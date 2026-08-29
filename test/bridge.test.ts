@@ -4,10 +4,19 @@ import * as fs from 'node:fs/promises';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { GitError, GitRunner } from '../src/git';
+import { GitHubError } from '../src/github';
 import { BRIDGE_MESSAGES, MessageBridge, toErrorBody, type BridgeHost, type WebviewLike } from '../src/bridge';
 import { Logger, type LogSink } from '../src/logger';
 import { RepositoryService, type PersistentStore } from '../src/repository';
-import type { HostEvent, HostMessage, Request, Response, SettingsSnapshot } from '../src/messages';
+import type {
+  HostEvent,
+  HostMessage,
+  OpenDiffPayload,
+  RemoteInfo,
+  Request,
+  Response,
+  SettingsSnapshot,
+} from '../src/messages';
 
 test('GitError REPOSITORY_LOCKED maps to 409', () => {
   const body = toErrorBody(new GitError({ code: 'REPOSITORY_LOCKED', message: 'locked' }));
@@ -156,10 +165,13 @@ interface Harness {
   webview: FakeWebview;
   bridge: MessageBridge;
   repo: RepositoryService | null;
+  /** Calls recorded by the optional host callbacks. */
+  calls: { showLogs: number; openDiff: OpenDiffPayload[]; external: string[] };
 }
 
-function harness(repo: RepositoryService | null): Harness {
+function harness(repo: RepositoryService | null, overrides: Partial<BridgeHost> = {}): Harness {
   const webview = new FakeWebview();
+  const calls = { showLogs: 0, openDiff: [] as OpenDiffPayload[], external: [] as string[] };
   const host: BridgeHost = {
     logger: new Logger(new NullSink()),
     resolveRepository: () => Promise.resolve(repo),
@@ -168,8 +180,20 @@ function harness(repo: RepositoryService | null): Harness {
     githubAuth: () => Promise.resolve({ connected: false, login: null, scopes: [] }),
     connectGitHub: () => Promise.resolve({ connected: true, login: null, scopes: [] }),
     disconnectGitHub: () => Promise.resolve({ connected: false, login: null, scopes: [] }),
+    openDiff: (payload) => {
+      calls.openDiff.push(payload);
+      return Promise.resolve({ opened: true, mode: 'commit' });
+    },
+    showLogs: () => {
+      calls.showLogs += 1;
+    },
+    openExternal: (url) => {
+      calls.external.push(url);
+      return Promise.resolve(true);
+    },
+    ...overrides,
   };
-  return { webview, bridge: new MessageBridge(webview, host), repo };
+  return { webview, bridge: new MessageBridge(webview, host), repo, calls };
 }
 
 let requestCounter = 0;
@@ -474,3 +498,203 @@ test('an unknown request kind is rejected with 400', async (t) => {
   if (response.ok) return;
   assert.equal(response.error.status, 400);
 });
+
+// ------------------------------------------------------- newly wired handlers
+
+test('repos/remotes parses the host and strips embedded credentials', async (t) => {
+  const dir = await makeRepo();
+  t.after(() => cleanup(dir));
+  const repo = new RepositoryService({ folderPath: dir, gitPath: 'git', store: new MemoryStore() });
+  await repo.git.run(['remote', 'add', 'origin', 'https://octocat:ghp_secret0123456789abcd@github.com/owner/repo.git']);
+  await repo.git.run(['remote', 'add', 'ent', 'git@git.acme.example:team/tooling.git']);
+  const h = harness(repo);
+  t.after(() => h.bridge.dispose());
+
+  const response = await h.webview.send(req('repos/remotes', {}));
+  assert.equal(response.ok, true);
+  if (!response.ok) return;
+  const remotes = (response.data as { remotes: RemoteInfo[] }).remotes;
+
+  const origin = remotes.find((r) => r.name === 'origin');
+  assert.equal(origin?.host, 'github.com');
+  assert.equal(origin?.owner, 'owner');
+  assert.equal(origin?.repo, 'repo');
+  assert.equal(origin?.isGitHub, true);
+  // The token never reaches the webview.
+  assert.ok(!JSON.stringify(remotes).includes('ghp_secret0123456789abcd'));
+  assert.equal(origin?.fetchUrl, 'https://github.com/owner/repo.git');
+
+  const ent = remotes.find((r) => r.name === 'ent');
+  assert.equal(ent?.host, 'git.acme.example');
+  assert.equal(ent?.isGitHub, false);
+});
+
+test('actions/openDiff validates its payload before reaching the host callback', async (t) => {
+  const dir = await makeRepo();
+  t.after(() => cleanup(dir));
+  const repo = new RepositoryService({ folderPath: dir, gitPath: 'git', store: new MemoryStore() });
+  const h = harness(repo);
+  t.after(() => h.bridge.dispose());
+
+  for (const payload of [
+    { path: '../escape.txt' },
+    { path: 'a.txt', hash: 'nope' },
+    { path: 'a.txt', hash: '0'.repeat(40), parent: 'nope' },
+  ]) {
+    const response = await h.webview.send(req('actions/openDiff', payload));
+    assert.equal(response.ok, false, JSON.stringify(payload));
+    if (response.ok) return;
+    assert.equal(response.error.code, 'VALIDATION_ERROR');
+  }
+  assert.deepEqual(h.calls.openDiff, [], 'no invalid payload reached the host');
+
+  const ok = await h.webview.send(req('actions/openDiff', { path: 'a.txt' }));
+  assert.equal(ok.ok, true);
+  assert.deepEqual(h.calls.openDiff, [{ path: 'a.txt' }]);
+});
+
+test('actions/openDiff reports UNAVAILABLE when the host cannot open editors', async (t) => {
+  const dir = await makeRepo();
+  t.after(() => cleanup(dir));
+  const repo = new RepositoryService({ folderPath: dir, gitPath: 'git', store: new MemoryStore() });
+  const h = harness(repo, { openDiff: undefined });
+  t.after(() => h.bridge.dispose());
+
+  const response = await h.webview.send(req('actions/openDiff', { path: 'a.txt' }));
+  assert.equal(response.ok, false);
+  if (response.ok) return;
+  assert.equal(response.error.status, 503);
+  assert.equal(response.error.code, 'UNAVAILABLE');
+});
+
+test('actions/showLogs only reveals the channel and takes no parameters', async (t) => {
+  const h = harness(null);
+  t.after(() => h.bridge.dispose());
+
+  const response = await h.webview.send(req('actions/showLogs', {}));
+  assert.equal(response.ok, true);
+  if (!response.ok) return;
+  assert.deepEqual(response.data, { shown: true });
+  assert.equal(h.calls.showLogs, 1);
+
+  // Extra fields are ignored, so the kind cannot smuggle a command.
+  await h.webview.send(req('actions/showLogs', { command: 'workbench.action.terminal.new' }));
+  assert.equal(h.calls.showLogs, 2);
+});
+
+test('actions/openExternal only accepts https URLs', async (t) => {
+  const h = harness(null);
+  t.after(() => h.bridge.dispose());
+
+  for (const url of ['file:///etc/passwd', 'vscode://extension/evil', 'http://github.com/o/r', 'javascript:alert(1)']) {
+    const response = await h.webview.send(req('actions/openExternal', { url }));
+    assert.equal(response.ok, false, url);
+    if (response.ok) return;
+    assert.equal(response.error.code, 'VALIDATION_ERROR');
+  }
+  assert.deepEqual(h.calls.external, []);
+
+  const ok = await h.webview.send(
+    req('actions/openExternal', { url: 'https://github.com/owner/repo/commit/abc1234' }),
+  );
+  assert.equal(ok.ok, true);
+  assert.deepEqual(h.calls.external, ['https://github.com/owner/repo/commit/abc1234']);
+});
+
+test('commits/detail rejects a negative fileCursor and forwards a valid one', async (t) => {
+  const dir = await makeRepo();
+  t.after(() => cleanup(dir));
+  const repo = new RepositoryService({
+    folderPath: dir,
+    gitPath: 'git',
+    store: new MemoryStore(),
+    fileLimit: 1,
+  });
+  const head = (await repo.status()).head as string;
+  const h = harness(repo);
+  t.after(() => h.bridge.dispose());
+
+  const bad = await h.webview.send(req('commits/detail', { hash: head, fileCursor: -1 }));
+  assert.equal(bad.ok, false);
+  if (bad.ok) return;
+  assert.equal(bad.error.code, 'VALIDATION_ERROR');
+  assert.equal(bad.error.detail, 'fileCursor');
+
+  const good = await h.webview.send(req('commits/detail', { hash: head, fileCursor: 0 }));
+  assert.equal(good.ok, true);
+  if (!good.ok) return;
+  assert.equal((good.data as { fileCursor: number }).fileCursor, 0);
+});
+
+test('github handlers reach the host and report UNAVAILABLE without one', async (t) => {
+  const withHost = harness(null, {
+    githubRepo: () =>
+      Promise.resolve({
+        defaultBranch: 'main',
+        private: false,
+        htmlUrl: 'https://github.com/o/r',
+        rateLimit: { limit: 5000, remaining: 4999, resetAt: null, cached: false, offline: false },
+      }),
+    githubPullRequests: () =>
+      Promise.resolve({
+        pullRequests: [],
+        rateLimit: { limit: 5000, remaining: 4999, resetAt: null, cached: false, offline: false },
+      }),
+    githubLinkage: () =>
+      Promise.resolve({
+        available: true,
+        host: 'github.com',
+        owner: 'o',
+        repo: 'r',
+        webUrl: 'https://github.com/o/r',
+        commitUrlTemplate: 'https://github.com/o/r/commit/{hash}',
+        apiUrl: 'https://api.github.com',
+      }),
+  });
+  t.after(() => withHost.bridge.dispose());
+
+  const repoInfo = await withHost.webview.send(req('github/repo', { owner: 'o', repo: 'r' }));
+  assert.equal(repoInfo.ok, true);
+  if (!repoInfo.ok) return;
+  assert.equal((repoInfo.data as { defaultBranch: string }).defaultBranch, 'main');
+
+  const prs = await withHost.webview.send(req('github/pullRequests', { owner: 'o', repo: 'r' }));
+  assert.equal(prs.ok, true);
+
+  const linkage = await withHost.webview.send(req('github/linkage', {}));
+  assert.equal(linkage.ok, true);
+
+  // A bad slug never reaches GitHub.
+  const bad = await withHost.webview.send(req('github/repo', { owner: '../etc', repo: 'r' }));
+  assert.equal(bad.ok, false);
+  if (bad.ok) return;
+  assert.equal(bad.error.code, 'VALIDATION_ERROR');
+
+  const withoutHost = harness(null);
+  t.after(() => withoutHost.bridge.dispose());
+  const stub = await withoutHost.webview.send(req('github/repo', { owner: 'o', repo: 'r' }));
+  assert.equal(stub.ok, false);
+  if (stub.ok) return;
+  assert.equal(stub.error.status, 503);
+});
+
+test('a GitHubError maps to its own status and code', () => {
+  const auth = toErrorBody(
+    new GitHubError({ status: 401, code: 'AUTH_ERROR', message: 'Token GitHub tidak valid.' }),
+  );
+  assert.equal(auth.status, 401);
+  assert.equal(auth.code, 'AUTH_ERROR');
+  assert.equal(auth.message, 'Token GitHub tidak valid.');
+
+  const limited = toErrorBody(
+    new GitHubError({
+      status: 429,
+      code: 'RATE_LIMITED',
+      message: 'Batas permintaan GitHub tercapai.',
+      resetAt: 1_700_000_600_000,
+    }),
+  );
+  assert.equal(limited.code, 'RATE_LIMITED');
+  assert.equal(limited.detail, 'resetAt=1700000600000');
+});
+

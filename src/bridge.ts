@@ -13,8 +13,10 @@
  * interfaces, so the dispatch table can be exercised without an editor.
  */
 import { GitError } from './git';
+import { GitHubError } from './github';
 import { SafetyGuard, DEFAULT_STALENESS_MS, type GuardAction, type GuardSnapshot, type GuardVerdict } from './guard';
 import type { Logger } from './logger';
+import { parseRemoteUrl, stripCredentials } from './remoteUrl';
 import type { RepositoryService } from './repository';
 import {
   validateBranchName,
@@ -25,6 +27,7 @@ import {
 import type {
   ActionResult,
   CommitDetail,
+  CommitDetailPayload,
   CommitPayload,
   CommitResult,
   ErrorBody,
@@ -34,10 +37,19 @@ import type {
   GitActionPayload,
   GitActionRequest,
   GitHubAuthState,
+  GitHubLinkage,
+  GitHubRepoInfo,
+  GitHubRepoPayload,
   GraphPayload,
   HostEvent,
   HostMessage,
   MutationMeta,
+  OpenDiffPayload,
+  OpenDiffResult,
+  OpenExternalPayload,
+  PullRequestsPayload,
+  PullRequestsResult,
+  RemoteInfo,
   RepoGraph,
   RepoStatus,
   Request,
@@ -55,7 +67,14 @@ export interface WebviewLike {
   onDidReceiveMessage(listener: (message: unknown) => void): { dispose(): void };
 }
 
-/** Services the bridge needs from the activation layer. */
+/**
+ * Services the bridge needs from the activation layer.
+ *
+ * Everything that requires the `vscode` module arrives here as a callback,
+ * because this file must stay importable without an editor. The GitHub and diff
+ * members are optional so the dispatch table degrades to a structured
+ * `UNAVAILABLE` instead of throwing when a host does not provide them.
+ */
 export interface BridgeHost {
   logger: Logger;
   /** Active repository, or `null` when the workspace has none. */
@@ -65,6 +84,15 @@ export interface BridgeHost {
   githubAuth(): Promise<GitHubAuthState>;
   connectGitHub(): Promise<GitHubAuthState>;
   disconnectGitHub(): Promise<GitHubAuthState>;
+  /** Open a real diff editor. Implemented in `extension.ts`, which owns `vscode`. */
+  openDiff?(payload: OpenDiffPayload): Promise<OpenDiffResult>;
+  /** Reveal the output channel. Takes no parameters, so it cannot run commands. */
+  showLogs?(): void;
+  /** Open an external URL. Host-side so the webview never navigates itself. */
+  openExternal?(url: string): Promise<boolean>;
+  githubRepo?(payload: GitHubRepoPayload): Promise<GitHubRepoInfo>;
+  githubPullRequests?(payload: PullRequestsPayload): Promise<PullRequestsResult>;
+  githubLinkage?(): Promise<GitHubLinkage>;
 }
 
 const IDEMPOTENCY_TTL_MS = 300_000;
@@ -85,6 +113,9 @@ export const BRIDGE_MESSAGES = {
   unavailable: 'Layanan tidak tersedia.',
   githubPending: 'Integrasi GitHub belum tersedia.',
   timeout: 'Operasi git melebihi batas waktu.',
+  diffUnavailable: 'Membuka diff tidak tersedia pada host ini.',
+  diffBinary: 'Diff teks tidak tersedia untuk file binary.',
+  externalBlocked: 'Tautan ini tidak boleh dibuka.',
 } as const;
 
 /** Idempotency record: the outcome only, so it can be re-stamped with a new id. */
@@ -207,14 +238,22 @@ export class MessageBridge {
         return this.handleStatus(request.payload as StatusPayload);
       case 'repos/graph':
         return this.handleGraph(request.payload as GraphPayload);
+      case 'repos/remotes':
+        return this.handleRemotes();
       case 'commits/detail':
-        return this.handleCommitDetail(request.payload as { hash: string });
+        return this.handleCommitDetail(request.payload as CommitDetailPayload);
       case 'actions/stage':
         return this.handleStage(request.payload as StagePayload, operationId);
       case 'actions/commit':
         return this.handleCommit(request.payload as CommitPayload, operationId);
       case 'actions/git':
         return this.handleGitAction(request.payload as GitActionPayload, operationId);
+      case 'actions/openDiff':
+        return this.handleOpenDiff(request.payload as OpenDiffPayload);
+      case 'actions/showLogs':
+        return this.handleShowLogs();
+      case 'actions/openExternal':
+        return this.handleOpenExternal(request.payload as OpenExternalPayload);
       case 'github/auth':
         return this.host.githubAuth();
       case 'github/connect':
@@ -222,7 +261,11 @@ export class MessageBridge {
       case 'github/disconnect':
         return this.host.disconnectGitHub();
       case 'github/repo':
-        return fail(503, 'UNAVAILABLE', BRIDGE_MESSAGES.githubPending);
+        return this.handleGitHubRepo(request.payload as GitHubRepoPayload);
+      case 'github/pullRequests':
+        return this.handleGitHubPullRequests(request.payload as PullRequestsPayload);
+      case 'github/linkage':
+        return this.handleGitHubLinkage();
       case 'settings/get':
         return this.host.settings();
       case 'settings/set':
@@ -257,14 +300,119 @@ export class MessageBridge {
     });
   }
 
-  private async handleCommitDetail(payload: { hash: string }): Promise<CommitDetail> {
+  private async handleCommitDetail(payload: CommitDetailPayload): Promise<CommitDetail> {
     if (!validateHash(payload.hash)) {
       fail(400, 'VALIDATION_ERROR', BRIDGE_MESSAGES.invalid, { detail: 'hash' });
     }
+    if (payload.fileCursor !== undefined && !isNonNegativeInt(payload.fileCursor)) {
+      fail(400, 'VALIDATION_ERROR', BRIDGE_MESSAGES.invalid, { detail: 'fileCursor' });
+    }
     const repo = await this.repository();
-    const detail = await repo.commitDetail(payload.hash);
+    const detail = await repo.commitDetail(payload.hash, {
+      ...(payload.fileCursor === undefined ? {} : { fileCursor: payload.fileCursor }),
+    });
     if (detail === null) fail(404, 'NOT_FOUND', BRIDGE_MESSAGES.notFound);
     return detail;
+  }
+
+  /**
+   * Configured remotes, with credentials stripped and the host parsed so the UI
+   * can decide whether "Buka di GitHub" applies without re-parsing URLs itself.
+   */
+  private async handleRemotes(): Promise<{ remotes: RemoteInfo[] }> {
+    const repo = await this.repository();
+    const raw = await repo.git.remoteList();
+    const remotes: RemoteInfo[] = raw.map((entry) => {
+      const parsed = parseRemoteUrl(entry.fetchUrl) ?? parseRemoteUrl(entry.pushUrl);
+      return {
+        name: entry.name,
+        // Never hand a token to the webview, even one the user pasted into a URL.
+        fetchUrl: stripCredentials(entry.fetchUrl),
+        pushUrl: stripCredentials(entry.pushUrl),
+        host: parsed?.host ?? null,
+        owner: parsed?.owner ?? null,
+        repo: parsed?.repo ?? null,
+        isGitHub: parsed?.isGitHub ?? false,
+      };
+    });
+    return { remotes };
+  }
+
+  /**
+   * Open a real diff editor. The work happens in `extension.ts` because opening
+   * an editor needs `vscode`; this arm only validates and maps failures.
+   */
+  private async handleOpenDiff(payload: OpenDiffPayload): Promise<OpenDiffResult> {
+    if (!validateRepoRelativePath(payload.path)) {
+      fail(400, 'VALIDATION_ERROR', BRIDGE_MESSAGES.invalid, { detail: 'path' });
+    }
+    if (payload.hash !== undefined && !validateHash(payload.hash)) {
+      fail(400, 'VALIDATION_ERROR', BRIDGE_MESSAGES.invalid, { detail: 'hash' });
+    }
+    if (payload.parent !== undefined && !validateHash(payload.parent)) {
+      fail(400, 'VALIDATION_ERROR', BRIDGE_MESSAGES.invalid, { detail: 'parent' });
+    }
+    const open = this.host.openDiff;
+    if (open === undefined) fail(503, 'UNAVAILABLE', BRIDGE_MESSAGES.diffUnavailable);
+    // Resolving the repository first turns "no repo" into 404 rather than a
+    // confusing editor error.
+    await this.repository();
+    return open(payload);
+  }
+
+  /**
+   * Reveal the output channel. Deliberately parameterless: there is no way to
+   * express "run command X" through this kind, so it cannot become an arbitrary
+   * command-execution channel for the webview.
+   */
+  private handleShowLogs(): { shown: boolean } {
+    const show = this.host.showLogs;
+    if (show === undefined) return { shown: false };
+    show();
+    return { shown: true };
+  }
+
+  /**
+   * Open an external URL. Restricted to `https:` so a compromised webview cannot
+   * ask the host to launch `file:`, `vscode:`, or a custom scheme handler.
+   */
+  private async handleOpenExternal(payload: OpenExternalPayload): Promise<{ opened: boolean }> {
+    if (typeof payload.url !== 'string' || !payload.url.startsWith('https://')) {
+      fail(400, 'VALIDATION_ERROR', BRIDGE_MESSAGES.externalBlocked, { detail: 'url' });
+    }
+    if (parseRemoteUrl(payload.url) === null && !/^https:\/\/[A-Za-z0-9.-]+\//.test(payload.url)) {
+      fail(400, 'VALIDATION_ERROR', BRIDGE_MESSAGES.externalBlocked, { detail: 'url' });
+    }
+    const open = this.host.openExternal;
+    if (open === undefined) fail(503, 'UNAVAILABLE', BRIDGE_MESSAGES.unavailable);
+    return { opened: await open(payload.url) };
+  }
+
+  private async handleGitHubRepo(payload: GitHubRepoPayload): Promise<GitHubRepoInfo> {
+    if (!isSlug(payload.owner) || !isSlug(payload.repo)) {
+      fail(400, 'VALIDATION_ERROR', BRIDGE_MESSAGES.invalid, { detail: 'owner/repo' });
+    }
+    const fetchRepo = this.host.githubRepo;
+    if (fetchRepo === undefined) fail(503, 'UNAVAILABLE', BRIDGE_MESSAGES.githubPending);
+    return fetchRepo(payload);
+  }
+
+  private async handleGitHubPullRequests(payload: PullRequestsPayload): Promise<PullRequestsResult> {
+    if (!isSlug(payload.owner) || !isSlug(payload.repo)) {
+      fail(400, 'VALIDATION_ERROR', BRIDGE_MESSAGES.invalid, { detail: 'owner/repo' });
+    }
+    if (payload.state !== undefined && !['open', 'closed', 'all'].includes(payload.state)) {
+      fail(400, 'VALIDATION_ERROR', BRIDGE_MESSAGES.invalid, { detail: 'state' });
+    }
+    const list = this.host.githubPullRequests;
+    if (list === undefined) fail(503, 'UNAVAILABLE', BRIDGE_MESSAGES.githubPending);
+    return list(payload);
+  }
+
+  private async handleGitHubLinkage(): Promise<GitHubLinkage> {
+    const linkage = this.host.githubLinkage;
+    if (linkage === undefined) fail(503, 'UNAVAILABLE', BRIDGE_MESSAGES.githubPending);
+    return linkage();
   }
 
   private async handleStage(payload: StagePayload, operationId: string): Promise<ActionResult> {
@@ -682,7 +830,23 @@ function verdictStatus(verdict: Extract<GuardVerdict, { allow: false }>): number
 export function toErrorBody(err: unknown): ErrorBody {
   if (err instanceof BridgeError) return err.body;
   if (err instanceof GitError) return fromGitError(err);
+  if (err instanceof GitHubError) return fromGitHubError(err);
   return { status: 500, code: 'SERVER_ERROR', message: messageOf(err) };
+}
+
+/**
+ * GitHub failures already carry their status and code; the reset timestamp is
+ * forwarded in `detail` so the UI can render the countdown badge.
+ */
+function fromGitHubError(err: GitHubError): ErrorBody {
+  return {
+    status: err.status,
+    code: err.code,
+    message: err.message,
+    ...(err.detail === undefined && err.resetAt === undefined
+      ? {}
+      : { detail: err.resetAt === undefined ? (err.detail as string) : `resetAt=${err.resetAt}` }),
+  };
 }
 
 function fromGitError(err: GitError): ErrorBody {
@@ -741,3 +905,9 @@ function isPositiveInt(value: unknown): boolean {
 function isNonNegativeInt(value: unknown): boolean {
   return typeof value === 'number' && Number.isInteger(value) && value >= 0;
 }
+
+/** GitHub owner/repo segment: no slashes, no dots-only, no option-like prefix. */
+function isSlug(value: unknown): boolean {
+  return typeof value === 'string' && value.length > 0 && value.length <= 100 && /^[A-Za-z0-9._-]+$/.test(value);
+}
+
