@@ -1,0 +1,34 @@
+# What NOT to ship in the VSIX.
+#
+# `vsce` ignores `.gitignore` entirely. Without this file it packages the whole
+# tree — including `PRD_Git_Control.md`, `src/`, `test/`, and the source maps with
+# their embedded `sourcesContent` — plus the production `node_modules`, even
+# though everything is already bundled into `dist/`.
+#
+# Everything the extension needs at runtime is `dist/`, `resources/`, and
+# `package.json` (always included by vsce).
+
+# Internal, never published.
+PRD_Git_Control.md
+.env
+.env.*
+
+# Sources: bundled into dist/, so shipping them doubles the package.
+src/**
+test/**
+out/**
+tsconfig.json
+esbuild.js
+
+# Source maps carry full `sourcesContent` and developer paths.
+**/*.map
+
+# Bundled by esbuild, so nothing is resolved from node_modules at runtime.
+node_modules/**
+
+# Tooling and local state.
+.git/**
+.gitignore
+.vscode/**
+.vscode-test/**
+**/*.vsix
