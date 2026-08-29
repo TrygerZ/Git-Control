@@ -12,6 +12,14 @@ const HEX = /^[0-9a-fA-F]+$/;
 const CONTROL_CHARS = /[\u0000-\u001f\u007f]/;
 
 /**
+ * Windows reserved device names. `CON`, `NUL`, and friends resolve to a device
+ * rather than a file at ANY directory depth and with any extension, so
+ * `a/b/NUL.txt` still opens the null device. Git never tracks such a path.
+ */
+const WINDOWS_DEVICE_NAMES =
+  /^(?:CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])(?:\..*)?$/i;
+
+/**
  * Defends against: passing arbitrary strings where git expects an object id,
  * which could otherwise smuggle option-like or path-like values into argv.
  */
@@ -66,17 +74,56 @@ export function validateRemoteName(value: unknown): boolean {
 }
 
 /**
+ * `true` when the host filesystem gives `:` and the reserved device names their
+ * Windows meaning.
+ *
+ * Read from `process` rather than imported so this module stays free of `node:`
+ * imports; guarded with `typeof` so it also evaluates to `false` if the bundle is
+ * ever loaded in a browser context. Every consumer may override it per call,
+ * which is how the tests exercise both platforms deterministically.
+ */
+export const WINDOWS_PATH_SEMANTICS: boolean =
+  typeof process !== 'undefined' && process.platform === 'win32';
+
+/**
  * Defends against: path traversal and absolute-path escapes when staging or
  * unstaging files. Paths must stay inside the repository working tree.
+ *
+ * Platform difference, decided deliberately: `a.txt:stream` is an NTFS alternate
+ * data stream on Windows and an ordinary — if unusual — filename on Linux and
+ * macOS. The same holds for `con.txt`, a normal word in several languages and a
+ * reserved device on Windows. Rejecting either unconditionally would make files
+ * a Linux user legitimately tracks unstageable and undiffable through this
+ * extension, so both rules apply only under {@link WINDOWS_PATH_SEMANTICS}.
+ * Everything that is an escape or a lie on *every* platform — traversal, an
+ * absolute or UNC path, a drive-qualified or drive-relative path, a control
+ * character, a `.` segment that would make the validated string differ from what
+ * the filesystem sees — is rejected everywhere.
  */
-export function validateRepoRelativePath(value: unknown): boolean {
+export function validateRepoRelativePath(
+  value: unknown,
+  opts: { windows?: boolean } = {},
+): boolean {
   if (typeof value !== 'string') return false;
   if (value.length === 0 || value.length > 4096) return false;
   if (CONTROL_CHARS.test(value)) return false;
+  // Absolute POSIX path, and `\\server\share` UNC, which starts with `\`.
   if (value.startsWith('/') || value.startsWith('\\')) return false;
+  // `C:\x` and `C:/x`: drive-qualified absolute.
   if (/^[A-Za-z]:[\\/]/.test(value)) return false;
+  // `C:foo`: drive-RELATIVE. Resolves against the process's per-drive current
+  // directory on Windows, so it is not a repository-relative path at all, and
+  // nothing legitimate in a git index looks like this on any platform.
+  if (/^[A-Za-z]:/.test(value)) return false;
+  const windows = opts.windows ?? WINDOWS_PATH_SEMANTICS;
+  // NTFS alternate data stream: `a.txt:$DATA` names a hidden stream, never a
+  // file git tracks. Also a second line of defence for the drive-relative form.
+  if (windows && value.includes(':')) return false;
   const segments = value.split(/[\\/]/);
-  return !segments.includes('..');
+  if (segments.includes('..')) return false;
+  if (segments.includes('.')) return false;
+  if (windows && segments.some((s) => WINDOWS_DEVICE_NAMES.test(s))) return false;
+  return true;
 }
 
 /**

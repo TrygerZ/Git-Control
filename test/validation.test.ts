@@ -105,6 +105,66 @@ test('validateRepoRelativePath blocks traversal and absolute paths', () => {
   assert.equal(validateRepoRelativePath(null), false);
 });
 
+// ------------------------------------------------------------------- SEC-011
+
+test('validateRepoRelativePath rejects UNC and both drive-qualified forms (SEC-011)', () => {
+  // Every platform: none of these is a repository-relative path anywhere.
+  for (const windows of [true, false]) {
+    const label = windows ? 'win' : 'posix';
+    assert.equal(validateRepoRelativePath('\\\\server\\share\\x', { windows }), false, `UNC ${label}`);
+    assert.equal(validateRepoRelativePath('//server/share/x', { windows }), false, `UNC fwd ${label}`);
+    assert.equal(validateRepoRelativePath('C:\\abs\\x', { windows }), false, `drive abs ${label}`);
+    assert.equal(validateRepoRelativePath('C:/abs/x', { windows }), false, `drive abs fwd ${label}`);
+    // Drive-RELATIVE: resolves against the per-drive cwd, so `C:foo` is neither
+    // absolute nor repo-relative.
+    assert.equal(validateRepoRelativePath('C:foo\\bar', { windows }), false, `drive rel ${label}`);
+    assert.equal(validateRepoRelativePath('c:foo', { windows }), false, `drive rel lower ${label}`);
+    // A `.` segment makes the validated string differ from what the FS sees.
+    assert.equal(validateRepoRelativePath('x/./y', { windows }), false, `dot segment ${label}`);
+  }
+});
+
+test('validateRepoRelativePath rejects NTFS streams and device names on Windows only (SEC-011)', () => {
+  // On Windows a colon opens an alternate data stream, and the reserved names
+  // resolve to devices at any depth and with any extension.
+  const windowsOnly = [
+    'a.txt:stream',
+    'a.txt:$DATA',
+    'dir/a.txt:hidden',
+    'CON',
+    'con',
+    'NUL.txt',
+    'aux',
+    'COM1',
+    'lpt9.log',
+    'dir/PRN',
+  ];
+  for (const value of windowsOnly) {
+    assert.equal(validateRepoRelativePath(value, { windows: true }), false, `win ${value}`);
+    // The same strings are legitimate filenames on Linux and macOS, and a user
+    // there must still be able to stage and diff them.
+    assert.equal(validateRepoRelativePath(value, { windows: false }), true, `posix ${value}`);
+  }
+});
+
+test('validateRepoRelativePath keeps accepting ordinary paths on both platforms (SEC-011)', () => {
+  const fine = [
+    'src/index.ts',
+    'a/b/c.txt',
+    'CONFIG.md',
+    'console.log.js',
+    'auxiliary/notes.txt',
+    'com10.txt',
+    'lpt0.txt',
+    'catatan-proyek.md',
+    'dokumen/ringkasan.txt',
+  ];
+  for (const value of fine) {
+    assert.equal(validateRepoRelativePath(value, { windows: true }), true, `win ${value}`);
+    assert.equal(validateRepoRelativePath(value, { windows: false }), true, `posix ${value}`);
+  }
+});
+
 test('validateCommitMessage requires 3+ trimmed chars', () => {
   assert.equal(validateCommitMessage('').ok, false);
   assert.equal(validateCommitMessage('   ').ok, false);
