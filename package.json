@@ -17,6 +17,16 @@
   "activationEvents": [
     "onStartupFinished"
   ],
+  "capabilities": {
+    "untrustedWorkspaces": {
+      "supported": false,
+      "restrictedConfigurations": [
+        "gitControl.gitPath",
+        "gitControl.githubApiUrl"
+      ],
+      "description": "Git Control menjalankan git CLI pada repository yang dibuka, termasuk git hook milik repository itu (misalnya pre-commit), dan membaca konfigurasi repository. Karena itu workspace harus dipercaya."
+    }
+  },
   "contributes": {
     "commands": [
       {
