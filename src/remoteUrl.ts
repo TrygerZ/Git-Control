@@ -39,9 +39,14 @@ const MAX_URL_LENGTH = 2048;
  * credential behind whenever the username or the secret itself contains one —
  * `https://user@corp:SECRET@host/o/r` is a real shape, and a first-`@` match
  * would emit `https://corp:SECRET@host/o/r`.
+ *
+ * A backslash ends the authority for WHATWG URL parsers, so it also ends the
+ * userinfo here. Without that exclusion `https://evil.example\@github.com/o/r`
+ * would be rewritten to `https://github.com/o/r` — a display lie naming a host
+ * the URL does not resolve to.
  */
 export function stripCredentials(url: string): string {
-  return url.replace(/^([a-z][a-z0-9+.-]*:\/\/)[^/]*@/i, '$1');
+  return url.replace(/^([a-z][a-z0-9+.-]*:\/\/)[^/\\]*@/i, '$1');
 }
 
 /** Default GitHub API base. Also the value shipped in `package.json`. */
@@ -113,12 +118,20 @@ export function webUrlOf(remote: ParsedRemoteUrl): string {
 /**
  * Split off the host and the repository path. Userinfo is discarded here, which
  * is why no credential can reach the returned object.
+ *
+ * A backslash terminates the authority and is otherwise treated as a path
+ * separator, exactly as the WHATWG URL parser and every browser do. Reading it
+ * as an ordinary character instead would attribute
+ * `https://evil.example\@github.com/o/r` to `github.com` — the userinfo rule
+ * would swallow `evil.example\` — while `new URL()`, `vscode.Uri.parse`, and the
+ * browser all resolve `evil.example`. Two parsers disagreeing about the host of
+ * one URL is the bug; the UI reports ours.
  */
 function splitHostAndPath(value: string): { host: string; path: string } | null {
   const scheme = SCHEMES.find((s) => value.toLowerCase().startsWith(s));
   if (scheme !== undefined) {
     const rest = value.slice(scheme.length);
-    const slash = rest.indexOf('/');
+    const slash = rest.search(/[/\\]/);
     if (slash <= 0) return null;
     const authority = rest.slice(0, slash);
     // Everything before the LAST `@` is userinfo; drop it, secret and all.
@@ -126,7 +139,7 @@ function splitHostAndPath(value: string): { host: string; path: string } | null 
     const hostPort = at === -1 ? authority : authority.slice(at + 1);
     const host = stripPort(hostPort);
     if (host === null) return null;
-    return { host, path: rest.slice(slash + 1) };
+    return { host, path: rest.slice(slash + 1).replace(/\\/g, '/') };
   }
 
   const scp = SCP_LIKE.exec(value);

@@ -123,6 +123,50 @@ test('a control character disqualifies the URL', () => {
   assert.equal(parseRemoteUrl('https://github.com/owner/re\npo'), null);
 });
 
+// ------------------------------------------------------------------- SEC-010
+
+test('a backslash authority is attributed exactly as WHATWG URL attributes it (SEC-010)', () => {
+  // The divergent inputs the audit names. `new URL()` is the reference: a
+  // backslash terminates the authority, so the userinfo rule must not be allowed
+  // to swallow it and promote the text after the `@` to host.
+  const cases = [
+    'https://evil.example\\@github.com/owner/repo.git',
+    'https://github.com\\@evil.example/owner/repo.git',
+    'https://evil.example\\github.com/owner/repo.git',
+  ];
+  for (const url of cases) {
+    const reference = new URL(url).hostname.toLowerCase();
+    const parsed = parseRemoteUrl(url);
+    assert.notEqual(parsed, null, url);
+    assert.equal(parsed?.host, reference, url);
+  }
+
+  // Concretely: the first case is `evil.example`, never `github.com`.
+  const crafted = parseRemoteUrl('https://evil.example\\@github.com/owner/repo.git');
+  assert.equal(crafted?.host, 'evil.example');
+  assert.equal(crafted?.isGitHub, false, 'a crafted remote must not be trusted as github.com');
+});
+
+test('stripCredentials does not rewrite a backslash authority into a false host (SEC-010)', () => {
+  // Stopping the userinfo match at the backslash keeps the output honest: it must
+  // not read as a plain `github.com` URL.
+  const stripped = stripCredentials('https://evil.example\\@github.com/owner/repo.git');
+  assert.notEqual(stripped, 'https://github.com/owner/repo.git');
+  assert.ok(stripped.includes('evil.example'));
+  // A real credential in a normal authority is still removed.
+  assert.equal(
+    stripCredentials('https://user:pass@github.com/owner/repo.git'),
+    'https://github.com/owner/repo.git',
+  );
+});
+
+test('a backslash inside the path is normalised, not treated as an authority end (SEC-010)', () => {
+  const parsed = parseRemoteUrl('https://github.com/owner\\repo.git');
+  assert.equal(parsed?.host, 'github.com');
+  assert.equal(parsed?.owner, 'owner');
+  assert.equal(parsed?.repo, 'repo');
+});
+
 test('webUrlOf builds a browsable base URL for github.com and Enterprise alike', () => {
   assert.equal(
     webUrlOf({ host: 'github.com', owner: 'owner', repo: 'repo', isGitHub: true }),
