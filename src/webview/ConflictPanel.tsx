@@ -65,13 +65,7 @@ export function ConflictPanel({ conflicts, operation }: Props): JSX.Element {
       await bridge.request('actions/openDiff', { path });
     } catch (err) {
       const body = toErrorBody(err);
-      pushToast({
-        level: 'warning',
-        message:
-          body.code === 'UNAVAILABLE'
-            ? 'Membuka merge editor belum tersedia pada versi ini.'
-            : body.message,
-      });
+      pushToast({ level: 'warning', message: body.message });
     }
   };
 

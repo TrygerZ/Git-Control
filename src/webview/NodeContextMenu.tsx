@@ -45,9 +45,7 @@ interface Props {
   onClose(): void;
 }
 
-const GITHUB_HOSTS = ['github.com'];
-
-/** Remote-tracking refs whose URL we can turn into a github.com commit link. */
+/** First remote-tracking ref's remote name, used as the push target. */
 export function githubRemoteName(refs: readonly RefInfo[]): string | null {
   for (const ref of refs) {
     if (ref.kind !== 'remote') continue;
@@ -176,21 +174,17 @@ export function menuItemsFor(
 }
 
 /**
- * Turn a remote URL into a browsable GitHub base URL.
- * Handles both `git@github.com:owner/repo.git` and `https://github.com/owner/repo`.
+ * Turn the host-parsed remotes into a browsable base URL.
+ *
+ * The host already parsed and credential-stripped every URL, so this only picks
+ * the first GitHub remote (falling back to any parsed host, which covers GitHub
+ * Enterprise) and assembles the base.
  */
 export function githubBaseUrl(remotes: readonly RemoteInfo[]): string | null {
-  for (const remote of remotes) {
-    const url = remote.fetchUrl.length > 0 ? remote.fetchUrl : remote.pushUrl;
-    const host = GITHUB_HOSTS.find((h) => url.includes(h));
-    if (host === undefined) continue;
-    const afterHost = url.split(host)[1];
-    if (afterHost === undefined) continue;
-    const path = afterHost.replace(/^[:/]+/, '').replace(/\.git$/, '');
-    if (path.length === 0) continue;
-    return `https://${host}/${path}`;
-  }
-  return null;
+  const usable = remotes.filter((r) => r.host !== null && r.owner !== null && r.repo !== null);
+  const preferred = usable.find((r) => r.isGitHub) ?? usable[0];
+  if (preferred === undefined) return null;
+  return `https://${preferred.host}/${preferred.owner}/${preferred.repo}`;
 }
 
 export function NodeContextMenu({
@@ -277,45 +271,29 @@ export function NodeContextMenu({
       onKeyDown={onKeyDown}
       style={{ left: `${anchor.x}px`, top: `${anchor.y}px` }}
     >
-      {items.map((item) =>
-        item.command.kind === 'openGitHub' ? (
-          // A real anchor: VS Code opens external links itself, and the CSP
-          // forbids the webview from navigating on its own.
-          <a
-            key={item.id}
-            role="menuitem"
-            className="gc-menu__item"
-            href={item.command.url}
-            target="_blank"
-            rel="noreferrer"
-            onClick={onClose}
-          >
-            <span className="gc-menu__label">{item.label}</span>
-          </a>
-        ) : (
-          <button
-            key={item.id}
-            type="button"
-            role="menuitem"
-            className={item.risky === true ? 'gc-menu__item gc-menu__item--risky' : 'gc-menu__item'}
-            onClick={() => {
-              onSelect(item);
-              onClose();
-            }}
-          >
-            <span className="gc-menu__label">
-              {item.risky === true && (
-                <span className="gc-menu__risk" aria-hidden="true">
-                  ⚠
-                </span>
-              )}
-              {item.label}
-              {item.risky === true && <span className="gc-menu__risk-word"> — berisiko</span>}
-            </span>
-            {item.hint !== undefined && <span className="gc-menu__hint">{item.hint}</span>}
-          </button>
-        ),
-      )}
+      {items.map((item) => (
+        <button
+          key={item.id}
+          type="button"
+          role="menuitem"
+          className={item.risky === true ? 'gc-menu__item gc-menu__item--risky' : 'gc-menu__item'}
+          onClick={() => {
+            onSelect(item);
+            onClose();
+          }}
+        >
+          <span className="gc-menu__label">
+            {item.risky === true && (
+              <span className="gc-menu__risk" aria-hidden="true">
+                ⚠
+              </span>
+            )}
+            {item.label}
+            {item.risky === true && <span className="gc-menu__risk-word"> — berisiko</span>}
+          </span>
+          {item.hint !== undefined && <span className="gc-menu__hint">{item.hint}</span>}
+        </button>
+      ))}
     </div>
   );
 }

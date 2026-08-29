@@ -83,10 +83,7 @@ export function Inspector({ hash }: Props): JSX.Element {
       const body = toErrorBody(err);
       pushToast({
         level: body.code === 'UNAVAILABLE' ? 'warning' : 'error',
-        message:
-          body.code === 'UNAVAILABLE'
-            ? 'Membuka diff belum tersedia pada versi ini.'
-            : body.message,
+        message: body.message,
         ...(body.detail === undefined ? {} : { detail: body.detail }),
       });
     } finally {
@@ -97,18 +94,17 @@ export function Inspector({ hash }: Props): JSX.Element {
   const totals = useMemo(() => detail?.totals ?? null, [detail]);
 
   /**
-   * Append the next page of files. `fileCursor` is a webview-added field; when
-   * the host ignores it the response repeats the first page, which is detected
-   * here and reported rather than silently appending duplicates.
+   * Append the next page of files. The cursor comes from the server's
+   * `nextFileCursor`, never computed here, and the path de-dupe stays as a cheap
+   * guard against a repeated page.
    */
   const loadMoreFiles = async (): Promise<void> => {
     if (hash === null || detail === null || paging) return;
+    const cursor = detail.nextFileCursor;
+    if (cursor === null) return;
     setPaging(true);
     try {
-      const page = await bridge.request('commits/detail', {
-        hash,
-        fileCursor: detail.files.length,
-      });
+      const page = await bridge.request('commits/detail', { hash, fileCursor: cursor });
       const known = new Set(detail.files.map((f) => f.path));
       const added = page.files.filter((f) => !known.has(f.path));
       if (added.length === 0) {
@@ -116,8 +112,14 @@ export function Inspector({ hash }: Props): JSX.Element {
           level: 'warning',
           message: 'Tidak ada file tambahan yang bisa dimuat.',
         });
+        setDetail({ ...detail, truncated: false, nextFileCursor: null });
       } else {
-        setDetail({ ...detail, files: [...detail.files, ...added], truncated: page.truncated });
+        setDetail({
+          ...detail,
+          files: [...detail.files, ...added],
+          truncated: page.truncated,
+          nextFileCursor: page.nextFileCursor,
+        });
       }
     } catch (err) {
       pushToast({ level: 'error', message: toErrorBody(err).message });

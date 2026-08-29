@@ -93,10 +93,7 @@ export function PendingChangesApp(): JSX.Element {
       const body = toErrorBody(err);
       pushToast({
         level: body.code === 'UNAVAILABLE' ? 'warning' : 'error',
-        message:
-          body.code === 'UNAVAILABLE'
-            ? 'Membuka diff belum tersedia pada versi ini.'
-            : body.message,
+        message: body.message,
       });
     }
   };

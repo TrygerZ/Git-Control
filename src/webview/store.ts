@@ -19,7 +19,11 @@ import type {
   ConflictEntry,
   ErrorBody,
   GitActionRequest,
+  GitHubAuthState,
+  GitHubLinkage,
+  GitHubRateLimit,
   MutationMeta,
+  PullRequestInfo,
   RepoGraph,
   RepoStatus,
   SettingsSnapshot,
@@ -479,14 +483,15 @@ export const useOperationStore = create<OperationState_>((set, get) => ({
   },
 
   /**
-   * Reveal the host Output channel. There is no request kind for running an
-   * arbitrary command, so this is surfaced as guidance rather than silently
-   * doing nothing (see the report note on `src/messages.ts`).
+   * Reveal the host Output channel through `actions/showLogs`, a kind whose only
+   * effect is `channel.show(true)`. A failure is reported rather than swallowed.
    */
   showLogs() {
-    get().pushToast({
-      level: 'info',
-      message: 'Jalankan perintah "Git Control: Show Logs" dari Command Palette.',
+    void bridge.request('actions/showLogs', {}).catch(() => {
+      get().pushToast({
+        level: 'warning',
+        message: 'Tidak bisa membuka log Git Control.',
+      });
     });
   },
 }));
@@ -559,6 +564,110 @@ async function persist(key: string, value: string | number | boolean): Promise<v
     // A failed persist must not block the interaction the user just made.
   }
 }
+
+// -------------------------------------------------------------- githubStore
+
+export interface GitHubState {
+  auth: GitHubAuthState | null;
+  linkage: GitHubLinkage | null;
+  pullRequests: PullRequestInfo[];
+  rateLimit: GitHubRateLimit | null;
+  loading: boolean;
+  /** Set when GitHub itself failed; git keeps working regardless. */
+  error: ErrorBody | null;
+  load(): Promise<void>;
+  loadPullRequests(): Promise<void>;
+  connect(): Promise<void>;
+  disconnect(): Promise<void>;
+  openCommit(hash: string): Promise<void>;
+  openUrl(url: string): Promise<void>;
+}
+
+/**
+ * GitHub metadata slice.
+ *
+ * Nothing here is on the critical path: every failure degrades to `error` plus
+ * the last known data, because the graph must stay usable when GitHub is down.
+ * Push and fetch are NOT here — they go through `actions/git` to the Git CLI.
+ */
+export const useGitHubStore = create<GitHubState>((set, get) => ({
+  auth: null,
+  linkage: null,
+  pullRequests: [],
+  rateLimit: null,
+  loading: false,
+  error: null,
+
+  async load() {
+    set({ loading: true });
+    try {
+      const [auth, linkage] = await Promise.all([
+        bridge.request('github/auth', {}),
+        bridge.request('github/linkage', {}),
+      ]);
+      set({ auth, linkage, loading: false, error: null });
+      if (linkage.available) await get().loadPullRequests();
+    } catch (err) {
+      set({ loading: false, error: toErrorBody(err) });
+    }
+  },
+
+  async loadPullRequests() {
+    const linkage = get().linkage;
+    if (linkage === null || !linkage.available || linkage.owner === null || linkage.repo === null) return;
+    try {
+      const result = await bridge.request('github/pullRequests', {
+        owner: linkage.owner,
+        repo: linkage.repo,
+        state: 'open',
+      });
+      set({ pullRequests: result.pullRequests, rateLimit: result.rateLimit, error: null });
+    } catch (err) {
+      // Keep the previous list: stale PR chips beat an empty panel.
+      set({ error: toErrorBody(err) });
+    }
+  },
+
+  async connect() {
+    try {
+      const auth = await bridge.request('github/connect', {});
+      set({ auth, error: null });
+      if (auth.invalidToken === true) {
+        useOperationStore.getState().pushToast({ level: 'warning', message: 'Token GitHub tidak valid.' });
+      }
+      await get().load();
+    } catch (err) {
+      set({ error: toErrorBody(err) });
+    }
+  },
+
+  async disconnect() {
+    try {
+      const auth = await bridge.request('github/disconnect', {});
+      set({ auth, pullRequests: [], rateLimit: null, error: null });
+    } catch (err) {
+      set({ error: toErrorBody(err) });
+    }
+  },
+
+  /** External navigation happens host-side; the webview CSP forbids it here. */
+  async openCommit(hash) {
+    const template = get().linkage?.commitUrlTemplate ?? null;
+    if (template === null) return;
+    await get().openUrl(template.replace('{hash}', hash));
+  },
+
+  async openUrl(url) {
+    try {
+      await bridge.request('actions/openExternal', { url });
+    } catch (err) {
+      useOperationStore.getState().pushToast({
+        level: 'warning',
+        message: toErrorBody(err).message,
+      });
+    }
+  },
+}));
 
 // ----------------------------------------------------------- event plumbing
 
