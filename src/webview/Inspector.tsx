@@ -14,7 +14,7 @@ import {
   shortHash,
 } from './format';
 import { bridge } from './bridge';
-import { toErrorBody, useOperationStore, useSettingsStore } from './store';
+import { toErrorBody, useGitHubStore, useOperationStore, useSettingsStore } from './store';
 import { EmptyState, ErrorBanner, FileListSkeleton, InfoBanner, MetadataSkeleton, Spinner } from './ui';
 import type { CommitDetail, CommitFileChange, ErrorBody } from '../messages';
 
@@ -33,6 +33,8 @@ export function Inspector({ hash }: Props): JSX.Element {
   const setDiffMode = useSettingsStore((s) => s.setDiffMode);
   const pushToast = useOperationStore((s) => s.pushToast);
   const showLogs = useOperationStore((s) => s.showLogs);
+  const linkage = useGitHubStore((s) => s.linkage);
+  const openCommit = useGitHubStore((s) => s.openCommit);
 
   useEffect(() => {
     if (hash === null) {
@@ -177,6 +179,16 @@ export function Inspector({ hash }: Props): JSX.Element {
           >
             Salin hash lengkap
           </button>
+          {linkage?.available === true && (
+            // Opening happens host-side: the webview CSP forbids navigation.
+            <button
+              type="button"
+              className="gc-button gc-button--quiet"
+              onClick={() => void openCommit(detail.hash)}
+            >
+              Buka di GitHub
+            </button>
+          )}
         </div>
       </header>
 
