@@ -1,7 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as fs from 'node:fs/promises';
-import * as os from 'node:os';
 import * as path from 'node:path';
 import { GitError, GitRunner } from '../src/git';
 import { GitHubError } from '../src/github';
@@ -572,23 +571,109 @@ test('actions/showLogs only reveals the channel and takes no parameters', async 
   assert.equal(h.calls.showLogs, 2);
 });
 
-test('actions/openExternal only accepts https URLs', async (t) => {
+test('actions/openExternal rejects every non-https scheme (SEC-006)', async (t) => {
   const h = harness(null);
   t.after(() => h.bridge.dispose());
 
-  for (const url of ['file:///etc/passwd', 'vscode://extension/evil', 'http://github.com/o/r', 'javascript:alert(1)']) {
+  for (const url of [
+    'file:///etc/passwd',
+    'vscode://extension/evil',
+    'command:workbench.action.terminal.new',
+    'data:text/html,<script>alert(1)</script>',
+    'javascript:alert(1)',
+    'http://github.com/o/r',
+    'ftp://github.com/o/r',
+    'HTTPS:/\\/\\github.com/o/r',
+    'not a url',
+    '',
+  ]) {
     const response = await h.webview.send(req('actions/openExternal', { url }));
     assert.equal(response.ok, false, url);
     if (response.ok) return;
-    assert.equal(response.error.code, 'VALIDATION_ERROR');
+    assert.equal(response.error.code, 'VALIDATION_ERROR', url);
   }
-  assert.deepEqual(h.calls.external, []);
+  assert.deepEqual(h.calls.external, [], 'nothing reached the host');
 
   const ok = await h.webview.send(
     req('actions/openExternal', { url: 'https://github.com/owner/repo/commit/abc1234' }),
   );
   assert.equal(ok.ok, true);
   assert.deepEqual(h.calls.external, ['https://github.com/owner/repo/commit/abc1234']);
+});
+
+test('actions/openExternal restricts the host to an allowlist (SEC-006)', async (t) => {
+  const h = harness(null);
+  t.after(() => h.bridge.dispose());
+
+  // With no repository the allowlist is the static pair only.
+  for (const url of [
+    'https://evil.example/anything',
+    'https://github.com.evil.example/o/r',
+    'https://notgithub.com/o/r',
+    'https://api.github.com.evil.example/user',
+  ]) {
+    const response = await h.webview.send(req('actions/openExternal', { url }));
+    assert.equal(response.ok, false, url);
+    if (response.ok) return;
+    assert.equal(response.error.code, 'VALIDATION_ERROR', url);
+    assert.equal(response.error.detail, 'host', url);
+  }
+
+  for (const url of ['https://github.com/o/r', 'https://www.github.com/o/r', 'https://git-scm.com/downloads']) {
+    const response = await h.webview.send(req('actions/openExternal', { url }));
+    assert.equal(response.ok, true, url);
+  }
+  assert.equal(h.calls.external.length, 3);
+});
+
+test('actions/openExternal rejects embedded userinfo that fakes a host (SEC-006)', async (t) => {
+  const h = harness(null);
+  t.after(() => h.bridge.dispose());
+
+  // Reads as GitHub to a human, resolves to `evil.example`.
+  for (const url of [
+    'https://github.com@evil.example/',
+    'https://github.com:x@evil.example/o/r',
+    // And the reverse: real host, but userinfo present, which we refuse anyway.
+    'https://user:pass@github.com/o/r',
+  ]) {
+    const response = await h.webview.send(req('actions/openExternal', { url }));
+    assert.equal(response.ok, false, url);
+  }
+  assert.deepEqual(h.calls.external, []);
+});
+
+test("actions/openExternal admits the repository's own remote host (SEC-006)", async (t) => {
+  const dir = await makeRepo();
+  t.after(() => cleanup(dir));
+  const repo = new RepositoryService({ folderPath: dir, gitPath: 'git', store: new MemoryStore() });
+  await repo.git.run(['remote', 'add', 'origin', 'https://git.acme.example/team/tooling.git']);
+  const h = harness(repo);
+  t.after(() => h.bridge.dispose());
+
+  const allowed = await h.webview.send(
+    req('actions/openExternal', { url: 'https://git.acme.example/team/tooling/commit/abc1234' }),
+  );
+  assert.equal(allowed.ok, true, 'the configured remote host is a legitimate link target');
+
+  // A host the repository has no relationship with is still refused, so a
+  // malicious `origin` can only aim a link at itself.
+  const blocked = await h.webview.send(
+    req('actions/openExternal', { url: 'https://unrelated.example/x' }),
+  );
+  assert.equal(blocked.ok, false);
+  if (blocked.ok) return;
+  assert.equal(blocked.error.detail, 'host');
+});
+
+test('actions/openExternal admits the configured GitHub API host (SEC-006)', async (t) => {
+  const h = harness(null, {
+    settings: () => ({ ...SETTINGS, githubApiUrl: 'https://ghe.acme.example/api/v3' }),
+  });
+  t.after(() => h.bridge.dispose());
+
+  const ok = await h.webview.send(req('actions/openExternal', { url: 'https://ghe.acme.example/o/r' }));
+  assert.equal(ok.ok, true);
 });
 
 test('commits/detail rejects a negative fileCursor and forwards a valid one', async (t) => {
@@ -687,4 +772,3 @@ test('a GitHubError maps to its own status and code', () => {
   assert.equal(limited.code, 'RATE_LIMITED');
   assert.equal(limited.detail, 'resetAt=1700000600000');
 });
-

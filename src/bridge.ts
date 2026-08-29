@@ -95,6 +95,15 @@ export interface BridgeHost {
   githubLinkage?(): Promise<GitHubLinkage>;
 }
 
+/**
+ * Hosts this extension has a reason to open regardless of the repository.
+ *
+ * `github.com` is where every PR and commit link the GitHub panel builds points.
+ * `git-scm.com` is the install/documentation target used when git is missing.
+ * Everything beyond these two must be justified by the repository's own remote.
+ */
+const STATIC_EXTERNAL_HOSTS: readonly string[] = ['github.com', 'www.github.com', 'git-scm.com'];
+
 const IDEMPOTENCY_TTL_MS = 300_000;
 const IDEMPOTENCY_MAX_ENTRIES = 200;
 /** Cap on stderr lines forwarded per operation so a chatty remote cannot flood. */
@@ -374,19 +383,85 @@ export class MessageBridge {
   }
 
   /**
-   * Open an external URL. Restricted to `https:` so a compromised webview cannot
-   * ask the host to launch `file:`, `vscode:`, or a custom scheme handler.
+   * Open an external URL.
+   *
+   * Two independent gates. The scheme must be exactly `https:`, which is what
+   * keeps `file:`, `vscode:`, `command:`, `data:`, and `javascript:` out — parsed
+   * with WHATWG `URL` rather than a prefix test, so the scheme checked is the
+   * scheme `vscode.Uri.parse` will act on. Then the host must be one the
+   * extension has a reason to open: `github.com`, `git-scm.com`, the host of the
+   * configured GitHub API base, or the host of a remote this repository actually
+   * has. A malicious `origin` can therefore only aim a link at itself, which the
+   * user could have reached by clicking the remote anyway.
+   *
+   * Embedded userinfo is rejected outright: `https://github.com@evil.example/`
+   * reads as GitHub to a human and resolves to `evil.example`.
    */
   private async handleOpenExternal(payload: OpenExternalPayload): Promise<{ opened: boolean }> {
-    if (typeof payload.url !== 'string' || !payload.url.startsWith('https://')) {
+    if (typeof payload.url !== 'string' || payload.url.length === 0) {
       fail(400, 'VALIDATION_ERROR', BRIDGE_MESSAGES.externalBlocked, { detail: 'url' });
     }
-    if (parseRemoteUrl(payload.url) === null && !/^https:\/\/[A-Za-z0-9.-]+\//.test(payload.url)) {
+    // A backslash is a path separator to the WHATWG parser and an ordinary
+    // character to several others, so `https:/\/\github.com/x` means different
+    // things to `new URL()` and to `vscode.Uri.parse`. Whatever the host would
+    // open, this check is the one that decided — so refuse the ambiguity instead
+    // of validating one parser's answer and acting on another's. No legitimate
+    // link this extension builds contains one.
+    if (payload.url.includes('\\')) {
       fail(400, 'VALIDATION_ERROR', BRIDGE_MESSAGES.externalBlocked, { detail: 'url' });
+    }
+    let parsed: URL;
+    try {
+      parsed = new URL(payload.url);
+    } catch {
+      return fail(400, 'VALIDATION_ERROR', BRIDGE_MESSAGES.externalBlocked, { detail: 'url' });
+    }
+    if (parsed.protocol !== 'https:') {
+      fail(400, 'VALIDATION_ERROR', BRIDGE_MESSAGES.externalBlocked, { detail: 'scheme' });
+    }
+    if (parsed.username.length > 0 || parsed.password.length > 0) {
+      fail(400, 'VALIDATION_ERROR', BRIDGE_MESSAGES.externalBlocked, { detail: 'userinfo' });
+    }
+    const allowed = await this.allowedExternalHosts();
+    if (!allowed.includes(parsed.hostname.toLowerCase())) {
+      fail(400, 'VALIDATION_ERROR', BRIDGE_MESSAGES.externalBlocked, { detail: 'host' });
     }
     const open = this.host.openExternal;
     if (open === undefined) fail(503, 'UNAVAILABLE', BRIDGE_MESSAGES.unavailable);
     return { opened: await open(payload.url) };
+  }
+
+  /**
+   * Hosts `actions/openExternal` may target, lower-cased.
+   *
+   * Derived, not configured: the static pair, plus the configured API base's host
+   * (an Enterprise user's links live there and the setting is `machine`-scoped, so
+   * a workspace cannot extend the allowlist), plus every host this repository's
+   * own remotes parse to. A repository with no remotes gets the static pair only.
+   */
+  private async allowedExternalHosts(): Promise<string[]> {
+    const hosts = new Set<string>(STATIC_EXTERNAL_HOSTS);
+    const configured = this.host.settings().githubApiUrl;
+    if (typeof configured === 'string' && configured.length > 0) {
+      try {
+        const base = new URL(configured);
+        if (base.protocol === 'https:') hosts.add(base.hostname.toLowerCase());
+      } catch {
+        // A malformed setting simply contributes nothing.
+      }
+    }
+    try {
+      const repo = await this.host.resolveRepository();
+      if (repo !== null) {
+        for (const entry of await repo.git.remoteList()) {
+          const parsed = parseRemoteUrl(entry.fetchUrl) ?? parseRemoteUrl(entry.pushUrl);
+          if (parsed !== null) hosts.add(parsed.host.toLowerCase());
+        }
+      }
+    } catch {
+      // No repository, or git failed: the static hosts still apply.
+    }
+    return [...hosts];
   }
 
   private async handleGitHubRepo(payload: GitHubRepoPayload): Promise<GitHubRepoInfo> {
