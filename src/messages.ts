@@ -214,6 +214,15 @@ export interface GraphPayload {
 
 export interface CommitDetailPayload {
   hash: string;
+  /**
+   * Skip this many files before filling `CommitDetail.files`.
+   *
+   * Added for the webview: a truncated diff must offer "Muat lebih banyak", and
+   * nothing else in the contract can page a commit's file list. The current host
+   * handler ignores it and returns the first page, which the UI detects and
+   * reports instead of silently doing nothing.
+   */
+  fileCursor?: number;
 }
 
 export interface StagePayload extends MutationMeta {
@@ -245,6 +254,36 @@ export interface SettingsSetPayload {
 export interface GitHubRepoPayload {
   owner: string;
   repo: string;
+}
+
+/**
+ * Open a file diff in a real VS Code diff editor.
+ *
+ * Added for the webview Inspector: a file row must open the editor rather than
+ * do nothing. `hash` selects the commit (omit for the working tree), `parent`
+ * picks which parent a merge commit is compared against.
+ */
+export interface OpenDiffPayload {
+  path: string;
+  hash?: string;
+  parent?: string;
+}
+
+export interface OpenDiffResult {
+  opened: boolean;
+}
+
+/**
+ * One configured git remote.
+ *
+ * Added for the webview: the node menu may only offer "Buka di GitHub" when a
+ * GitHub remote actually exists, which requires the remote URL. Nothing else in
+ * the contract exposes it.
+ */
+export interface RemoteInfo {
+  name: string;
+  fetchUrl: string;
+  pushUrl: string;
 }
 
 export interface ActionResult {
@@ -292,10 +331,12 @@ export interface GitHubAuthState {
 export interface RequestMap {
   'repos/status': { payload: StatusPayload; response: RepoStatus };
   'repos/graph': { payload: GraphPayload; response: RepoGraph };
+  'repos/remotes': { payload: Record<string, never>; response: { remotes: RemoteInfo[] } };
   'commits/detail': { payload: CommitDetailPayload; response: CommitDetail };
   'actions/stage': { payload: StagePayload; response: ActionResult };
   'actions/commit': { payload: CommitPayload; response: CommitResult };
   'actions/git': { payload: GitActionPayload; response: ActionResult };
+  'actions/openDiff': { payload: OpenDiffPayload; response: OpenDiffResult };
   'github/auth': { payload: Record<string, never>; response: GitHubAuthState };
   'github/connect': { payload: Record<string, never>; response: GitHubAuthState };
   'github/disconnect': { payload: Record<string, never>; response: GitHubAuthState };
