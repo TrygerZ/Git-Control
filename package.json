@@ -1,0 +1,123 @@
+{
+  "name": "git-control",
+  "displayName": "Git Control",
+  "description": "Interactive 2D Git DAG explorer with a Unity-style Pending Changes panel.",
+  "publisher": "TrygerZ",
+  "version": "0.0.1",
+  "license": "MIT",
+  "private": true,
+  "engines": {
+    "vscode": "^1.90.0"
+  },
+  "main": "./dist/extension.js",
+  "categories": [
+    "SCM Providers",
+    "Visualization"
+  ],
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "contributes": {
+    "commands": [
+      {
+        "command": "gitControl.openExplorer",
+        "title": "Git Control: Open Explorer"
+      },
+      {
+        "command": "gitControl.openPendingChanges",
+        "title": "Git Control: Open Pending Changes"
+      },
+      {
+        "command": "gitControl.refresh",
+        "title": "Git Control: Refresh"
+      },
+      {
+        "command": "gitControl.connectGitHub",
+        "title": "Git Control: Connect GitHub"
+      },
+      {
+        "command": "gitControl.disconnectGitHub",
+        "title": "Git Control: Disconnect GitHub"
+      },
+      {
+        "command": "gitControl.showLogs",
+        "title": "Git Control: Show Logs"
+      }
+    ],
+    "configuration": {
+      "title": "Git Control",
+      "properties": {
+        "gitControl.gitPath": {
+          "type": "string",
+          "default": "",
+          "description": "Override the git executable path. Empty uses 'git' from PATH."
+        },
+        "gitControl.commitLimit": {
+          "type": "number",
+          "default": 10000,
+          "minimum": 100,
+          "maximum": 10000,
+          "description": "Maximum number of commits loaded into the graph."
+        },
+        "gitControl.pageSize": {
+          "type": "number",
+          "default": 500,
+          "description": "Number of commits fetched per page."
+        },
+        "gitControl.showIgnoredFiles": {
+          "type": "boolean",
+          "default": false,
+          "description": "Include ignored files in the Pending Changes panel."
+        },
+        "gitControl.githubApiUrl": {
+          "type": "string",
+          "default": "https://api.github.com",
+          "description": "GitHub API base URL (change for GitHub Enterprise)."
+        },
+        "gitControl.fetchStalenessMs": {
+          "type": "number",
+          "default": 300000,
+          "description": "Age in milliseconds after which remote data is considered stale."
+        }
+      }
+    },
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "gitControl",
+          "title": "Git Control",
+          "icon": "resources/icon.svg"
+        }
+      ]
+    },
+    "views": {
+      "gitControl": [
+        {
+          "id": "gitControl.pendingChanges",
+          "name": "Pending Changes",
+          "type": "webview"
+        }
+      ]
+    }
+  },
+  "scripts": {
+    "build": "node esbuild.js",
+    "watch": "node esbuild.js --watch",
+    "typecheck": "tsc --noEmit",
+    "test": "node esbuild.js && node --test out/test/"
+  },
+  "dependencies": {
+    "react": "19.2.8",
+    "react-dom": "19.2.8",
+    "zustand": "5.0.15"
+  },
+  "devDependencies": {
+    "@types/node": "24.13.3",
+    "@types/react": "19.2.18",
+    "@types/react-dom": "19.2.5",
+    "@types/vscode": "1.90.0",
+    "@vscode/test-electron": "3.1.0",
+    "esbuild": "0.28.2",
+    "typescript": "5.9.3"
+  }
+}
