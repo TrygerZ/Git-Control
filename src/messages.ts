@@ -165,8 +165,12 @@ export interface CommitDetail {
   files: CommitFileChange[];
   /** Aggregate counts across non-binary files. */
   totals: { files: number; additions: number; deletions: number; binary: number };
-  /** `true` when the file list was capped; `files` holds only the first page. */
+  /** `true` when the file list was capped; `files` holds only the current page. */
   truncated: boolean;
+  /** Index of the first file in `files`, mirroring the requested `fileCursor`. */
+  fileCursor: number;
+  /** `fileCursor` for the next page, or `null` when the list is exhausted. */
+  nextFileCursor: number | null;
 }
 
 /** Discriminated union of every git action the webview may request. */
@@ -218,9 +222,8 @@ export interface CommitDetailPayload {
    * Skip this many files before filling `CommitDetail.files`.
    *
    * Added for the webview: a truncated diff must offer "Muat lebih banyak", and
-   * nothing else in the contract can page a commit's file list. The current host
-   * handler ignores it and returns the first page, which the UI detects and
-   * reports instead of silently doing nothing.
+   * nothing else in the contract can page a commit's file list. The host honours
+   * it and reports the next page through `CommitDetail.nextFileCursor`.
    */
   fileCursor?: number;
 }
@@ -262,6 +265,11 @@ export interface GitHubRepoPayload {
  * Added for the webview Inspector: a file row must open the editor rather than
  * do nothing. `hash` selects the commit (omit for the working tree), `parent`
  * picks which parent a merge commit is compared against.
+ *
+ * There is deliberately no "mode" field: a conflicted path opens the merge
+ * editor and a working-tree path picks index-vs-HEAD or worktree-vs-index, both
+ * decided host-side from the live status. A webview-supplied mode would be a
+ * second source of truth that could disagree with the repository.
  */
 export interface OpenDiffPayload {
   path: string;
@@ -271,6 +279,8 @@ export interface OpenDiffPayload {
 
 export interface OpenDiffResult {
   opened: boolean;
+  /** What the host actually opened, so the UI can label the result. */
+  mode: 'commit' | 'index' | 'worktree' | 'merge';
 }
 
 /**
@@ -279,11 +289,19 @@ export interface OpenDiffResult {
  * Added for the webview: the node menu may only offer "Buka di GitHub" when a
  * GitHub remote actually exists, which requires the remote URL. Nothing else in
  * the contract exposes it.
+ *
+ * URLs are credential-stripped host-side, so a remote configured with an
+ * embedded token never reaches the webview with the secret attached.
  */
 export interface RemoteInfo {
   name: string;
   fetchUrl: string;
   pushUrl: string;
+  /** Parsed host, or `null` when the URL is not an `owner/repo` remote. */
+  host: string | null;
+  owner: string | null;
+  repo: string | null;
+  isGitHub: boolean;
 }
 
 export interface ActionResult {
@@ -325,6 +343,86 @@ export interface GitHubAuthState {
   connected: boolean;
   login: string | null;
   scopes: string[];
+  /**
+   * `true` when a token was stored but the API rejected it. The host deletes the
+   * token in that case, so this is a one-shot report, not a persistent state.
+   */
+  invalidToken?: boolean;
+  /** Present when the token lacks `repo:status` and the repository is private. */
+  scopeWarning?: string;
+  /** API base actually in use, so the UI can show which host it talked to. */
+  apiUrl?: string;
+}
+
+/**
+ * Rate-limit snapshot taken from the last GitHub response.
+ *
+ * `cached` means the payload came from the in-memory response cache, `offline`
+ * means the circuit breaker is open. Both are shown as badges, so the user can
+ * tell fresh data from a replay.
+ */
+export interface GitHubRateLimit {
+  limit: number | null;
+  remaining: number | null;
+  /** Epoch ms at which the window resets, or `null` when unknown. */
+  resetAt: number | null;
+  cached: boolean;
+  offline: boolean;
+}
+
+export interface GitHubRepoInfo {
+  defaultBranch: string;
+  private: boolean;
+  htmlUrl: string;
+  rateLimit: GitHubRateLimit;
+  /** Set when the repository is private and the token lacks `repo:status`. */
+  scopeWarning?: string;
+}
+
+export interface PullRequestInfo {
+  number: number;
+  title: string;
+  state: 'open' | 'closed' | 'merged';
+  url: string;
+  headRef: string;
+  baseRef: string;
+  draft: boolean;
+  author: string;
+  updatedAt: string;
+}
+
+export interface PullRequestsPayload {
+  owner: string;
+  repo: string;
+  /** Default `open`, per the PRD. */
+  state?: 'open' | 'closed' | 'all';
+}
+
+export interface PullRequestsResult {
+  pullRequests: PullRequestInfo[];
+  rateLimit: GitHubRateLimit;
+}
+
+/**
+ * GitHub linkage for the active repository's detected remote.
+ *
+ * `commitUrlTemplate` carries a literal `{hash}` placeholder so the UI can build
+ * a per-commit link without knowing the host layout.
+ */
+export interface GitHubLinkage {
+  available: boolean;
+  host: string | null;
+  owner: string | null;
+  repo: string | null;
+  webUrl: string | null;
+  commitUrlTemplate: string | null;
+  /** API base derived for this remote, including the Enterprise `/api/v3` rule. */
+  apiUrl: string | null;
+}
+
+/** Ask the host to open a URL externally. Only `https:` GitHub links are honoured. */
+export interface OpenExternalPayload {
+  url: string;
 }
 
 /** Request kind → { payload, response } map. Extend here, nowhere else. */
@@ -337,10 +435,19 @@ export interface RequestMap {
   'actions/commit': { payload: CommitPayload; response: CommitResult };
   'actions/git': { payload: GitActionPayload; response: ActionResult };
   'actions/openDiff': { payload: OpenDiffPayload; response: OpenDiffResult };
+  /**
+   * Reveal the `Git Control` output channel. Empty payload by design: it takes no
+   * parameters, so it cannot be used to run an arbitrary host command.
+   */
+  'actions/showLogs': { payload: Record<string, never>; response: { shown: boolean } };
+  /** Open a URL in the system browser. Host-side only; the webview cannot navigate. */
+  'actions/openExternal': { payload: OpenExternalPayload; response: { opened: boolean } };
   'github/auth': { payload: Record<string, never>; response: GitHubAuthState };
   'github/connect': { payload: Record<string, never>; response: GitHubAuthState };
   'github/disconnect': { payload: Record<string, never>; response: GitHubAuthState };
-  'github/repo': { payload: GitHubRepoPayload; response: { defaultBranch: string; private: boolean } };
+  'github/repo': { payload: GitHubRepoPayload; response: GitHubRepoInfo };
+  'github/pullRequests': { payload: PullRequestsPayload; response: PullRequestsResult };
+  'github/linkage': { payload: Record<string, never>; response: GitHubLinkage };
   'settings/get': { payload: SettingsGetPayload; response: SettingsSnapshot };
   'settings/set': { payload: SettingsSetPayload; response: SettingsSnapshot };
 }
