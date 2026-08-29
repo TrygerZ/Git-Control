@@ -7,12 +7,16 @@ import {
   baseName,
   conflictLabel,
   consequenceOf,
+  countdown,
   displayPath,
   entryStatus,
   formatCount,
   gitCommandOf,
+  githubConnectionLabel,
   operationLabel,
   presentError,
+  pullRequestLabel,
+  rateLimitBadge,
   relativeTime,
   remedyLabel,
   riskLabel,
@@ -20,7 +24,15 @@ import {
   statusLabel,
   truncate,
 } from '../src/webview/format';
-import type { ChangeEntry, ErrorCode, GitActionRequest, OperationState, Remedy } from '../src/messages';
+import type {
+  ChangeEntry,
+  ErrorCode,
+  GitActionRequest,
+  GitHubRateLimit,
+  OperationState,
+  PullRequestInfo,
+  Remedy,
+} from '../src/messages';
 
 const NOW = Date.parse('2026-06-15T12:00:00.000Z');
 const HASH = 'abc1234def5678'.padEnd(40, '0');
@@ -312,3 +324,75 @@ test('truncate appends an ellipsis only when needed', () => {
   assert.equal(truncate('short', 10), 'short');
   assert.equal(truncate('abcdefghij', 5), 'abcd…');
 });
+
+// ------------------------------------------------------------------- github
+
+function rate(patch: Partial<GitHubRateLimit> = {}): GitHubRateLimit {
+  return { limit: 5000, remaining: 4987, resetAt: null, cached: false, offline: false, ...patch };
+}
+
+test('rateLimitBadge reports the remaining quota in Indonesian', () => {
+  const badge = rateLimitBadge(rate());
+  assert.equal(badge.label, 'Sisa 4.987 permintaan');
+  assert.equal(badge.tone, 'info');
+  assert.match(badge.title, /dari 5\.000/);
+});
+
+test('rateLimitBadge shows a countdown once the quota is spent', () => {
+  const now = 1_700_000_000_000;
+  const badge = rateLimitBadge(rate({ remaining: 0, resetAt: now + 125_000 }), now);
+  assert.equal(badge.tone, 'warning');
+  assert.match(badge.label, /^Habis · 2 menit 5 detik/);
+});
+
+test('rateLimitBadge marks cached and offline states with words, not colour', () => {
+  assert.match(rateLimitBadge(rate({ cached: true })).label, /cached$/);
+  const offline = rateLimitBadge(rate({ offline: true, cached: true }));
+  assert.equal(offline.label, 'offline · cached');
+  assert.equal(offline.tone, 'warning');
+  // Offline wins over exhaustion, because no request is being made at all.
+  assert.equal(rateLimitBadge(rate({ offline: true, remaining: 0 })).label, 'offline');
+});
+
+test('rateLimitBadge degrades when nothing is known yet', () => {
+  assert.equal(rateLimitBadge(null).label, 'Tidak diketahui');
+  assert.equal(rateLimitBadge(rate({ remaining: null })).label, 'Tidak diketahui');
+});
+
+test('countdown clamps, rounds, and falls back', () => {
+  const now = 1_700_000_000_000;
+  assert.equal(countdown(null, now), 'beberapa saat');
+  assert.equal(countdown(now - 5000, now), 'sekarang');
+  assert.equal(countdown(now + 30_000, now), '30 detik');
+  assert.equal(countdown(now + 120_000, now), '2 menit');
+  assert.equal(countdown(now + 90_000, now), '1 menit 30 detik');
+});
+
+test('pullRequestLabel states the number, state word, and draft marker', () => {
+  const base: PullRequestInfo = {
+    number: 12,
+    title: 'Tambah panel',
+    state: 'open',
+    url: 'https://github.com/o/r/pull/12',
+    headRef: 'fitur/panel',
+    baseRef: 'main',
+    draft: false,
+    author: 'octocat',
+    updatedAt: '2026-06-15T10:00:00.000Z',
+  };
+  assert.equal(pullRequestLabel(base), '#12 Terbuka');
+  assert.equal(pullRequestLabel({ ...base, draft: true }), '#12 Terbuka · draft');
+  assert.equal(pullRequestLabel({ ...base, state: 'merged' }), '#12 Digabung');
+  assert.equal(pullRequestLabel({ ...base, state: 'closed' }), '#12 Ditutup');
+});
+
+test('githubConnectionLabel covers connected, anonymous, and invalid-token', () => {
+  assert.equal(githubConnectionLabel({ connected: false, login: null }), 'Belum tersambung.');
+  assert.equal(githubConnectionLabel({ connected: true, login: 'octocat' }), 'Tersambung sebagai octocat.');
+  assert.equal(githubConnectionLabel({ connected: true, login: null }), 'Tersambung.');
+  assert.equal(
+    githubConnectionLabel({ connected: false, login: null, invalidToken: true }),
+    'Token GitHub tidak valid.',
+  );
+});
+

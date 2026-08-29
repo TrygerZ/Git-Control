@@ -10,7 +10,9 @@ import type {
   ErrorBody,
   ErrorCode,
   GitActionRequest,
+  GitHubRateLimit,
   OperationState,
+  PullRequestInfo,
   Remedy,
 } from '../messages';
 
@@ -393,3 +395,94 @@ export function actionTarget(action: GitActionRequest): string {
   if ('remote' in action && action.remote !== undefined) return action.remote;
   return '—';
 }
+
+// ---------------------------------------------------------------------- github
+
+export interface RateLimitBadge {
+  /** Short text shown in the badge; never colour alone. */
+  label: string;
+  /** Longer tooltip / screen-reader text. */
+  title: string;
+  tone: 'info' | 'warning';
+}
+
+/**
+ * Describe a rate-limit snapshot in Indonesian.
+ *
+ * Order matters: the breaker (`offline`) wins over exhaustion, exhaustion wins
+ * over a plain remaining count, and `cached` is appended because it is
+ * orthogonal — cached data can be served in any of those states.
+ */
+export function rateLimitBadge(
+  rate: GitHubRateLimit | null,
+  now: number = Date.now(),
+): RateLimitBadge {
+  if (rate === null) {
+    return { label: 'Tidak diketahui', title: 'Status batas permintaan belum diketahui.', tone: 'info' };
+  }
+  const cached = rate.cached ? ' · cached' : '';
+  if (rate.offline) {
+    return {
+      label: `offline${cached}`,
+      title: 'GitHub tidak dapat dijangkau. Data dari cache bila tersedia.',
+      tone: 'warning',
+    };
+  }
+  if (rate.remaining === 0) {
+    return {
+      label: `Habis · ${countdown(rate.resetAt, now)}${cached}`,
+      title: `Batas permintaan tercapai. Coba lagi dalam ${countdown(rate.resetAt, now)}.`,
+      tone: 'warning',
+    };
+  }
+  if (rate.remaining === null) {
+    return { label: `Tidak diketahui${cached}`, title: 'Sisa permintaan belum diketahui.', tone: 'info' };
+  }
+  const limit = rate.limit === null ? '' : ` dari ${formatCount(rate.limit)}`;
+  return {
+    label: `Sisa ${formatCount(rate.remaining)} permintaan${cached}`,
+    title: `Sisa ${formatCount(rate.remaining)}${limit} permintaan pada jendela saat ini.`,
+    tone: 'info',
+  };
+}
+
+/** `mm:ss` style countdown to a reset timestamp, clamped at zero. */
+export function countdown(resetAt: number | null, now: number = Date.now()): string {
+  if (resetAt === null) return 'beberapa saat';
+  const seconds = Math.max(0, Math.ceil((resetAt - now) / 1000));
+  if (seconds === 0) return 'sekarang';
+  if (seconds < 60) return `${seconds} detik`;
+  const minutes = Math.floor(seconds / 60);
+  const rest = seconds % 60;
+  return rest === 0 ? `${minutes} menit` : `${minutes} menit ${rest} detik`;
+}
+
+const PR_STATE_LABELS: Readonly<Record<PullRequestInfo['state'], string>> = {
+  open: 'Terbuka',
+  closed: 'Ditutup',
+  merged: 'Digabung',
+};
+
+/** Chip text for a pull request: number, state word, and draft marker. */
+export function pullRequestLabel(pr: PullRequestInfo): string {
+  const draft = pr.draft ? ' · draft' : '';
+  return `#${pr.number} ${PR_STATE_LABELS[pr.state]}${draft}`;
+}
+
+export function pullRequestState(state: PullRequestInfo['state']): string {
+  return PR_STATE_LABELS[state];
+}
+
+/** Connection line for the GitHub panel. `login` is omitted when unknown. */
+export function githubConnectionLabel(state: {
+  connected: boolean;
+  login: string | null;
+  invalidToken?: boolean;
+}): string {
+  if (state.invalidToken === true) return 'Token GitHub tidak valid.';
+  if (!state.connected) return 'Belum tersambung.';
+  return state.login === null || state.login.length === 0
+    ? 'Tersambung.'
+    : `Tersambung sebagai ${state.login}.`;
+}
+

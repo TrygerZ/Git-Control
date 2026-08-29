@@ -1200,6 +1200,125 @@ pre {
   margin-top: 6px;
 }
 
+/* -------------------------------------------------------------------- github */
+
+/*
+ * Compact metadata panel. Every state carries a word ("offline", "Habis",
+ * "cached", "Terbuka"), so nothing depends on colour alone.
+ */
+.gc-github {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 6px;
+  border: 1px solid var(--gc-border);
+  border-radius: var(--gc-radius);
+}
+
+.gc-github__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.gc-github__title {
+  margin: 0;
+  font-size: 0.95em;
+}
+
+.gc-github__badge {
+  display: inline-flex;
+  align-items: center;
+  min-height: 18px;
+  padding: 0 6px;
+  border: 1px solid var(--gc-border);
+  border-radius: 9px;
+  font-size: 0.85em;
+}
+
+.gc-github__badge--info {
+  color: var(--gc-muted);
+}
+
+.gc-github__badge--warning {
+  border-color: var(--gc-warning);
+  color: var(--vscode-foreground);
+}
+
+.gc-github__state {
+  margin: 0;
+  font-size: 0.9em;
+}
+
+.gc-github__repo {
+  color: var(--gc-muted);
+}
+
+.gc-github__note {
+  margin: 0;
+  color: var(--gc-muted);
+  font-size: 0.85em;
+}
+
+.gc-github__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.gc-github__prs {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.gc-chip--pr {
+  display: flex;
+  gap: 6px;
+  align-items: baseline;
+  max-width: 100%;
+  min-height: var(--gc-hit);
+  padding: 2px 8px;
+  background: transparent;
+  color: var(--vscode-foreground);
+  font-family: inherit;
+  cursor: pointer;
+  text-align: left;
+}
+
+.gc-chip--pr:hover {
+  background: var(--vscode-list-hoverBackground);
+}
+
+.gc-chip--pr-open {
+  border-color: var(--vscode-focusBorder);
+}
+
+.gc-chip--pr-merged {
+  border-style: double;
+}
+
+.gc-chip--pr-closed {
+  border-style: dashed;
+}
+
+.gc-github__pr-number {
+  flex: 0 0 auto;
+  color: var(--gc-muted);
+}
+
+.gc-github__pr-title {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 /* -------------------------------------------------------------------- toasts */
 
 .gc-toasts {
@@ -1274,6 +1393,8 @@ pre {
   .gc-button,
   .gc-icon-button,
   .gc-chip,
+  .gc-chip--pr,
+  .gc-github__badge,
   .gc-badge,
   .gc-menu,
   .gc-modal,

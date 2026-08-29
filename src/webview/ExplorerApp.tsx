@@ -4,6 +4,7 @@
  */
 import { useCallback, useEffect, useState, type JSX } from 'react';
 import { ConflictPanel, OperationBanner } from './ConflictPanel';
+import { GitHubPanel } from './GitHubPanel';
 import { GraphCanvas } from './GraphCanvas';
 import { GuardDialog } from './GuardDialog';
 import { Inspector } from './Inspector';
@@ -11,6 +12,7 @@ import { ToastRegion } from './Toast';
 import { bridge, loadState } from './bridge';
 import { githubBaseUrl, type MenuItem } from './NodeContextMenu';
 import {
+  useGitHubStore,
   useOperationStore,
   useRepoStore,
   useSettingsStore,
@@ -36,6 +38,7 @@ export function ExplorerApp(): JSX.Element {
 
   const [githubUrl, setGithubUrl] = useState<string | null>(null);
   const [inspectorOpen, setInspectorOpen] = useState(true);
+  const openUrl = useGitHubStore((s) => s.openUrl);
 
   useEffect(() => {
     const persisted = loadState();
@@ -43,8 +46,8 @@ export function ExplorerApp(): JSX.Element {
     const off = wireHostEvents('explorer');
     void loadSettings();
     void refresh();
-    // `repos/remotes` is a webview-added request kind; a host that does not
-    // implement it yet simply means the GitHub item stays hidden.
+    // The host parses each remote URL, so the GitHub item appears only when a
+    // GitHub remote actually exists.
     bridge
       .request('repos/remotes', {})
       .then((result) => setGithubUrl(githubBaseUrl(result.remotes)))
@@ -82,12 +85,14 @@ export function ExplorerApp(): JSX.Element {
           return;
         }
         case 'openGitHub':
-          // Rendered as an anchor; VS Code handles the navigation itself.
+          // Host-side only: the webview CSP forbids navigation, and routing every
+          // external link through the host keeps URL vetting in one place.
+          void openUrl(command.url);
           return;
         default:
       }
     },
-    [pushToast, runAction, selectCommit],
+    [openUrl, pushToast, runAction, selectCommit],
   );
 
   return (
@@ -138,6 +143,7 @@ export function ExplorerApp(): JSX.Element {
           {inspectorOpen && (
             <>
               <Inspector hash={selectedHash} />
+              <GitHubPanel />
               {status !== null && status.conflicts.length > 0 && (
                 <ConflictPanel conflicts={status.conflicts} operation={status.operation} />
               )}
