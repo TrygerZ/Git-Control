@@ -1,4 +1,7 @@
-PRD_Git_Control.md
+﻿# Markdown is developer-only scratch space (PRD, audits, notes). Never shipped,
+# never committed.
+*.md
+
 node_modules/
 out/
 dist/
