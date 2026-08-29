@@ -197,9 +197,16 @@ export class RepositoryService {
    * Metadata plus per-file stats for one commit. Merge commits list every
    * parent so the UI can offer a parent selector; the diff itself is taken
    * against the first parent.
+   *
+   * `fileCursor` pages the file list: a commit touching more files than
+   * `fileLimit` is served one page at a time, and `nextFileCursor` carries the
+   * offset of the following page (`null` once the list is exhausted). `totals`
+   * always describes the whole commit, not the current page.
    */
-  async commitDetail(hash: string): Promise<CommitDetail | null> {
-    const cached = this.detailCache.get(hash);
+  async commitDetail(hash: string, opts: { fileCursor?: number } = {}): Promise<CommitDetail | null> {
+    const cursor = normalizeCursor(opts.fileCursor);
+    const cacheKey = `${hash}:${cursor}`;
+    const cached = this.detailCache.get(cacheKey);
     if (cached !== undefined) return cached;
 
     const meta = await this.git.commitMeta(hash);
@@ -207,8 +214,9 @@ export class RepositoryService {
     const isMerge = meta.parents.length > 1;
     const stats = await this.git.numstat(meta.hash, { firstParent: isMerge });
 
-    const truncated = stats.length > this.fileLimit;
-    const files: CommitFileChange[] = stats.slice(0, this.fileLimit).map((entry) => ({
+    const end = cursor + this.fileLimit;
+    const truncated = stats.length > end;
+    const files: CommitFileChange[] = stats.slice(cursor, end).map((entry) => ({
       path: entry.path,
       ...(entry.origPath === undefined ? {} : { origPath: entry.origPath }),
       // Binary files carry no line counts.
@@ -232,8 +240,10 @@ export class RepositoryService {
       files,
       totals: totalsOf(stats),
       truncated,
+      fileCursor: cursor,
+      nextFileCursor: truncated ? end : null,
     };
-    this.detailCache.set(hash, detail);
+    this.detailCache.set(cacheKey, detail);
     return detail;
   }
 
@@ -420,4 +430,11 @@ function totalsOf(
 function clamp(value: number, min: number, max: number): number {
   if (!Number.isFinite(value)) return min;
   return Math.min(max, Math.max(min, Math.trunc(value)));
+}
+
+/** A file cursor is a non-negative integer; anything else starts at the top. */
+function normalizeCursor(value: number | undefined): number {
+  if (value === undefined) return 0;
+  if (!Number.isFinite(value) || value < 0) return 0;
+  return Math.trunc(value);
 }

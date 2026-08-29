@@ -227,6 +227,75 @@ test('commitDetail truncates an oversized file list', async (t) => {
   assert.equal(detail?.truncated, true);
   // Totals still count every file, even the ones not listed.
   assert.equal(detail?.totals.files, 3);
+  assert.equal(detail?.fileCursor, 0);
+  assert.equal(detail?.nextFileCursor, 2);
+});
+
+test('commitDetail pages a truncated file list through fileCursor', async (t) => {
+  const dir = await makeRepo();
+  t.after(() => cleanup(dir));
+  const git = new GitRunner({ gitPath: 'git', cwd: dir });
+  const names = ['p1.txt', 'p2.txt', 'p3.txt', 'p4.txt', 'p5.txt'];
+  for (const name of names) await fs.writeFile(path.join(dir, name), 'x\n', 'utf8');
+  await git.stage(names);
+  await git.commit('add five files');
+
+  const repo = new RepositoryService({
+    folderPath: dir,
+    gitPath: 'git',
+    store: new MemoryStore(),
+    fileLimit: 2,
+  });
+  const head = (await repo.status()).head as string;
+
+  const first = await repo.commitDetail(head);
+  assert.equal(first?.files.length, 2);
+  assert.equal(first?.truncated, true);
+  assert.equal(first?.nextFileCursor, 2);
+
+  const second = await repo.commitDetail(head, { fileCursor: first?.nextFileCursor ?? 0 });
+  assert.equal(second?.files.length, 2);
+  assert.equal(second?.fileCursor, 2);
+  assert.equal(second?.truncated, true);
+  assert.equal(second?.nextFileCursor, 4);
+
+  const third = await repo.commitDetail(head, { fileCursor: second?.nextFileCursor ?? 0 });
+  assert.equal(third?.files.length, 1);
+  assert.equal(third?.truncated, false);
+  assert.equal(third?.nextFileCursor, null);
+
+  // Pages are disjoint and cover the whole commit in order.
+  const paths = [
+    ...(first?.files ?? []),
+    ...(second?.files ?? []),
+    ...(third?.files ?? []),
+  ].map((f) => f.path);
+  assert.equal(new Set(paths).size, 5);
+  assert.deepEqual(paths, ['p1.txt', 'p2.txt', 'p3.txt', 'p4.txt', 'p5.txt']);
+  // Totals describe the commit, not the page.
+  assert.equal(third?.totals.files, 5);
+});
+
+test('commitDetail caches per cursor and normalizes a bad cursor to zero', async (t) => {
+  const dir = await makeRepo();
+  t.after(() => cleanup(dir));
+  const repo = new RepositoryService({
+    folderPath: dir,
+    gitPath: 'git',
+    store: new MemoryStore(),
+    fileLimit: 1,
+  });
+  const head = (await repo.status()).head as string;
+
+  const zero = await repo.commitDetail(head, { fileCursor: 0 });
+  const negative = await repo.commitDetail(head, { fileCursor: -5 });
+  assert.deepEqual(negative, zero);
+
+  // A cursor past the end yields an empty, non-truncated page.
+  const past = await repo.commitDetail(head, { fileCursor: 99 });
+  assert.equal(past?.files.length, 0);
+  assert.equal(past?.truncated, false);
+  assert.equal(past?.nextFileCursor, null);
 });
 
 test('changes derives conflict entries during a merge', async (t) => {
