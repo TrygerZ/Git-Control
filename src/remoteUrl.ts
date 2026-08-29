@@ -33,9 +33,15 @@ const MAX_URL_LENGTH = 2048;
 /**
  * Remove any `user:password@` / `user@` credential from a URL so it is safe to
  * log or hand to the UI. Non-URL input is returned unchanged.
+ *
+ * The userinfo component is matched up to its LAST `@`, matching
+ * {@link splitHostAndPath}. Stopping at the first `@` would leave the tail of a
+ * credential behind whenever the username or the secret itself contains one —
+ * `https://user@corp:SECRET@host/o/r` is a real shape, and a first-`@` match
+ * would emit `https://corp:SECRET@host/o/r`.
  */
 export function stripCredentials(url: string): string {
-  return url.replace(/^([a-z][a-z0-9+.-]*:\/\/)[^/@]*@/i, '$1');
+  return url.replace(/^([a-z][a-z0-9+.-]*:\/\/)[^/]*@/i, '$1');
 }
 
 /**

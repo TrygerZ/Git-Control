@@ -127,3 +127,21 @@ test('webUrlOf builds a browsable base URL for github.com and Enterprise alike',
     'https://git.acme.example/team/tooling',
   );
 });
+
+// -------------------------------------------------- regression: SEC-002/SEC-003
+
+test('stripCredentials removes userinfo containing an @ (SEC-003)', () => {
+  // Userinfo runs to the LAST `@`. Stopping at the first one left the tail of the
+  // secret in the URL handed to the webview.
+  const secret = 'ghs_A1b2C3d4E5f6G7h8I9j0';
+  const leaky = `https://x-access-token:${secret}@corp@github.com/owner/repo.git`;
+  const stripped = stripCredentials(leaky);
+  assert.ok(!stripped.includes(secret), stripped);
+  assert.equal(stripped, 'https://github.com/owner/repo.git');
+
+  // An email-style username has the same shape.
+  assert.equal(
+    stripCredentials('https://alice@corp.example:s3cr3t@git.acme.example/t/r.git'),
+    'https://git.acme.example/t/r.git',
+  );
+});
