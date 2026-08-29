@@ -88,18 +88,21 @@ export function layoutGraph(input: LayoutInput, options: LayoutOptions = {}): La
   const laneWidth = options.laneWidth ?? DEFAULT_LANE_WIDTH;
 
   const known = new Set(input.commits.map((c) => c.hash));
-  const localOnly = computeLocalOnly(input.commits, input.refs, known);
+  const byHash = new Map(input.commits.map((c) => [c.hash, c]));
+  const localOnly = computeLocalOnly(input.commits, input.refs, known, byHash);
 
   /** Lane slot i holds the hash that lane expects next, or null when free. */
   const laneExpect: Array<string | null> = [];
-  const laneRef = new Map<number, string>();
 
-  // Seed lanes by ref priority so lane order is meaningful and deterministic.
-  for (const seed of seedOrder(input)) {
+  // Seed lanes by ref priority. A tip already reachable from a higher-priority
+  // tip shares that lane instead of reserving one it would never occupy.
+  const seeds = seedOrder(input);
+  const covered = new Set<string>();
+  for (const seed of seeds) {
     if (!known.has(seed.hash)) continue;
-    if (laneExpect.includes(seed.hash)) continue;
+    if (covered.has(seed.hash)) continue;
     laneExpect.push(seed.hash);
-    if (seed.refName !== undefined) laneRef.set(laneExpect.length - 1, seed.refName);
+    markAncestors(seed.hash, byHash, covered);
   }
 
   const laneOf = new Map<string, number>();
@@ -156,6 +159,7 @@ export function layoutGraph(input: LayoutInput, options: LayoutOptions = {}): La
   }
 
   const laneCount = nodes.reduce((max, node) => Math.max(max, node.lane + 1), 0);
+  const laneRef = assignLaneRefs(seeds, laneOf);
   const lanes: LayoutLane[] = [];
   for (let index = 0; index < laneCount; index += 1) {
     const ref = laneRef.get(index);
@@ -167,6 +171,21 @@ export function layoutGraph(input: LayoutInput, options: LayoutOptions = {}): La
   }
 
   return { nodes, edges, lanes };
+}
+
+/**
+ * Label each lane with the highest-priority ref whose tip landed in it. Seeds
+ * arrive pre-sorted, so the first match per lane wins.
+ */
+function assignLaneRefs(seeds: readonly Seed[], laneOf: ReadonlyMap<string, number>): Map<number, string> {
+  const laneRef = new Map<number, string>();
+  for (const seed of seeds) {
+    if (seed.refName === undefined) continue;
+    const lane = laneOf.get(seed.hash);
+    if (lane === undefined || laneRef.has(lane)) continue;
+    laneRef.set(lane, seed.refName);
+  }
+  return laneRef;
 }
 
 /** Take the lowest free lane, appending a new one only when all are busy. */
@@ -222,6 +241,25 @@ function rankOf(refName: string, currentRef: string | null): number | null {
   return null;
 }
 
+/** Mark a tip and all of its in-window ancestors as covered/reachable. */
+function markAncestors(
+  tip: string,
+  byHash: ReadonlyMap<string, LayoutCommit>,
+  seen: Set<string>,
+): void {
+  const stack = [tip];
+  while (stack.length > 0) {
+    const hash = stack.pop() as string;
+    if (seen.has(hash)) continue;
+    seen.add(hash);
+    const commit = byHash.get(hash);
+    if (commit === undefined) continue;
+    for (const parent of commit.parents) {
+      if (!seen.has(parent)) stack.push(parent);
+    }
+  }
+}
+
 /**
  * Commits NOT reachable from any remote-tracking ref, computed by walking
  * parents from every `refs/remotes/*` tip inside the loaded commit window.
@@ -230,25 +268,12 @@ function computeLocalOnly(
   commits: readonly LayoutCommit[],
   refs: readonly LayoutRef[],
   known: ReadonlySet<string>,
+  byHash: ReadonlyMap<string, LayoutCommit>,
 ): Set<string> {
-  const byHash = new Map(commits.map((c) => [c.hash, c]));
   const reachable = new Set<string>();
-  const stack: string[] = [];
-
   for (const ref of refs) {
     if (!ref.refName.startsWith('refs/remotes/')) continue;
-    if (known.has(ref.objectName)) stack.push(ref.objectName);
-  }
-
-  while (stack.length > 0) {
-    const hash = stack.pop() as string;
-    if (reachable.has(hash)) continue;
-    reachable.add(hash);
-    const commit = byHash.get(hash);
-    if (commit === undefined) continue;
-    for (const parent of commit.parents) {
-      if (known.has(parent) && !reachable.has(parent)) stack.push(parent);
-    }
+    if (known.has(ref.objectName)) markAncestors(ref.objectName, byHash, reachable);
   }
 
   const localOnly = new Set<string>();

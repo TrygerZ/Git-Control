@@ -104,7 +104,7 @@
     "build": "node esbuild.js",
     "watch": "node esbuild.js --watch",
     "typecheck": "tsc --noEmit",
-    "test": "node esbuild.js && node --test out/test/"
+    "test": "node esbuild.js && node --test \"out/test/*.test.js\""
   },
   "dependencies": {
     "react": "19.2.8",
