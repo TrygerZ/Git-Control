@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {
   parseLog,
   parseRefs,
+  parseRemoteList,
   parseRemotes,
   parseRevListCounts,
   parseShowStat,
@@ -221,5 +222,18 @@ test('parseRemotes dedupes fetch and push URLs', () => {
   assert.deepEqual(parseRemotes(raw), [
     { name: 'origin', url: 'https://example.com/a.git' },
     { name: 'upstream', url: 'https://example.com/b.git' },
+  ]);
+});
+
+test('parseRemoteList keeps fetch and push URLs apart', () => {
+  const raw = [
+    'origin\thttps://example.com/a.git\t(fetch)',
+    'origin\tgit@example.com:a.git\t(push)',
+    'upstream\thttps://example.com/b.git\t(fetch)',
+  ].join('\n');
+  assert.deepEqual(parseRemoteList(raw), [
+    { name: 'origin', fetchUrl: 'https://example.com/a.git', pushUrl: 'git@example.com:a.git' },
+    // A remote listed once uses that URL for both directions.
+    { name: 'upstream', fetchUrl: 'https://example.com/b.git', pushUrl: 'https://example.com/b.git' },
   ]);
 });

@@ -19,6 +19,7 @@ import {
   REFS_FORMAT,
   parseLog,
   parseRefs,
+  parseRemoteList,
   parseRemotes,
   parseRevListCounts,
   parseShowStat,
@@ -370,6 +371,49 @@ export class GitRunner {
   async remotes(): Promise<Array<{ name: string; url: string }>> {
     const { stdout } = await this.run(['remote', '-v']);
     return parseRemotes(stdout);
+  }
+
+  /** Every remote with both its fetch and push URL. */
+  async remoteList(): Promise<Array<{ name: string; fetchUrl: string; pushUrl: string }>> {
+    const { stdout } = await this.run(['remote', '-v']);
+    return parseRemoteList(stdout);
+  }
+
+  /**
+   * Content of one path at one revision, i.e. `git show <rev>:<path>`.
+   *
+   * The diff viewer needs historical blobs without writing anything to disk, and
+   * the host must never shell out itself, so this is the only supported route.
+   * `rev` accepts a hash, a branch name, or the empty-string-free special values
+   * git understands for the index (`:0`), which is why it is validated against
+   * both the hash and the branch rules.
+   *
+   * Binary content is returned verbatim; the caller decides what to do with NUL
+   * bytes because "binary" is a presentation concern, not a git one.
+   */
+  async showFile(rev: string, filePath: string): Promise<string> {
+    if (!validateHash(rev) && !validateBranchName(rev)) {
+      throw new GitError({ code: 'VALIDATION_ERROR', message: `Invalid revision: ${rev}` });
+    }
+    if (!validateRepoRelativePath(filePath)) {
+      throw new GitError({ code: 'VALIDATION_ERROR', message: `Invalid repository path: ${filePath}` });
+    }
+    // Forward slashes only: `git show` uses git's own path syntax, not the OS's.
+    const spec = `${rev}:${filePath.replace(/\\/g, '/')}`;
+    const { stdout } = await this.run(['show', '--no-color', sanitizeRefArg(spec)]);
+    return stdout;
+  }
+
+  /** Content of one path in the index (stage 0), i.e. `git show :path`. */
+  async showIndexFile(filePath: string): Promise<string> {
+    if (!validateRepoRelativePath(filePath)) {
+      throw new GitError({ code: 'VALIDATION_ERROR', message: `Invalid repository path: ${filePath}` });
+    }
+    const spec = `:${filePath.replace(/\\/g, '/')}`;
+    // `--` is not accepted after an object spec, and `spec` starts with `:` so
+    // it can never be read as an option.
+    const { stdout } = await this.run(['show', '--no-color', spec]);
+    return stdout;
   }
 
   /** Upstream ref of a branch, or `null` when it has none. */

@@ -208,3 +208,73 @@ test('onStderrLine streams git progress lines', async (t) => {
   // gc may legitimately be silent; the contract is only "no partial lines".
   for (const line of lines) assert.ok(!line.includes('\n'));
 });
+
+test('showFile returns historical content and validates rev and path', async (t) => {
+  const dir = await makeRepo();
+  t.after(() => fs.rm(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }));
+  const git = new GitRunner({ gitPath: 'git', cwd: dir });
+  const first = (await git.headHash()) as string;
+
+  await fs.writeFile(path.join(dir, 'a.txt'), 'two\n', 'utf8');
+  await git.stage(['a.txt']);
+  await git.commit('second commit');
+
+  // Historical revision keeps the old content; HEAD has the new one.
+  assert.equal(await git.showFile(first, 'a.txt'), 'one\n');
+  assert.equal(await git.showFile('HEAD', 'a.txt'), 'two\n');
+  assert.equal(await git.showFile('main', 'a.txt'), 'two\n');
+
+  // Validation runs before git is spawned.
+  await assert.rejects(() => git.showFile('-x', 'a.txt'), (err: unknown) => {
+    assert.ok(err instanceof GitError);
+    assert.equal(err.code, 'VALIDATION_ERROR');
+    return true;
+  });
+  await assert.rejects(() => git.showFile(first, '../escape.txt'), (err: unknown) => {
+    assert.ok(err instanceof GitError);
+    assert.equal(err.code, 'VALIDATION_ERROR');
+    return true;
+  });
+  await assert.rejects(() => git.showFile(first, '/etc/passwd'), /Invalid repository path/);
+  await assert.rejects(() => git.showFile('', 'a.txt'), /Invalid revision/);
+});
+
+test('showIndexFile reads the staged copy and rejects escaping paths', async (t) => {
+  const dir = await makeRepo();
+  t.after(() => fs.rm(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }));
+  const git = new GitRunner({ gitPath: 'git', cwd: dir });
+
+  await fs.writeFile(path.join(dir, 'a.txt'), 'staged\n', 'utf8');
+  await git.stage(['a.txt']);
+  // Working tree moves on; the index keeps what was staged.
+  await fs.writeFile(path.join(dir, 'a.txt'), 'worktree\n', 'utf8');
+
+  assert.equal(await git.showIndexFile('a.txt'), 'staged\n');
+  await assert.rejects(() => git.showIndexFile('../escape.txt'), /Invalid repository path/);
+});
+
+test('remoteList reports fetch and push URLs separately', async (t) => {
+  const dir = await makeRepo();
+  t.after(() => fs.rm(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }));
+  const git = new GitRunner({ gitPath: 'git', cwd: dir });
+
+  assert.deepEqual(await git.remoteList(), []);
+  await git.run(['remote', 'add', 'origin', 'https://github.com/owner/repo.git']);
+  assert.deepEqual(await git.remoteList(), [
+    {
+      name: 'origin',
+      fetchUrl: 'https://github.com/owner/repo.git',
+      pushUrl: 'https://github.com/owner/repo.git',
+    },
+  ]);
+
+  await git.run(['remote', 'set-url', '--push', 'origin', 'git@github.com:owner/repo.git']);
+  assert.deepEqual(await git.remoteList(), [
+    {
+      name: 'origin',
+      fetchUrl: 'https://github.com/owner/repo.git',
+      pushUrl: 'git@github.com:owner/repo.git',
+    },
+  ]);
+});
+

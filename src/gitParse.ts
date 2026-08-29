@@ -219,6 +219,33 @@ export function parseRefs(raw: string): ParsedRef[] {
   return refs;
 }
 
+/**
+ * Parse `git remote -v` keeping the fetch and push URL of every remote.
+ *
+ * A remote configured with `pushurl` has two different URLs, and the UI needs
+ * both: the fetch URL identifies the repository, the push URL is what a push
+ * would actually contact.
+ */
+export function parseRemoteList(raw: string): Array<{ name: string; fetchUrl: string; pushUrl: string }> {
+  const seen = new Map<string, { fetchUrl: string; pushUrl: string }>();
+  for (const line of raw.split(/\r?\n/)) {
+    if (line.length === 0) continue;
+    const match = /^(\S+)\s+(\S+)\s+\((fetch|push)\)$/.exec(line.trim());
+    if (match === null) continue;
+    const [, name, url, kind] = match as unknown as [string, string, string, string];
+    const entry = seen.get(name) ?? { fetchUrl: '', pushUrl: '' };
+    if (kind === 'fetch') entry.fetchUrl = url;
+    else entry.pushUrl = url;
+    seen.set(name, entry);
+  }
+  // A remote listed only once uses that URL for both directions.
+  return [...seen].map(([name, urls]) => ({
+    name,
+    fetchUrl: urls.fetchUrl.length > 0 ? urls.fetchUrl : urls.pushUrl,
+    pushUrl: urls.pushUrl.length > 0 ? urls.pushUrl : urls.fetchUrl,
+  }));
+}
+
 /** Parse `git remote -v` into unique remote names with their fetch URL. */
 export function parseRemotes(raw: string): Array<{ name: string; url: string }> {
   const seen = new Map<string, string>();
