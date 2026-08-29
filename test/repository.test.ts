@@ -1,10 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as fs from 'node:fs/promises';
-import * as os from 'node:os';
 import * as path from 'node:path';
 import { GitRunner } from '../src/git';
 import { RepositoryService, type PersistentStore } from '../src/repository';
+import { cleanup, makeFixture } from './repoFixture';
 
 /** `workspaceState` stand-in so the service can be exercised without vscode. */
 class MemoryStore implements PersistentStore {
@@ -17,29 +17,9 @@ class MemoryStore implements PersistentStore {
   }
 }
 
-/** Windows keeps `.git` handles briefly after git exits; retry the rmdir. */
-function cleanup(dir: string): Promise<void> {
-  return fs.rm(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
-}
-
 /** Temp repo with three commits on `main` plus one on a side branch. */
-async function makeRepo(): Promise<string> {
-  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'git-control-repo-'));
-  const git = new GitRunner({ gitPath: 'git', cwd: dir });
-  await git.run(['init', '--quiet', '--initial-branch=main']);
-  await git.run(['config', 'user.email', 'test@example.com']);
-  await git.run(['config', 'user.name', 'Test User']);
-  for (const n of ['one', 'two', 'three']) {
-    await fs.writeFile(path.join(dir, `${n}.txt`), `${n}\n`, 'utf8');
-    await git.stage([`${n}.txt`]);
-    await git.commit(`add ${n}`);
-  }
-  await git.createBranch('side', 'main');
-  await fs.writeFile(path.join(dir, 'side.txt'), 'side\n', 'utf8');
-  await git.stage(['side.txt']);
-  await git.commit('add side');
-  await git.switchBranch('main');
-  return dir;
+function makeRepo(): Promise<string> {
+  return makeFixture('triple');
 }
 
 function service(dir: string, overrides: { commitLimit?: number; pageSize?: number } = {}): RepositoryService {

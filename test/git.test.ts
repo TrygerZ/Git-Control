@@ -4,23 +4,16 @@ import * as fs from 'node:fs/promises';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { GitError, GitRunner } from '../src/git';
+import { cleanup, makeFixture } from './repoFixture';
 
-/** Create a throwaway repository with one commit and return its path. */
-async function makeRepo(): Promise<string> {
-  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'git-control-test-'));
-  const runner = new GitRunner({ gitPath: 'git', cwd: dir });
-  await runner.run(['init', '--quiet', '--initial-branch=main']);
-  await runner.run(['config', 'user.email', 'test@example.com']);
-  await runner.run(['config', 'user.name', 'Test User']);
-  await fs.writeFile(path.join(dir, 'a.txt'), 'one\n', 'utf8');
-  await runner.stage(['a.txt']);
-  await runner.commit('initial commit');
-  return dir;
+/** Throwaway repository with one commit. Copied from a per-process template. */
+function makeRepo(): Promise<string> {
+  return makeFixture('single');
 }
 
 test('GitRunner drives a real repository end to end', async (t) => {
   const dir = await makeRepo();
-  t.after(() => fs.rm(dir, { recursive: true, force: true }));
+  t.after(() => cleanup(dir));
   const git = new GitRunner({ gitPath: 'git', cwd: dir });
 
   assert.equal(await git.isRepository(), true);
@@ -70,7 +63,7 @@ test('GitRunner drives a real repository end to end', async (t) => {
 
 test('GitRunner rejects invalid input before spawning git', async (t) => {
   const dir = await makeRepo();
-  t.after(() => fs.rm(dir, { recursive: true, force: true }));
+  t.after(() => cleanup(dir));
   const git = new GitRunner({ gitPath: 'git', cwd: dir });
 
   await assert.rejects(() => git.stage(['../escape.txt']), (err: unknown) => {
@@ -89,7 +82,7 @@ test('GitRunner rejects invalid input before spawning git', async (t) => {
 
 test('runExclusive serializes mutations and survives rejections', async (t) => {
   const dir = await makeRepo();
-  t.after(() => fs.rm(dir, { recursive: true, force: true }));
+  t.after(() => cleanup(dir));
   const git = new GitRunner({ gitPath: 'git', cwd: dir });
 
   const order: string[] = [];
@@ -115,7 +108,7 @@ test('runExclusive serializes mutations and survives rejections', async (t) => {
 
 test('index.lock surfaces as REPOSITORY_LOCKED', async (t) => {
   const dir = await makeRepo();
-  t.after(() => fs.rm(dir, { recursive: true, force: true }));
+  t.after(() => cleanup(dir));
   const git = new GitRunner({ gitPath: 'git', cwd: dir });
   const lock = path.join(await git.gitDir(), 'index.lock');
   await fs.writeFile(lock, '', 'utf8');
@@ -130,7 +123,7 @@ test('index.lock surfaces as REPOSITORY_LOCKED', async (t) => {
 
 test('run reports failures as GitError with stderr and args', async (t) => {
   const dir = await makeRepo();
-  t.after(() => fs.rm(dir, { recursive: true, force: true }));
+  t.after(() => cleanup(dir));
   const git = new GitRunner({ gitPath: 'git', cwd: dir });
 
   await assert.rejects(() => git.run(['rev-parse', 'does-not-exist']), (err: unknown) => {
@@ -153,7 +146,7 @@ test('missing git executable yields GIT_SPAWN_FAILED', async () => {
 
 test('repoRoot, commitMeta, and isAncestor read real objects', async (t) => {
   const dir = await makeRepo();
-  t.after(() => fs.rm(dir, { recursive: true, force: true }));
+  t.after(() => cleanup(dir));
   const git = new GitRunner({ gitPath: 'git', cwd: dir });
 
   assert.equal(await fs.realpath(await git.repoRoot()), await fs.realpath(dir));
@@ -176,7 +169,7 @@ test('repoRoot, commitMeta, and isAncestor read real objects', async (t) => {
 
 test('onBusyChange brackets exclusive operations', async (t) => {
   const dir = await makeRepo();
-  t.after(() => fs.rm(dir, { recursive: true, force: true }));
+  t.after(() => cleanup(dir));
   const git = new GitRunner({ gitPath: 'git', cwd: dir });
 
   const transitions: boolean[] = [];
@@ -199,7 +192,7 @@ test('onBusyChange brackets exclusive operations', async (t) => {
 
 test('onStderrLine streams git progress lines', async (t) => {
   const dir = await makeRepo();
-  t.after(() => fs.rm(dir, { recursive: true, force: true }));
+  t.after(() => cleanup(dir));
   const git = new GitRunner({ gitPath: 'git', cwd: dir });
 
   const lines: string[] = [];
@@ -211,7 +204,7 @@ test('onStderrLine streams git progress lines', async (t) => {
 
 test('showFile returns historical content and validates rev and path', async (t) => {
   const dir = await makeRepo();
-  t.after(() => fs.rm(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }));
+  t.after(() => cleanup(dir));
   const git = new GitRunner({ gitPath: 'git', cwd: dir });
   const first = (await git.headHash()) as string;
 
@@ -241,7 +234,7 @@ test('showFile returns historical content and validates rev and path', async (t)
 
 test('showIndexFile reads the staged copy and rejects escaping paths', async (t) => {
   const dir = await makeRepo();
-  t.after(() => fs.rm(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }));
+  t.after(() => cleanup(dir));
   const git = new GitRunner({ gitPath: 'git', cwd: dir });
 
   await fs.writeFile(path.join(dir, 'a.txt'), 'staged\n', 'utf8');
@@ -255,7 +248,7 @@ test('showIndexFile reads the staged copy and rejects escaping paths', async (t)
 
 test('remoteList reports fetch and push URLs separately', async (t) => {
   const dir = await makeRepo();
-  t.after(() => fs.rm(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }));
+  t.after(() => cleanup(dir));
   const git = new GitRunner({ gitPath: 'git', cwd: dir });
 
   assert.deepEqual(await git.remoteList(), []);

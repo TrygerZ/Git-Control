@@ -8,6 +8,7 @@ import { GitHubError } from '../src/github';
 import { BRIDGE_MESSAGES, MessageBridge, toErrorBody, type BridgeHost, type WebviewLike } from '../src/bridge';
 import { Logger, type LogSink } from '../src/logger';
 import { RepositoryService, type PersistentStore } from '../src/repository';
+import { cleanup, makeFixture } from './repoFixture';
 import type {
   HostEvent,
   HostMessage,
@@ -145,20 +146,9 @@ const SETTINGS: SettingsSnapshot = {
   ui: { zoom: 1, branchFilter: '' },
 };
 
-async function makeRepo(): Promise<string> {
-  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'git-control-bridge-'));
-  const git = new GitRunner({ gitPath: 'git', cwd: dir });
-  await git.run(['init', '--quiet', '--initial-branch=main']);
-  await git.run(['config', 'user.email', 'test@example.com']);
-  await git.run(['config', 'user.name', 'Test User']);
-  await fs.writeFile(path.join(dir, 'a.txt'), 'one\n', 'utf8');
-  await git.stage(['a.txt']);
-  await git.commit('initial commit');
-  return dir;
-}
-
-function cleanup(dir: string): Promise<void> {
-  return fs.rm(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
+/** One commit, `a.txt` = `one\n`, on `main`. Copied from a shared template. */
+function makeRepo(): Promise<string> {
+  return makeFixture('single');
 }
 
 interface Harness {
