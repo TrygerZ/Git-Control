@@ -17,7 +17,7 @@ import {
   hasPrivateScope,
 } from './github';
 import { Logger } from './logger';
-import { parseRemoteUrl, webUrlOf, type ParsedRemoteUrl } from './remoteUrl';
+import { parseRemoteUrl, resolveGitHubApiBase, webUrlOf, type GitHubApiBase, type ParsedRemoteUrl } from './remoteUrl';
 import { MAX_COMMIT_LIMIT, RepositoryService } from './repository';
 import { RepoWatcher } from './watcher';
 import type {
@@ -47,6 +47,9 @@ const MESSAGES = {
   refreshed: 'Git Control dimuat ulang.',
   diffTrimmed: 'Diff dipangkas demi performa.',
   diffBinary: 'Diff teks tidak tersedia untuk file binary.',
+  githubUntrustedBase:
+    'Token tidak dikirim: alamat API berasal dari URL remote, bukan dari setelan Anda. ' +
+    'Setel gitControl.githubApiUrl bila host ini memang GitHub Enterprise Anda.',
 } as const;
 
 const GIT_INSTALL_URL = 'https://git-scm.com/downloads';
@@ -556,18 +559,30 @@ class Controller implements vscode.Disposable {
    *
    * API base resolution, documented because the rule is not obvious:
    *   1. `gitControl.githubApiUrl` when the user changed it away from the default
-   *      → always wins, so an explicit Enterprise base is never second-guessed
+   *      → always wins, so an explicit Enterprise base is never second-guessed.
+   *      The setting is `machine`-scoped, so a workspace cannot set it.
    *   2. otherwise, if the detected remote host is not `github.com`, derive
    *      `https://HOST/api/v3` — the fixed GitHub Enterprise Server layout
    *   3. otherwise `https://api.github.com`
+   *
+   * HARD RULE: the token only travels to a base the USER chose (case 1 or 3). A
+   * base derived from a remote URL (case 2) is attacker-influenced — a cloned
+   * repository picks its own `origin` — so those requests go out anonymously.
    *
    * HARD RULE: this client is metadata only. Push and fetch always go through the
    * Git CLI in `git.ts`; nothing here transfers git objects.
    */
   private async githubClient(): Promise<{ client: GitHubClient; apiUrl: string }> {
-    const token = (await this.context.secrets.get(TOKEN_SECRET_KEY)) ?? null;
+    const stored = (await this.context.secrets.get(TOKEN_SECRET_KEY)) ?? null;
     const remote = await this.detectRemote();
-    const apiUrl = this.resolveApiUrl(remote);
+    const base = this.resolveApiBase(remote);
+    const apiUrl = base.apiUrl;
+    // A base derived from a remote URL is attacker-influenced: a cloned
+    // repository picks its own `origin`. Never send the token there.
+    const token = base.tokenAllowed ? stored : null;
+    if (stored !== null && !base.tokenAllowed) {
+      this.logger.info('github/client', `anonymous: derived base ${apiUrl} is not a trusted token target`);
+    }
     const cached = this.github;
     if (cached !== undefined && cached.apiUrl === apiUrl && cached.token === token) {
       return { client: cached.client, apiUrl };
@@ -582,14 +597,15 @@ class Controller implements vscode.Disposable {
   }
 
   /** See {@link githubClient} for the precedence rules. */
-  private resolveApiUrl(remote: ParsedRemoteUrl | null): string {
+  private resolveApiBase(remote: ParsedRemoteUrl | null): GitHubApiBase {
     const configured = vscode.workspace
       .getConfiguration('gitControl')
-      .get<string>('githubApiUrl', DEFAULT_API_URL)
-      .trim();
-    if (configured.length > 0 && configured !== DEFAULT_API_URL) return configured.replace(/\/+$/, '');
-    if (remote !== null && !remote.isGitHub) return `https://${remote.host}/api/v3`;
-    return DEFAULT_API_URL;
+      .get<string>('githubApiUrl', DEFAULT_API_URL);
+    return resolveGitHubApiBase(configured, remote);
+  }
+
+  private resolveApiUrl(remote: ParsedRemoteUrl | null): string {
+    return this.resolveApiBase(remote).apiUrl;
   }
 
   /** First remote we can turn into `owner/repo`, preferring `origin`. */
@@ -620,6 +636,17 @@ class Controller implements vscode.Disposable {
     const { client, apiUrl } = await this.githubClient();
     if (token === undefined || token.length === 0) {
       return { connected: false, login: null, scopes: [], apiUrl };
+    }
+    // Token withheld because the API base was derived from a remote URL. Report
+    // it instead of probing anonymously and mistaking 401 for a bad token.
+    if (!client.hasToken) {
+      return {
+        connected: false,
+        login: null,
+        scopes: [],
+        apiUrl,
+        scopeWarning: `${MESSAGES.githubUntrustedBase} (${apiUrl})`,
+      };
     }
     try {
       const viewer = await client.viewer();

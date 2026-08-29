@@ -1,6 +1,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { parseRemoteUrl, stripCredentials, webUrlOf } from '../src/remoteUrl';
+import {
+  DEFAULT_GITHUB_API_URL,
+  parseRemoteUrl,
+  resolveGitHubApiBase,
+  stripCredentials,
+  webUrlOf,
+} from '../src/remoteUrl';
 
 test('parses the https form with and without .git', () => {
   assert.deepEqual(parseRemoteUrl('https://github.com/owner/repo.git'), {
@@ -144,4 +150,39 @@ test('stripCredentials removes userinfo containing an @ (SEC-003)', () => {
     stripCredentials('https://alice@corp.example:s3cr3t@git.acme.example/t/r.git'),
     'https://git.acme.example/t/r.git',
   );
+});
+
+test('a derived Enterprise API base is never a trusted token target (SEC-002)', () => {
+  // A cloned repository chooses its own remote, so a base derived from that
+  // remote must not receive the stored token.
+  const evil = parseRemoteUrl('https://evil.example/o/r.git');
+  assert.notEqual(evil, null);
+  const derived = resolveGitHubApiBase(DEFAULT_GITHUB_API_URL, evil);
+  assert.equal(derived.apiUrl, 'https://evil.example/api/v3');
+  assert.equal(derived.tokenAllowed, false, 'token must not travel to a derived base');
+});
+
+test('a user-configured API base does receive the token, github.com included', () => {
+  const remote = parseRemoteUrl('https://git.acme.example/team/tooling.git');
+  const configured = resolveGitHubApiBase('https://git.acme.example/api/v3/', remote);
+  assert.equal(configured.apiUrl, 'https://git.acme.example/api/v3');
+  assert.equal(configured.tokenAllowed, true);
+
+  const github = resolveGitHubApiBase(DEFAULT_GITHUB_API_URL, parseRemoteUrl('git@github.com:o/r.git'));
+  assert.equal(github.apiUrl, DEFAULT_GITHUB_API_URL);
+  assert.equal(github.tokenAllowed, true);
+
+  // No remote at all still means the default API.
+  assert.deepEqual(resolveGitHubApiBase('', null), {
+    apiUrl: DEFAULT_GITHUB_API_URL,
+    tokenAllowed: true,
+  });
+});
+
+test('a non-https configured base falls back to the default rather than sending the token in the clear', () => {
+  for (const value of ['http://evil.example/api/v3', 'ftp://x.example', 'evil.example']) {
+    const base = resolveGitHubApiBase(value, null);
+    assert.equal(base.apiUrl, DEFAULT_GITHUB_API_URL, value);
+    assert.equal(base.tokenAllowed, true, value);
+  }
 });

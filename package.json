@@ -76,7 +76,8 @@
         "gitControl.githubApiUrl": {
           "type": "string",
           "default": "https://api.github.com",
-          "description": "GitHub API base URL (change for GitHub Enterprise)."
+          "scope": "machine",
+          "description": "GitHub API base URL (change for GitHub Enterprise). Machine-scoped: a workspace cannot set it, because the stored token is sent to this host."
         },
         "gitControl.fetchStalenessMs": {
           "type": "number",

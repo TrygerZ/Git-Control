@@ -44,6 +44,48 @@ export function stripCredentials(url: string): string {
   return url.replace(/^([a-z][a-z0-9+.-]*:\/\/)[^/]*@/i, '$1');
 }
 
+/** Default GitHub API base. Also the value shipped in `package.json`. */
+export const DEFAULT_GITHUB_API_URL = 'https://api.github.com';
+
+export interface GitHubApiBase {
+  /** API base to talk to, without a trailing slash. */
+  apiUrl: string;
+  /**
+   * `true` when the stored token may be sent to {@link apiUrl}.
+   *
+   * Only two bases earn this: the default GitHub API, and a base the user typed
+   * into `gitControl.githubApiUrl` themselves. A base *derived* from a remote URL
+   * never does — a cloned repository could otherwise aim our `Authorization`
+   * header at any host it likes and collect the user's token.
+   */
+  tokenAllowed: boolean;
+}
+
+/**
+ * Resolve the GitHub API base and decide whether the token may travel to it.
+ *
+ * Precedence, unchanged from the PRD:
+ *   1. an explicitly configured `githubApiUrl` (must be `https:`)
+ *   2. otherwise `https://HOST/api/v3` when the remote host is not github.com
+ *   3. otherwise the default API
+ *
+ * Pure so the trust rule is unit-testable without an editor.
+ */
+export function resolveGitHubApiBase(configured: string, remote: ParsedRemoteUrl | null): GitHubApiBase {
+  const value = typeof configured === 'string' ? configured.trim() : '';
+  if (value.length > 0 && value !== DEFAULT_GITHUB_API_URL) {
+    // Plaintext HTTP would put the token on the wire in the clear.
+    if (/^https:\/\//i.test(value)) {
+      return { apiUrl: value.replace(/\/+$/, ''), tokenAllowed: true };
+    }
+    return { apiUrl: DEFAULT_GITHUB_API_URL, tokenAllowed: true };
+  }
+  if (remote !== null && !remote.isGitHub) {
+    return { apiUrl: `https://${remote.host}/api/v3`, tokenAllowed: false };
+  }
+  return { apiUrl: DEFAULT_GITHUB_API_URL, tokenAllowed: true };
+}
+
 /**
  * Parse any form git accepts into `{ host, owner, repo, isGitHub }`, or `null`
  * when the value is not a recognisable `owner/repo` remote (local paths,
