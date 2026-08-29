@@ -1,0 +1,7 @@
+PRD_Git_Control.md
+node_modules/
+out/
+dist/
+*.vsix
+.env
+.vscode-test/
