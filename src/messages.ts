@@ -20,13 +20,22 @@ export type ErrorCode =
   | 'REMOTE_AHEAD'
   | 'STALE_STATUS'
   | 'NON_FAST_FORWARD'
-  | 'HOOK_REJECTED';
+  | 'HOOK_REJECTED'
+  | 'CONFIRMATION_REQUIRED';
+
+/** Remedies the UI may offer when an action is blocked by the safety guard. */
+export type Remedy = 'commit' | 'stash' | 'fetch' | 'cancel' | 'resolve-conflicts' | 'confirm';
 
 export interface ErrorBody {
   status: number;
   code: ErrorCode;
   message: string;
   detail?: string;
+  /** Buttons the UI should render for a guard-blocked action. */
+  remedies?: Remedy[];
+  requiresConfirmation?: boolean;
+  confirmationLevel?: 1 | 2;
+  risk?: 'low' | 'medium' | 'high';
 }
 
 // ------------------------------------------------------------- domain DTOs
@@ -72,12 +81,22 @@ export interface RepoStatus {
   upstream: string | null;
   ahead: number;
   behind: number;
+  /** Alias of {@link behind}: commits the remote has that we do not. */
+  incoming: number;
+  /** Alias of {@link ahead}: commits we have that the remote does not. */
+  outgoing: number;
+  /** Any unstaged/untracked change present in the working tree. */
+  dirty: boolean;
+  /** Any change present in the index. */
+  staged: boolean;
   operation: OperationState;
   changes: ChangeEntry[];
   conflicts: ConflictEntry[];
   /** Server-computed token used to reject actions built on stale status. */
   statusToken: string;
   lastFetchedAt: string | null;
+  /** Same value as {@link lastFetchedAt} as epoch ms, or `null` when never fetched. */
+  lastFetchAt: number | null;
 }
 
 export interface GraphNode {
@@ -117,6 +136,10 @@ export interface RepoGraph {
   refs: RefInfo[];
   head: string | null;
   truncated: boolean;
+  /** Skip value for the next page, or `null` when the history is exhausted. */
+  nextCursor: number | null;
+  /** `true` when the payload is a cached snapshot served after a git failure. */
+  stale: boolean;
 }
 
 export interface CommitFileChange {
@@ -140,6 +163,10 @@ export interface CommitDetail {
   body: string;
   refNames: string[];
   files: CommitFileChange[];
+  /** Aggregate counts across non-binary files. */
+  totals: { files: number; additions: number; deletions: number; binary: number };
+  /** `true` when the file list was capped; `files` holds only the first page. */
+  truncated: boolean;
 }
 
 /** Discriminated union of every git action the webview may request. */
@@ -161,13 +188,26 @@ export type GitActionRequest =
 
 // ---------------------------------------------------------------- payloads
 
+/**
+ * Fields every mutation carries. `idempotencyKey` lets the host replay the
+ * previous result instead of re-executing (PRD Kasus 2: double-click push).
+ * `confirm` / `forceAcknowledgement` are checked host-side, so a webview cannot
+ * bypass the safety guard by omitting them.
+ */
+export interface MutationMeta {
+  idempotencyKey: string;
+  confirm?: boolean;
+  forceAcknowledgement?: boolean;
+}
+
 export interface StatusPayload {
   includeIgnored?: boolean;
 }
 
 export interface GraphPayload {
   limit?: number;
-  skip?: number;
+  /** Opaque page cursor; currently the number of commits to skip. */
+  cursor?: number;
   rowHeight?: number;
   laneWidth?: number;
 }
@@ -176,18 +216,22 @@ export interface CommitDetailPayload {
   hash: string;
 }
 
-export interface StagePayload {
+export interface StagePayload extends MutationMeta {
   paths: string[];
   /** `true` stages, `false` unstages. */
   stage: boolean;
   statusToken: string;
 }
 
-export interface CommitPayload {
+export interface CommitPayload extends MutationMeta {
   message: string;
   amend?: boolean;
+  /** Push the current branch right after a successful commit. */
+  push?: boolean;
   statusToken: string;
 }
+
+export type GitActionPayload = GitActionRequest & MutationMeta;
 
 export interface SettingsGetPayload {
   keys?: string[];
@@ -209,6 +253,25 @@ export interface ActionResult {
   statusToken: string;
 }
 
+/**
+ * Commit outcome. When `push` was requested and failed, the commit stands:
+ * `pushed: false` plus `pushError` so the UI can offer "Retry Push".
+ */
+export interface CommitResult {
+  success: true;
+  commit: string | null;
+  pushed: boolean;
+  pushError?: string;
+  operation: OperationState;
+  statusToken: string;
+}
+
+/** Per-workspace UI preferences persisted in `workspaceState`. Never tokens. */
+export interface UiPreferences {
+  zoom: number;
+  branchFilter: string;
+}
+
 export interface SettingsSnapshot {
   gitPath: string;
   commitLimit: number;
@@ -216,6 +279,7 @@ export interface SettingsSnapshot {
   showIgnoredFiles: boolean;
   githubApiUrl: string;
   fetchStalenessMs: number;
+  ui: UiPreferences;
 }
 
 export interface GitHubAuthState {
@@ -230,8 +294,8 @@ export interface RequestMap {
   'repos/graph': { payload: GraphPayload; response: RepoGraph };
   'commits/detail': { payload: CommitDetailPayload; response: CommitDetail };
   'actions/stage': { payload: StagePayload; response: ActionResult };
-  'actions/commit': { payload: CommitPayload; response: ActionResult };
-  'actions/git': { payload: GitActionRequest; response: ActionResult };
+  'actions/commit': { payload: CommitPayload; response: CommitResult };
+  'actions/git': { payload: GitActionPayload; response: ActionResult };
   'github/auth': { payload: Record<string, never>; response: GitHubAuthState };
   'github/connect': { payload: Record<string, never>; response: GitHubAuthState };
   'github/disconnect': { payload: Record<string, never>; response: GitHubAuthState };
@@ -263,6 +327,8 @@ export interface ToastEvent {
 }
 
 export interface OperationProgressEvent {
+  /** Correlates with the request id that started the operation. */
+  id: string;
   operation: string;
   phase: 'started' | 'progress' | 'finished' | 'failed';
   message?: string;
