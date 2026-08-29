@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
+  CACHE_MAX_ENTRIES,
   GITHUB_MESSAGES,
   GitHubClient,
   GitHubError,
@@ -324,6 +325,80 @@ test('clearCache forces the next read back onto the network', async () => {
   h.gh.clearCache();
   assert.equal((await h.gh.repo('o', 'r')).cached, false);
   assert.equal(h.calls.length, 2);
+});
+
+// ------------------------------------------------------------------- SEC-013
+
+test('the cache is bounded and evicts in insertion order (SEC-013)', async () => {
+  // `commitPulls:` is the one key generator that grows per commit, so it is the
+  // realistic path to an unbounded map.
+  const h = client([response(200, [])]);
+  assert.equal(h.gh.cacheSize, 0);
+
+  for (let i = 0; i < CACHE_MAX_ENTRIES; i += 1) {
+    await h.gh.pullRequestsForCommit('o', 'r', `${i}`.padStart(40, '0'));
+  }
+  assert.equal(h.gh.cacheSize, CACHE_MAX_ENTRIES);
+
+  // The first key is still present, so nothing was evicted prematurely.
+  const firstHash = '0'.repeat(40);
+  const callsBefore = h.calls.length;
+  assert.equal((await h.gh.pullRequestsForCommit('o', 'r', firstHash)).cached, true);
+  assert.equal(h.calls.length, callsBefore, 'served from cache, no request');
+
+  // One past the cap evicts exactly one entry and holds the bound.
+  for (let i = 0; i < 50; i += 1) {
+    await h.gh.pullRequestsForCommit('o', 'r', `${1000 + i}`.padStart(40, '0'));
+  }
+  assert.equal(h.gh.cacheSize, CACHE_MAX_ENTRIES, 'the bound holds under continued growth');
+
+  // And the oldest keys are the ones that went. The very first hash was refreshed
+  // by the cached read above, which re-inserts it, so probe an untouched early one.
+  const early = '1'.padStart(40, '0');
+  const before = h.calls.length;
+  await h.gh.pullRequestsForCommit('o', 'r', early);
+  assert.equal(h.calls.length, before + 1, 'an evicted key goes back to the network');
+});
+
+test('a refreshed entry is not evicted as if it were the oldest (SEC-013)', async () => {
+  const h = client([response(200, { default_branch: 'main', private: false, html_url: 'u' })]);
+  // `repo:` first, so it is the insertion-order head.
+  await h.gh.repo('o', 'r');
+  // Re-reading past the TTL must move it to the back of the eviction queue,
+  // otherwise the repository the user is looking at is the first thing dropped.
+  h.advance(600_000);
+  await h.gh.repo('o', 'r');
+
+  for (let i = 0; i < CACHE_MAX_ENTRIES; i += 1) {
+    await h.gh.pullRequestsForCommit('o', 'r', `${i}`.padStart(40, '0'));
+  }
+  assert.equal(h.gh.cacheSize, CACHE_MAX_ENTRIES);
+});
+
+test('the breaker can still serve a stale cached entry under the cap (SEC-013)', async () => {
+  const queue: Array<FetchResponseLike | Error> = [
+    response(200, { default_branch: 'main', private: false, html_url: 'u' }),
+  ];
+  const rec = recorder(queue);
+  let clock = 1_700_000_000_000;
+  const gh = new GitHubClient({
+    apiUrl: 'https://api.github.com',
+    token: TOKEN,
+    fetchImpl: rec.fetchImpl,
+    now: () => clock,
+    sleep: () => Promise.resolve(),
+  });
+
+  await gh.repo('o', 'r');
+  queue[0] = response(500, { message: 'boom' });
+  for (let i = 0; i < 5; i += 1) await assert.rejects(() => gh.repo(`x${i}`, 'r'));
+  assert.equal(gh.circuitOpen, true);
+
+  // The cap must not have evicted the entry the offline path depends on.
+  clock += 600_000;
+  const cached = await gh.repo('o', 'r');
+  assert.equal(cached.cached, true);
+  assert.equal(cached.data.defaultBranch, 'main');
 });
 
 // ----------------------------------------------------------- pull requests

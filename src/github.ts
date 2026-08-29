@@ -110,6 +110,12 @@ const REPO_TTL_MS = 300_000;
 const PR_TTL_MS = 60_000;
 const VIEWER_TTL_MS = 300_000;
 const REQUEST_TIMEOUT_MS = 15_000;
+/**
+ * Cap on cached responses. Same bound and same eviction policy as the bridge's
+ * idempotency map, for the same reason: an unbounded `Map` in a long-lived
+ * extension host is a slow leak.
+ */
+export const CACHE_MAX_ENTRIES = 200;
 
 interface CacheEntry {
   at: number;
@@ -162,6 +168,11 @@ export class GitHubClient {
 
   get circuitOpen(): boolean {
     return this.breakerOpen;
+  }
+
+  /** Number of cached responses. Exposed so the entry cap is testable. */
+  get cacheSize(): number {
+    return this.cache.size;
   }
 
   /** Drop cached responses. Used when the token changes. */
@@ -292,8 +303,30 @@ export class GitHubClient {
     const response = await this.send(path);
     const parsed = parseJson(response.body);
     const data = map(parsed, response.headers);
-    this.cache.set(cacheKey, { at: this.now(), value: data });
+    this.setCache(cacheKey, data);
     return { data, cached: false, rateLimit: this.rateLimit(false) };
+  }
+
+  /**
+   * Store a response, evicting the oldest entries past {@link CACHE_MAX_ENTRIES}.
+   *
+   * The TTL alone does not bound the map: it is applied on *read*, so a stale entry
+   * is not returned but is also not removed — and the breaker path deliberately
+   * reads with an infinite TTL to serve stale data while GitHub is unreachable, so
+   * entries have to survive expiry. Most keys are fixed per repository, but
+   * `commitPulls:` grows one entry per commit inspected, up to the 10 000-commit
+   * ceiling. Insertion-order eviction, matching the idempotency map in `bridge.ts`.
+   */
+  private setCache(key: string, value: unknown): void {
+    // Re-inserting moves the key to the end, so a refreshed entry is not the
+    // eviction candidate merely because it was first seen long ago.
+    this.cache.delete(key);
+    this.cache.set(key, { at: this.now(), value });
+    while (this.cache.size > CACHE_MAX_ENTRIES) {
+      const oldest = this.cache.keys().next();
+      if (oldest.done === true) break;
+      this.cache.delete(oldest.value);
+    }
   }
 
   /**
