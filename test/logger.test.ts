@@ -120,3 +120,51 @@ test('info writes a single redacted line with no operation id', () => {
   assert.ok(sink.lines[0]?.startsWith('2026-08-29T00:00:00.000Z - git/exec info '));
   assert.ok(!sink.lines[0]?.includes('ghs_A1b2C3d4E5f6G7h8I9j0'));
 });
+
+// ------------------------------------------------ regression: SEC-004 redactor
+
+test('redact strips a fine-grained github_pat_ token (SEC-004)', () => {
+  // Different prefix and an underscore body, so the `gh[pousr]_` rule misses it.
+  const token = 'github_pat_11ABCDEFG0aBcDeFgHiJk_ZZZZZZZZZZZZZZZZZZZZZZZZZZZZ';
+  const out = redact(`fatal: unable to access using ${token} now`);
+  assert.ok(!out.includes(token), out);
+  assert.ok(out.includes('[redacted]'));
+
+  // Also inside a remote URL, where git actually prints it.
+  const url = redact(`https://x-access-token:${token}@github.com/o/r.git`);
+  assert.ok(!url.includes(token), url);
+});
+
+test('redact strips a credential whose userinfo contains an @ (SEC-004)', () => {
+  const secret = 'ghs_A1b2C3d4E5f6G7h8I9j0';
+  const out = redact(`remote: https://x-access-token:${secret}@corp@github.com/o/r.git`);
+  assert.ok(!out.includes(secret), out);
+
+  const email = redact('remote: https://alice@corp.example:s3cr3t@example.com/repo.git');
+  assert.ok(!email.includes('s3cr3t'), email);
+});
+
+test('redact strips a bare Bearer/Basic/token credential without a header name', () => {
+  for (const line of [
+    'sent Bearer github_pat_11ABCDEFG0aBcDeFgHiJk_ZZZZZZZZZZZZZZZZZZZ upstream',
+    'used Basic YWxpY2U6czNjcjN0MDAwMDAwMDA= upstream',
+    'used token 0123456789abcdef0123456789abcdef01234567 upstream',
+  ]) {
+    const out = redact(line);
+    assert.ok(out.includes('[redacted]'), out);
+  }
+});
+
+test('redact leaves a bare 40-hex object id alone, by design', () => {
+  // A classic OAuth token and a git object id are byte-identical, and this log is
+  // full of object ids. Redacting them would erase every hash from the channel.
+  const hash = '0123456789abcdef0123456789abcdef01234567';
+  assert.equal(redact(`git show ${hash}`), `git show ${hash}`);
+});
+
+test('redact stays idempotent across the new rules', () => {
+  const line =
+    'Authorization: Bearer x; https://x-access-token:github_pat_11AAAAAAAAAAAAAAAAAAAA_BBBB@corp@h/r; ghp_A1b2C3d4E5f6G7h8I9j0';
+  const once = redact(line);
+  assert.equal(redact(once), once);
+});

@@ -32,16 +32,30 @@ const REDACTED = '[redacted]';
 /**
  * Ordered redaction rules. Each replaces the secret portion only, so the
  * surrounding text stays useful for debugging.
+ *
+ * Deliberate omission: a bare 40-hex classic OAuth token is NOT matched, because
+ * it is byte-identical to a git object id and this log is full of those.
+ * Redacting every 40-hex run would erase every hash from the output channel. The
+ * two paths a token can actually reach a log line — a remote URL's userinfo and
+ * an HTTP auth header — are both covered below.
  */
 const RULES: ReadonlyArray<{ pattern: RegExp; replace: string }> = [
   // GitHub PAT / OAuth / user-to-server / server-to-server / refresh tokens.
   { pattern: /gh[pousr]_[A-Za-z0-9]{20,}/g, replace: REDACTED },
+  // Fine-grained PAT: different prefix, different length, and underscores in the
+  // body, so the rule above does not cover it.
+  { pattern: /github_pat_[A-Za-z0-9_]{20,}/g, replace: REDACTED },
   // `x-access-token:<token>@host`, with or without a scheme prefix.
   { pattern: /x-access-token:[^@\s]*@/gi, replace: `x-access-token:${REDACTED}@` },
   // Any other `user:password@host` credential in a URL. The username is kept
   // (it is not a secret and helps debugging); only the password is dropped.
+  //
+  // Userinfo runs to the LAST `@` before the path, so an email-style username or
+  // a secret that itself contains `@` cannot leave its tail behind.
   // Idempotent, so it safely runs over the rule above.
-  { pattern: /(\bhttps?:\/\/)([^/\s:@]+):[^/\s@]+@/gi, replace: `$1$2:${REDACTED}@` },
+  { pattern: /(\bhttps?:\/\/)([^/\s:@]+)[:@][^/\s]*@/gi, replace: `$1$2:${REDACTED}@` },
+  // Bare auth credentials, e.g. a `Bearer …` echoed without its header name.
+  { pattern: /\b(Bearer|Basic|token)\s+[A-Za-z0-9._\-+/=]{16,}/gi, replace: `$1 ${REDACTED}` },
   // HTTP auth headers, however they are cased or spaced.
   { pattern: /(Authorization:\s*)\S+.*/gi, replace: `$1${REDACTED}` },
 ];
