@@ -212,10 +212,22 @@ export class RepositoryService {
     const meta = await this.git.commitMeta(hash);
     if (meta === null) return null;
     const isMerge = meta.parents.length > 1;
-    const stats = await this.git.numstat(meta.hash, { firstParent: isMerge });
+    // A commit touching hundreds of thousands of files produces a `--numstat`
+    // larger than the runner will buffer. It truncates rather than failing, and
+    // the flag rides out with the page so the UI does not claim completeness.
+    let statsTruncated = false;
+    const stats = await this.git.numstat(meta.hash, {
+      firstParent: isMerge,
+      onTruncated: () => {
+        statsTruncated = true;
+      },
+    });
 
     const end = cursor + this.fileLimit;
-    const truncated = stats.length > end;
+    const hasMorePages = stats.length > end;
+    // `truncated` means "there is more than you are seeing", which is true both
+    // when a later page exists and when git's own output was cut short.
+    const truncated = hasMorePages || statsTruncated;
     const files: CommitFileChange[] = stats.slice(cursor, end).map((entry) => ({
       path: entry.path,
       ...(entry.origPath === undefined ? {} : { origPath: entry.origPath }),
@@ -241,7 +253,9 @@ export class RepositoryService {
       totals: totalsOf(stats),
       truncated,
       fileCursor: cursor,
-      nextFileCursor: truncated ? end : null,
+      // Only offer a next page when one actually exists. A `--numstat` cut off by
+      // the byte cap has no further page to serve.
+      nextFileCursor: hasMorePages ? end : null,
     };
     this.detailCache.set(cacheKey, detail);
     return detail;

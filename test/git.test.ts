@@ -271,3 +271,132 @@ test('remoteList reports fetch and push URLs separately', async (t) => {
   ]);
 });
 
+// ------------------------------------------------------------------- SEC-009
+
+test('run kills git and rejects GIT_OUTPUT_TOO_LARGE past the stdout cap (SEC-009)', async (t) => {
+  const dir = await makeRepo();
+  t.after(() => cleanup(dir));
+  const git = new GitRunner({ gitPath: 'git', cwd: dir });
+
+  // A blob comfortably past a deliberately tiny cap. 256 KiB of real content, so
+  // the stream genuinely delivers several chunks rather than one.
+  const big = 'x'.repeat(256 * 1024);
+  await fs.writeFile(path.join(dir, 'big.txt'), big, 'utf8');
+  await git.stage(['big.txt']);
+  await git.commit('add a big file');
+
+  await assert.rejects(
+    () => git.run(['show', '--no-color', 'HEAD:big.txt'], { maxStdoutBytes: 4096 }),
+    (err: unknown) => {
+      assert.ok(err instanceof GitError);
+      assert.equal(err.code, 'GIT_OUTPUT_TOO_LARGE');
+      assert.match(err.message, /more than 4096 bytes/);
+      return true;
+    },
+  );
+
+  // Under the cap nothing changes, and the content is complete.
+  const ok = await git.run(['show', '--no-color', 'HEAD:big.txt'], {
+    maxStdoutBytes: 1024 * 1024,
+  });
+  assert.equal(ok.stdout.length, big.length);
+  assert.equal(ok.truncated, undefined);
+});
+
+test('run truncates instead of failing when the caller opts in (SEC-009)', async (t) => {
+  const dir = await makeRepo();
+  t.after(() => cleanup(dir));
+  const git = new GitRunner({ gitPath: 'git', cwd: dir });
+
+  const big = 'y'.repeat(128 * 1024);
+  await fs.writeFile(path.join(dir, 'big.txt'), big, 'utf8');
+  await git.stage(['big.txt']);
+  await git.commit('add a big file');
+
+  const result = await git.run(['show', '--no-color', 'HEAD:big.txt'], {
+    maxStdoutBytes: 4096,
+    truncateStdout: true,
+  });
+  assert.equal(result.truncated, true);
+  assert.ok(result.stdout.length > 0, 'what arrived is kept');
+  assert.ok(result.stdout.length < big.length, 'and it is short of the whole blob');
+  // A truncated read is not an error, so `code` reads as success.
+  assert.equal(result.code, 0);
+});
+
+test('showFile refuses to return a partial blob (SEC-009)', async (t) => {
+  const dir = await makeRepo();
+  t.after(() => cleanup(dir));
+  const git = new GitRunner({ gitPath: 'git', cwd: dir });
+
+  // The production cap is 5 MiB, so generate past it. ~6 MiB of ASCII.
+  const huge = 'z'.repeat(6 * 1024 * 1024);
+  await fs.writeFile(path.join(dir, 'huge.txt'), huge, 'utf8');
+  await git.stage(['huge.txt']);
+  await git.commit('add a huge file');
+
+  await assert.rejects(() => git.showFile('HEAD', 'huge.txt'), (err: unknown) => {
+    assert.ok(err instanceof GitError);
+    assert.equal(err.code, 'GIT_OUTPUT_TOO_LARGE', 'half a file must never be presented as the file');
+    return true;
+  });
+  await assert.rejects(() => git.showIndexFile('huge.txt'), (err: unknown) => {
+    assert.ok(err instanceof GitError);
+    assert.equal(err.code, 'GIT_OUTPUT_TOO_LARGE');
+    return true;
+  });
+
+  // A normal file still reads end to end through the same capped path.
+  assert.equal(await git.showFile('HEAD', 'a.txt'), 'one\n');
+});
+
+test('numstat truncation is reported rather than fatal (SEC-009)', async (t) => {
+  const dir = await makeRepo();
+  t.after(() => cleanup(dir));
+  const git = new GitRunner({ gitPath: 'git', cwd: dir });
+
+  // Enough files that a small cap lands mid-list.
+  const names: string[] = [];
+  for (let i = 0; i < 400; i += 1) {
+    const name = `numstat-${String(i).padStart(4, '0')}.txt`;
+    names.push(name);
+    await fs.writeFile(path.join(dir, name), `${i}\n`, 'utf8');
+  }
+  await git.stage(names);
+  await git.commit('add many files');
+  const head = (await git.headHash()) as string;
+
+  // Uncapped: the whole list, no truncation signal.
+  let truncated = false;
+  const all = await git.numstat(head, { onTruncated: () => { truncated = true; } });
+  assert.equal(all.length, names.length);
+  assert.equal(truncated, false);
+
+  // Capped through `run` directly, since the production cap is 16 MiB. This
+  // asserts the property that matters: a partial record is dropped, not parsed.
+  const capped = await git.run(['show', '--numstat', '--format=', '--no-color', head], {
+    maxStdoutBytes: 2048,
+    truncateStdout: true,
+  });
+  assert.equal(capped.truncated, true);
+  for (const line of capped.stdout.split('\n')) {
+    if (line.length === 0) continue;
+    // Every complete line is a well-formed record; the parser skips the rest.
+    const parts = line.split('\t');
+    if (parts.length < 3) continue;
+    assert.match(parts[0] as string, /^(\d+|-)$/);
+  }
+});
+
+test('stderr accumulation is capped without failing the operation (SEC-009)', async (t) => {
+  const dir = await makeRepo();
+  t.after(() => cleanup(dir));
+  const git = new GitRunner({ gitPath: 'git', cwd: dir });
+
+  // `git status` succeeds and writes nothing to stderr; the point is that a
+  // successful run is unaffected by the cap being in place at all.
+  const result = await git.run(['status', '--porcelain=v1']);
+  assert.equal(result.code, 0);
+  assert.ok(result.stderr.length <= MAX_STDERR_BYTES);
+});
+

@@ -46,6 +46,7 @@ export type GitErrorCode =
   | 'GIT_FAILED'
   | 'GIT_TIMEOUT'
   | 'GIT_SPAWN_FAILED'
+  | 'GIT_OUTPUT_TOO_LARGE'
   | 'REPOSITORY_LOCKED'
   | 'VALIDATION_ERROR';
 
@@ -55,6 +56,11 @@ export interface GitResult {
   stdout: string;
   stderr: string;
   code: number;
+  /**
+   * `true` when stdout was cut off at `maxStdoutBytes` because the caller opted
+   * into truncation. Never `true` unless `truncateStdout` was requested.
+   */
+  truncated?: boolean;
 }
 
 export interface RunOptions {
@@ -63,6 +69,20 @@ export interface RunOptions {
   allowedExitCodes?: number[];
   /** Called with each complete stderr line. Git reports progress on stderr. */
   onStderrLine?: (line: string) => void;
+  /**
+   * Stop accumulating stdout past this many bytes. Defaults to
+   * {@link DEFAULT_MAX_STDOUT_BYTES}.
+   */
+  maxStdoutBytes?: number;
+  /**
+   * What to do at the cap. `false` (the default) kills git and rejects with
+   * `GIT_OUTPUT_TOO_LARGE`, because a caller that asked for a file's content
+   * cannot use half of it — a truncated blob would be shown to the user as if it
+   * were the file. `true` resolves with what arrived plus `truncated: true`, which
+   * is only safe where the output is a record-per-line summary the caller already
+   * treats as possibly-partial, e.g. `--numstat`.
+   */
+  truncateStdout?: boolean;
 }
 
 export interface GitRunnerOptions {
@@ -95,6 +115,38 @@ export class GitError extends Error {
 }
 
 const DEFAULT_TIMEOUT_MS = 60_000;
+/**
+ * Cap on accumulated stdout per invocation, 64 MiB.
+ *
+ * Without a cap a single `git show <rev>:<path>` on a multi-gigabyte blob builds
+ * a JS string of that size in the extension host, and V8's ~512 MB string limit
+ * turns it into a hard crash that takes every other extension down with it. 64
+ * MiB is far above any output this extension reads on purpose — the largest is a
+ * `--numstat` for a huge commit — and far below the host's breaking point.
+ */
+export const DEFAULT_MAX_STDOUT_BYTES = 64 * 1024 * 1024;
+/**
+ * Cap on accumulated stderr, 1 MiB. Smaller because stderr carries messages and
+ * progress lines, never content: a megabyte of them is already pathological.
+ * Stderr is always truncated rather than fatal — losing the tail of a progress
+ * log must not fail an otherwise successful push.
+ */
+export const MAX_STDERR_BYTES = 1024 * 1024;
+/**
+ * Cap on a single blob read through {@link GitRunner.showFile} /
+ * {@link GitRunner.showIndexFile}, 5 MiB.
+ *
+ * Matches the diff viewer's own display ceiling, and is enforced at the stream
+ * rather than after the whole blob is already a string in the host. Truncation is
+ * NOT allowed on this path: half a file rendered as if it were the file is worse
+ * than an error.
+ */
+export const MAX_BLOB_BYTES = 5 * 1024 * 1024;
+/**
+ * Cap on one `--numstat` read, 16 MiB — roughly 200 000 file records. Past it the
+ * list is truncated rather than fatal; see {@link GitRunner.numstat}.
+ */
+export const MAX_NUMSTAT_BYTES = 16 * 1024 * 1024;
 
 export class GitRunner {
   private readonly gitPath: string;
@@ -117,6 +169,8 @@ export class GitRunner {
   async run(args: string[], opts: RunOptions = {}): Promise<GitResult> {
     const timeoutMs = opts.timeoutMs ?? DEFAULT_TIMEOUT_MS;
     const allowed = opts.allowedExitCodes ?? [0];
+    const maxStdout = opts.maxStdoutBytes ?? DEFAULT_MAX_STDOUT_BYTES;
+    const truncateStdout = opts.truncateStdout === true;
     this.logger(`git ${args.join(' ')}`);
 
     return new Promise<GitResult>((resolve, reject) => {
@@ -130,6 +184,10 @@ export class GitRunner {
       let stdout = '';
       let stderr = '';
       let timedOut = false;
+      let stdoutBytes = 0;
+      let stderrBytes = 0;
+      /** Set once stdout hit the cap; further chunks are dropped. */
+      let overflowed = false;
 
       const timer = setTimeout(() => {
         timedOut = true;
@@ -140,12 +198,33 @@ export class GitRunner {
       child.stdout.setEncoding('utf8');
       child.stderr.setEncoding('utf8');
       child.stdout.on('data', (chunk: string) => {
+        if (overflowed) return;
+        const bytes = Buffer.byteLength(chunk, 'utf8');
+        if (stdoutBytes + bytes > maxStdout) {
+          overflowed = true;
+          if (truncateStdout) {
+            // Keep the prefix that fits. Sliced on a byte boundary, so the final
+            // character may be cut in half — harmless for the only truncatable
+            // caller, `--numstat`, whose parser discards an incomplete last line.
+            const room = maxStdout - stdoutBytes;
+            if (room > 0) {
+              stdout += Buffer.from(chunk, 'utf8').subarray(0, room).toString('utf8');
+            }
+          }
+          // Kill rather than keep buffering: continuing to accumulate is exactly
+          // the DoS, and the remainder cannot help either caller.
+          child.kill('SIGKILL');
+          return;
+        }
+        stdoutBytes += bytes;
         stdout += chunk;
       });
       // Git writes progress to stderr; forward complete lines as they arrive.
       let stderrPending = '';
       child.stderr.on('data', (chunk: string) => {
-        stderr += chunk;
+        stderrBytes += Buffer.byteLength(chunk, 'utf8');
+        // Keep the head: the first lines carry the reason, the tail is progress.
+        if (stderrBytes <= MAX_STDERR_BYTES) stderr += chunk;
         if (opts.onStderrLine === undefined) return;
         stderrPending += chunk;
         const lines = stderrPending.split(/\r?\n|\r/);
@@ -168,6 +247,23 @@ export class GitRunner {
 
       child.on('close', (code) => {
         clearTimeout(timer);
+        // Overflow is checked before the timeout and the exit code: the SIGKILL
+        // that produced them is our own, so its exit status says nothing.
+        if (overflowed && !truncateStdout) {
+          reject(
+            new GitError({
+              code: 'GIT_OUTPUT_TOO_LARGE',
+              message: `git produced more than ${maxStdout} bytes on stdout`,
+              stderr,
+              args,
+            }),
+          );
+          return;
+        }
+        if (overflowed) {
+          resolve({ stdout, stderr, code: 0, truncated: true });
+          return;
+        }
         if (timedOut) {
           reject(
             new GitError({
@@ -390,6 +486,10 @@ export class GitRunner {
    *
    * Binary content is returned verbatim; the caller decides what to do with NUL
    * bytes because "binary" is a presentation concern, not a git one.
+   *
+   * Capped at {@link MAX_BLOB_BYTES} with truncation refused: a blob past the
+   * ceiling rejects with `GIT_OUTPUT_TOO_LARGE`, which the bridge maps to a 413
+   * the UI already renders. Returning a prefix would misrepresent the file.
    */
   async showFile(rev: string, filePath: string): Promise<string> {
     if (!validateHash(rev) && !validateBranchName(rev)) {
@@ -400,7 +500,9 @@ export class GitRunner {
     }
     // Forward slashes only: `git show` uses git's own path syntax, not the OS's.
     const spec = `${rev}:${filePath.replace(/\\/g, '/')}`;
-    const { stdout } = await this.run(['show', '--no-color', sanitizeRefArg(spec)]);
+    const { stdout } = await this.run(['show', '--no-color', sanitizeRefArg(spec)], {
+      maxStdoutBytes: MAX_BLOB_BYTES,
+    });
     return stdout;
   }
 
@@ -412,7 +514,9 @@ export class GitRunner {
     const spec = `:${filePath.replace(/\\/g, '/')}`;
     // `--` is not accepted after an object spec, and `spec` starts with `:` so
     // it can never be read as an option.
-    const { stdout } = await this.run(['show', '--no-color', spec]);
+    const { stdout } = await this.run(['show', '--no-color', spec], {
+      maxStdoutBytes: MAX_BLOB_BYTES,
+    });
     return stdout;
   }
 
@@ -444,13 +548,30 @@ export class GitRunner {
     return stdout;
   }
 
-  async numstat(hash: string, opts: { firstParent?: boolean } = {}): Promise<ParsedNumstatEntry[]> {
+  /**
+   * Per-file add/delete counts for one commit.
+   *
+   * Truncation IS allowed here, unlike {@link showFile}: the output is one
+   * self-contained record per line, `parseShowStat` drops any partial trailing
+   * line, and a caller that learns the list was cut off can say so. A commit
+   * touching 500 000 files produces tens of megabytes of `--numstat`, and failing
+   * the whole inspector for it would be worse than showing the first pages.
+   * `onTruncated` fires when the cap was hit, so the caller can mark the result.
+   */
+  async numstat(
+    hash: string,
+    opts: { firstParent?: boolean; onTruncated?: () => void } = {},
+  ): Promise<ParsedNumstatEntry[]> {
     this.assertHash(hash);
     const args = ['show', '--numstat', '--format=', '--no-color'];
     // A merge commit has no diff against "the" parent; compare with the first.
     if (opts.firstParent === true) args.push('-m', '--first-parent');
     args.push(sanitizeRefArg(hash));
-    const { stdout } = await this.run(args);
+    const { stdout, truncated } = await this.run(args, {
+      maxStdoutBytes: MAX_NUMSTAT_BYTES,
+      truncateStdout: true,
+    });
+    if (truncated === true && opts.onTruncated !== undefined) opts.onTruncated();
     return parseShowStat(stdout);
   }
 

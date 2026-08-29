@@ -15,7 +15,7 @@
 import { GitError } from './git';
 import { GitHubError } from './github';
 import { SafetyGuard, DEFAULT_STALENESS_MS, type GuardAction, type GuardSnapshot, type GuardVerdict } from './guard';
-import type { Logger } from './logger';
+import { redact, type Logger } from './logger';
 import { parseRemoteUrl, stripCredentials } from './remoteUrl';
 import type { RepositoryService } from './repository';
 import {
@@ -116,6 +116,7 @@ export const BRIDGE_MESSAGES = {
   diffUnavailable: 'Membuka diff tidak tersedia pada host ini.',
   diffBinary: 'Diff teks tidak tersedia untuk file binary.',
   externalBlocked: 'Tautan ini tidak boleh dibuka.',
+  outputTooLarge: 'Keluaran git terlalu besar untuk ditampilkan.',
 } as const;
 
 /** Idempotency record: the outcome only, so it can be re-stamped with a new id. */
@@ -856,9 +857,13 @@ function fromGitError(err: GitError): ErrorBody {
     case 'REPOSITORY_LOCKED':
       return { status: 409, code: 'REPOSITORY_LOCKED', message: BRIDGE_MESSAGES.locked };
     case 'GIT_TIMEOUT':
-      return { status: 504, code: 'UNAVAILABLE', message: BRIDGE_MESSAGES.timeout, detail: err.message };
+      return { status: 504, code: 'UNAVAILABLE', message: BRIDGE_MESSAGES.timeout, detail: redact(err.message) };
     case 'GIT_SPAWN_FAILED':
-      return { status: 503, code: 'UNAVAILABLE', message: BRIDGE_MESSAGES.unavailable, detail: err.message };
+      return { status: 503, code: 'UNAVAILABLE', message: BRIDGE_MESSAGES.unavailable, detail: redact(err.message) };
+    case 'GIT_OUTPUT_TOO_LARGE':
+      // 413: the request was valid, the response is too big to hand over. The UI
+      // renders it through the SERVER_ERROR arm, which already offers Show Logs.
+      return { status: 413, code: 'SERVER_ERROR', message: BRIDGE_MESSAGES.outputTooLarge, detail: redact(err.message) };
     case 'GIT_FAILED':
     default:
       return fromGitFailure(err);
