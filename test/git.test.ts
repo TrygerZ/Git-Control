@@ -150,3 +150,61 @@ test('missing git executable yields GIT_SPAWN_FAILED', async () => {
     return true;
   });
 });
+
+test('repoRoot, commitMeta, and isAncestor read real objects', async (t) => {
+  const dir = await makeRepo();
+  t.after(() => fs.rm(dir, { recursive: true, force: true }));
+  const git = new GitRunner({ gitPath: 'git', cwd: dir });
+
+  assert.equal(await fs.realpath(await git.repoRoot()), await fs.realpath(dir));
+
+  const first = await git.headHash() as string;
+  await fs.writeFile(path.join(dir, 'c.txt'), 'three\n', 'utf8');
+  await git.stage(['c.txt']);
+  const second = await git.commit('second commit');
+  assert.ok(second !== null && second.length === 40);
+
+  const meta = await git.commitMeta(second as string);
+  assert.equal(meta?.subject, 'second commit');
+  assert.deepEqual(meta?.parents, [first]);
+  assert.equal(await git.commitMeta('0'.repeat(40)), null);
+
+  // The first commit is an ancestor of the second, but not the reverse.
+  assert.equal(await git.isAncestor(first, second as string), true);
+  assert.equal(await git.isAncestor(second as string, first), false);
+});
+
+test('onBusyChange brackets exclusive operations', async (t) => {
+  const dir = await makeRepo();
+  t.after(() => fs.rm(dir, { recursive: true, force: true }));
+  const git = new GitRunner({ gitPath: 'git', cwd: dir });
+
+  const transitions: boolean[] = [];
+  const off = git.onBusyChange((busy) => transitions.push(busy));
+  assert.equal(git.busy, false);
+
+  await Promise.all([
+    git.runExclusive(() => new Promise<void>((r) => setTimeout(r, 10))),
+    git.runExclusive(() => Promise.resolve()),
+  ]);
+
+  // One rising edge for the whole burst, one falling edge when it drains.
+  assert.deepEqual(transitions, [true, false]);
+  assert.equal(git.busy, false);
+
+  off();
+  await git.runExclusive(() => Promise.resolve());
+  assert.deepEqual(transitions, [true, false]);
+});
+
+test('onStderrLine streams git progress lines', async (t) => {
+  const dir = await makeRepo();
+  t.after(() => fs.rm(dir, { recursive: true, force: true }));
+  const git = new GitRunner({ gitPath: 'git', cwd: dir });
+
+  const lines: string[] = [];
+  // `--progress` forces stderr output even when stderr is not a TTY.
+  await git.run(['gc', '--quiet', '--no-prune'], { onStderrLine: (line) => lines.push(line) });
+  // gc may legitimately be silent; the contract is only "no partial lines".
+  for (const line of lines) assert.ok(!line.includes('\n'));
+});

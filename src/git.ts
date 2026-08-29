@@ -60,6 +60,8 @@ export interface RunOptions {
   input?: string;
   timeoutMs?: number;
   allowedExitCodes?: number[];
+  /** Called with each complete stderr line. Git reports progress on stderr. */
+  onStderrLine?: (line: string) => void;
 }
 
 export interface GitRunnerOptions {
@@ -100,6 +102,9 @@ export class GitRunner {
   /** Promise chain acting as a mutex so only one mutation runs at a time. */
   private mutationQueue: Promise<unknown> = Promise.resolve();
   private gitDirCache: string | undefined;
+  /** Number of queued-or-running exclusive operations. */
+  private pending = 0;
+  private readonly busyListeners = new Set<(busy: boolean) => void>();
 
   constructor(options: GitRunnerOptions) {
     this.gitPath = options.gitPath.length > 0 ? options.gitPath : 'git';
@@ -136,8 +141,17 @@ export class GitRunner {
       child.stdout.on('data', (chunk: string) => {
         stdout += chunk;
       });
+      // Git writes progress to stderr; forward complete lines as they arrive.
+      let stderrPending = '';
       child.stderr.on('data', (chunk: string) => {
         stderr += chunk;
+        if (opts.onStderrLine === undefined) return;
+        stderrPending += chunk;
+        const lines = stderrPending.split(/\r?\n|\r/);
+        stderrPending = lines.pop() ?? '';
+        for (const line of lines) {
+          if (line.trim().length > 0) opts.onStderrLine(line.trim());
+        }
       });
 
       child.on('error', (err) => {
@@ -193,13 +207,50 @@ export class GitRunner {
    * prevents concurrent index writes and the `index.lock` races they cause.
    */
   async runExclusive<T>(fn: () => Promise<T>): Promise<T> {
+    this.enter();
     const run = this.mutationQueue.then(
       () => this.assertNotLocked().then(fn),
       () => this.assertNotLocked().then(fn),
     );
     // Keep the chain alive even when a mutation rejects.
     this.mutationQueue = run.catch(() => undefined);
-    return run;
+    return run.finally(() => this.leave());
+  }
+
+  /**
+   * Observe whether any exclusive operation is queued or running. The watcher
+   * uses this to suppress file-system events caused by our own mutations.
+   * @returns unsubscribe function
+   */
+  onBusyChange(listener: (busy: boolean) => void): () => void {
+    this.busyListeners.add(listener);
+    return () => {
+      this.busyListeners.delete(listener);
+    };
+  }
+
+  get busy(): boolean {
+    return this.pending > 0;
+  }
+
+  private enter(): void {
+    this.pending += 1;
+    if (this.pending === 1) this.emitBusy(true);
+  }
+
+  private leave(): void {
+    this.pending -= 1;
+    if (this.pending === 0) this.emitBusy(false);
+  }
+
+  private emitBusy(busy: boolean): void {
+    for (const listener of this.busyListeners) {
+      try {
+        listener(busy);
+      } catch {
+        // A misbehaving listener must not break the mutation queue.
+      }
+    }
   }
 
   /** Throw REPOSITORY_LOCKED when another git process holds the index. */
@@ -231,6 +282,36 @@ export class GitRunner {
     } catch {
       return false;
     }
+  }
+
+  /** Absolute working-tree root. Differs from `cwd` when opened on a subfolder. */
+  async repoRoot(): Promise<string> {
+    const { stdout } = await this.run(['rev-parse', '--show-toplevel']);
+    return stdout.trim();
+  }
+
+  /** Full metadata for one commit, or `null` when the object is unknown. */
+  async commitMeta(hash: string): Promise<ParsedCommit | null> {
+    this.assertHash(hash);
+    const { stdout, code } = await this.run(
+      ['log', LOG_FORMAT, '--max-count=1', sanitizeRefArg(hash)],
+      { allowedExitCodes: [0, 128] },
+    );
+    if (code !== 0) return null;
+    return parseLog(stdout)[0] ?? null;
+  }
+
+  /** True when `ancestor` is reachable from `descendant` (i.e. fast-forwardable). */
+  async isAncestor(ancestor: string, descendant: string): Promise<boolean> {
+    this.assertHash(ancestor);
+    if (!validateHash(descendant) && !validateBranchName(descendant)) {
+      throw new GitError({ code: 'VALIDATION_ERROR', message: `Invalid ref: ${descendant}` });
+    }
+    const { code } = await this.run(
+      ['merge-base', '--is-ancestor', sanitizeRefArg(ancestor), sanitizeRefArg(descendant)],
+      { allowedExitCodes: [0, 1] },
+    );
+    return code === 0;
   }
 
   async version(): Promise<string> {
@@ -319,15 +400,13 @@ export class GitRunner {
     return stdout;
   }
 
-  async numstat(hash: string): Promise<ParsedNumstatEntry[]> {
+  async numstat(hash: string, opts: { firstParent?: boolean } = {}): Promise<ParsedNumstatEntry[]> {
     this.assertHash(hash);
-    const { stdout } = await this.run([
-      'show',
-      '--numstat',
-      '--format=',
-      '--no-color',
-      sanitizeRefArg(hash),
-    ]);
+    const args = ['show', '--numstat', '--format=', '--no-color'];
+    // A merge commit has no diff against "the" parent; compare with the first.
+    if (opts.firstParent === true) args.push('-m', '--first-parent');
+    args.push(sanitizeRefArg(hash));
+    const { stdout } = await this.run(args);
     return parseShowStat(stdout);
   }
 
@@ -360,8 +439,11 @@ export class GitRunner {
     await this.runExclusive(() => this.run(['restore', '--staged', '--', ...safe]));
   }
 
-  /** Message goes over stdin via `-F -`, never as an argv string. */
-  async commit(message: string, opts: { amend?: boolean } = {}): Promise<void> {
+  /**
+   * Message goes over stdin via `-F -`, never as an argv string.
+   * @returns the new HEAD hash, or `null` if HEAD could not be read back.
+   */
+  async commit(message: string, opts: { amend?: boolean } = {}): Promise<string | null> {
     const check = validateCommitMessage(message);
     if (!check.ok) {
       throw new GitError({ code: 'VALIDATION_ERROR', message: check.message ?? 'Invalid commit message.' });
@@ -369,13 +451,19 @@ export class GitRunner {
     const args = ['commit', '-F', '-'];
     if (opts.amend === true) args.push('--amend');
     await this.runExclusive(() => this.run(args, { input: check.message }));
+    return this.headHash();
   }
 
   /**
    * Push without force. A refspec starting with `+` requests a force update and
    * is rejected here, so this method can never rewrite published history.
    */
-  async push(opts: { remote: string; refspec: string; setUpstream?: boolean }): Promise<void> {
+  async push(opts: {
+    remote: string;
+    refspec: string;
+    setUpstream?: boolean;
+    onProgress?: (line: string) => void;
+  }): Promise<void> {
     if (!validateRemoteName(opts.remote)) {
       throw new GitError({ code: 'VALIDATION_ERROR', message: `Invalid remote name: ${opts.remote}` });
     }
@@ -389,10 +477,17 @@ export class GitRunner {
     const args = ['push'];
     if (opts.setUpstream === true) args.push('--set-upstream');
     args.push(sanitizeRefArg(opts.remote), sanitizeRefArg(opts.refspec));
-    await this.runExclusive(() => this.run(args, { timeoutMs: 120_000 }));
+    await this.runExclusive(() =>
+      this.run(args, {
+        timeoutMs: 120_000,
+        ...(opts.onProgress === undefined ? {} : { onStderrLine: opts.onProgress }),
+      }),
+    );
   }
 
-  async fetch(opts: { remote?: string; prune?: boolean } = {}): Promise<void> {
+  async fetch(
+    opts: { remote?: string; prune?: boolean; onProgress?: (line: string) => void } = {},
+  ): Promise<void> {
     const args = ['fetch'];
     if (opts.prune === true) args.push('--prune');
     if (opts.remote !== undefined) {
@@ -403,7 +498,12 @@ export class GitRunner {
     } else {
       args.push('--all');
     }
-    await this.runExclusive(() => this.run(args, { timeoutMs: 120_000 }));
+    await this.runExclusive(() =>
+      this.run(args, {
+        timeoutMs: 120_000,
+        ...(opts.onProgress === undefined ? {} : { onStderrLine: opts.onProgress }),
+      }),
+    );
   }
 
   async switchBranch(name: string): Promise<void> {
