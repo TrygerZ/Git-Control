@@ -772,3 +772,65 @@ test('a GitHubError maps to its own status and code', () => {
   assert.equal(limited.code, 'RATE_LIMITED');
   assert.equal(limited.detail, 'resetAt=1700000600000');
 });
+
+// ------------------------------------------------------------------- SEC-012
+
+test('git stderr is redacted before it crosses into the webview (SEC-012)', () => {
+  const token = 'ghp_secret0123456789abcdefgh';
+  // Hook rejection: `detail` is the whole point of this arm.
+  const hook = toErrorBody(
+    new GitError({
+      code: 'GIT_FAILED',
+      message: 'failed',
+      exitCode: 1,
+      stderr: `pre-push hook declined\nremote: https://x-access-token:${token}@github.com/o/r.git`,
+    }),
+  );
+  assert.equal(hook.code, 'HOOK_REJECTED');
+  assert.ok(hook.detail !== undefined);
+  assert.ok(!hook.detail.includes(token), 'the token must not reach the webview');
+  assert.ok(hook.detail.includes('[redacted]'));
+  // The useful part of the hook message survives.
+  assert.ok(hook.detail.includes('pre-push hook declined'));
+
+  // Non-fast-forward.
+  const nonFf = toErrorBody(
+    new GitError({
+      code: 'GIT_FAILED',
+      message: 'failed',
+      exitCode: 1,
+      stderr: `! [rejected] main -> main (non-fast-forward)\nurl: https://user:${token}@github.com/o/r`,
+    }),
+  );
+  assert.equal(nonFf.code, 'NON_FAST_FORWARD');
+  assert.ok(nonFf.detail !== undefined && !nonFf.detail.includes(token));
+
+  // Generic 500, where both `message` and `detail` come from git.
+  const generic = toErrorBody(
+    new GitError({
+      code: 'GIT_FAILED',
+      message: `fatal: unable to access https://user:${token}@github.com/o/r`,
+      exitCode: 128,
+      stderr: `fatal: unable to access https://user:${token}@github.com/o/r`,
+    }),
+  );
+  assert.equal(generic.code, 'SERVER_ERROR');
+  assert.ok(!generic.message.includes(token), 'message is redacted too');
+  assert.ok(generic.detail !== undefined && !generic.detail.includes(token));
+
+  // Timeout and spawn failures carry `err.message`, which can hold a URL.
+  for (const code of ['GIT_TIMEOUT', 'GIT_SPAWN_FAILED', 'VALIDATION_ERROR'] as const) {
+    const body = toErrorBody(
+      new GitError({ code, message: `boom https://user:${token}@github.com/o/r` }),
+    );
+    assert.ok(body.detail !== undefined && !body.detail.includes(token), code);
+  }
+});
+
+test('a fine-grained PAT in stderr is redacted on the webview path too (SEC-012)', () => {
+  const token = 'github_pat_11ABCDEFG0aBcDeFgHiJk_ZZZZZZZZZZZZZZZZZZ';
+  const body = toErrorBody(
+    new GitError({ code: 'GIT_FAILED', message: 'failed', exitCode: 1, stderr: `sent Bearer ${token}` }),
+  );
+  assert.ok(body.detail !== undefined && !body.detail.includes(token));
+});

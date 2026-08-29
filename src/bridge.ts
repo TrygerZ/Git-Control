@@ -928,7 +928,7 @@ function fromGitHubError(err: GitHubError): ErrorBody {
 function fromGitError(err: GitError): ErrorBody {
   switch (err.code) {
     case 'VALIDATION_ERROR':
-      return { status: 400, code: 'VALIDATION_ERROR', message: BRIDGE_MESSAGES.invalid, detail: err.message };
+      return { status: 400, code: 'VALIDATION_ERROR', message: BRIDGE_MESSAGES.invalid, detail: redact(err.message) };
     case 'REPOSITORY_LOCKED':
       return { status: 409, code: 'REPOSITORY_LOCKED', message: BRIDGE_MESSAGES.locked };
     case 'GIT_TIMEOUT':
@@ -951,9 +951,14 @@ const NON_FF_MARKERS = [/non-fast-forward/i, /fetch first/i, /\[rejected\]/i, /b
 /**
  * Classify a generic git failure from stderr. Hook output is surfaced verbatim
  * in `detail` because it is the only place the reason lives.
+ *
+ * Redacted on the way out. The same stderr is already redacted en route to the
+ * output channel via `formatRecord`, so leaving this path raw meant the log was
+ * clean while the webview DTO was not — and `detail` is what users screenshot
+ * into bug reports. Git's own credential helpers do echo URLs on failure.
  */
 function fromGitFailure(err: GitError): ErrorBody {
-  const stderr = err.stderr.length > 0 ? err.stderr : err.message;
+  const stderr = redact(err.stderr.length > 0 ? err.stderr : err.message);
   if (HOOK_MARKERS.some((m) => m.test(stderr))) {
     return {
       status: 409,
@@ -971,7 +976,7 @@ function fromGitFailure(err: GitError): ErrorBody {
       remedies: ['fetch'],
     };
   }
-  return { status: 500, code: 'SERVER_ERROR', message: err.message, detail: stderr.trim() };
+  return { status: 500, code: 'SERVER_ERROR', message: redact(err.message), detail: stderr.trim() };
 }
 
 function messageOf(err: unknown): string {
