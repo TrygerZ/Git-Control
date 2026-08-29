@@ -564,10 +564,21 @@ export class MessageBridge {
     };
   }
 
+  /**
+   * Run one git action.
+   *
+   * Freshness is enforced the same way stage and commit enforce it: when the
+   * request carries a `statusToken` it must match the status the host reads now,
+   * otherwise 409. `actions/git` is where the destructive actions live, so it
+   * needed this more than the two paths that already had it.
+   *
+   * `reset-hard` additionally re-evaluates the guard INSIDE the exclusive lock —
+   * see {@link narrowedResetHard}.
+   */
   private async handleGitAction(payload: GitActionPayload, operationId: string): Promise<ActionResult> {
     validateAction(payload);
     const repo = await this.repository();
-    const status = await repo.status();
+    const status = await this.assertToken(repo, payload.statusToken);
     this.gate(payload as GuardAction, status, payload);
 
     // `push-up-to` must be fast-forward; the remedy is fetch, never force.
@@ -598,7 +609,7 @@ export class MessageBridge {
   /** Run one git action. Mutation dispatch lives here, not in the guard. */
   private async execute(
     repo: RepositoryService,
-    action: GitActionRequest,
+    action: GitActionPayload,
     operationId: string,
   ): Promise<void> {
     const git = repo.git;
@@ -618,7 +629,7 @@ export class MessageBridge {
       case 'reset-soft':
         return git.resetSoft(action.hash);
       case 'reset-hard':
-        return git.resetHard(action.hash);
+        return this.narrowedResetHard(repo, action.hash, action as GitActionPayload);
       case 'push':
         return git.push({
           remote: action.remote,
@@ -656,7 +667,40 @@ export class MessageBridge {
     }
   }
 
-  /** Wrap a mutation with progress events, cache invalidation, and a notify. */
+  /**
+   * `reset --hard` with the guard re-evaluated inside the exclusive lock.
+   *
+   * The ordinary sequence is: read status → guard → take the lock → run git. That
+   * leaves a window in which an external process — a terminal, another extension,
+   * a plain editor save — can dirty the tree after the guard concluded it was
+   * clean, and `reset --hard` would then discard work the guard believed absent.
+   *
+   * `precheck` runs after the lock is held and immediately before git, which is the
+   * narrowest point the architecture allows: it invalidates the status cache, reads
+   * the tree again, and re-applies the guard. Anything it rejects surfaces as the
+   * guard's own error rather than as lost work.
+   *
+   * What remains: `precheck` still spawns `git status`, so between that read
+   * returning and `git reset --hard` starting there is a window of one process
+   * spawn. It cannot be closed from here — the lock is this extension's, not the
+   * filesystem's, and only git's own index lock is shared. `assertNotLocked` covers
+   * a concurrent git; it does not cover an editor writing a file.
+   */
+  private async narrowedResetHard(
+    repo: RepositoryService,
+    hash: string,
+    meta: GitActionPayload,
+  ): Promise<void> {
+    await repo.git.resetHard(hash, {
+      precheck: async () => {
+        repo.invalidate();
+        const fresh = await repo.status();
+        this.gate({ action: 'reset-hard', hash }, fresh, meta);
+      },
+    });
+  }
+
+
   private async run(
     repo: RepositoryService,
     operationId: string,
@@ -755,8 +799,15 @@ export class MessageBridge {
     return repo;
   }
 
-  /** Reject a mutation computed against a status snapshot that has moved on. */
-  private async assertToken(repo: RepositoryService, token: string): Promise<RepoStatus> {
+  /**
+   * Reject a mutation computed against a status snapshot that has moved on.
+   *
+   * An absent or empty token means "the caller has no snapshot to compare", which
+   * is accepted: `actions/git` made the field optional for compatibility, and a
+   * host-initiated action has no webview snapshot at all. A token that is present
+   * and different is always a conflict.
+   */
+  private async assertToken(repo: RepositoryService, token: string | undefined): Promise<RepoStatus> {
     const status = await repo.status();
     if (typeof token === 'string' && token.length > 0 && token !== status.statusToken) {
       fail(409, 'CONFLICT', BRIDGE_MESSAGES.staleToken, { remedies: ['cancel'] });

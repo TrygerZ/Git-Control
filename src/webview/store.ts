@@ -298,12 +298,13 @@ export const useChangesStore = create<ChangesState>((set, get) => ({
     const ops = useOperationStore.getState();
     try {
       const token = await freshToken();
+      // `statusToken` rides in the meta, not the payload: it is part of
+      // `MutationMeta` now that every mutation kind honours it.
       const handle = mutation('actions/commit', {
         message,
         push: get().pushAfterCommit,
-        statusToken: token,
       });
-      const result: CommitResult = await handle.send();
+      const result: CommitResult = await handle.send({ statusToken: token });
       set({ busy: false, commitMessage: '', selection: new Set<string>() });
       saveState({ commitMessage: '', selectedPaths: [] });
       if (get().pushAfterCommit && !result.pushed) {
@@ -314,7 +315,10 @@ export const useChangesStore = create<ChangesState>((set, get) => ({
         });
         set({
           retryPush: async () => {
-            await handle.send();
+            // Same key AND the same token as the original attempt: within the
+            // host's idempotency window this replays the stored outcome, and past
+            // it the now-stale token turns a would-be second commit into a 409.
+            await handle.send({ statusToken: token });
           },
         });
       } else {
@@ -345,7 +349,7 @@ async function runStage(
   set({ busy: true });
   try {
     const token = await freshToken();
-    await mutation('actions/stage', { paths, stage, statusToken: token }).send();
+    await mutation('actions/stage', { paths, stage }).send({ statusToken: token });
     set({ busy: false });
     await get().load();
     await useRepoStore.getState().loadStatus();
@@ -400,12 +404,19 @@ export const useOperationStore = create<OperationState_>((set, get) => ({
    * Run a git action. A guard rejection is not an error state: it parks the
    * request in `pendingGuard` so `GuardDialog` can offer the remedies and then
    * replay the SAME mutation with `confirm: true`.
+   *
+   * Every send — including a confirmation retry — carries a freshly read
+   * `statusToken`, so the host can reject an action computed against a repository
+   * that has since moved. The token is deliberately re-read per attempt rather
+   * than captured once: the user reads the dialog, thinks, and clicks Confirm, and
+   * the request that lands must be judged against the tree as it is then.
    */
   async runAction(request) {
     set({ state: 'loading', lastError: null });
     const handle = mutation('actions/git', request);
     const send = async (extra: Partial<MutationMeta>): Promise<boolean> => {
-      const result = await handle.send(extra);
+      const statusToken = await freshToken();
+      const result = await handle.send({ statusToken, ...extra });
       set({ state: 'success', pendingGuard: null });
       await useRepoStore.getState().refresh();
       await useChangesStore.getState().load();

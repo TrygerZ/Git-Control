@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import * as fs from 'node:fs/promises';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { GitError, GitRunner } from '../src/git';
+import { GitError, GitRunner, MAX_STDERR_BYTES } from '../src/git';
 import { cleanup, makeFixture } from './repoFixture';
 
 /** Throwaway repository with one commit. Copied from a per-process template. */

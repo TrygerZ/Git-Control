@@ -773,6 +773,128 @@ test('a GitHubError maps to its own status and code', () => {
   assert.equal(limited.detail, 'resetAt=1700000600000');
 });
 
+// ------------------------------------------------------------------- SEC-008
+
+test('actions/git rejects a stale statusToken with 409, like stage and commit (SEC-008)', async (t) => {
+  const dir = await makeRepo();
+  t.after(() => cleanup(dir));
+  const repo = new RepositoryService({ folderPath: dir, gitPath: 'git', store: new MemoryStore() });
+  const head = (await repo.status()).head as string;
+  const h = harness(repo);
+  t.after(() => h.bridge.dispose());
+
+  const stale = await h.webview.send(
+    req('actions/git', {
+      action: 'reset-soft',
+      hash: head,
+      confirm: true,
+      statusToken: 'deadbeefdeadbeef',
+      idempotencyKey: 'st-1',
+    }),
+  );
+  assert.equal(stale.ok, false);
+  if (stale.ok) return;
+  assert.equal(stale.error.status, 409);
+  assert.equal(stale.error.code, 'CONFLICT');
+  assert.equal(stale.error.message, BRIDGE_MESSAGES.staleToken);
+
+  // The mutation did not run: HEAD is unchanged.
+  assert.equal((await repo.status()).head, head);
+
+  // The matching token is accepted.
+  repo.invalidate();
+  const fresh = (await repo.status()).statusToken;
+  const ok = await h.webview.send(
+    req('actions/git', {
+      action: 'reset-soft',
+      hash: head,
+      confirm: true,
+      statusToken: fresh,
+      idempotencyKey: 'st-2',
+    }),
+  );
+  assert.equal(ok.ok, true);
+});
+
+test('actions/git still accepts an absent statusToken for compatibility (SEC-008)', async (t) => {
+  const dir = await makeRepo();
+  t.after(() => cleanup(dir));
+  const repo = new RepositoryService({ folderPath: dir, gitPath: 'git', store: new MemoryStore() });
+  const h = harness(repo);
+  t.after(() => h.bridge.dispose());
+
+  const response = await h.webview.send(req('actions/git', { action: 'fetch', idempotencyKey: 'st-3' }));
+  assert.equal(response.ok, true, 'no token means "no snapshot to compare", not a rejection');
+});
+
+test('reset-hard re-evaluates the guard inside the exclusive lock (SEC-008)', async (t) => {
+  const dir = await makeRepo();
+  t.after(() => cleanup(dir));
+  const repo = new RepositoryService({ folderPath: dir, gitPath: 'git', store: new MemoryStore() });
+  const head = (await repo.status()).head as string;
+  const h = harness(repo);
+  t.after(() => h.bridge.dispose());
+
+  // Dirty the tree AFTER the outer guard has seen a clean status, by hooking the
+  // point where the lock is already held. This is exactly the TOCTOU the finding
+  // describes: an external process writing between the check and the mutation.
+  let resets = 0;
+  const realRun = repo.git.run.bind(repo.git);
+  repo.git.run = async (args, opts) => {
+    if (args[0] === 'reset') resets += 1;
+    return realRun(args, opts);
+  };
+  const realResetHard = repo.git.resetHard.bind(repo.git);
+  repo.git.resetHard = (hash, opts = {}) =>
+    realResetHard(hash, {
+      precheck: async () => {
+        // Simulate the external writer. `precheck` runs after this, inside the
+        // lock, and must see the file.
+        await fs.writeFile(path.join(dir, 'raced.txt'), 'x\n', 'utf8');
+        if (opts.precheck !== undefined) await opts.precheck();
+      },
+    });
+
+  const response = await h.webview.send(
+    req('actions/git', {
+      action: 'reset-hard',
+      hash: head,
+      confirm: true,
+      forceAcknowledgement: true,
+      idempotencyKey: 'race-1',
+    }),
+  );
+
+  // The in-lock re-check saw the dirty tree and refused. Without it `git reset
+  // --hard` would have run and discarded `raced.txt`.
+  assert.equal(response.ok, false, 'the in-lock guard must reject a tree dirtied after the outer check');
+  if (response.ok) return;
+  assert.equal(response.error.code, 'DIRTY_TREE');
+  assert.equal(resets, 0, 'git reset never ran');
+  // The work the guard protected is still there.
+  assert.equal(await fs.readFile(path.join(dir, 'raced.txt'), 'utf8'), 'x\n');
+});
+
+test('reset-hard still succeeds when nothing changes under the lock (SEC-008)', async (t) => {
+  const dir = await makeRepo();
+  t.after(() => cleanup(dir));
+  const repo = new RepositoryService({ folderPath: dir, gitPath: 'git', store: new MemoryStore() });
+  const head = (await repo.status()).head as string;
+  const h = harness(repo);
+  t.after(() => h.bridge.dispose());
+
+  const response = await h.webview.send(
+    req('actions/git', {
+      action: 'reset-hard',
+      hash: head,
+      confirm: true,
+      forceAcknowledgement: true,
+      idempotencyKey: 'race-2',
+    }),
+  );
+  assert.equal(response.ok, true, 'the added re-check must not break the ordinary path');
+});
+
 // ------------------------------------------------------------------- SEC-012
 
 test('git stderr is redacted before it crosses into the webview (SEC-012)', () => {

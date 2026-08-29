@@ -302,13 +302,25 @@ export class GitRunner {
   /**
    * Serialize a mutating operation. Only one runs at a time per runner, which
    * prevents concurrent index writes and the `index.lock` races they cause.
+   *
+   * `precheck` runs after the lock is held and after the `index.lock` assertion,
+   * immediately before `fn`. That is the only place a check and its mutation share
+   * the lock, so it is where a guard decision has to be re-made if it must hold at
+   * the moment git runs rather than at the moment the request arrived. Throwing
+   * from `precheck` aborts the operation without running `fn`.
+   *
+   * `precheck` must not itself call `runExclusive`: the lock is a promise chain, so
+   * a nested acquisition waits on the operation that holds it and deadlocks. Reads
+   * are safe — they never take the lock.
    */
-  async runExclusive<T>(fn: () => Promise<T>): Promise<T> {
+  async runExclusive<T>(fn: () => Promise<T>, opts: { precheck?: () => Promise<void> } = {}): Promise<T> {
     this.enter();
-    const run = this.mutationQueue.then(
-      () => this.assertNotLocked().then(fn),
-      () => this.assertNotLocked().then(fn),
-    );
+    const guarded = async (): Promise<T> => {
+      await this.assertNotLocked();
+      if (opts.precheck !== undefined) await opts.precheck();
+      return fn();
+    };
+    const run = this.mutationQueue.then(guarded, guarded);
     // Keep the chain alive even when a mutation rejects.
     this.mutationQueue = run.catch(() => undefined);
     return run.finally(() => this.leave());
@@ -709,9 +721,18 @@ export class GitRunner {
     await this.runExclusive(() => this.run(['reset', '--soft', sanitizeRefArg(hash)]));
   }
 
-  async resetHard(hash: string): Promise<void> {
+  /**
+   * `git reset --hard`. Discards work permanently, so the caller may pass
+   * `precheck` to re-verify its preconditions inside the exclusive lock: for every
+   * other action a check made just before the lock is close enough, but here the
+   * thing being discarded is the user's uncommitted work.
+   */
+  async resetHard(hash: string, opts: { precheck?: () => Promise<void> } = {}): Promise<void> {
     this.assertHash(hash);
-    await this.runExclusive(() => this.run(['reset', '--hard', sanitizeRefArg(hash)]));
+    await this.runExclusive(
+      () => this.run(['reset', '--hard', sanitizeRefArg(hash)]),
+      opts.precheck === undefined ? {} : { precheck: opts.precheck },
+    );
   }
 
   async stashPush(message: string, opts: { includeUntracked?: boolean } = {}): Promise<void> {

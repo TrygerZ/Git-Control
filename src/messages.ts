@@ -202,6 +202,16 @@ export interface MutationMeta {
   idempotencyKey: string;
   confirm?: boolean;
   forceAcknowledgement?: boolean;
+  /**
+   * Status fingerprint the action was computed against.
+   *
+   * Optional so a caller that has no snapshot to speak of can still act, but when
+   * present the host rejects a mismatch with 409 — exactly as `actions/stage` and
+   * `actions/commit` already do through their required `statusToken`. The webview
+   * always supplies it, including on a guard-confirmation retry, so confirming a
+   * dialog cannot act on the repository the user saw a minute ago.
+   */
+  statusToken?: string;
 }
 
 export interface StatusPayload {
