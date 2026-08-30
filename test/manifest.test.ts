@@ -123,7 +123,7 @@ test('@types/vscode matches engines.vscode major/minor', () => {
 
 test('.vscodeignore excludes source, tests, maps, dependencies, and markdown', () => {
   const ignore = fs.readFileSync(path.join(__dirname, '..', '..', '.vscodeignore'), 'utf8');
-  for (const pattern of ['src/**', 'test/**', '**/*.map', 'node_modules/**', '*.md']) {
+  for (const pattern of ['src/**', 'test/**', '**/*.map', 'node_modules/**', '**/*.md']) {
     assert.match(ignore, new RegExp(`^${pattern.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'm'), pattern);
   }
 });

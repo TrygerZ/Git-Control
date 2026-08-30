@@ -10,7 +10,7 @@
 
 # Internal, never published.
 PRD_Git_Control.md
-*.md
+**/*.md
 .env
 .env.*
 
