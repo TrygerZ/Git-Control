@@ -11,6 +11,7 @@ import {
   baseName,
   formatCount,
   relativeTime,
+  sanitizeGitText,
   shortHash,
 } from './format';
 import { bridge } from './bridge';
@@ -161,7 +162,7 @@ export function Inspector({ hash }: Props): JSX.Element {
   return (
     <div className="gc-inspector" aria-label="Detail commit">
       <header className="gc-inspector__head">
-        <h2 className="gc-inspector__subject">{detail.subject}</h2>
+        <h2 className="gc-inspector__subject">{sanitizeGitText(detail.subject)}</h2>
         <div className="gc-inspector__hashes">
           <code>{detail.shortHash}</code>
           <button
@@ -195,7 +196,7 @@ export function Inspector({ hash }: Props): JSX.Element {
       <dl className="gc-inspector__meta">
         <dt>Penulis</dt>
         <dd>
-          {detail.authorName} &lt;{detail.authorEmail}&gt;
+          {sanitizeGitText(detail.authorName)} &lt;{sanitizeGitText(detail.authorEmail)}&gt;
         </dd>
         <dt>Ditulis</dt>
         <dd>
@@ -204,7 +205,8 @@ export function Inspector({ hash }: Props): JSX.Element {
         <dt>Di-commit</dt>
         <dd>
           {absoluteTime(detail.committedAt)} · {relativeTime(detail.committedAt)}
-          {detail.committerName !== detail.authorName && ` oleh ${detail.committerName}`}
+          {detail.committerName !== detail.authorName &&
+            ` oleh ${sanitizeGitText(detail.committerName)}`}
         </dd>
         <dt>Induk</dt>
         <dd>
@@ -226,13 +228,15 @@ export function Inspector({ hash }: Props): JSX.Element {
         <ul className="gc-inspector__refs" aria-label="Ref pada commit ini">
           {detail.refNames.map((ref) => (
             <li key={ref} className="gc-chip gc-chip--local">
-              {ref}
+              {sanitizeGitText(ref)}
             </li>
           ))}
         </ul>
       )}
 
-      {detail.body.trim().length > 0 && <pre className="gc-inspector__body">{detail.body.trim()}</pre>}
+      {detail.body.trim().length > 0 && (
+        <pre className="gc-inspector__body">{sanitizeGitText(detail.body.trim())}</pre>
+      )}
 
       {detail.parents.length > 1 && (
         <label className="gc-field">
@@ -286,32 +290,39 @@ export function Inspector({ hash }: Props): JSX.Element {
         <EmptyState title="Commit ini tidak mengubah file." />
       ) : (
         <ul className="gc-filelist" aria-label="File yang berubah">
-          {detail.files.map((file) => (
-            <li key={file.path} className="gc-filelist__item">
-              <button
-                type="button"
-                className="gc-filelist__button"
-                onClick={() => void openDiff(file)}
-                disabled={opening === file.path}
-              >
-                <span className="gc-filelist__name" title={file.path}>
-                  {file.origPath !== undefined ? `${file.origPath} → ${baseName(file.path)}` : baseName(file.path)}
-                </span>
-                <span className="gc-filelist__dir">{file.path}</span>
-                {file.binary ? (
-                  <span className="gc-filelist__binary">
-                    Diff teks tidak tersedia untuk file binary.
+          {detail.files.map((file) => {
+            // Paths come from git; sanitise once so the title and the two visible
+            // spans cannot disagree. `baseName` sanitises internally too.
+            const safePath = sanitizeGitText(file.path);
+            return (
+              <li key={file.path} className="gc-filelist__item">
+                <button
+                  type="button"
+                  className="gc-filelist__button"
+                  onClick={() => void openDiff(file)}
+                  disabled={opening === file.path}
+                >
+                  <span className="gc-filelist__name" title={safePath}>
+                    {file.origPath !== undefined
+                      ? `${sanitizeGitText(file.origPath)} → ${baseName(file.path)}`
+                      : baseName(file.path)}
                   </span>
-                ) : (
-                  <span className="gc-filelist__stats">
-                    <span className="gc-stat gc-stat--add">+{file.additions ?? 0}</span>
-                    <span className="gc-stat gc-stat--del">−{file.deletions ?? 0}</span>
-                  </span>
-                )}
-              </button>
-              {opening === file.path && <Spinner label="Membuka diff…" />}
-            </li>
-          ))}
+                  <span className="gc-filelist__dir">{safePath}</span>
+                  {file.binary ? (
+                    <span className="gc-filelist__binary">
+                      Diff teks tidak tersedia untuk file binary.
+                    </span>
+                  ) : (
+                    <span className="gc-filelist__stats">
+                      <span className="gc-stat gc-stat--add">+{file.additions ?? 0}</span>
+                      <span className="gc-stat gc-stat--del">−{file.deletions ?? 0}</span>
+                    </span>
+                  )}
+                </button>
+                {opening === file.path && <Spinner label="Membuka diff…" />}
+              </li>
+            );
+          })}
         </ul>
       )}
 

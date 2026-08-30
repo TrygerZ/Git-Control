@@ -3,7 +3,7 @@
  * Kept in one file because none of them own state worth isolating.
  */
 import { Component, type ErrorInfo, type JSX, type ReactNode } from 'react';
-import { presentError, remedyLabel } from './format';
+import { presentError, remedyLabel, sanitizeGitText } from './format';
 import type { ErrorBody } from '../messages';
 
 // ------------------------------------------------------------------ skeleton
@@ -102,7 +102,10 @@ export function ErrorBanner({
       <div className="gc-banner__body">
         <strong>{view.title}</strong>
         <span>{view.explanation}</span>
-        {error.detail !== undefined && <code className="gc-banner__detail">{error.detail}</code>}
+        {/* `detail` carries git stderr, including hook output. */}
+        {error.detail !== undefined && (
+          <code className="gc-banner__detail">{sanitizeGitText(error.detail)}</code>
+        )}
       </div>
       <div className="gc-banner__actions">
         {onRemedy !== undefined &&
@@ -180,7 +183,7 @@ export class ErrorBoundary extends Component<{ children: ReactNode }, BoundarySt
     return (
       <div className="gc-crash" role="alert">
         <p className="gc-crash__title">UI gagal dimuat</p>
-        <p className="gc-crash__detail">{error.message}</p>
+        <p className="gc-crash__detail">{sanitizeGitText(error.message)}</p>
         <p className="gc-crash__id">ID kesalahan: {errorId}</p>
         <button type="button" className="gc-button gc-button--primary" onClick={this.reload}>
           Muat ulang

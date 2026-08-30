@@ -7,7 +7,7 @@
  * button with no explanation is worse than no button.
  */
 import { type JSX } from 'react';
-import { conflictLabel, formatCount, operationLabel } from './format';
+import { conflictLabel, formatCount, operationLabel, sanitizeGitText } from './format';
 import { bridge } from './bridge';
 import { toErrorBody, useChangesStore, useOperationStore } from './store';
 import { EmptyState, InfoBanner } from './ui';
@@ -88,31 +88,34 @@ export function ConflictPanel({ conflicts, operation }: Props): JSX.Element {
         {formatCount(conflicts.length)} file perlu diselesaikan
       </h3>
       <ul className="gc-conflicts__list">
-        {conflicts.map((entry) => (
-          <li key={entry.path} className="gc-conflicts__item">
-            <span className="gc-conflicts__path" title={entry.path}>
-              {entry.path}
-            </span>
-            <span className="gc-conflicts__code">{conflictLabel(entry.code)}</span>
-            <span className="gc-conflicts__actions">
-              <button
-                type="button"
-                className="gc-button gc-button--primary"
-                onClick={() => void openMergeEditor(entry.path)}
-              >
-                Selesaikan
-              </button>
-              <button
-                type="button"
-                className="gc-button"
-                disabled={busy}
-                onClick={() => void stage([entry.path])}
-              >
-                Tandai selesai
-              </button>
-            </span>
-          </li>
-        ))}
+        {conflicts.map((entry) => {
+          const safePath = sanitizeGitText(entry.path);
+          return (
+            <li key={entry.path} className="gc-conflicts__item">
+              <span className="gc-conflicts__path" title={safePath}>
+                {safePath}
+              </span>
+              <span className="gc-conflicts__code">{conflictLabel(entry.code)}</span>
+              <span className="gc-conflicts__actions">
+                <button
+                  type="button"
+                  className="gc-button gc-button--primary"
+                  onClick={() => void openMergeEditor(entry.path)}
+                >
+                  Selesaikan
+                </button>
+                <button
+                  type="button"
+                  className="gc-button"
+                  disabled={busy}
+                  onClick={() => void stage([entry.path])}
+                >
+                  Tandai selesai
+                </button>
+              </span>
+            </li>
+          );
+        })}
       </ul>
       <div className="gc-conflicts__footer">
         <button

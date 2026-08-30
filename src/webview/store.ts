@@ -11,6 +11,7 @@
  */
 import { create } from 'zustand';
 import { BridgeRequestError, bridge, isBridgeError, mutation, saveState } from './bridge';
+import { sanitizeGitText } from './format';
 import { pruneSelection, toggleNode, togglePath, type TreeNode } from './tree';
 import { clampZoom } from './viewport';
 import type {
@@ -485,7 +486,10 @@ export const useOperationStore = create<OperationState_>((set, get) => ({
   },
 
   appendProgress(line) {
-    const log = [...get().progressLog, line];
+    // Progress lines are raw git stderr, so a remote or a hook chooses their
+    // bytes. Sanitised on the way in: the log is rendered in a `<pre>`, where a
+    // bidi override would reorder neighbouring lines as well as its own.
+    const log = [...get().progressLog, sanitizeGitText(line)];
     set({ progressLog: log.length > PROGRESS_CAP ? log.slice(log.length - PROGRESS_CAP) : log });
   },
 

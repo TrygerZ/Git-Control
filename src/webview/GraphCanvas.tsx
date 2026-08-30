@@ -34,7 +34,7 @@ import {
 import { BranchLegend } from './BranchLegend';
 import { GraphMinimap } from './GraphMinimap';
 import { NodeContextMenu, type MenuAnchor, type MenuItem } from './NodeContextMenu';
-import { relativeTime, shortHash, truncate } from './format';
+import { relativeTime, sanitizeGitText, shortHash, truncate } from './format';
 import { useRepoStore, useSettingsStore } from './store';
 import {
   DEFAULT_OVERSCAN,
@@ -91,6 +91,10 @@ const CHIP_GLYPH: Record<ChipKind, string> = {
  * Turn raw `refNames` into display chips. Remote refs are distinguished by a
  * glyph plus a `remote/` text prefix, so the difference survives a monochrome
  * high-contrast theme.
+ *
+ * Ref names come from git, so `name` is sanitised for display. Comparisons —
+ * "is this the current branch?" — run on the raw value, because the raw value is
+ * what the host will act on.
  */
 export function chipsFor(refNames: readonly string[], currentBranch: string | null): Chip[] {
   const chips: Chip[] = [];
@@ -98,13 +102,23 @@ export function chipsFor(refNames: readonly string[], currentBranch: string | nu
     const name = raw.trim();
     if (name.length === 0 || name === 'HEAD') continue;
     if (name.startsWith('tag: ')) {
-      chips.push({ kind: 'tag', glyph: CHIP_GLYPH.tag, prefix: 'tag ', name: name.slice(5) });
+      chips.push({
+        kind: 'tag',
+        glyph: CHIP_GLYPH.tag,
+        prefix: 'tag ',
+        name: sanitizeGitText(name.slice(5)),
+      });
       continue;
     }
     const isRemote = name.includes('/') && !name.startsWith('refs/heads/');
     const short = name.replace('refs/heads/', '').replace('refs/remotes/', '');
     if (isRemote) {
-      chips.push({ kind: 'remote', glyph: CHIP_GLYPH.remote, prefix: 'remote ', name: short });
+      chips.push({
+        kind: 'remote',
+        glyph: CHIP_GLYPH.remote,
+        prefix: 'remote ',
+        name: sanitizeGitText(short),
+      });
       continue;
     }
     const isCurrent = currentBranch !== null && short === currentBranch;
@@ -112,7 +126,7 @@ export function chipsFor(refNames: readonly string[], currentBranch: string | nu
       kind: isCurrent ? 'current' : 'local',
       glyph: isCurrent ? CHIP_GLYPH.current : CHIP_GLYPH.local,
       prefix: '',
-      name: short,
+      name: sanitizeGitText(short),
     });
   }
   // Current branch first, then locals, remotes, tags.
@@ -120,12 +134,18 @@ export function chipsFor(refNames: readonly string[], currentBranch: string | nu
   return chips.sort((a, b) => order[a.kind] - order[b.kind]);
 }
 
-/** Accessible name for a commit row, per the PRD's example wording. */
+/**
+ * Accessible name for a commit row, per the PRD's example wording.
+ *
+ * Sanitised for the same reason the visual row is: a screen-reader user makes the
+ * same decisions from this string that a sighted user makes from the row, and the
+ * two must not be able to disagree.
+ */
 export function rowLabel(node: GraphNode, now: number): string {
   const parts = [
     `commit ${shortHash(node.hash)}`,
-    node.subject,
-    `oleh ${node.authorName}`,
+    sanitizeGitText(node.subject),
+    `oleh ${sanitizeGitText(node.authorName)}`,
     relativeTime(node.authoredAt, now),
   ];
   if (node.isHead) parts.push('HEAD');
@@ -658,6 +678,10 @@ function Row({
   const classes = ['gc-row'];
   if (selected) classes.push('gc-row--selected');
   if (dim) classes.push('gc-row--dim');
+  // Both come from git. Sanitised once here so the `title` attribute and the
+  // visible text cannot disagree.
+  const subject = sanitizeGitText(node.subject);
+  const authorName = sanitizeGitText(node.authorName);
 
   return (
     <div
@@ -703,11 +727,11 @@ function Row({
             </span>
           ))}
         </span>
-        <span className="gc-row__subject" title={node.subject} aria-hidden="true">
-          <Highlight text={truncate(node.subject, SUBJECT_MAX)} needle={search} />
+        <span className="gc-row__subject" title={subject} aria-hidden="true">
+          <Highlight text={truncate(subject, SUBJECT_MAX)} needle={search} />
         </span>
         <span className="gc-row__author" aria-hidden="true">
-          <Highlight text={node.authorName} needle={search} />
+          <Highlight text={authorName} needle={search} />
         </span>
         <span className="gc-row__date" aria-hidden="true">
           {relativeTime(node.authoredAt, now)}
@@ -768,8 +792,12 @@ function Toolbar({
         <select value={branchFilter} onChange={(e) => onBranchFilter(e.target.value)}>
           <option value="">Semua branch</option>
           {branches.map((ref) => (
+            // `value` stays raw: it is compared against lane refs host-side.
+            // Only the label is sanitised.
             <option key={ref.refName} value={ref.shortName}>
-              {ref.kind === 'remote' ? `remote ${ref.shortName}` : ref.shortName}
+              {ref.kind === 'remote'
+                ? `remote ${sanitizeGitText(ref.shortName)}`
+                : sanitizeGitText(ref.shortName)}
             </option>
           ))}
         </select>

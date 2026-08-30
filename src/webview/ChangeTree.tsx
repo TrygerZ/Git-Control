@@ -6,7 +6,7 @@
  * letter, an Indonesian word, and a glyph, so nothing depends on colour.
  */
 import { type JSX } from 'react';
-import { displayPath, entryStatus } from './format';
+import { displayPath, entryStatus, sanitizeGitText } from './format';
 import { buildTree, flattenTree, triState, type FolderNode, type TreeNode } from './tree';
 import type { ChangeEntry } from '../messages';
 
@@ -41,6 +41,10 @@ export function ChangeTree({
     <ul className="gc-tree" role="tree" aria-label="Daftar perubahan">
       {rows.map(({ node, depth }) => {
         const state = triState(node, selection);
+        // Folder names and paths are derived from git paths, so they carry the
+        // same risk as any other git-sourced string.
+        const safeName = sanitizeGitText(node.name);
+        const safePath = sanitizeGitText(node.path);
         return (
           <li
             key={`${node.kind}:${node.path}`}
@@ -54,7 +58,7 @@ export function ChangeTree({
             <TriCheckbox
               state={state}
               disabled={busy}
-              label={node.kind === 'folder' ? `Pilih semua di ${node.name}` : `Pilih ${node.path}`}
+              label={node.kind === 'folder' ? `Pilih semua di ${safeName}` : `Pilih ${safePath}`}
               onChange={() => (node.kind === 'folder' ? onToggleFolder(node) : onToggleFile(node.path))}
             />
 
@@ -65,7 +69,7 @@ export function ChangeTree({
                 onClick={() => onToggleCollapsed(node.path)}
               >
                 <span aria-hidden="true">{collapsed.has(node.path) ? '▸' : '▾'}</span>
-                <span className="gc-tree__name">{node.name}</span>
+                <span className="gc-tree__name">{safeName}</span>
               </button>
             ) : (
               <FileRow entry={node.entry} onOpenDiff={onOpenDiff} fileAction={fileAction} busy={busy} />

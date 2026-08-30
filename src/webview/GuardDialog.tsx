@@ -20,6 +20,7 @@ import {
   presentError,
   remedyLabel,
   riskLabel,
+  sanitizeGitText,
 } from './format';
 import { useOperationStore, type PendingGuard } from './store';
 import type { GitActionRequest, Remedy } from '../messages';
@@ -182,7 +183,8 @@ function GuardDialogBody({ guard }: { guard: PendingGuard }): JSX.Element {
         </div>
 
         {guard.error.detail !== undefined && (
-          <pre className="gc-modal__detail">{guard.error.detail}</pre>
+          // Hook output reaches `detail` verbatim, so a hook can choose these bytes.
+          <pre className="gc-modal__detail">{sanitizeGitText(guard.error.detail)}</pre>
         )}
 
         {level === 2 && stage === 2 && (

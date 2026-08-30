@@ -4,6 +4,7 @@
  * focus is inside the stack, otherwise a long message is unreadable.
  */
 import { useEffect, useRef, useState, type JSX } from 'react';
+import { sanitizeGitText } from './format';
 import { TOAST_TIMEOUT_MS, useOperationStore, type Toast } from './store';
 
 export function ToastRegion(): JSX.Element {
@@ -72,8 +73,11 @@ function ToastItem({ toast, paused, onDismiss, onShowLogs }: ItemProps): JSX.Ele
       </span>
       <div className="gc-toast__body">
         <span className="gc-visually-hidden">{LEVEL_LABEL[toast.level]}: </span>
-        <span className="gc-toast__message">{toast.message}</span>
-        {toast.detail !== undefined && <span className="gc-toast__detail">{toast.detail}</span>}
+        {/* Both can be git stderr — hook output reaches `detail` verbatim. */}
+        <span className="gc-toast__message">{sanitizeGitText(toast.message)}</span>
+        {toast.detail !== undefined && (
+          <span className="gc-toast__detail">{sanitizeGitText(toast.detail)}</span>
+        )}
       </div>
       {toast.showLogs === true && (
         <button type="button" className="gc-button gc-button--quiet" onClick={onShowLogs}>

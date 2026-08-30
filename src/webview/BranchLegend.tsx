@@ -4,16 +4,17 @@
  * point of the extension — not decoration.
  */
 import { useState, type JSX } from 'react';
+import { sanitizeGitText } from './format';
 import type { GraphLane } from '../messages';
 
 interface Props {
   lanes: readonly GraphLane[];
 }
 
-/** Short display name for a lane's seed ref. */
+/** Short display name for a lane's seed ref. Sanitised: refs come from git. */
 function laneLabel(lane: GraphLane): string {
   if (lane.ref === undefined) return `Jalur ${lane.index + 1}`;
-  return lane.ref
+  return sanitizeGitText(lane.ref)
     .replace('refs/heads/', '')
     .replace('refs/remotes/', 'remote ')
     .replace('refs/tags/', 'tag ');

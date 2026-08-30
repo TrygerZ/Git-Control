@@ -9,7 +9,7 @@
  * alone. Force push is not offered here or anywhere else.
  */
 import { useEffect, useRef, type JSX, type KeyboardEvent } from 'react';
-import { shortHash } from './format';
+import { sanitizeGitText, shortHash } from './format';
 import type { GitActionRequest, GraphNode, RefInfo, RemoteInfo, RepoStatus } from '../messages';
 
 export interface MenuAnchor {
@@ -58,6 +58,11 @@ export function githubRemoteName(refs: readonly RefInfo[]): string | null {
 /**
  * Compute the menu for a node. Pure, so the availability rules are readable in
  * one place and could be unit-tested later without a DOM.
+ *
+ * Every ref name reaching a `label` is sanitised; the `request` keeps the raw
+ * value, because that is what the host validates and passes to git. A bidi
+ * override in a branch name must not be able to make one menu item read as
+ * another.
  */
 export function menuItemsFor(
   node: GraphNode,
@@ -75,7 +80,7 @@ export function menuItemsFor(
     if (ref.shortName === currentBranch) continue;
     items.push({
       id: `checkout-${ref.shortName}`,
-      label: `Checkout branch ${ref.shortName}`,
+      label: `Checkout branch ${sanitizeGitText(ref.shortName)}`,
       hint: 'Pindah ke branch ini.',
       command: { kind: 'action', request: { action: 'checkout-branch', branch: ref.shortName } },
     });
@@ -102,7 +107,7 @@ export function menuItemsFor(
   if (mergeable !== undefined && currentBranch !== null && !busy) {
     items.push({
       id: 'merge',
-      label: `Merge ${mergeable.shortName} ke ${currentBranch}`,
+      label: `Merge ${sanitizeGitText(mergeable.shortName)} ke ${sanitizeGitText(currentBranch)}`,
       hint: 'Menggabungkan branch itu ke branch aktif.',
       command: { kind: 'action', request: { action: 'merge', branch: mergeable.shortName } },
     });

@@ -25,6 +25,87 @@ export function shortHash(hash: string, length: number = SHORT_HASH_LENGTH): str
   return hash.slice(0, Math.max(1, length));
 }
 
+// ------------------------------------------------------------ untrusted text
+
+/**
+ * Characters that change how text READS without changing what it IS.
+ *
+ * All of them are attacker-controlled in any repository a user clones, because a
+ * commit subject, an author name, a branch name, a file path, and a PR title are
+ * all just bytes somebody else chose.
+ *
+ *  - `\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f-\u009f` — C0 and C1 controls.
+ *    `\t`, `\n`, and `\r` are excluded: a commit body is legitimately multi-line
+ *    and `<pre>` renders it as written.
+ *  - `\u061c\u200e\u200f\u202a-\u202e\u2066-\u2069` — ARABIC LETTER MARK, LRM/RLM,
+ *    the bidi embeddings and overrides, and the bidi isolates. U+202E
+ *    (RIGHT-TO-LEFT OVERRIDE) reverses the visual order of everything after it,
+ *    which is how one commit renders as another.
+ *  - `\u200b\u200c\ufeff` — zero-width space, zero-width non-joiner, and BOM. All
+ *    invisible, so `ma\u200bin` reads as `main` and is a different ref.
+ *
+ * U+200D ZERO WIDTH JOINER is handled separately by {@link ZWJ_OUTSIDE_EMOJI},
+ * because it is load-bearing inside emoji sequences.
+ *
+ * Deliberately NOT included: U+00AD SOFT HYPHEN (a rendering hint inside ordinary
+ * words) and U+2060-U+2064 (invisible mathematical operators, not a spoofing
+ * vector in the strings this extension renders).
+ *
+ * Known cost, accepted: U+200C is orthographically required in Persian, Urdu, and
+ * several Indic scripts, so a commit subject written in those languages gains a
+ * visible marker where a joiner was. That is the deliberate trade — the marker
+ * says "an invisible character was here", which is a legible imperfection, whereas
+ * an unmarked zero-width character in a ref name or a path is a spoof the user
+ * cannot see at all. The bytes git acts on are never modified.
+ */
+const UNSAFE_DISPLAY_CHARS =
+  /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f-\u009f\u061c\u200b\u200c\u200e\u200f\u202a-\u202e\u2066-\u2069\ufeff]/g;
+
+/**
+ * U+200D ZERO WIDTH JOINER that is NOT joining two emoji.
+ *
+ * Inside an emoji sequence the joiner is the sequence: `👨\u200d💻` is one glyph,
+ * and replacing the joiner would break ordinary text in a commit subject. Outside
+ * one it is just another invisible character, so `main\u200dx` still gets marked.
+ * The lookarounds test for Extended_Pictographic on both sides, tolerating an
+ * intervening variation selector (U+FE0F) and skin-tone modifier.
+ */
+const ZWJ_OUTSIDE_EMOJI =
+  /(?<![\p{Extended_Pictographic}\u{1F3FB}-\u{1F3FF}][\uFE0F\u{1F3FB}-\u{1F3FF}]?)\u200D|\u200D(?![\p{Extended_Pictographic}])/gu;
+
+/**
+ * Visible stand-in. U+FFFD REPLACEMENT CHARACTER rather than deletion, because
+ * deletion is itself a lie: `ma\u200bin` would render as `main`, and the user
+ * would read a branch name that does not exist. A visible mark says "something was
+ * here that you cannot see", which is the only honest rendering.
+ */
+export const SANITIZED_MARKER = '\ufffd';
+
+/**
+ * Neutralise display-spoofing characters in any string that came from git or from
+ * the GitHub API.
+ *
+ * React escapes HTML, so there is no XSS at these render sites and this is not an
+ * XSS control. What React does not do is stop U+202E from reversing the visual
+ * order of a commit subject, or a zero-width space from making two distinct refs
+ * look identical. The guard dialog is the sharpest case: its whole purpose is to
+ * show the exact command and the exact target, and a bidi override in a branch
+ * name misrepresents both — the user then approves an operation on an object other
+ * than the one they read.
+ *
+ * Ordinary text is untouched, including every non-ASCII character real prose
+ * needs: accented Latin (`é`), Indonesian, CJK, Arabic and Hebrew letters
+ * themselves, and emoji up to and including ZWJ sequences.
+ *
+ * Idempotent: U+FFFD is not in either replaced set.
+ */
+export function sanitizeGitText(text: string): string {
+  if (typeof text !== 'string') return '';
+  return text
+    .replace(UNSAFE_DISPLAY_CHARS, SANITIZED_MARKER)
+    .replace(ZWJ_OUTSIDE_EMOJI, SANITIZED_MARKER);
+}
+
 // ------------------------------------------------------------------- duration
 
 const SECOND_MS = 1000;
@@ -105,15 +186,16 @@ export function entryStatus(entry: ChangeEntry): StatusLabel {
   return statusLabel(code);
 }
 
-/** `lama → baru` for renames, plain path otherwise. */
+/** `lama → baru` for renames, plain path otherwise. Sanitised: paths come from git. */
 export function displayPath(entry: ChangeEntry): string {
-  if (entry.origPath === undefined || entry.origPath.length === 0) return entry.path;
-  return `${entry.origPath} → ${entry.path}`;
+  const path = sanitizeGitText(entry.path);
+  if (entry.origPath === undefined || entry.origPath.length === 0) return path;
+  return `${sanitizeGitText(entry.origPath)} → ${path}`;
 }
 
-/** Trailing path segment, used as the tree row label. */
+/** Trailing path segment, used as the tree row label. Sanitised. */
 export function baseName(path: string): string {
-  const parts = path.split('/');
+  const parts = sanitizeGitText(path).split('/');
   return parts[parts.length - 1] ?? path;
 }
 
@@ -131,7 +213,7 @@ const CONFLICT_CODES: Readonly<Record<string, string>> = {
 
 /** Explain a two-letter conflict code in Indonesian. */
 export function conflictLabel(code: string): string {
-  const key = code.trim().toUpperCase();
+  const key = sanitizeGitText(code).trim().toUpperCase();
   return CONFLICT_CODES[key] ?? `${key} — konflik tidak dikenal`;
 }
 
@@ -243,9 +325,12 @@ const ERROR_TEXT: Readonly<Record<ErrorCode, { title: string; explanation: strin
 export function presentError(error: ErrorBody): ErrorPresentation {
   const text = ERROR_TEXT[error.code] ?? ERROR_TEXT.SERVER_ERROR;
   const remedies = error.remedies !== undefined && error.remedies.length > 0 ? error.remedies : ['cancel'];
+  // `error.message` can be git stderr, which means it can be hook output, which
+  // means a repository chose it.
+  const message = sanitizeGitText(error.message);
   return {
     title: text.title,
-    explanation: error.message.length > 0 ? `${text.explanation} (${error.message})` : text.explanation,
+    explanation: message.length > 0 ? `${text.explanation} (${message})` : text.explanation,
     remedies: remedies as Remedy[],
     showLogs: error.code === 'SERVER_ERROR' || error.code === 'HOOK_REJECTED',
   };
@@ -279,17 +364,22 @@ export function truncate(text: string, max: number): string {
 /**
  * The exact command the host will run. Read-only, shown in the guard dialog so
  * the user learns the git behind the button — the PRD's core teaching goal.
+ *
+ * Every interpolated ref is sanitised. This string exists to tell the user what is
+ * about to happen; a bidi override inside a branch name would make it say
+ * something else, which defeats the dialog's only purpose.
  */
 export function gitCommandOf(action: GitActionRequest): string {
+  const s = sanitizeGitText;
   switch (action.action) {
     case 'checkout-branch':
-      return `git switch ${action.branch}`;
+      return `git switch ${s(action.branch)}`;
     case 'checkout-commit':
       return `git checkout --detach ${shortHash(action.hash)}`;
     case 'create-branch':
-      return `git branch ${action.name} ${shortHash(action.startPoint)}`;
+      return `git branch ${s(action.name)} ${shortHash(action.startPoint)}`;
     case 'merge':
-      return `git merge ${action.noFf === true ? '--no-ff ' : ''}${action.branch}`;
+      return `git merge ${action.noFf === true ? '--no-ff ' : ''}${s(action.branch)}`;
     case 'revert':
       return `git revert --no-edit ${shortHash(action.hash)}`;
     case 'reset-soft':
@@ -297,13 +387,13 @@ export function gitCommandOf(action: GitActionRequest): string {
     case 'reset-hard':
       return `git reset --hard ${shortHash(action.hash)}`;
     case 'push':
-      return `git push ${action.setUpstream === true ? '-u ' : ''}${action.remote} ${action.branch}:${action.branch}`;
+      return `git push ${action.setUpstream === true ? '-u ' : ''}${s(action.remote)} ${s(action.branch)}:${s(action.branch)}`;
     case 'push-up-to':
-      return `git push ${action.remote} ${shortHash(action.hash)}:refs/heads/${action.branch}`;
+      return `git push ${s(action.remote)} ${shortHash(action.hash)}:refs/heads/${s(action.branch)}`;
     case 'fetch':
-      return `git fetch ${action.remote ?? '--all'}${action.prune === true ? ' --prune' : ''}`;
+      return `git fetch ${action.remote === undefined ? '--all' : s(action.remote)}${action.prune === true ? ' --prune' : ''}`;
     case 'stash':
-      return `git stash push${action.includeUntracked === true ? ' -u' : ''} -m "${action.message}"`;
+      return `git stash push${action.includeUntracked === true ? ' -u' : ''} -m "${s(action.message)}"`;
     case 'stash-pop':
       return 'git stash pop';
     case 'merge-continue':
@@ -317,15 +407,16 @@ export function gitCommandOf(action: GitActionRequest): string {
 
 /** Plain-Indonesian consequence of an action, shown above the command. */
 export function consequenceOf(action: GitActionRequest): string {
+  const s = sanitizeGitText;
   switch (action.action) {
     case 'checkout-branch':
-      return `Pindah ke branch ${action.branch}. File di folder kerja akan mengikuti branch itu.`;
+      return `Pindah ke branch ${s(action.branch)}. File di folder kerja akan mengikuti branch itu.`;
     case 'checkout-commit':
       return 'Masuk ke mode detached HEAD. Commit baru tidak menempel pada branch mana pun.';
     case 'create-branch':
-      return `Membuat branch ${action.name} pada commit ${shortHash(action.startPoint)} tanpa berpindah.`;
+      return `Membuat branch ${s(action.name)} pada commit ${shortHash(action.startPoint)} tanpa berpindah.`;
     case 'merge':
-      return `Menggabungkan ${action.branch} ke branch aktif. Bisa memunculkan konflik.`;
+      return `Menggabungkan ${s(action.branch)} ke branch aktif. Bisa memunculkan konflik.`;
     case 'revert':
       return 'Membuat commit baru yang membatalkan perubahan commit tersebut. Histori tetap utuh.';
     case 'reset-soft':
@@ -333,9 +424,9 @@ export function consequenceOf(action: GitActionRequest): string {
     case 'reset-hard':
       return 'Memindahkan branch DAN membuang semua perubahan setelah commit tersebut. Tidak bisa dibatalkan.';
     case 'push':
-      return `Mengirim branch ${action.branch} ke ${action.remote}.`;
+      return `Mengirim branch ${s(action.branch)} ke ${s(action.remote)}.`;
     case 'push-up-to':
-      return `Mengirim histori sampai ${shortHash(action.hash)} ke ${action.remote}/${action.branch}.`;
+      return `Mengirim histori sampai ${shortHash(action.hash)} ke ${s(action.remote)}/${s(action.branch)}.`;
     case 'fetch':
       return 'Mengambil data terbaru dari remote. Folder kerja tidak diubah.';
     case 'stash':
@@ -353,15 +444,16 @@ export function consequenceOf(action: GitActionRequest): string {
 
 /** Short menu/dialog title for an action. */
 export function actionTitle(action: GitActionRequest): string {
+  const s = sanitizeGitText;
   switch (action.action) {
     case 'checkout-branch':
-      return `Checkout branch ${action.branch}`;
+      return `Checkout branch ${s(action.branch)}`;
     case 'checkout-commit':
       return `Checkout commit ${shortHash(action.hash)}`;
     case 'create-branch':
-      return `Buat branch ${action.name}`;
+      return `Buat branch ${s(action.name)}`;
     case 'merge':
-      return `Merge ${action.branch} ke branch aktif`;
+      return `Merge ${s(action.branch)} ke branch aktif`;
     case 'revert':
       return `Revert ${shortHash(action.hash)}`;
     case 'reset-soft':
@@ -369,7 +461,7 @@ export function actionTitle(action: GitActionRequest): string {
     case 'reset-hard':
       return `Reset hard ke ${shortHash(action.hash)}`;
     case 'push':
-      return `Push ${action.branch}`;
+      return `Push ${s(action.branch)}`;
     case 'push-up-to':
       return `Push sampai ${shortHash(action.hash)}`;
     case 'fetch':
@@ -387,12 +479,12 @@ export function actionTitle(action: GitActionRequest): string {
   }
 }
 
-/** Target the action operates on, shown as the dialog's subject line. */
+/** Target the action operates on, shown as the dialog's subject line. Sanitised. */
 export function actionTarget(action: GitActionRequest): string {
-  if ('branch' in action && typeof action.branch === 'string') return action.branch;
-  if ('name' in action) return action.name;
+  if ('branch' in action && typeof action.branch === 'string') return sanitizeGitText(action.branch);
+  if ('name' in action) return sanitizeGitText(action.name);
   if ('hash' in action) return shortHash(action.hash);
-  if ('remote' in action && action.remote !== undefined) return action.remote;
+  if ('remote' in action && action.remote !== undefined) return sanitizeGitText(action.remote);
   return '—';
 }
 
@@ -481,8 +573,8 @@ export function githubConnectionLabel(state: {
 }): string {
   if (state.invalidToken === true) return 'Token GitHub tidak valid.';
   if (!state.connected) return 'Belum tersambung.';
-  return state.login === null || state.login.length === 0
-    ? 'Tersambung.'
-    : `Tersambung sebagai ${state.login}.`;
+  // `login` comes from the GitHub API, so it is remote data like any other.
+  const login = state.login === null ? '' : sanitizeGitText(state.login);
+  return login.length === 0 ? 'Tersambung.' : `Tersambung sebagai ${login}.`;
 }
 

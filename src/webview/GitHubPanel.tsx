@@ -15,6 +15,7 @@ import {
   pullRequestLabel,
   rateLimitBadge,
   relativeTime,
+  sanitizeGitText,
 } from './format';
 import { useGitHubStore } from './store';
 import { InfoBanner } from './ui';
@@ -70,7 +71,7 @@ export function GitHubPanel(): JSX.Element {
           <>
             {' '}
             <code className="gc-github__repo">
-              {linkage.owner}/{linkage.repo}
+              {sanitizeGitText(linkage.owner)}/{sanitizeGitText(linkage.repo ?? '')}
             </code>
           </>
         )}
@@ -79,14 +80,14 @@ export function GitHubPanel(): JSX.Element {
       {auth?.scopeWarning !== undefined && (
         <InfoBanner tone="warning" glyph="⚠">
           <strong>Scope token kurang.</strong>
-          <span>{auth.scopeWarning}</span>
+          <span>{sanitizeGitText(auth.scopeWarning)}</span>
         </InfoBanner>
       )}
 
       {error !== null && (
         <InfoBanner tone="warning" glyph="!">
           <strong>Metadata GitHub tidak lengkap.</strong>
-          <span>{error.message} Operasi git tetap berjalan lewat Git CLI.</span>
+          <span>{sanitizeGitText(error.message)} Operasi git tetap berjalan lewat Git CLI.</span>
         </InfoBanner>
       )}
 
@@ -128,19 +129,27 @@ export function PullRequestList({
   }
   return (
     <ul className="gc-github__prs" aria-label="Pull request terbuka">
-      {pullRequests.map((pr) => (
-        <li key={pr.number}>
-          <button
-            type="button"
-            className={`gc-chip gc-chip--pr gc-chip--pr-${pr.state}`}
-            title={`${pr.title} — ${pr.headRef} → ${pr.baseRef}, oleh ${pr.author}, diperbarui ${relativeTime(pr.updatedAt)}`}
-            onClick={() => void openUrl(pr.url)}
-          >
-            <span className="gc-github__pr-number">{pullRequestLabel(pr)}</span>
-            <span className="gc-github__pr-title">{pr.title}</span>
-          </button>
-        </li>
-      ))}
+      {pullRequests.map((pr) => {
+        // Title, refs, and author are whatever the PR opener typed. Sanitised for
+        // both the chip text and the tooltip.
+        const title = sanitizeGitText(pr.title);
+        const tooltip =
+          `${title} — ${sanitizeGitText(pr.headRef)} → ${sanitizeGitText(pr.baseRef)},` +
+          ` oleh ${sanitizeGitText(pr.author)}, diperbarui ${relativeTime(pr.updatedAt)}`;
+        return (
+          <li key={pr.number}>
+            <button
+              type="button"
+              className={`gc-chip gc-chip--pr gc-chip--pr-${pr.state}`}
+              title={tooltip}
+              onClick={() => void openUrl(pr.url)}
+            >
+              <span className="gc-github__pr-number">{pullRequestLabel(pr)}</span>
+              <span className="gc-github__pr-title">{title}</span>
+            </button>
+          </li>
+        );
+      })}
     </ul>
   );
 }

@@ -1,5 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import * as fs from 'node:fs';
+import * as path from 'node:path';
 import {
   absoluteTime,
   actionTarget,
@@ -20,6 +22,8 @@ import {
   relativeTime,
   remedyLabel,
   riskLabel,
+  SANITIZED_MARKER,
+  sanitizeGitText,
   shortHash,
   statusLabel,
   truncate,
@@ -46,6 +50,240 @@ test('shortHash takes seven characters by default', () => {
   assert.equal(shortHash(HASH), 'abc1234');
   assert.equal(shortHash(HASH, 10), 'abc1234def');
   assert.equal(shortHash('ab'), 'ab');
+});
+
+// ------------------------------------------------------- SEC-007 sanitisation
+
+const M = SANITIZED_MARKER;
+
+test('sanitizeGitText neutralises every bidi override, embedding, and isolate (SEC-007)', () => {
+  // U+202A-U+202E: LRE, RLE, PDF, LRO, RLO. U+2066-U+2069: LRI, RLI, FSI, PDI.
+  // U+200E/U+200F: LRM/RLM. U+061C: ALM.
+  const bidi = [
+    '\u202a',
+    '\u202b',
+    '\u202c',
+    '\u202d',
+    '\u202e',
+    '\u2066',
+    '\u2067',
+    '\u2068',
+    '\u2069',
+    '\u200e',
+    '\u200f',
+    '\u061c',
+  ];
+  for (const ch of bidi) {
+    const code = ch.codePointAt(0)?.toString(16);
+    assert.equal(sanitizeGitText(`a${ch}b`), `a${M}b`, `U+${code}`);
+  }
+  // The audit's concrete case: a subject crafted to render as something else.
+  assert.equal(sanitizeGitText('Fix typo\u202ednuora'), `Fix typo${M}dnuora`);
+  // And a branch name, which is what the guard dialog shows.
+  assert.equal(sanitizeGitText('main\u202ednuora'), `main${M}dnuora`);
+});
+
+test('sanitizeGitText neutralises zero-width characters and the BOM (SEC-007)', () => {
+  for (const ch of ['\u200b', '\u200c', '\ufeff']) {
+    const code = ch.codePointAt(0)?.toString(16);
+    assert.equal(sanitizeGitText(`a${ch}b`), `a${M}b`, `U+${code}`);
+  }
+  // Two refs that render identically without this: `main` and `ma<ZWSP>in`.
+  assert.notEqual(sanitizeGitText('ma\u200bin'), 'main');
+  assert.equal(sanitizeGitText('ma\u200bin'), `ma${M}in`);
+});
+
+test('sanitizeGitText marks a bare ZWJ but keeps emoji ZWJ sequences whole (SEC-007)', () => {
+  // Between letters the joiner is just another invisible character.
+  assert.equal(sanitizeGitText('main\u200dx'), `main${M}x`);
+  assert.equal(sanitizeGitText('a\u200db'), `a${M}b`);
+  // Between pictographs it IS the sequence, so it must survive verbatim.
+  for (const emoji of ['👨\u200d💻', '👩\u200d🚀', '👨\u200d👩\u200d👧\u200d👦', '🏳\ufe0f\u200d🌈']) {
+    assert.equal(sanitizeGitText(`fix: ${emoji} ok`), `fix: ${emoji} ok`, emoji);
+  }
+});
+
+test('sanitizeGitText neutralises C0 and C1 controls but keeps tab and newline (SEC-007)', () => {
+  // C0, excluding \t (U+0009), \n (U+000A), \r (U+000D).
+  for (let code = 0x00; code <= 0x1f; code += 1) {
+    if (code === 0x09 || code === 0x0a || code === 0x0d) continue;
+    const ch = String.fromCharCode(code);
+    assert.equal(sanitizeGitText(`a${ch}b`), `a${M}b`, `C0 U+${code.toString(16)}`);
+  }
+  // DEL plus the whole C1 block.
+  for (let code = 0x7f; code <= 0x9f; code += 1) {
+    const ch = String.fromCharCode(code);
+    assert.equal(sanitizeGitText(`a${ch}b`), `a${M}b`, `C1 U+${code.toString(16)}`);
+  }
+  // A commit body is legitimately multi-line and is rendered in a `<pre>`.
+  assert.equal(sanitizeGitText('baris satu\nbaris dua\r\n\tindentasi'), 'baris satu\nbaris dua\r\n\tindentasi');
+});
+
+test('sanitizeGitText leaves ordinary Indonesian and Unicode text untouched (SEC-007)', () => {
+  const fine = [
+    'Perbaiki panel Pending Changes',
+    'Menambahkan fitur baru ke aplikasi',
+    'café résumé naïve Ærøskøbing',
+    'Añadir configuración',
+    '修复图形渲染问题',
+    'コミットメッセージ',
+    '커밋 메시지',
+    'إصلاح الخطأ',
+    'תיקון באג',
+    'Исправить ошибку',
+    'ตรวจแก้ไข',
+    'fix: emoji in a subject 🎉🚀👨‍👩‍👧‍👦',
+    'feat(graph): lane colours — dashes, em dash, «quotes»',
+    'path/with spaces/and-dashes_1.2.3.txt',
+    'author <someone@example.com>',
+  ];
+  for (const value of fine) {
+    assert.equal(sanitizeGitText(value), value, value);
+  }
+});
+
+test('sanitizeGitText is idempotent and total (SEC-007)', () => {
+  const nasty = `a\u202eb\u200bc\u0001d\u2066e`;
+  const once = sanitizeGitText(nasty);
+  assert.equal(sanitizeGitText(once), once, 'the marker itself is never replaced');
+  assert.equal(sanitizeGitText(''), '');
+  // Non-string input cannot crash a render path.
+  assert.equal(sanitizeGitText(undefined as unknown as string), '');
+  assert.equal(sanitizeGitText(null as unknown as string), '');
+});
+
+test('sanitizeGitText protects the guard dialog surfaces (SEC-007)', () => {
+  // The command line the user reads before approving.
+  assert.equal(
+    gitCommandOf({ action: 'checkout-branch', branch: 'main\u202ednuora' }),
+    `git switch main${M}dnuora`,
+  );
+  assert.equal(
+    gitCommandOf({ action: 'merge', branch: 'fitur\u200bx' }),
+    `git merge fitur${M}x`,
+  );
+  // The target line.
+  assert.equal(actionTarget({ action: 'checkout-branch', branch: 'main\u202ex' }), `main${M}x`);
+  assert.equal(
+    actionTarget({ action: 'create-branch', name: 'a\u0007b', startPoint: HASH }),
+    `a${M}b`,
+  );
+  // The consequence sentence and the dialog title.
+  assert.ok(consequenceOf({ action: 'merge', branch: 'x\u202ey' }).includes(`x${M}y`));
+  assert.ok(actionTitle({ action: 'checkout-branch', branch: 'x\u202ey' }).includes(`x${M}y`));
+});
+
+test('sanitizeGitText protects paths, conflict codes, and error details (SEC-007)', () => {
+  assert.equal(baseName('dir/a\u202eb.txt'), `a${M}b.txt`);
+  assert.equal(
+    displayPath({
+      path: 'new\u200b.txt',
+      origPath: 'old\u202e.txt',
+      indexStatus: 'R',
+      worktreeStatus: ' ',
+      staged: true,
+      unstaged: false,
+      untracked: false,
+      additions: null,
+      deletions: null,
+      binary: false,
+    }),
+    `old${M}.txt → new${M}.txt`,
+  );
+  assert.ok(conflictLabel('U\u202eU').includes(M));
+  // Hook output reaches `presentError` through `ErrorBody.message`.
+  const view = presentError({
+    status: 409,
+    code: 'HOOK_REJECTED',
+    message: 'pre-commit\u202edetcejer',
+  });
+  assert.ok(view.explanation.includes(M));
+  assert.ok(!view.explanation.includes('\u202e'));
+});
+
+test('sanitizeGitText protects the GitHub login line (SEC-007)', () => {
+  assert.equal(
+    githubConnectionLabel({ connected: true, login: 'octo\u202ecat' }),
+    `Tersambung sebagai octo${M}cat.`,
+  );
+});
+
+/**
+ * Source-level guard for the render sites the pure helpers cannot cover.
+ *
+ * `GraphCanvas.tsx`, `Inspector.tsx`, `GitHubPanel.tsx`, and the rest import
+ * `./store`, which constructs the webview bridge at module scope and touches
+ * `window` — so they cannot be imported under `node:test` without a DOM harness,
+ * which this project does not have (see the audit's "what I could not verify").
+ *
+ * Rather than assert nothing, this pins the render sites textually: every JSX
+ * interpolation of a known git- or GitHub-sourced field must pass through
+ * `sanitizeGitText`. It fails if someone adds `{node.subject}` back, which is the
+ * regression that matters.
+ *
+ * Two kinds of interpolation are deliberately exempt and are excluded by
+ * construction rather than by an allowlist:
+ *
+ *  - `key=` and `value=`, plus a `key`/`id` object property. These are identity,
+ *    not display. A React `key` is never rendered, and an `<option value>` is
+ *    compared against lane refs, so it must stay byte-identical to what git said.
+ *  - objects that are locally computed rather than host-supplied — `badge` from
+ *    `rateLimitBadge` and `view` from `presentError` build their strings from the
+ *    fixed Indonesian tables in this file, and `presentError` already sanitises
+ *    the one host value it interpolates.
+ */
+test('every git-sourced field is sanitised at its render site (SEC-007)', () => {
+  const dir = path.join(__dirname, '..', '..', 'src', 'webview');
+  /** Fields whose value originates in git or in the GitHub API. */
+  const risky = [
+    'subject',
+    'body',
+    'authorName',
+    'authorEmail',
+    'committerName',
+    'shortName',
+    'refName',
+    'title',
+    'headRef',
+    'baseRef',
+    'author',
+    'login',
+    'scopeWarning',
+    'origPath',
+    'detail',
+    'message',
+  ].join('|');
+  /** Objects built in this module from fixed tables, not from host data. */
+  const localObjects = /^(?:badge|view|text|status|state)$/;
+  const risky_ = new RegExp(
+    String.raw`\{\s*([A-Za-z_$][\w$]*)[\w$?.]*\.(?:${risky})\b[^}]*\}`,
+    'g',
+  );
+  const offenders: string[] = [];
+
+  for (const file of fs.readdirSync(dir)) {
+    if (!file.endsWith('.tsx')) continue;
+    const source = fs.readFileSync(path.join(dir, file), 'utf8');
+    for (const line of source.split(/\r?\n/)) {
+      const trimmed = line.trim();
+      // Comments explain the rule; they do not violate it.
+      if (trimmed.startsWith('*') || trimmed.startsWith('//') || trimmed.startsWith('/*')) continue;
+      for (const match of line.matchAll(risky_)) {
+        const whole = match[0];
+        const root = match[1] ?? '';
+        if (whole.includes('sanitizeGitText')) continue;
+        if (localObjects.test(root)) continue;
+        // Identity positions, never rendered as text.
+        const before = line.slice(0, match.index ?? 0);
+        if (/\b(?:key|value)=\s*$/.test(before)) continue;
+        if (/\b(?:key|id):\s*$/.test(before)) continue;
+        if (/`[^`]*$/.test(before) && /^\s*(?:key|id):/.test(trimmed)) continue;
+        offenders.push(`${file}: ${trimmed}`);
+      }
+    }
+  }
+
+  assert.deepEqual(offenders, [], `unsanitised git-sourced render sites:\n${offenders.join('\n')}`);
 });
 
 // ------------------------------------------------------------- relative time
