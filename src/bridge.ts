@@ -283,6 +283,7 @@ export class MessageBridge {
       case 'repos/graph':
         return this.handleGraph(request.payload as GraphPayload);
       case 'repos/remotes':
+        validateEmptyPayload(request.payload);
         return this.handleRemotes();
       case 'commits/detail':
         return this.handleCommitDetail(request.payload as CommitDetailPayload);
@@ -299,18 +300,26 @@ export class MessageBridge {
       case 'actions/openExternal':
         return this.handleOpenExternal(request.payload as OpenExternalPayload);
       case 'github/auth':
+        validateEmptyPayload(request.payload);
         return this.host.githubAuth();
       case 'github/connect':
+        validateEmptyPayload(request.payload);
         return this.host.connectGitHub();
       case 'github/disconnect':
+        validateEmptyPayload(request.payload);
         return this.host.disconnectGitHub();
       case 'github/repo':
         return this.handleGitHubRepo(request.payload as GitHubRepoPayload);
       case 'github/pullRequests':
         return this.handleGitHubPullRequests(request.payload as PullRequestsPayload);
       case 'github/linkage':
+        validateEmptyPayload(request.payload);
         return this.handleGitHubLinkage();
       case 'settings/get':
+        { const keys = (request.payload as { keys?: unknown }).keys;
+        if (keys !== undefined && (!Array.isArray(keys) || keys.some((key: unknown) => typeof key !== 'string'))) {
+          fail(400, 'VALIDATION_ERROR', BRIDGE_MESSAGES.invalid, { detail: 'keys' });
+        } }
         return this.host.settings();
       case 'settings/set':
         return this.handleSettingsSet(request.payload as SettingsSetPayload);
@@ -324,6 +333,9 @@ export class MessageBridge {
   // --------------------------------------------------------------- handlers
 
   private async handleStatus(payload: StatusPayload): Promise<RepoStatus> {
+    if (payload.includeIgnored !== undefined && typeof payload.includeIgnored !== 'boolean') {
+      fail(400, 'VALIDATION_ERROR', BRIDGE_MESSAGES.invalid, { detail: 'includeIgnored' });
+    }
     const repo = await this.repository();
     return repo.status({ includeIgnored: payload.includeIgnored === true });
   }
@@ -927,6 +939,10 @@ function parseRequest(raw: unknown): Request | null {
     kind: candidate.kind as RequestKind,
     payload: candidate.payload as Request['payload'],
   };
+}
+
+function validateEmptyPayload(payload: object): void {
+  if (Object.keys(payload).length > 0) fail(400, 'VALIDATION_ERROR', BRIDGE_MESSAGES.invalid, { detail: 'payload' });
 }
 
 const MUTATION_KINDS = new Set<string>(['actions/stage', 'actions/commit', 'actions/git']);
