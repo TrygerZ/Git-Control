@@ -20,6 +20,8 @@ test/**
 out/**
 tsconfig.json
 esbuild.js
+# Build-time only: regenerates resources/icon.png, never read at runtime.
+scripts/**
 
 # Source maps carry full `sourcesContent` and developer paths.
 **/*.map
