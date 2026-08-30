@@ -843,6 +843,7 @@ export class MessageBridge {
   }
 
   private remember(key: string, outcome: Outcome): void {
+    if (!shouldRemember(outcome)) return;
     this.evictExpired();
     this.completed.set(key, { at: Date.now(), outcome });
     // Map preserves insertion order, so the first key is the oldest.
@@ -884,6 +885,35 @@ function parseRequest(raw: unknown): Request | null {
 }
 
 const MUTATION_KINDS = new Set<string>(['actions/stage', 'actions/commit', 'actions/git']);
+
+/**
+ * Codes that describe the *request*, not the repository, and that the user
+ * resolves by sending the same request again with more on it.
+ *
+ * The webview reuses one idempotency key across a confirmation dialog — by design,
+ * because that is what stops a double-clicked push from pushing twice. Caching a
+ * guard rejection under that key means the retry that carries `confirm: true` is
+ * answered from the cache and never reaches the guard, so `reset --hard`, `revert`,
+ * `reset-soft`, and `push-up-to` become unconfirmable. These outcomes are therefore
+ * not remembered; the guard re-runs on every attempt, which is also the only way it
+ * can see the repository as it is at that moment.
+ */
+const RETRYABLE_CODES = new Set<ErrorCode>(['CONFIRMATION_REQUIRED', 'DIRTY_TREE', 'STALE_STATUS']);
+
+/**
+ * Whether an outcome may be replayed for a repeated idempotency key.
+ *
+ * Successes always are — that is the entire point of the map (PRD Kasus 2: a
+ * double-clicked push must not push twice), and it is preserved unchanged.
+ * Genuine failures are too: a hook rejection or a non-fast-forward is a fact about
+ * the repository, and replaying it is honest. Only the guard rejections above are
+ * excluded, because they are answers to an incomplete request rather than outcomes
+ * of an attempt.
+ */
+function shouldRemember(outcome: Outcome): boolean {
+  if (outcome.ok) return true;
+  return !RETRYABLE_CODES.has(outcome.error.code);
+}
 
 /** Idempotency applies to mutations only; reads are cheap and always fresh. */
 function idempotencyKeyOf(request: Request): string | null {

@@ -956,3 +956,142 @@ test('a fine-grained PAT in stderr is redacted on the webview path too (SEC-012)
   );
   assert.ok(body.detail !== undefined && !body.detail.includes(token));
 });
+
+// ------------------------------------------------------------------- SEC-014
+
+test('a guard rejection is not cached, so a confirmed retry reaches the guard (SEC-014)', async (t) => {
+  const dir = await makeRepo();
+  t.after(() => cleanup(dir));
+  const repo = new RepositoryService({ folderPath: dir, gitPath: 'git', store: new MemoryStore() });
+  const head = (await repo.status()).head as string;
+  const h = harness(repo);
+  t.after(() => h.bridge.dispose());
+
+  // The flow the webview actually performs: ONE idempotency key across the
+  // confirmation dialog.
+  const key = 'guard-retry-1';
+
+  const blocked = await h.webview.send(
+    req('actions/git', { action: 'reset-hard', hash: head, idempotencyKey: key }),
+  );
+  assert.equal(blocked.ok, false);
+  if (blocked.ok) return;
+  assert.equal(blocked.error.code, 'CONFIRMATION_REQUIRED');
+  assert.equal(blocked.error.confirmationLevel, 2);
+
+  // Same key, now with both flags. Pre-fix this replayed the cached rejection and
+  // the dialog could never be confirmed.
+  const confirmed = await h.webview.send(
+    req('actions/git', {
+      action: 'reset-hard',
+      hash: head,
+      confirm: true,
+      forceAcknowledgement: true,
+      idempotencyKey: key,
+    }),
+  );
+  assert.equal(confirmed.ok, true, 'confirming must actually run the action');
+});
+
+test('a level-1 guard rejection is retryable under the same key (SEC-014)', async (t) => {
+  const dir = await makeRepo();
+  t.after(() => cleanup(dir));
+  const repo = new RepositoryService({ folderPath: dir, gitPath: 'git', store: new MemoryStore() });
+  const head = (await repo.status()).head as string;
+  const h = harness(repo);
+  t.after(() => h.bridge.dispose());
+
+  const key = 'guard-retry-2';
+  const blocked = await h.webview.send(
+    req('actions/git', { action: 'reset-soft', hash: head, idempotencyKey: key }),
+  );
+  assert.equal(blocked.ok, false);
+  const confirmed = await h.webview.send(
+    req('actions/git', { action: 'reset-soft', hash: head, confirm: true, idempotencyKey: key }),
+  );
+  assert.equal(confirmed.ok, true);
+});
+
+test('a DIRTY_TREE rejection is retryable once the tree is clean (SEC-014)', async (t) => {
+  const dir = await makeRepo();
+  t.after(() => cleanup(dir));
+  await fs.writeFile(path.join(dir, 'dirty.txt'), 'x\n', 'utf8');
+  const repo = new RepositoryService({ folderPath: dir, gitPath: 'git', store: new MemoryStore() });
+  const h = harness(repo);
+  t.after(() => h.bridge.dispose());
+
+  const key = 'guard-retry-3';
+  const blocked = await h.webview.send(
+    req('actions/git', { action: 'checkout-branch', branch: 'main', idempotencyKey: key }),
+  );
+  assert.equal(blocked.ok, false);
+  if (blocked.ok) return;
+  assert.equal(blocked.error.code, 'DIRTY_TREE');
+
+  // The user takes the offered remedy, then retries with the same key.
+  await fs.rm(path.join(dir, 'dirty.txt'));
+  repo.invalidate();
+  const retried = await h.webview.send(
+    req('actions/git', { action: 'checkout-branch', branch: 'main', idempotencyKey: key }),
+  );
+  assert.equal(retried.ok, true, 'a resolved DIRTY_TREE must not be replayed from cache');
+});
+
+test('a genuine failure IS still replayed for a repeated key (SEC-014)', async (t) => {
+  const dir = await makeRepo();
+  t.after(() => cleanup(dir));
+  const repo = new RepositoryService({ folderPath: dir, gitPath: 'git', store: new MemoryStore() });
+  // Fresh fetch so the guard lets the push reach git, which fails: no `origin`.
+  await repo.markFetched(Date.now());
+  const h = harness(repo);
+  t.after(() => h.bridge.dispose());
+
+  let pushes = 0;
+  const realPush = repo.git.push.bind(repo.git);
+  repo.git.push = async (opts) => {
+    pushes += 1;
+    return realPush(opts);
+  };
+
+  const key = 'push-fail-1';
+  const payload = { action: 'push', remote: 'origin', branch: 'main', idempotencyKey: key };
+  const first = await h.webview.send(req('actions/git', payload));
+  const second = await h.webview.send(req('actions/git', payload));
+
+  assert.equal(first.ok, false);
+  assert.equal(second.ok, false);
+  if (first.ok || second.ok) return;
+  assert.deepEqual(second.error, first.error, 'the same failure is replayed verbatim');
+  assert.equal(pushes, 1, 'git push ran once: a repository fact is not re-attempted');
+});
+
+test('the double-click guarantee survives: a successful mutation still replays (SEC-014)', async (t) => {
+  const dir = await makeRepo();
+  t.after(() => cleanup(dir));
+  const repo = new RepositoryService({ folderPath: dir, gitPath: 'git', store: new MemoryStore() });
+  const head = (await repo.status()).head as string;
+  const h = harness(repo);
+  t.after(() => h.bridge.dispose());
+
+  let reverts = 0;
+  const realRevert = repo.git.revert.bind(repo.git);
+  repo.git.revert = async (hash) => {
+    reverts += 1;
+    return realRevert(hash);
+  };
+
+  const payload = {
+    action: 'revert',
+    hash: head,
+    confirm: true,
+    idempotencyKey: 'revert-dup-1',
+  };
+  const first = await h.webview.send(req('actions/git', payload));
+  const second = await h.webview.send(req('actions/git', payload));
+  assert.equal(first.ok, true);
+  assert.equal(second.ok, true);
+  if (!first.ok || !second.ok) return;
+  assert.deepEqual(second.data, first.data);
+  assert.equal(reverts, 1, 'PRD Kasus 2: one logical operation runs once');
+});
+
