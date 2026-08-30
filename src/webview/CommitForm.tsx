@@ -5,6 +5,10 @@
  * the textarea and announces the error rather than silently refusing. The button
  * is disabled while a commit is in flight, on top of the host's idempotency —
  * belt and braces for PRD Kasus 2.
+ *
+ * The submit button is never disabled for a short message: a control that is off
+ * for a reason the user cannot see is a dead end. It submits, fails validation,
+ * and says why — which also keeps the reason reachable by keyboard.
  */
 import { useEffect, useRef, type JSX } from 'react';
 import { COMMIT_MESSAGE_MIN, useChangesStore } from './store';
@@ -34,9 +38,11 @@ export function CommitForm(): JSX.Element {
   };
 
   const tooShort = message.trim().length < COMMIT_MESSAGE_MIN;
+  const hintId = 'gc-commit-hint';
+  const errorId = 'gc-commit-error';
 
   return (
-    <form className="gc-commit" onSubmit={submit}>
+    <form className="gc-commit" onSubmit={submit} aria-label="Buat commit">
       <label className="gc-field">
         <span className="gc-field__label">Pesan commit</span>
         <textarea
@@ -45,16 +51,23 @@ export function CommitForm(): JSX.Element {
           value={message}
           rows={3}
           required
+          minLength={COMMIT_MESSAGE_MIN}
           aria-invalid={messageError !== null}
-          aria-describedby={messageError !== null ? 'gc-commit-error' : undefined}
+          aria-describedby={messageError !== null ? `${errorId} ${hintId}` : hintId}
           placeholder="Jelaskan singkat apa yang Anda ubah"
           onChange={(e) => setMessage(e.target.value)}
         />
       </label>
 
+      <p className="gc-commit__hint" id={hintId}>
+        Minimal {COMMIT_MESSAGE_MIN} karakter. Tulis apa yang berubah dan mengapa — pesan ini yang akan
+        Anda baca lagi berbulan-bulan kemudian.
+      </p>
+
       {messageError !== null && (
-        <p className="gc-field__error" id="gc-commit-error" role="alert">
-          {messageError}
+        <p className="gc-field__error" id={errorId} role="alert">
+          <span aria-hidden="true">!</span>
+          <span>{messageError}</span>
         </p>
       )}
 
@@ -65,7 +78,7 @@ export function CommitForm(): JSX.Element {
           disabled={busy}
           onChange={(e) => setPushAfter(e.target.checked)}
         />
-        <span>Push setelah commit</span>
+        <span>Push ke remote setelah commit berhasil</span>
       </label>
 
       <label className="gc-checkbox">
@@ -75,11 +88,16 @@ export function CommitForm(): JSX.Element {
           disabled={busy}
           onChange={(e) => setIncludeUntracked(e.target.checked)}
         />
-        <span>Include untracked</span>
+        <span>Sertakan file yang belum dilacak saat stage</span>
       </label>
 
       <div className="gc-commit__actions">
-        <button type="submit" className="gc-button gc-button--primary" disabled={busy || tooShort}>
+        <button
+          type="submit"
+          className="gc-button gc-button--primary"
+          disabled={busy}
+          aria-describedby={tooShort ? hintId : undefined}
+        >
           Commit
         </button>
         {busy && <Spinner label="Menjalankan commit…" />}
@@ -90,7 +108,7 @@ export function CommitForm(): JSX.Element {
             disabled={busy}
             onClick={() => void retryPush()}
           >
-            Coba Push Lagi
+            Coba push lagi
           </button>
         )}
       </div>

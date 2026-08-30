@@ -4,7 +4,7 @@
  */
 import { Component, type ErrorInfo, type JSX, type ReactNode } from 'react';
 import { presentError, remedyLabel, sanitizeGitText } from './format';
-import type { ErrorBody } from '../messages';
+import type { ErrorBody, Remedy } from '../messages';
 
 // ------------------------------------------------------------------ skeleton
 
@@ -13,10 +13,16 @@ export function Skeleton({ width, height }: { width: string; height: number }): 
   return <span className="gc-skeleton" style={{ width, height: `${height}px` }} aria-hidden="true" />;
 }
 
-/** Lane skeleton: what the canvas shows before the first graph page lands. */
+/**
+ * Lane skeleton: what the canvas shows before the first graph page lands.
+ *
+ * Shaped like `.gc-row` — dot, subject bar, date bar, at the same row height and
+ * gaps — so the first real paint replaces it in place instead of shifting the
+ * layout. `aria-busy` marks the region as loading rather than as content.
+ */
 export function GraphSkeleton(): JSX.Element {
   return (
-    <div className="gc-skeleton-graph" role="status" aria-label="Memuat grafik commit">
+    <div className="gc-skeleton-graph" role="status" aria-busy="true" aria-label="Memuat grafik commit">
       {Array.from({ length: 12 }, (_, i) => (
         <div className="gc-skeleton-row" key={i}>
           <Skeleton width="12px" height={12} />
@@ -31,7 +37,7 @@ export function GraphSkeleton(): JSX.Element {
 /** File skeleton for the pending panel and the inspector file list. */
 export function FileListSkeleton({ rows = 6 }: { rows?: number }): JSX.Element {
   return (
-    <div className="gc-skeleton-files" role="status" aria-label="Memuat daftar file">
+    <div className="gc-skeleton-files" role="status" aria-busy="true" aria-label="Memuat daftar file">
       {Array.from({ length: rows }, (_, i) => (
         <div className="gc-skeleton-row" key={i}>
           <Skeleton width="14px" height={14} />
@@ -45,7 +51,7 @@ export function FileListSkeleton({ rows = 6 }: { rows?: number }): JSX.Element {
 /** Metadata skeleton for the inspector header. */
 export function MetadataSkeleton(): JSX.Element {
   return (
-    <div className="gc-skeleton-meta" role="status" aria-label="Memuat metadata commit">
+    <div className="gc-skeleton-meta" role="status" aria-busy="true" aria-label="Memuat metadata commit">
       <Skeleton width="55%" height={14} />
       <Skeleton width="35%" height={10} />
       <Skeleton width="45%" height={10} />
@@ -53,7 +59,13 @@ export function MetadataSkeleton(): JSX.Element {
   );
 }
 
-/** Inline spinner used for diff loads and pagination. */
+/**
+ * Inline spinner used for diff loads and pagination.
+ *
+ * The label is visible text, not an `aria-label`: under `prefers-reduced-motion`
+ * the ring stops moving, and the words are then the only thing still saying
+ * "working".
+ */
 export function Spinner({ label }: { label: string }): JSX.Element {
   return (
     <span className="gc-spinner" role="status">
@@ -65,6 +77,13 @@ export function Spinner({ label }: { label: string }): JSX.Element {
 
 // -------------------------------------------------------------------- states
 
+/**
+ * Empty state.
+ *
+ * `title` states what is true; `hint` says what to do next. An empty panel that
+ * only says "nothing here" makes the user guess, which in a git UI means guessing
+ * about their own repository.
+ */
 export function EmptyState({
   title,
   hint,
@@ -78,7 +97,7 @@ export function EmptyState({
     <div className="gc-empty" role="note">
       <p className="gc-empty__title">{title}</p>
       {hint !== undefined && <p className="gc-empty__hint">{hint}</p>}
-      {action}
+      {action !== undefined && <div className="gc-empty__actions">{action}</div>}
     </div>
   );
 }
@@ -90,7 +109,7 @@ export function ErrorBanner({
   onShowLogs,
 }: {
   error: ErrorBody;
-  onRemedy?(remedy: string): void;
+  onRemedy?(remedy: Remedy): void;
   onShowLogs?(): void;
 }): JSX.Element {
   const view = presentError(error);
@@ -100,6 +119,8 @@ export function ErrorBanner({
         !
       </span>
       <div className="gc-banner__body">
+        {/* "Kesalahan" spells the severity out; the border colour is only backup. */}
+        <span className="gc-visually-hidden">Kesalahan: </span>
         <strong>{view.title}</strong>
         <span>{view.explanation}</span>
         {/* `detail` carries git stderr, including hook output. */}
@@ -121,7 +142,7 @@ export function ErrorBanner({
           ))}
         {view.showLogs && onShowLogs !== undefined && (
           <button type="button" className="gc-button gc-button--quiet" onClick={onShowLogs}>
-            Show Logs
+            Lihat log
           </button>
         )}
       </div>
@@ -144,7 +165,11 @@ export function InfoBanner({
       <span className="gc-banner__glyph" aria-hidden="true">
         {glyph}
       </span>
-      <div className="gc-banner__body">{children}</div>
+      <div className="gc-banner__body">
+        {/* Warnings say so in words; `role="status"` alone conveys no severity. */}
+        {tone === 'warning' && <span className="gc-visually-hidden">Peringatan: </span>}
+        {children}
+      </div>
     </div>
   );
 }
@@ -184,10 +209,14 @@ export class ErrorBoundary extends Component<{ children: ReactNode }, BoundarySt
       <div className="gc-crash" role="alert">
         <p className="gc-crash__title">UI gagal dimuat</p>
         <p className="gc-crash__detail">{sanitizeGitText(error.message)}</p>
-        <p className="gc-crash__id">ID kesalahan: {errorId}</p>
-        <button type="button" className="gc-button gc-button--primary" onClick={this.reload}>
-          Muat ulang
-        </button>
+        <p className="gc-crash__id">
+          ID kesalahan: <code>{errorId}</code>. Sebutkan ID ini bila melaporkan masalah.
+        </p>
+        <div className="gc-crash__actions">
+          <button type="button" className="gc-button gc-button--primary" onClick={this.reload}>
+            Muat ulang
+          </button>
+        </div>
       </div>
     );
   }

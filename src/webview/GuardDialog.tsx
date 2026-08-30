@@ -44,19 +44,34 @@ function GuardDialogBody({ guard }: { guard: PendingGuard }): JSX.Element {
   const [acknowledged, setAcknowledged] = useState(false);
   const [busy, setBusy] = useState(false);
   const dialogRef = useRef<HTMLDivElement>(null);
+  const cancelRef = useRef<HTMLButtonElement>(null);
+  const ackRef = useRef<HTMLInputElement>(null);
   const returnFocus = useRef<Element | null>(null);
 
-  // Move focus in on open, restore it on close.
+  /**
+   * Move focus in on open, restore it on close.
+   *
+   * Focus goes to Cancel, not to the first focusable child: the first child is
+   * whichever remedy the host listed first, and for a level-2 `reset --hard` that
+   * can be `Konfirmasi`. Landing on the destructive button and pressing Enter out of
+   * habit is exactly the accident this dialog exists to prevent.
+   */
   useEffect(() => {
     returnFocus.current = document.activeElement;
     const node = dialogRef.current;
-    const first = node?.querySelector<HTMLElement>(FOCUSABLE);
-    first?.focus();
+    const target = cancelRef.current ?? node?.querySelector<HTMLElement>(FOCUSABLE) ?? null;
+    target?.focus();
     return () => {
       const previous = returnFocus.current;
       if (previous instanceof HTMLElement) previous.focus();
     };
   }, []);
+
+  // Entering the second stage moves focus to the acknowledgement box, which is the
+  // only thing that can unblock the flow from there.
+  useEffect(() => {
+    if (stage === 2) ackRef.current?.focus();
+  }, [stage]);
 
   const close = (): void => {
     dismiss();
@@ -136,6 +151,8 @@ function GuardDialogBody({ guard }: { guard: PendingGuard }): JSX.Element {
   const confirmDisabled = busy || (level === 2 && stage === 2 && !acknowledged);
   const titleId = 'gc-guard-title';
   const descId = 'gc-guard-desc';
+  const commandId = 'gc-guard-command';
+  const ackHintId = 'gc-guard-ack-hint';
 
   return (
     <div className="gc-modal-backdrop">
@@ -152,34 +169,56 @@ function GuardDialogBody({ guard }: { guard: PendingGuard }): JSX.Element {
           {actionTitle(request)}
         </h2>
 
+        {/*
+          Target, problem, and — for a two-stage flow — where the user is in it. The
+          stage line is a fact about the dialog, so it belongs with the other facts
+          rather than buried in the prose.
+        */}
         <dl className="gc-modal__facts">
           <dt>Target</dt>
           <dd>{actionTarget(request)}</dd>
           <dt>Masalah</dt>
           <dd>{view.title}</dd>
+          {risk !== undefined && (
+            <>
+              <dt>Tingkat risiko</dt>
+              <dd className="gc-risk">
+                <span className="gc-risk__glyph" aria-hidden="true">
+                  ⚠
+                </span>
+                <span>{riskLabel(risk)}</span>
+              </dd>
+            </>
+          )}
+          {level === 2 && (
+            <>
+              <dt>Konfirmasi</dt>
+              <dd>Tahap {stage} dari 2</dd>
+            </>
+          )}
         </dl>
 
         <div className="gc-modal__body" id={descId}>
           <p>{view.explanation}</p>
-          <p>{consequenceOf(request)}</p>
+          {/* The consequence is the sentence that must not be skimmed, so it is
+              set apart rather than run in with the explanation. */}
+          <p className="gc-modal__consequence">{consequenceOf(request)}</p>
           {stage === 2 && (
             <p className="gc-modal__warning">
-              Konfirmasi kedua diperlukan. Perubahan yang dibuang tidak dapat dikembalikan.
-            </p>
-          )}
-          {risk !== undefined && (
-            <p className="gc-risk">
-              <span className="gc-risk__glyph" aria-hidden="true">
-                ⚠
+              <span aria-hidden="true">⚠</span>
+              <span>
+                Konfirmasi kedua diperlukan. Perubahan yang dibuang tidak dapat dikembalikan, termasuk
+                oleh Git sendiri.
               </span>
-              <span>{riskLabel(risk)}</span>
             </p>
           )}
         </div>
 
         <div className="gc-modal__command">
-          <span className="gc-modal__command-label">Perintah git yang akan dijalankan</span>
-          <code>{gitCommandOf(request)}</code>
+          <span className="gc-modal__command-label" id={commandId}>
+            Perintah git yang akan dijalankan
+          </span>
+          <code aria-describedby={commandId}>{gitCommandOf(request)}</code>
         </div>
 
         {guard.error.detail !== undefined && (
@@ -190,6 +229,7 @@ function GuardDialogBody({ guard }: { guard: PendingGuard }): JSX.Element {
         {level === 2 && stage === 2 && (
           <label className="gc-checkbox">
             <input
+              ref={ackRef}
               type="checkbox"
               checked={acknowledged}
               onChange={(e) => setAcknowledged(e.target.checked)}
@@ -199,29 +239,46 @@ function GuardDialogBody({ guard }: { guard: PendingGuard }): JSX.Element {
         )}
 
         <div className="gc-modal__actions">
-          {view.remedies.map((remedy) => (
-            <button
-              key={remedy}
-              type="button"
-              className={
-                remedy === 'confirm'
-                  ? 'gc-button gc-button--danger'
-                  : remedy === 'cancel'
-                    ? 'gc-button'
-                    : 'gc-button gc-button--primary'
-              }
-              disabled={remedy === 'confirm' ? confirmDisabled : busy}
-              onClick={() => void handleRemedy(remedy)}
-            >
-              {remedy === 'confirm' && level === 2 && stage === 1 ? 'Lanjutkan' : remedyLabel(remedy)}
-            </button>
-          ))}
+          {view.remedies.map((remedy) => {
+            const isConfirm = remedy === 'confirm';
+            const label =
+              isConfirm && level === 2 && stage === 1 ? 'Lanjutkan' : remedyLabel(remedy);
+            return (
+              <button
+                key={remedy}
+                type="button"
+                ref={remedy === 'cancel' ? cancelRef : undefined}
+                className={
+                  isConfirm
+                    ? 'gc-button gc-button--danger'
+                    : remedy === 'cancel'
+                      ? 'gc-button'
+                      : 'gc-button gc-button--primary'
+                }
+                // The confirm button names what it will do, not just "Konfirmasi":
+                // this is the last stop before an irreversible command runs.
+                aria-label={isConfirm ? `${label}: ${gitCommandOf(request)}` : undefined}
+                aria-describedby={isConfirm && confirmDisabled ? ackHintId : undefined}
+                disabled={isConfirm ? confirmDisabled : busy}
+                onClick={() => void handleRemedy(remedy)}
+              >
+                {label}
+              </button>
+            );
+          })}
           {!view.remedies.includes('cancel') && (
-            <button type="button" className="gc-button" onClick={close}>
+            <button type="button" className="gc-button" ref={cancelRef} onClick={close}>
               Batal
             </button>
           )}
         </div>
+
+        {/* A disabled button with no stated reason is worse than no button. */}
+        {confirmDisabled && !busy && (
+          <p className="gc-help-text" id={ackHintId}>
+            Centang pernyataan di atas untuk mengaktifkan tombol konfirmasi.
+          </p>
+        )}
       </div>
     </div>
   );

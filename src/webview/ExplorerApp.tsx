@@ -2,7 +2,7 @@
  * Explorer root: the graph plus the inspector, conflict banner, guard dialog,
  * and toast region.
  */
-import { useCallback, useEffect, useState, type JSX } from 'react';
+import { useCallback, useEffect, useId, useState, type JSX } from 'react';
 import { ConflictPanel, OperationBanner } from './ConflictPanel';
 import { GitHubPanel } from './GitHubPanel';
 import { GraphCanvas } from './GraphCanvas';
@@ -39,6 +39,8 @@ export function ExplorerApp(): JSX.Element {
   const [githubUrl, setGithubUrl] = useState<string | null>(null);
   const [inspectorOpen, setInspectorOpen] = useState(true);
   const openUrl = useGitHubStore((s) => s.openUrl);
+  // `aria-controls` needs a stable id even across two roots in one bundle.
+  const asideId = useId();
 
   useEffect(() => {
     const persisted = loadState();
@@ -135,26 +137,36 @@ export function ExplorerApp(): JSX.Element {
               type="button"
               className="gc-button gc-button--quiet"
               aria-expanded={inspectorOpen}
+              aria-controls={asideId}
               onClick={() => setInspectorOpen(!inspectorOpen)}
             >
               {inspectorOpen ? 'Sembunyikan detail' : 'Tampilkan detail'}
             </button>
           </div>
-          {inspectorOpen && (
-            <>
-              <Inspector hash={selectedHash} />
-              <GitHubPanel />
-              {status !== null && status.conflicts.length > 0 && (
-                <ConflictPanel conflicts={status.conflicts} operation={status.operation} />
-              )}
-              {progressLog.length > 0 && (
-                <details className="gc-progress">
-                  <summary>Log operasi</summary>
-                  <pre className="gc-progress__log">{progressLog.join('\n')}</pre>
-                </details>
-              )}
-            </>
-          )}
+          <div id={asideId}>
+            {inspectorOpen && (
+              <>
+                <Inspector hash={selectedHash} />
+                <GitHubPanel />
+                {status !== null && status.conflicts.length > 0 && (
+                  <ConflictPanel conflicts={status.conflicts} operation={status.operation} />
+                )}
+                {progressLog.length > 0 && (
+                  <details className="gc-progress">
+                    <summary>Log operasi ({progressLog.length} baris)</summary>
+                    {/*
+                      Not a live region: git streams progress lines by the dozen, and
+                      announcing each one would bury everything else a screen reader
+                      has to say. Outcomes arrive as toasts instead.
+                    */}
+                    <pre className="gc-progress__log" aria-label="Log operasi git">
+                      {progressLog.join('\n')}
+                    </pre>
+                  </details>
+                )}
+              </>
+            )}
+          </div>
         </aside>
       </div>
 

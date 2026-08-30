@@ -1,7 +1,16 @@
 /**
- * Toast region. `aria-live="polite"` so a screen reader announces outcomes
- * without stealing focus. Auto-dismiss pauses while the pointer or keyboard
- * focus is inside the stack, otherwise a long message is unreadable.
+ * Toast region.
+ *
+ * Two regions, not one: informational outcomes go to a `polite` region that waits
+ * for a pause, and warnings and errors go to an `assertive` one that interrupts.
+ * A single `polite` region would queue a failed push behind three "Commit
+ * berhasil" messages, which is the wrong order for the only message that needs
+ * acting on.
+ *
+ * Auto-dismiss pauses while the pointer or keyboard focus is inside the stack,
+ * otherwise a long message is unreadable. Errors never auto-dismiss at all: a
+ * message that names a failed git operation has to survive long enough to be read
+ * and acted on.
  */
 import { useEffect, useRef, useState, type JSX } from 'react';
 import { sanitizeGitText } from './format';
@@ -13,26 +22,43 @@ export function ToastRegion(): JSX.Element {
   const showLogs = useOperationStore((s) => s.showLogs);
   const [paused, setPaused] = useState(false);
 
+  const polite = toasts.filter((t) => t.level === 'info');
+  const urgent = toasts.filter((t) => t.level !== 'info');
+
+  const render = (toast: Toast): JSX.Element => (
+    <ToastItem
+      key={toast.id}
+      toast={toast}
+      paused={paused}
+      onDismiss={() => dismiss(toast.id)}
+      onShowLogs={showLogs}
+    />
+  );
+
   return (
     <div
       className="gc-toasts"
-      role="status"
-      aria-live="polite"
-      aria-label="Notifikasi"
       onMouseEnter={() => setPaused(true)}
       onMouseLeave={() => setPaused(false)}
       onFocus={() => setPaused(true)}
       onBlur={() => setPaused(false)}
     >
-      {toasts.map((toast) => (
-        <ToastItem
-          key={toast.id}
-          toast={toast}
-          paused={paused}
-          onDismiss={() => dismiss(toast.id)}
-          onShowLogs={showLogs}
-        />
-      ))}
+      {/*
+        `role="alert"` implies `aria-live="assertive"`, and it is on the CONTAINER
+        rather than each toast: a live region has to exist in the DOM before its
+        content changes, otherwise the insertion is not announced at all.
+      */}
+      <div className="gc-toasts__urgent" role="alert" aria-label="Peringatan dan kesalahan">
+        {urgent.map(render)}
+      </div>
+      <div
+        className="gc-toasts__polite"
+        role="status"
+        aria-live="polite"
+        aria-label="Notifikasi"
+      >
+        {polite.map(render)}
+      </div>
     </div>
   );
 }
@@ -61,10 +87,11 @@ function ToastItem({ toast, paused, onDismiss, onShowLogs }: ItemProps): JSX.Ele
   dismissRef.current = onDismiss;
 
   useEffect(() => {
-    if (paused) return undefined;
+    // An error stays until dismissed. Everything else is transient by design.
+    if (paused || toast.level === 'error') return undefined;
     const timer = setTimeout(() => dismissRef.current(), TOAST_TIMEOUT_MS);
     return () => clearTimeout(timer);
-  }, [paused, toast.id]);
+  }, [paused, toast.id, toast.level]);
 
   return (
     <div className={`gc-toast gc-toast--${toast.level}`}>
@@ -72,6 +99,7 @@ function ToastItem({ toast, paused, onDismiss, onShowLogs }: ItemProps): JSX.Ele
         {LEVEL_GLYPH[toast.level]}
       </span>
       <div className="gc-toast__body">
+        {/* The level as a word, so severity does not depend on the border colour. */}
         <span className="gc-visually-hidden">{LEVEL_LABEL[toast.level]}: </span>
         {/* Both can be git stderr — hook output reaches `detail` verbatim. */}
         <span className="gc-toast__message">{sanitizeGitText(toast.message)}</span>
@@ -81,16 +109,18 @@ function ToastItem({ toast, paused, onDismiss, onShowLogs }: ItemProps): JSX.Ele
       </div>
       {toast.showLogs === true && (
         <button type="button" className="gc-button gc-button--quiet" onClick={onShowLogs}>
-          Show Logs
+          Lihat log
         </button>
       )}
       <button
         type="button"
         className="gc-icon-button"
-        aria-label="Tutup notifikasi"
+        // Names which notification is being closed, so a stack of three does not
+        // read as three identical `Tutup notifikasi` buttons.
+        aria-label={`Tutup notifikasi: ${sanitizeGitText(toast.message)}`}
         onClick={onDismiss}
       >
-        ×
+        <span aria-hidden="true">×</span>
       </button>
     </div>
   );

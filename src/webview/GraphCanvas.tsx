@@ -14,14 +14,17 @@
  *
  * Accessibility
  * -------------
- * `role="grid"` with `aria-rowcount` on the container and `aria-rowindex` on
- * each rendered row — the standard way to expose a virtualized list. Every
- * commit state is encoded redundantly (shape, dash pattern, badge, accessible
- * name) so colour is never the only signal.
+ * `role="grid"` with `aria-rowcount`/`aria-colcount` on the container and
+ * `aria-rowindex` on each rendered row — the standard way to expose a virtualized
+ * list. The grid is a single tab stop with a roving `tabIndex` on the focused row,
+ * so Tab crosses the canvas in one press while the arrow keys move the cursor
+ * inside it. Every commit state is encoded redundantly (shape, dash pattern, badge,
+ * accessible name) so colour is never the only signal.
  */
 import {
   useCallback,
   useEffect,
+  useId,
   useLayoutEffect,
   useMemo,
   useRef,
@@ -34,7 +37,7 @@ import {
 import { BranchLegend } from './BranchLegend';
 import { GraphMinimap } from './GraphMinimap';
 import { NodeContextMenu, type MenuAnchor, type MenuItem } from './NodeContextMenu';
-import { relativeTime, sanitizeGitText, shortHash, truncate } from './format';
+import { formatCount, relativeTime, rowLabel, sanitizeGitText, shortHash, truncate } from './format';
 import { useRepoStore, useSettingsStore } from './store';
 import {
   DEFAULT_OVERSCAN,
@@ -135,24 +138,12 @@ export function chipsFor(refNames: readonly string[], currentBranch: string | nu
 }
 
 /**
- * Accessible name for a commit row, per the PRD's example wording.
+ * Accessible name for a commit row.
  *
- * Sanitised for the same reason the visual row is: a screen-reader user makes the
- * same decisions from this string that a sighted user makes from the row, and the
- * two must not be able to disagree.
+ * Re-exported rather than defined here: it lives in `format.ts` so `a11y.test.ts`
+ * can assert it without a DOM, and so this file has exactly one source for it.
  */
-export function rowLabel(node: GraphNode, now: number): string {
-  const parts = [
-    `commit ${shortHash(node.hash)}`,
-    sanitizeGitText(node.subject),
-    `oleh ${sanitizeGitText(node.authorName)}`,
-    relativeTime(node.authoredAt, now),
-  ];
-  if (node.isHead) parts.push('HEAD');
-  if (node.isMerge) parts.push('commit merge');
-  if (node.local) parts.push('lokal belum dipush');
-  return parts.join(', ');
-}
+export { rowLabel };
 
 /** Case-insensitive match over hash, subject, and author. */
 export function matchesSearch(node: GraphNode, needle: string): boolean {
@@ -204,6 +195,10 @@ export function GraphCanvas({
   const spaceHeld = useRef(false);
   const panFrom = useRef<{ x: number; y: number; left: number; top: number } | null>(null);
   const now = useMemo(() => Date.now(), [graph]);
+  // Ids for the grid's description and for the search result count, which is the
+  // only live region on this surface.
+  const helpId = useId();
+  const countId = useId();
 
   // Track the viewport height so the row window matches reality after a resize.
   useLayoutEffect(() => {
@@ -297,6 +292,27 @@ export function GraphCanvas({
     node?.focus();
   }, []);
 
+  /**
+   * Scroll `index` into view and focus it WITHOUT changing the selection.
+   *
+   * Used when Tab lands on the canvas: moving the keyboard cursor is not the same
+   * act as selecting a commit, and tabbing past the graph must not silently change
+   * what the inspector shows.
+   */
+  const revealRow = useCallback(
+    (index: number): void => {
+      const node = scrollRef.current;
+      if (node === null) return;
+      const top = index * ROW_HEIGHT * zoom;
+      const bottom = top + ROW_HEIGHT * zoom;
+      if (top < node.scrollTop || bottom > node.scrollTop + node.clientHeight) {
+        node.scrollTop = scrollToRow(index, viewportHeight, zoom, rows.length, ROW_HEIGHT);
+      }
+      requestAnimationFrame(() => focusRowElement(index));
+    },
+    [focusRowElement, rows.length, viewportHeight, zoom],
+  );
+
   const goToRow = useCallback(
     (index: number): void => {
       const clamped = Math.min(Math.max(0, index), Math.max(0, rows.length - 1));
@@ -323,6 +339,13 @@ export function GraphCanvas({
     setMenu({ node, anchor });
   }, []);
 
+  /** Horizontal pan, so a wide lane gutter is reachable without a mouse. */
+  const panBy = useCallback((dx: number): void => {
+    const node = scrollRef.current;
+    if (node === null) return;
+    node.scrollLeft = Math.max(0, node.scrollLeft + dx);
+  }, []);
+
   // Align the keyboard cursor with a selection restored from persisted state.
   useEffect(() => {
     if (selectedHash === null) return;
@@ -340,6 +363,16 @@ export function GraphCanvas({
         event.preventDefault();
         goToRow(focusRow - 1);
         return;
+      // Horizontal pan from the keyboard. Without these, a graph wider than the
+      // viewport is only reachable with a mouse.
+      case 'ArrowLeft':
+        event.preventDefault();
+        panBy(-LANE_WIDTH * zoom * 2);
+        return;
+      case 'ArrowRight':
+        event.preventDefault();
+        panBy(LANE_WIDTH * zoom * 2);
+        return;
       case 'PageDown':
         event.preventDefault();
         goToRow(focusRow + Math.max(1, Math.floor(viewportHeight / (ROW_HEIGHT * zoom)) - 1));
@@ -356,7 +389,8 @@ export function GraphCanvas({
         event.preventDefault();
         goToRow(rows.length - 1);
         return;
-      case 'Enter': {
+      case 'Enter':
+      case ' ': {
         event.preventDefault();
         const node = rows[focusRow];
         if (node !== undefined) onOpenInspector(node.hash);
@@ -371,6 +405,10 @@ export function GraphCanvas({
       case '_':
         event.preventDefault();
         setZoom(stepZoom(zoom, -1));
+        return;
+      case '0':
+        event.preventDefault();
+        setZoom(1);
         return;
       case 'ContextMenu':
       case 'F10': {
@@ -430,13 +468,14 @@ export function GraphCanvas({
     return (
       <EmptyState
         title="Belum ada commit di repository ini."
-        hint="Buat commit pertama Anda dari panel Pending Changes, lalu grafik akan muncul di sini."
+        hint="Grafik menggambar riwayat commit, jadi ia baru punya isi setelah commit pertama. Buka panel Pending Changes, pilih file yang ingin disimpan, tulis pesan singkat, lalu tekan Commit."
       />
     );
   }
 
   const worldH = worldHeight(rows.length, ROW_HEIGHT) * zoom;
   const currentBranch = status?.branch ?? null;
+  const matchCount = search.length === 0 ? rows.length : rows.filter((n) => matchesSearch(n, search)).length;
 
   return (
     <div className="gc-graph">
@@ -445,14 +484,26 @@ export function GraphCanvas({
         search={search}
         branchFilter={branchFilter}
         refs={graph?.refs ?? []}
+        countId={countId}
         onZoom={setZoom}
         onSearch={setSearch}
         onBranchFilter={setBranchFilter}
       />
 
+      {/*
+        The only live region on this surface. It announces the filtered total after
+        the user stops typing rather than on every keystroke, because `polite`
+        queues and a per-frame update would leave a screen reader minutes behind.
+      */}
+      <p className="gc-help-text" id={countId} role="status" aria-live="polite">
+        {search.length === 0 && branchFilter.length === 0
+          ? `${formatCount(rows.length)} commit ditampilkan.`
+          : `${formatCount(matchCount)} dari ${formatCount(rows.length)} commit cocok dengan filter.`}
+      </p>
+
       {graph?.stale === true && (
         <InfoBanner tone="warning" glyph="⌛">
-          <strong>Stale</strong>
+          <strong>Data lama</strong>
           <span>Data ini snapshot lama karena git gagal dibaca. Muat ulang untuk mencoba lagi.</span>
         </InfoBanner>
       )}
@@ -472,14 +523,34 @@ export function GraphCanvas({
         </InfoBanner>
       )}
 
+      <p className="gc-visually-hidden" id={helpId}>
+        Gunakan panah atas dan bawah untuk berpindah commit, panah kiri dan kanan untuk menggeser
+        kanvas, Enter untuk membuka detail, Shift F10 untuk menu tindakan, tanda plus dan minus untuk
+        perbesaran, dan angka nol untuk mengembalikan perbesaran ke 100 persen.
+      </p>
+
       <div className="gc-graph__main">
+        {/*
+          One tab stop for the whole grid. Tab lands on the container, which
+          immediately hands focus to the cursor row (`onFocus` below) so the row's
+          accessible name is announced; the arrow keys then move the cursor. The
+          container stays focusable rather than relying only on the roving row
+          `tabIndex`, because the cursor row may be scrolled out of the rendered
+          window, and a grid that Tab cannot reach at all is the worse failure.
+        */}
         <div
           className="gc-canvas"
           ref={scrollRef}
           role="grid"
           aria-label="Grafik commit"
           aria-rowcount={rows.length}
+          aria-colcount={1}
+          aria-describedby={helpId}
           tabIndex={0}
+          onFocus={(event) => {
+            if (event.target !== event.currentTarget) return;
+            if (rows.length > 0) revealRow(focusRow);
+          }}
           onScroll={(event) => setScrollTop(event.currentTarget.scrollTop)}
           onKeyDown={onKeyDown}
           onPointerDown={onPointerDown}
@@ -488,7 +559,16 @@ export function GraphCanvas({
           onPointerCancel={endPan}
           onContextMenu={onContextMenu}
         >
-          <div className="gc-canvas__world" style={{ height: `${worldH}px` }}>
+          {/*
+            `role="rowgroup"` because the world div sits between the grid and its
+            rows: a `grid` may only own `row` or `rowgroup` children, and without
+            this the rows are not part of the grid as far as AT is concerned.
+          */}
+          <div
+            className="gc-canvas__world"
+            role="rowgroup"
+            style={{ height: `${worldH}px` }}
+          >
             <svg
               className="gc-canvas__svg"
               width={gutterWidth * zoom}
@@ -701,7 +781,12 @@ function Row({
     >
       {/* One gridcell carries the whole row: the accessible name is composed in
           `rowLabel`, and the visual parts stay hidden so nothing is read twice. */}
-      <span className="gc-row__cell-group" role="gridcell" aria-label={rowLabel(node, now)}>
+      <span
+        className="gc-row__cell-group"
+        role="gridcell"
+        aria-colindex={1}
+        aria-label={rowLabel(node, now)}
+      >
         <span className="gc-row__hash" aria-hidden="true">
           {shortHash(node.hash)}
         </span>
@@ -709,12 +794,12 @@ function Row({
           {node.isHead && <span className="gc-badge gc-badge--head">HEAD</span>}
           {node.local && (
             <span className="gc-badge gc-badge--local" title="Lokal, belum dipush">
-              ↑
+              ↑ lokal
             </span>
           )}
           {node.isMerge && (
-            <span className="gc-badge gc-badge--merge" title="Commit merge">
-              ⑃
+            <span className="gc-badge gc-badge--merge" title="Commit merge: punya dua induk">
+              ⑃ merge
             </span>
           )}
         </span>
@@ -761,6 +846,7 @@ function Toolbar({
   search,
   branchFilter,
   refs,
+  countId,
   onZoom,
   onSearch,
   onBranchFilter,
@@ -769,26 +855,29 @@ function Toolbar({
   search: string;
   branchFilter: string;
   refs: readonly RefInfo[];
+  /** Id of the result-count live region, so the search box points at its own output. */
+  countId: string;
   onZoom(zoom: number): void;
   onSearch(value: string): void;
   onBranchFilter(value: string): void;
 }): JSX.Element {
   const branches = refs.filter((r) => r.kind === 'local' || r.kind === 'remote');
   return (
-    <div className="gc-toolbar" role="toolbar" aria-label="Kontrol grafik">
-      <label className="gc-field">
-        <span className="gc-field__label">Cari</span>
+    <div className="gc-toolbar" role="toolbar" aria-label="Kontrol grafik" aria-orientation="horizontal">
+      <label className="gc-field gc-toolbar__search">
+        <span className="gc-field__label">Cari commit</span>
         <input
           type="search"
           value={search}
           maxLength={100}
           placeholder="hash, subjek, atau penulis"
+          aria-describedby={countId}
           onChange={(e) => onSearch(e.target.value)}
         />
       </label>
 
       <label className="gc-field">
-        <span className="gc-field__label">Branch</span>
+        <span className="gc-field__label">Saring branch</span>
         <select value={branchFilter} onChange={(e) => onBranchFilter(e.target.value)}>
           <option value="">Semua branch</option>
           {branches.map((ref) => (
@@ -807,25 +896,34 @@ function Toolbar({
         <button
           type="button"
           className="gc-icon-button"
-          aria-label="Perkecil"
+          aria-label="Perkecil grafik"
           disabled={zoom <= MIN_ZOOM}
           onClick={() => onZoom(stepZoom(zoom, -1))}
         >
-          −
+          <span aria-hidden="true">−</span>
         </button>
+        {/*
+          `aria-live` is off deliberately: the value is announced by the buttons
+          that changed it, and a live region here would fire on every wheel notch.
+        */}
         <span className="gc-zoom__value" aria-live="off">
           {Math.round(zoom * 100)}%
         </span>
         <button
           type="button"
           className="gc-icon-button"
-          aria-label="Perbesar"
+          aria-label="Perbesar grafik"
           disabled={zoom >= MAX_ZOOM}
           onClick={() => onZoom(stepZoom(zoom, 1))}
         >
-          +
+          <span aria-hidden="true">+</span>
         </button>
-        <button type="button" className="gc-button gc-button--quiet" onClick={() => onZoom(1)}>
+        <button
+          type="button"
+          className="gc-button gc-button--quiet"
+          aria-label="Kembalikan perbesaran ke 100 persen"
+          onClick={() => onZoom(1)}
+        >
           100%
         </button>
       </div>

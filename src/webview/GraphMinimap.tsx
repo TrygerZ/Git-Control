@@ -2,8 +2,14 @@
  * Minimap: a condensed overview of the whole loaded history with a draggable
  * viewport rectangle. Every commit becomes one 1 px tick, so even 10 000 rows
  * stay cheap — the ticks are drawn as a single path, not per-node elements.
+ *
+ * Accessibility: `role="slider"` over the row index, with `aria-valuetext` so the
+ * announcement is "commit 120 dari 3.400" rather than a bare number. Home, End,
+ * and the arrow keys all move it, which makes the whole history reachable without
+ * a pointer even though the visual affordance is a drag.
  */
 import { useCallback, useRef, type JSX, type PointerEvent } from 'react';
+import { formatCount } from './format';
 import { minimapGeometry, minimapScrollFor, ROW_HEIGHT } from './viewport';
 import type { GraphNode } from '../messages';
 
@@ -65,6 +71,10 @@ export function GraphMinimap({
     seek(event.clientY);
   };
 
+  const row = Math.round(scrollTop / (ROW_HEIGHT * zoom));
+  /** One screen of rows, so PageUp/PageDown match what the canvas does. */
+  const page = Math.max(1, Math.floor(viewportHeight / (ROW_HEIGHT * zoom)));
+
   return (
     <svg
       ref={ref}
@@ -74,9 +84,11 @@ export function GraphMinimap({
       role="slider"
       tabIndex={0}
       aria-label="Ikhtisar grafik"
+      aria-orientation="vertical"
       aria-valuemin={0}
       aria-valuemax={Math.max(0, nodes.length - 1)}
-      aria-valuenow={Math.round(scrollTop / (ROW_HEIGHT * zoom))}
+      aria-valuenow={row}
+      aria-valuetext={`Baris ${formatCount(row + 1)} dari ${formatCount(nodes.length)}`}
       onPointerDown={onPointerDown}
       onPointerMove={(event) => {
         if (dragging.current) seek(event.clientY);
@@ -86,13 +98,33 @@ export function GraphMinimap({
         event.currentTarget.releasePointerCapture(event.pointerId);
       }}
       onKeyDown={(event) => {
-        if (event.key === 'ArrowDown' || event.key === 'PageDown') {
+        const max = Math.max(0, nodes.length * ROW_HEIGHT * zoom - viewportHeight);
+        const to = (next: number): void => {
           event.preventDefault();
-          onScroll(scrollTop + ROW_HEIGHT * zoom * 10);
-        }
-        if (event.key === 'ArrowUp' || event.key === 'PageUp') {
-          event.preventDefault();
-          onScroll(Math.max(0, scrollTop - ROW_HEIGHT * zoom * 10));
+          onScroll(Math.min(max, Math.max(0, next)));
+        };
+        // A slider that only answers ArrowUp/ArrowDown is a slider a keyboard user
+        // has to hold a key on for 3 000 rows. Page and Home/End are the way out.
+        switch (event.key) {
+          case 'ArrowDown':
+            to(scrollTop + ROW_HEIGHT * zoom);
+            return;
+          case 'ArrowUp':
+            to(scrollTop - ROW_HEIGHT * zoom);
+            return;
+          case 'PageDown':
+            to(scrollTop + page * ROW_HEIGHT * zoom);
+            return;
+          case 'PageUp':
+            to(scrollTop - page * ROW_HEIGHT * zoom);
+            return;
+          case 'Home':
+            to(0);
+            return;
+          case 'End':
+            to(max);
+            return;
+          default:
         }
       }}
     >

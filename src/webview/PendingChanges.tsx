@@ -36,6 +36,20 @@ const SECTION_TITLES: Record<ChangeSection, string> = {
   untracked: 'Belum dilacak',
 };
 
+/**
+ * One line explaining what each section means, shown under its heading.
+ *
+ * The panel's whole job is making git legible, and "staged" versus "unstaged" is
+ * the single concept newcomers get wrong most often. A sentence per section costs
+ * one line and removes the guesswork.
+ */
+const SECTION_HINTS: Record<ChangeSection, string> = {
+  conflicted: 'Git tidak bisa menggabungkan otomatis. Selesaikan dulu sebelum melanjutkan.',
+  staged: 'Sudah masuk staging area. Hanya bagian ini yang akan ikut pada commit berikutnya.',
+  unstaged: 'Sudah diubah tapi belum masuk staging area. Tekan Stage agar ikut di-commit.',
+  untracked: 'File baru yang belum pernah dicatat git. Stage dulu agar mulai dilacak.',
+};
+
 export function PendingChangesApp(): JSX.Element {
   const changes = useChangesStore((s) => s.changes);
   const conflicts = useChangesStore((s) => s.conflicts);
@@ -106,6 +120,8 @@ export function PendingChangesApp(): JSX.Element {
       return includeUntracked || !entry.untracked;
     });
 
+  const stageable = stageablePaths();
+
   return (
     <div className="gc-pending">
       <OperationBanner status={status} />
@@ -116,17 +132,33 @@ export function PendingChangesApp(): JSX.Element {
         <ConflictPanel conflicts={conflicts} operation={status?.operation ?? 'idle'} />
       )}
 
-      <div className="gc-pending__bar" role="toolbar" aria-label="Tindakan perubahan">
-        <button type="button" className="gc-button gc-button--quiet" onClick={selectAll}>
+      <div className="gc-pending__bar" role="toolbar" aria-label="Tindakan perubahan" aria-orientation="horizontal">
+        <button
+          type="button"
+          className="gc-button gc-button--quiet"
+          disabled={changes.length === 0}
+          onClick={selectAll}
+        >
           Pilih semua
-        </button>
-        <button type="button" className="gc-button gc-button--quiet" onClick={clear}>
-          Kosongkan pilihan
         </button>
         <button
           type="button"
+          className="gc-button gc-button--quiet"
+          disabled={selected.length === 0}
+          onClick={clear}
+        >
+          Kosongkan pilihan
+        </button>
+        {/*
+          The count rides in the accessible name rather than only in the adjacent
+          span: a screen reader user who tabs straight to the button otherwise hears
+          `Stage` with no idea how many files it will touch.
+        */}
+        <button
+          type="button"
           className="gc-button"
-          disabled={busy || stageablePaths().length === 0}
+          aria-label={`Stage ${formatCount(stageable.length)} file terpilih`}
+          disabled={busy || stageable.length === 0}
           onClick={() => void stage(stageablePaths())}
         >
           Stage
@@ -134,12 +166,17 @@ export function PendingChangesApp(): JSX.Element {
         <button
           type="button"
           className="gc-button"
+          aria-label={`Unstage ${formatCount(selected.length)} file terpilih`}
           disabled={busy || selected.length === 0}
           onClick={() => void unstage(selected)}
         >
           Unstage
         </button>
-        <span className="gc-pending__count">{formatCount(selected.length)} dipilih</span>
+        {/* `aria-live` stays off: this changes on every checkbox tick, and the
+            checkbox itself already announces its own new state. */}
+        <span className="gc-pending__count" aria-live="off">
+          {formatCount(selected.length)} dipilih
+        </span>
       </div>
 
       {loading && changes.length === 0 ? (
@@ -147,7 +184,7 @@ export function PendingChangesApp(): JSX.Element {
       ) : changes.length === 0 ? (
         <EmptyState
           title="Tidak ada perubahan."
-          hint="Semua file sudah sesuai dengan commit terakhir."
+          hint="Semua file di folder kerja sudah sama dengan commit terakhir. Ubah sebuah file, lalu ia akan muncul di sini siap untuk di-stage."
         />
       ) : (
         <div
@@ -164,11 +201,13 @@ export function PendingChangesApp(): JSX.Element {
                   {SECTION_TITLES[section]}
                   <span className="gc-section__count">{formatCount(entries.length)}</span>
                 </h3>
+                <p className="gc-help-text">{SECTION_HINTS[section]}</p>
                 <ChangeTree
                   entries={entries}
                   selection={selection}
                   collapsed={collapsed}
                   busy={busy}
+                  label={`${SECTION_TITLES[section]}: ${formatCount(entries.length)} file`}
                   onToggleFile={toggle}
                   onToggleFolder={toggleFolder}
                   onToggleCollapsed={toggleCollapsed}

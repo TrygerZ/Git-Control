@@ -5,9 +5,18 @@
  * someone who is avoiding the terminal. `Lanjutkan merge` stays disabled until
  * the conflict list is empty, and the reason is always visible — a disabled
  * button with no explanation is worse than no button.
+ *
+ * Accessibility: each row's buttons name the file they act on, so a ten-file
+ * conflict list does not read as ten identical `Selesaikan` buttons.
  */
 import { type JSX } from 'react';
-import { conflictLabel, formatCount, operationLabel, sanitizeGitText } from './format';
+import {
+  conflictActionLabel,
+  conflictLabel,
+  formatCount,
+  operationLabel,
+  sanitizeGitText,
+} from './format';
 import { bridge } from './bridge';
 import { toErrorBody, useChangesStore, useOperationStore } from './store';
 import { EmptyState, InfoBanner } from './ui';
@@ -18,6 +27,7 @@ export function OperationBanner({ status }: { status: RepoStatus | null }): JSX.
   const runAction = useOperationStore((s) => s.runAction);
   if (status === null || status.operation === 'idle') return null;
   const resolved = status.conflicts.length === 0;
+  const blockedId = 'gc-continue-blocked';
 
   return (
     <InfoBanner tone="warning" glyph="⚠">
@@ -32,7 +42,8 @@ export function OperationBanner({ status }: { status: RepoStatus | null }): JSX.
           type="button"
           className="gc-button gc-button--primary"
           disabled={!resolved}
-          title={resolved ? undefined : 'Selesaikan semua file konflik terlebih dahulu.'}
+          // The reason for the disabled state is announced, not only hovered.
+          aria-describedby={resolved ? undefined : blockedId}
           onClick={() => void runAction({ action: 'merge-continue' })}
         >
           Lanjutkan merge
@@ -45,6 +56,11 @@ export function OperationBanner({ status }: { status: RepoStatus | null }): JSX.
           Batalkan merge
         </button>
       </span>
+      {!resolved && (
+        <span className="gc-help-text" id={blockedId}>
+          Selesaikan semua file konflik terlebih dahulu.
+        </span>
+      )}
     </InfoBanner>
   );
 }
@@ -59,6 +75,7 @@ export function ConflictPanel({ conflicts, operation }: Props): JSX.Element {
   const busy = useChangesStore((s) => s.busy);
   const runAction = useOperationStore((s) => s.runAction);
   const pushToast = useOperationStore((s) => s.pushToast);
+  const blockedId = 'gc-conflicts-blocked';
 
   const openMergeEditor = async (path: string): Promise<void> => {
     try {
@@ -75,8 +92,8 @@ export function ConflictPanel({ conflicts, operation }: Props): JSX.Element {
         title="Tidak ada konflik."
         hint={
           operation === 'idle'
-            ? undefined
-            : 'Operasi git masih berjalan. Gunakan tombol lanjutkan di banner atas.'
+            ? 'Git bisa menggabungkan semua perubahan tanpa campur tangan Anda.'
+            : 'Operasi git masih berjalan. Gunakan tombol lanjutkan di banner atas untuk menyelesaikannya.'
         }
       />
     );
@@ -87,6 +104,10 @@ export function ConflictPanel({ conflicts, operation }: Props): JSX.Element {
       <h3 className="gc-conflicts__title">
         {formatCount(conflicts.length)} file perlu diselesaikan
       </h3>
+      <p className="gc-conflicts__hint">
+        Git menemukan perubahan yang saling bertabrakan pada file berikut. Buka tiap file, pilih versi
+        yang benar, lalu tandai selesai. Setelah daftar ini kosong, merge bisa dilanjutkan.
+      </p>
       <ul className="gc-conflicts__list">
         {conflicts.map((entry) => {
           const safePath = sanitizeGitText(entry.path);
@@ -100,6 +121,7 @@ export function ConflictPanel({ conflicts, operation }: Props): JSX.Element {
                 <button
                   type="button"
                   className="gc-button gc-button--primary"
+                  aria-label={conflictActionLabel('Selesaikan konflik di', entry.path)}
                   onClick={() => void openMergeEditor(entry.path)}
                 >
                   Selesaikan
@@ -107,6 +129,7 @@ export function ConflictPanel({ conflicts, operation }: Props): JSX.Element {
                 <button
                   type="button"
                   className="gc-button"
+                  aria-label={conflictActionLabel('Tandai selesai', entry.path)}
                   disabled={busy}
                   onClick={() => void stage([entry.path])}
                 >
@@ -122,7 +145,7 @@ export function ConflictPanel({ conflicts, operation }: Props): JSX.Element {
           type="button"
           className="gc-button gc-button--primary"
           disabled
-          title="Selesaikan semua file konflik terlebih dahulu."
+          aria-describedby={blockedId}
         >
           Lanjutkan merge
         </button>
@@ -133,6 +156,9 @@ export function ConflictPanel({ conflicts, operation }: Props): JSX.Element {
         >
           Batalkan merge
         </button>
+        <span className="gc-help-text" id={blockedId}>
+          Selesaikan semua file konflik terlebih dahulu.
+        </span>
       </div>
     </section>
   );

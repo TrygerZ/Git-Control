@@ -56,7 +56,16 @@ export function GitHubPanel(): JSX.Element {
     <section className="gc-github" aria-label="Status GitHub">
       <header className="gc-github__head">
         <h3 className="gc-github__title">GitHub</h3>
-        <span className={`gc-github__badge gc-github__badge--${badge.tone}`} title={badge.title}>
+        {/*
+          The badge label always contains a word — `offline`, `Habis`, `Sisa …`,
+          `cached` — so the tone colour is redundancy. `title` alone would not be
+          reachable by keyboard, hence the explicit accessible name.
+        */}
+        <span
+          className={`gc-github__badge gc-github__badge--${badge.tone}`}
+          title={badge.title}
+          aria-label={badge.title}
+        >
           {badge.label}
         </span>
       </header>
@@ -92,7 +101,10 @@ export function GitHubPanel(): JSX.Element {
       )}
 
       {linkage?.available === false && (
-        <p className="gc-github__note">Repository ini tidak punya remote GitHub.</p>
+        <p className="gc-github__note">
+          Repository ini tidak punya remote GitHub, jadi tidak ada pull request atau tautan commit yang
+          bisa ditampilkan. Semua operasi git tetap berjalan seperti biasa.
+        </p>
       )}
 
       <div className="gc-github__actions">
@@ -105,7 +117,13 @@ export function GitHubPanel(): JSX.Element {
             Sambungkan GitHub
           </button>
         )}
-        <button type="button" className="gc-button gc-button--quiet" disabled={loading} onClick={() => void load()}>
+        <button
+          type="button"
+          className="gc-button gc-button--quiet"
+          aria-label="Muat ulang metadata GitHub"
+          disabled={loading}
+          onClick={() => void load()}
+        >
           Muat ulang
         </button>
       </div>
@@ -125,7 +143,12 @@ export function PullRequestList({
 }): JSX.Element | null {
   const openUrl = useGitHubStore((s) => s.openUrl);
   if (pullRequests.length === 0) {
-    return connected ? <p className="gc-github__note">Tidak ada pull request terbuka.</p> : null;
+    return connected ? (
+      <p className="gc-github__note">
+        Tidak ada pull request terbuka. Setelah Anda push sebuah branch, pull request-nya akan muncul di
+        sini.
+      </p>
+    ) : null;
   }
   return (
     <ul className="gc-github__prs" aria-label="Pull request terbuka">
@@ -142,10 +165,18 @@ export function PullRequestList({
               type="button"
               className={`gc-chip gc-chip--pr gc-chip--pr-${pr.state}`}
               title={tooltip}
+              // The state word is in `pullRequestLabel`, so the name carries the
+              // number, the state, the branches, the author, and the age — the
+              // border style is redundancy for sighted users, not the signal.
+              aria-label={`Buka pull request ${pullRequestLabel(pr)}: ${tooltip}`}
               onClick={() => void openUrl(pr.url)}
             >
-              <span className="gc-github__pr-number">{pullRequestLabel(pr)}</span>
-              <span className="gc-github__pr-title">{title}</span>
+              <span className="gc-github__pr-number" aria-hidden="true">
+                {pullRequestLabel(pr)}
+              </span>
+              <span className="gc-github__pr-title" aria-hidden="true">
+                {title}
+              </span>
             </button>
           </li>
         );

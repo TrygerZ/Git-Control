@@ -3,20 +3,42 @@
  *
  * Rules that hold everywhere in this file:
  *   - chrome colours come only from `--vscode-*` variables, so light, dark, and
- *     high-contrast themes all work; no hex literal appears below
+ *     high-contrast themes all work; no hex literal appears below, and
+ *     `test/a11y.test.ts` fails the build if one is added
  *   - lane colours are DATA and arrive as inline `stroke`/`fill` from the host
  *     palette, never from CSS
  *   - every interactive element gets a visible `:focus-visible` ring built from
- *     `--vscode-focusBorder`, and a 24x24 px minimum hit area
+ *     `--vscode-focusBorder`, and a 24x24 px minimum hit area (`--gc-hit`)
  *   - `prefers-reduced-motion` disables every transition and animation
+ *
+ * Spacing and type are two scales, not ad-hoc numbers. Every margin, padding, and
+ * gap below is one of `--gc-space-*`; every font size is one of `--gc-fs-*`. That
+ * is what makes the panel read as one surface instead of six.
  */
 
 :root {
   color-scheme: light dark;
 
-  --gc-gap: 8px;
+  /* Spacing scale: 4 px base. Nothing in this file uses a value off this ladder. */
+  --gc-space-1: 2px;
+  --gc-space-2: 4px;
+  --gc-space-3: 8px;
+  --gc-space-4: 12px;
+  --gc-space-5: 16px;
+  --gc-space-6: 24px;
+
+  /* Type scale. Relative so the whole UI follows the editor font size and zoom. */
+  --gc-fs-xs: 0.85em;
+  --gc-fs-sm: 0.92em;
+  --gc-fs-md: 1em;
+  --gc-fs-lg: 1.08em;
+  --gc-fs-xl: 1.2em;
+  --gc-weight-strong: 600;
+
   --gc-radius: 3px;
+  --gc-radius-pill: 9px;
   --gc-row-height: 24px;
+  /* WCAG 2.5.8 target size (minimum). Every clickable element honours it. */
   --gc-hit: 24px;
   --gc-border: var(--vscode-panel-border, var(--vscode-contrastBorder, transparent));
   --gc-muted: var(--vscode-descriptionForeground, var(--vscode-foreground));
@@ -32,6 +54,7 @@ body {
   margin: 0;
   font-family: var(--vscode-font-family);
   font-size: var(--vscode-font-size);
+  line-height: 1.4;
   color: var(--vscode-foreground);
   background: var(--vscode-editor-background);
 }
@@ -40,7 +63,23 @@ code,
 kbd,
 pre {
   font-family: var(--vscode-editor-font-family, monospace);
-  font-size: 0.92em;
+  font-size: var(--gc-fs-sm);
+}
+
+/* Hashes and counts are compared by eye down a column, so they get fixed advance. */
+code,
+.gc-row__hash,
+.gc-status__code {
+  font-variant-numeric: tabular-nums;
+}
+
+/*
+ * Section headings share one rhythm. `h2` is a panel title, `h3` a group inside
+ * it; nothing goes deeper, so two sizes are the whole hierarchy.
+ */
+h2,
+h3 {
+  line-height: 1.3;
 }
 
 /* --------------------------------------------------------------- a11y basics */
@@ -62,18 +101,43 @@ pre {
   outline-offset: 1px;
 }
 
+/*
+ * Forced-colours themes replace the outline colour with the system one, but some
+ * of ours sit on a `background: transparent` control where a 2 px ring can be
+ * clipped. Offsetting it outward keeps it whole.
+ */
+@media (forced-colors: active) {
+  :focus-visible {
+    outline: 2px solid Highlight;
+    outline-offset: 2px;
+  }
+}
+
+/*
+ * A skip link is pointless here (there is no repeated nav), but the graph is a
+ * large composite widget, so it advertises its own keyboard contract instead.
+ */
+.gc-help-text {
+  color: var(--gc-muted);
+  font-size: var(--gc-fs-xs);
+}
+
 /* ------------------------------------------------------------------ controls */
 
 .gc-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   min-height: var(--gc-hit);
   min-width: var(--gc-hit);
-  padding: 2px 10px;
-  border: 1px solid var(--vscode-button-border, transparent);
+  padding: var(--gc-space-1) var(--gc-space-4);
+  border: 1px solid var(--vscode-button-border, var(--vscode-contrastBorder, transparent));
   border-radius: var(--gc-radius);
   background: var(--vscode-button-secondaryBackground, var(--vscode-button-background));
   color: var(--vscode-button-secondaryForeground, var(--vscode-button-foreground));
   font-family: inherit;
   font-size: inherit;
+  white-space: nowrap;
   cursor: pointer;
   transition: background 80ms ease-in-out;
 }
@@ -91,6 +155,12 @@ pre {
   background: var(--vscode-button-hoverBackground);
 }
 
+/*
+ * Destructive buttons carry the danger colour AND an inset rule, so the
+ * difference from a primary button survives a monochrome high-contrast theme.
+ * The word on the button (`Konfirmasi`, next to `sangat berisiko` in the dialog)
+ * is the third channel.
+ */
 .gc-button--danger {
   background: var(--vscode-button-background);
   color: var(--vscode-button-foreground);
@@ -108,9 +178,14 @@ pre {
   background: var(--vscode-list-hoverBackground);
 }
 
+/*
+ * 0.5 opacity on `--vscode-descriptionForeground` can drop under 3:1. Disabled
+ * controls are exempt from the contrast minimum, but they still have to be
+ * readable, so the fade is shallower and `aria-disabled` carries the state.
+ */
 .gc-button:disabled,
 .gc-icon-button:disabled {
-  opacity: 0.5;
+  opacity: 0.6;
   cursor: not-allowed;
 }
 
@@ -120,11 +195,14 @@ pre {
   justify-content: center;
   min-width: var(--gc-hit);
   min-height: var(--gc-hit);
+  padding: 0;
   border: 1px solid transparent;
   border-radius: var(--gc-radius);
   background: transparent;
   color: var(--vscode-foreground);
-  font-size: 1.05em;
+  font-family: inherit;
+  font-size: var(--gc-fs-lg);
+  line-height: 1;
   cursor: pointer;
 }
 
@@ -135,20 +213,20 @@ pre {
 .gc-field {
   display: inline-flex;
   flex-direction: column;
-  gap: 2px;
+  gap: var(--gc-space-1);
   min-width: 0;
 }
 
 .gc-field__label {
   color: var(--gc-muted);
-  font-size: 0.9em;
+  font-size: var(--gc-fs-xs);
 }
 
 .gc-field input,
 .gc-field select,
 .gc-field textarea {
   min-height: var(--gc-hit);
-  padding: 2px 6px;
+  padding: var(--gc-space-1) var(--gc-space-3);
   border: 1px solid var(--vscode-input-border, var(--gc-border));
   border-radius: var(--gc-radius);
   background: var(--vscode-input-background);
@@ -161,23 +239,41 @@ pre {
   resize: vertical;
 }
 
+/* Invalid fields get a rule as well as a colour; the message below is the third. */
+.gc-field textarea[aria-invalid='true'],
+.gc-field input[aria-invalid='true'] {
+  border-color: var(--gc-danger);
+  box-shadow: inset 0 0 0 1px var(--gc-danger);
+}
+
 .gc-field__error {
-  margin: 2px 0 0;
+  display: flex;
+  align-items: baseline;
+  gap: var(--gc-space-2);
+  margin: var(--gc-space-1) 0 0;
   color: var(--gc-danger);
+  font-size: var(--gc-fs-xs);
 }
 
 .gc-checkbox {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--gc-space-3);
   min-height: var(--gc-hit);
   cursor: pointer;
 }
 
+/*
+ * The box itself is 16 px because that is the platform metric, but the clickable
+ * area is padded out to `--gc-hit` so the 24x24 target-size floor is met without
+ * making the tick look oversized.
+ */
 .gc-checkbox input,
 .gc-checkbox__input {
+  flex: 0 0 auto;
   width: 16px;
   height: 16px;
+  margin: var(--gc-space-2);
   accent-color: var(--vscode-button-background);
   cursor: pointer;
 }
@@ -187,10 +283,11 @@ pre {
 .gc-banner {
   display: flex;
   align-items: flex-start;
-  gap: var(--gc-gap);
-  padding: 6px 10px;
+  gap: var(--gc-space-3);
+  padding: var(--gc-space-3) var(--gc-space-4);
   border: 1px solid var(--gc-border);
   border-left-width: 3px;
+  border-radius: var(--gc-radius);
   background: var(--vscode-editorWidget-background, var(--vscode-editor-background));
 }
 
@@ -206,27 +303,45 @@ pre {
   border-left-color: var(--vscode-editorInfo-foreground, var(--vscode-focusBorder));
 }
 
+/*
+ * The glyph is the second channel next to the border colour: `!` for an error,
+ * `⚠` for a warning, `⋯`/`⌛` for information. It is `aria-hidden` because the
+ * banner's `role` already conveys urgency to a screen reader.
+ */
 .gc-banner__glyph {
   flex: 0 0 auto;
+  min-width: 1em;
+  text-align: center;
   font-weight: bold;
+}
+
+.gc-banner--error .gc-banner__glyph {
+  color: var(--gc-danger);
+}
+
+.gc-banner--warning .gc-banner__glyph {
+  color: var(--gc-warning);
 }
 
 .gc-banner__body {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 6px;
+  gap: var(--gc-space-3);
   min-width: 0;
 }
 
 .gc-banner__detail,
 .gc-modal__detail {
   display: block;
+  flex: 1 1 100%;
   max-height: 8em;
   overflow: auto;
-  padding: 4px 6px;
+  margin: 0;
+  padding: var(--gc-space-2) var(--gc-space-3);
+  border-radius: var(--gc-radius);
   background: var(--vscode-textCodeBlock-background, var(--vscode-editor-background));
-  color: var(--gc-muted);
+  color: var(--vscode-foreground);
   white-space: pre-wrap;
 }
 
@@ -234,12 +349,17 @@ pre {
 .gc-banner__buttons {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px;
+  gap: var(--gc-space-2);
   margin-left: auto;
 }
 
 /* ------------------------------------------------------------------ skeleton */
 
+/*
+ * Skeletons mirror the geometry of what replaces them: the graph skeleton is a
+ * 24 px row with a dot, a subject bar, and a date bar, at exactly the row height
+ * and gaps `.gc-row` uses, so the first paint does not shift the layout.
+ */
 .gc-skeleton {
   display: inline-block;
   border-radius: var(--gc-radius);
@@ -262,24 +382,31 @@ pre {
 .gc-skeleton-meta {
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  padding: var(--gc-gap);
+  gap: var(--gc-space-1);
+  padding: var(--gc-space-3);
+}
+
+.gc-skeleton-meta {
+  gap: var(--gc-space-2);
 }
 
 .gc-skeleton-row {
   display: flex;
   align-items: center;
-  gap: var(--gc-gap);
+  gap: var(--gc-space-3);
+  min-height: var(--gc-row-height);
 }
 
 .gc-spinner {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  color: var(--gc-muted);
+  gap: var(--gc-space-3);
+  min-height: var(--gc-hit);
+  color: var(--vscode-foreground);
 }
 
 .gc-spinner__dot {
+  flex: 0 0 auto;
   width: 10px;
   height: 10px;
   border: 2px solid var(--vscode-focusBorder);
@@ -296,41 +423,66 @@ pre {
 
 /* -------------------------------------------------------------- empty/crash */
 
+/*
+ * An empty state is an instruction, not a shrug: the title says what is true and
+ * the hint says what to do next, so it stays left-aligned like prose rather than
+ * centred like an error page.
+ */
 .gc-empty {
-  padding: 24px var(--gc-gap);
-  text-align: center;
-  color: var(--gc-muted);
+  display: flex;
+  flex-direction: column;
+  gap: var(--gc-space-2);
+  padding: var(--gc-space-6) var(--gc-space-4);
+  color: var(--vscode-foreground);
 }
 
 .gc-empty__title {
-  margin: 0 0 4px;
+  margin: 0;
   color: var(--vscode-foreground);
-  font-weight: 600;
+  font-weight: var(--gc-weight-strong);
 }
 
 .gc-empty__hint {
   margin: 0;
+  max-width: 44em;
+  color: var(--gc-muted);
+  font-size: var(--gc-fs-sm);
+}
+
+.gc-empty__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--gc-space-2);
+  margin-top: var(--gc-space-1);
 }
 
 .gc-crash {
   max-width: 40em;
-  margin: 32px auto;
-  padding: 16px;
+  margin: var(--gc-space-6) auto;
+  padding: var(--gc-space-5);
   border: 1px solid var(--gc-danger);
   border-radius: var(--gc-radius);
-  text-align: center;
+  display: flex;
+  flex-direction: column;
+  gap: var(--gc-space-3);
 }
 
 .gc-crash__title {
-  margin: 0 0 6px;
-  font-size: 1.2em;
-  font-weight: 600;
+  margin: 0;
+  font-size: var(--gc-fs-xl);
+  font-weight: var(--gc-weight-strong);
 }
 
 .gc-crash__detail,
 .gc-crash__id {
-  margin: 0 0 6px;
+  margin: 0;
   color: var(--gc-muted);
+  overflow-wrap: anywhere;
+}
+
+.gc-crash__actions {
+  display: flex;
+  gap: var(--gc-space-2);
 }
 
 /* --------------------------------------------------------------- explorer */
@@ -339,16 +491,16 @@ pre {
 .gc-pending {
   display: flex;
   flex-direction: column;
-  gap: var(--gc-gap);
+  gap: var(--gc-space-3);
   height: 100vh;
-  padding: var(--gc-gap);
+  padding: var(--gc-space-3);
   overflow: hidden;
 }
 
 .gc-explorer__split {
   display: flex;
   flex: 1 1 auto;
-  gap: var(--gc-gap);
+  gap: var(--gc-space-3);
   min-height: 0;
 }
 
@@ -362,9 +514,9 @@ pre {
   flex: 0 0 340px;
   display: flex;
   flex-direction: column;
-  gap: var(--gc-gap);
+  gap: var(--gc-space-3);
   min-height: 0;
-  padding-left: var(--gc-gap);
+  padding-left: var(--gc-space-3);
   border-left: 1px solid var(--gc-border);
   overflow: auto;
 }
@@ -373,14 +525,55 @@ pre {
   flex-basis: auto;
 }
 
+.gc-explorer__aside-head {
+  display: flex;
+  justify-content: flex-end;
+}
+
+/*
+ * Narrow panel or 200 % text zoom: stack instead of squeezing. A 340 px aside
+ * beside a graph inside a 600 px sidebar leaves neither readable, and the sidebar
+ * is where this view usually lives.
+ */
+@media (max-width: 900px) {
+  .gc-explorer__split {
+    flex-direction: column;
+  }
+
+  .gc-explorer__aside {
+    flex: 0 0 auto;
+    max-height: 50vh;
+    padding-left: 0;
+    padding-top: var(--gc-space-3);
+    border-left: none;
+    border-top: 1px solid var(--gc-border);
+  }
+
+  .gc-graph__main {
+    flex-direction: column;
+  }
+
+  .gc-graph__side {
+    flex-direction: row;
+    flex-wrap: wrap;
+    max-width: none;
+  }
+}
+
 .gc-progress__log {
   max-height: 12em;
   overflow: auto;
   margin: 0;
-  padding: 6px;
+  padding: var(--gc-space-3);
   background: var(--vscode-textCodeBlock-background, var(--vscode-editor-background));
-  color: var(--gc-muted);
+  color: var(--vscode-foreground);
   white-space: pre-wrap;
+}
+
+.gc-progress > summary {
+  min-height: var(--gc-hit);
+  padding: var(--gc-space-2) 0;
+  cursor: pointer;
 }
 
 /* ------------------------------------------------------------------- toolbar */
@@ -390,19 +583,28 @@ pre {
   display: flex;
   flex-wrap: wrap;
   align-items: flex-end;
-  gap: var(--gc-gap);
+  gap: var(--gc-space-3);
+}
+
+.gc-toolbar__search {
+  flex: 1 1 12em;
+  min-width: 8em;
+}
+
+.gc-toolbar__search input {
+  width: 100%;
 }
 
 .gc-zoom {
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: var(--gc-space-2);
 }
 
 .gc-zoom__value {
   min-width: 4em;
   text-align: center;
-  color: var(--gc-muted);
+  color: var(--vscode-foreground);
   font-variant-numeric: tabular-nums;
 }
 
@@ -411,7 +613,7 @@ pre {
 .gc-graph {
   display: flex;
   flex-direction: column;
-  gap: var(--gc-gap);
+  gap: var(--gc-space-3);
   height: 100%;
   min-height: 0;
 }
@@ -419,7 +621,7 @@ pre {
 .gc-graph__main {
   display: flex;
   flex: 1 1 auto;
-  gap: var(--gc-gap);
+  gap: var(--gc-space-3);
   min-height: 0;
 }
 
@@ -427,7 +629,7 @@ pre {
   flex: 0 0 auto;
   display: flex;
   flex-direction: column;
-  gap: var(--gc-gap);
+  gap: var(--gc-space-3);
   max-width: 260px;
   overflow: auto;
 }
@@ -435,7 +637,7 @@ pre {
 .gc-graph__more {
   display: flex;
   align-items: center;
-  gap: var(--gc-gap);
+  gap: var(--gc-space-3);
 }
 
 .gc-canvas {
@@ -444,6 +646,7 @@ pre {
   min-height: 0;
   overflow: auto;
   border: 1px solid var(--gc-border);
+  border-radius: var(--gc-radius);
   background: var(--vscode-editor-background);
 }
 
@@ -459,15 +662,22 @@ pre {
   pointer-events: none;
 }
 
+/*
+ * Edge weights. A first-parent edge is the spine of a branch, so it is thin and
+ * continuous; a merge edge is where two histories join, which is the fact a reader
+ * scans for, so it is nearly twice as thick AND round-capped. Two channels, no
+ * reliance on the lane colour.
+ */
 .gc-edge {
   fill: none;
-  stroke-width: 1.5;
+  stroke-width: 1.4;
+  stroke-linecap: round;
 }
 
 .gc-edge--merge {
-  stroke-width: 2.25;
+  stroke-width: 2.6;
   stroke-dasharray: none;
-  opacity: 0.95;
+  stroke-linejoin: round;
 }
 
 .gc-node__dot {
@@ -480,7 +690,7 @@ pre {
 }
 
 .gc-node--dim {
-  opacity: 0.28;
+  opacity: 0.3;
 }
 
 .gc-node__head-ring {
@@ -506,8 +716,8 @@ pre {
   right: 0;
   display: flex;
   align-items: center;
-  gap: var(--gc-gap);
-  padding: 0 6px;
+  gap: var(--gc-space-3);
+  padding: 0 var(--gc-space-3);
   overflow: hidden;
   white-space: nowrap;
   cursor: default;
@@ -521,30 +731,43 @@ pre {
   background: var(--vscode-list-activeSelectionBackground);
   color: var(--vscode-list-activeSelectionForeground);
   outline: 1px solid var(--vscode-contrastActiveBorder, transparent);
+  outline-offset: -1px;
 }
 
+/*
+ * Search misses are dimmed rather than hidden so the topology stays intact, but
+ * 0.42 put muted text under 3:1. 0.55 keeps the "this is not a match" signal while
+ * staying readable, and the `<mark>` on the hits is the stronger signal anyway.
+ */
 .gc-row--dim {
-  opacity: 0.42;
+  opacity: 0.55;
 }
 
 .gc-row__cell-group {
   display: flex;
   align-items: center;
-  gap: var(--gc-gap);
+  gap: var(--gc-space-3);
   width: 100%;
   min-width: 0;
 }
 
+/*
+ * Type hierarchy in a row: the subject is the primary text at full weight and
+ * full contrast; the hash, author, and date are metadata and step down in both
+ * size and contrast. Nothing is smaller than `--gc-fs-xs`.
+ */
 .gc-row__hash {
   flex: 0 0 auto;
   color: var(--gc-muted);
   font-family: var(--vscode-editor-font-family, monospace);
+  font-size: var(--gc-fs-sm);
 }
 
 .gc-row__subject {
   flex: 1 1 auto;
   min-width: 0;
   overflow: hidden;
+  color: inherit;
   text-overflow: ellipsis;
 }
 
@@ -552,18 +775,26 @@ pre {
 .gc-row__date {
   flex: 0 0 auto;
   color: var(--gc-muted);
+  font-size: var(--gc-fs-xs);
+}
+
+.gc-row__author {
+  max-width: 12em;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .gc-row__badges,
 .gc-row__chips {
   display: flex;
   flex: 0 0 auto;
-  gap: 4px;
+  gap: var(--gc-space-2);
 }
 
 .gc-mark {
   background: var(--vscode-editor-findMatchHighlightBackground, var(--vscode-list-hoverBackground));
   color: inherit;
+  font-weight: var(--gc-weight-strong);
 }
 
 /* --------------------------------------------------------------- badges/chips */
@@ -571,18 +802,20 @@ pre {
 .gc-badge {
   display: inline-flex;
   align-items: center;
-  padding: 0 4px;
+  padding: 0 var(--gc-space-2);
   border: 1px solid currentColor;
   border-radius: var(--gc-radius);
-  font-size: 0.82em;
+  font-size: var(--gc-fs-xs);
   line-height: 1.5;
+  white-space: nowrap;
 }
 
 .gc-badge--head {
   color: var(--vscode-charts-blue, var(--vscode-foreground));
-  font-weight: 600;
+  font-weight: var(--gc-weight-strong);
 }
 
+/* Dashed border repeats the dashed node outline: same fact, same visual language. */
 .gc-badge--local {
   color: var(--vscode-charts-orange, var(--gc-warning));
   border-style: dashed;
@@ -596,26 +829,29 @@ pre {
   display: inline-flex;
   align-items: center;
   max-width: 18em;
-  padding: 0 5px;
+  padding: 0 var(--gc-space-3);
   overflow: hidden;
   border: 1px solid var(--gc-border);
-  border-radius: 9px;
+  border-radius: var(--gc-radius-pill);
   color: var(--gc-muted);
-  font-size: 0.85em;
+  font-size: var(--gc-fs-xs);
+  line-height: 1.6;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
+/* The active branch is the one fact worth extra weight anywhere in the row. */
 .gc-chip--current {
   border-color: var(--vscode-focusBorder);
   color: var(--vscode-foreground);
-  font-weight: 600;
+  font-weight: var(--gc-weight-strong);
 }
 
 .gc-chip--remote {
   border-style: dashed;
 }
 
+/* Tags are permanent markers, so they get the square shape branches do not have. */
 .gc-chip--tag {
   border-radius: var(--gc-radius);
 }
@@ -623,14 +859,18 @@ pre {
 /* ------------------------------------------------------------------- minimap */
 
 .gc-minimap {
+  flex: 0 0 auto;
   border: 1px solid var(--gc-border);
+  border-radius: var(--gc-radius);
   background: var(--vscode-editorWidget-background, var(--vscode-editor-background));
   cursor: pointer;
+  touch-action: none;
 }
 
 .gc-minimap__ticks {
-  stroke: var(--gc-muted);
+  stroke: var(--vscode-foreground);
   stroke-width: 1;
+  opacity: 0.7;
 }
 
 .gc-minimap__viewport {
@@ -641,14 +881,24 @@ pre {
 
 /* -------------------------------------------------------------------- legend */
 
+/*
+ * The legend is the teaching surface, so it is laid out as documentation: a
+ * heading per concept group, a swatch that is literally the canvas glyph, and one
+ * sentence of plain Indonesian per entry.
+ */
 .gc-legend {
   border: 1px solid var(--gc-border);
-  padding: 6px;
+  border-radius: var(--gc-radius);
+  padding: var(--gc-space-3);
 }
 
 .gc-legend__toggle {
+  display: flex;
+  align-items: center;
+  gap: var(--gc-space-2);
   width: 100%;
   min-height: var(--gc-hit);
+  padding: 0;
   border: none;
   background: transparent;
   color: var(--vscode-textLink-foreground, var(--vscode-foreground));
@@ -657,31 +907,56 @@ pre {
   cursor: pointer;
 }
 
+.gc-legend__toggle-glyph {
+  flex: 0 0 auto;
+}
+
+.gc-legend__body {
+  margin-top: var(--gc-space-3);
+}
+
+.gc-legend__intro {
+  margin: 0 0 var(--gc-space-3);
+  color: var(--gc-muted);
+  font-size: var(--gc-fs-xs);
+}
+
 .gc-legend__heading {
-  margin: 10px 0 4px;
-  font-size: 0.95em;
+  margin: var(--gc-space-4) 0 var(--gc-space-2);
+  font-size: var(--gc-fs-sm);
+  font-weight: var(--gc-weight-strong);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--gc-muted);
+}
+
+.gc-legend__heading:first-child {
+  margin-top: 0;
 }
 
 .gc-legend__list {
   display: grid;
   grid-template-columns: auto;
-  gap: 2px;
+  gap: var(--gc-space-1);
   margin: 0;
 }
 
 .gc-legend__list dt {
   display: flex;
   align-items: center;
-  gap: 6px;
-  font-weight: 600;
+  gap: var(--gc-space-3);
+  min-height: var(--gc-row-height);
+  font-weight: var(--gc-weight-strong);
 }
 
 .gc-legend__list dd {
-  margin: 0 0 6px;
+  margin: 0 0 var(--gc-space-3);
   color: var(--gc-muted);
+  font-size: var(--gc-fs-xs);
 }
 
 .gc-legend__swatch {
+  flex: 0 0 auto;
   width: 12px;
   height: 12px;
   border: 1.5px solid var(--vscode-foreground);
@@ -708,13 +983,15 @@ pre {
 
 .gc-legend__line {
   display: inline-block;
+  flex: 0 0 auto;
   width: 22px;
   height: 0;
-  border-top: 1.5px solid var(--vscode-foreground);
+  border-top: 1.4px solid var(--vscode-foreground);
 }
 
+/* Mirrors `.gc-edge--merge`: same weight, same rounding, so the sample is honest. */
 .gc-legend__line--merge {
-  border-top-width: 3px;
+  border-top-width: 2.6px;
   border-radius: 3px;
 }
 
@@ -727,29 +1004,41 @@ pre {
 .gc-legend__lanes li {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--gc-space-3);
+  min-height: var(--gc-row-height);
+  font-size: var(--gc-fs-xs);
 }
 
 .gc-legend__lane-color {
-  width: 12px;
+  flex: 0 0 auto;
+  width: 14px;
   height: 3px;
   border-radius: 2px;
 }
 
 .gc-legend__note {
+  margin: var(--gc-space-2) 0 0;
   color: var(--gc-muted);
+  font-size: var(--gc-fs-xs);
 }
 
 .gc-legend__keys {
   margin: 0;
-  padding-left: 1.1em;
+  padding-left: 1.2em;
   color: var(--gc-muted);
+  font-size: var(--gc-fs-xs);
+}
+
+.gc-legend__keys li {
+  margin-bottom: var(--gc-space-1);
 }
 
 .gc-legend__keys kbd {
-  padding: 0 3px;
+  padding: 0 var(--gc-space-2);
   border: 1px solid var(--gc-border);
   border-radius: 2px;
+  background: var(--vscode-keybindingLabel-background, transparent);
+  color: var(--vscode-keybindingLabel-foreground, inherit);
 }
 
 /* ---------------------------------------------------------------------- menu */
@@ -761,8 +1050,10 @@ pre {
   flex-direction: column;
   min-width: 16em;
   max-width: 26em;
-  padding: 4px;
-  border: 1px solid var(--vscode-menu-border, var(--gc-border));
+  max-height: 80vh;
+  overflow: auto;
+  padding: var(--gc-space-2);
+  border: 1px solid var(--vscode-menu-border, var(--vscode-contrastBorder, var(--gc-border)));
   border-radius: var(--gc-radius);
   background: var(--vscode-menu-background, var(--vscode-editorWidget-background));
   color: var(--vscode-menu-foreground, var(--vscode-foreground));
@@ -773,9 +1064,9 @@ pre {
   display: flex;
   flex-direction: column;
   align-items: flex-start;
-  gap: 1px;
+  gap: var(--gc-space-1);
   min-height: var(--gc-hit);
-  padding: 4px 8px;
+  padding: var(--gc-space-2) var(--gc-space-3);
   border: none;
   border-radius: var(--gc-radius);
   background: transparent;
@@ -786,28 +1077,48 @@ pre {
   cursor: pointer;
 }
 
-.gc-menu__item:hover {
+.gc-menu__item:hover,
+.gc-menu__item:focus-visible {
   background: var(--vscode-menu-selectionBackground, var(--vscode-list-hoverBackground));
   color: var(--vscode-menu-selectionForeground, inherit);
 }
 
+.gc-menu__label {
+  display: flex;
+  align-items: baseline;
+  gap: var(--gc-space-2);
+}
+
+.gc-menu__separator {
+  height: 1px;
+  margin: var(--gc-space-2) var(--gc-space-1);
+  background: var(--gc-border);
+}
+
+/* Risk is a glyph, the word `berisiko`, and a colour — three channels, not one. */
 .gc-menu__item--risky .gc-menu__risk,
 .gc-menu__item--risky .gc-menu__risk-word {
   color: var(--gc-danger);
 }
 
 .gc-menu__risk {
-  margin-right: 4px;
+  flex: 0 0 auto;
 }
 
 .gc-menu__risk-word {
-  font-size: 0.85em;
+  font-size: var(--gc-fs-xs);
+  font-weight: var(--gc-weight-strong);
 }
 
 .gc-menu__hint {
   color: var(--gc-muted);
-  font-size: 0.85em;
+  font-size: var(--gc-fs-xs);
   white-space: normal;
+}
+
+.gc-menu__item:hover .gc-menu__hint,
+.gc-menu__item:focus-visible .gc-menu__hint {
+  color: inherit;
 }
 
 /* --------------------------------------------------------------------- modal */
@@ -819,32 +1130,36 @@ pre {
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 16px;
-  background: var(--vscode-widget-shadow, rgba(0, 0, 0, 0.4));
+  padding: var(--gc-space-5);
+  overflow: auto;
+  /* No hex literal: the theme's own shadow token, falling back to a neutral wash. */
+  background: var(--vscode-widget-shadow, var(--vscode-editorWidget-background));
 }
 
 .gc-modal {
   display: flex;
   flex-direction: column;
-  gap: var(--gc-gap);
+  gap: var(--gc-space-4);
   width: min(38em, 100%);
   max-height: 90vh;
   overflow: auto;
-  padding: 16px;
+  padding: var(--gc-space-5);
   border: 1px solid var(--vscode-contrastBorder, var(--gc-border));
   border-radius: var(--gc-radius);
   background: var(--vscode-editorWidget-background, var(--vscode-editor-background));
+  box-shadow: 0 4px 16px var(--vscode-widget-shadow, transparent);
 }
 
 .gc-modal__title {
   margin: 0;
-  font-size: 1.15em;
+  font-size: var(--gc-fs-xl);
+  font-weight: var(--gc-weight-strong);
 }
 
 .gc-modal__facts {
   display: grid;
   grid-template-columns: auto 1fr;
-  gap: 2px 10px;
+  gap: var(--gc-space-1) var(--gc-space-4);
   margin: 0;
 }
 
@@ -854,44 +1169,73 @@ pre {
 
 .gc-modal__facts dd {
   margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.gc-modal__body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gc-space-2);
 }
 
 .gc-modal__body p {
-  margin: 0 0 6px;
+  margin: 0;
+}
+
+/*
+ * The consequence sentence is the one line that must not be skimmed past, so it
+ * gets its own block and a rule on the danger side.
+ */
+.gc-modal__consequence {
+  padding: var(--gc-space-3);
+  border-left: 3px solid var(--gc-warning);
+  background: var(--vscode-textBlockQuote-background, transparent);
 }
 
 .gc-modal__warning {
-  color: var(--gc-warning);
-  font-weight: 600;
+  display: flex;
+  align-items: flex-start;
+  gap: var(--gc-space-2);
+  padding: var(--gc-space-3);
+  border: 1px solid var(--gc-danger);
+  border-radius: var(--gc-radius);
+  color: var(--vscode-foreground);
+  font-weight: var(--gc-weight-strong);
 }
 
 .gc-modal__command {
   display: flex;
   flex-direction: column;
-  gap: 2px;
-  padding: 6px 8px;
+  gap: var(--gc-space-1);
+  padding: var(--gc-space-3);
   border: 1px solid var(--gc-border);
+  border-radius: var(--gc-radius);
   background: var(--vscode-textCodeBlock-background, var(--vscode-editor-background));
+}
+
+.gc-modal__command code {
+  overflow-wrap: anywhere;
+  font-size: var(--gc-fs-md);
 }
 
 .gc-modal__command-label {
   color: var(--gc-muted);
-  font-size: 0.85em;
+  font-size: var(--gc-fs-xs);
 }
 
 .gc-modal__actions {
   display: flex;
   flex-wrap: wrap;
   justify-content: flex-end;
-  gap: 6px;
+  gap: var(--gc-space-2);
 }
 
 .gc-risk {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--gc-space-2);
   color: var(--gc-danger);
-  font-weight: 600;
+  font-weight: var(--gc-weight-strong);
 }
 
 /* ----------------------------------------------------------- pending changes */
@@ -904,29 +1248,34 @@ pre {
 
 .gc-pending__count {
   margin-left: auto;
-  color: var(--gc-muted);
+  align-self: center;
+  color: var(--vscode-foreground);
+  font-variant-numeric: tabular-nums;
 }
 
 .gc-section {
-  margin-bottom: var(--gc-gap);
+  margin-bottom: var(--gc-space-4);
 }
 
 .gc-section__title {
   display: flex;
   align-items: center;
-  gap: 6px;
-  margin: 0 0 2px;
-  font-size: 0.95em;
+  gap: var(--gc-space-3);
+  margin: 0 0 var(--gc-space-1);
+  color: var(--gc-muted);
+  font-size: var(--gc-fs-xs);
+  font-weight: var(--gc-weight-strong);
   text-transform: uppercase;
-  letter-spacing: 0.04em;
+  letter-spacing: 0.05em;
 }
 
 .gc-section__count {
-  padding: 0 5px;
+  padding: 0 var(--gc-space-3);
   border: 1px solid var(--gc-border);
-  border-radius: 9px;
+  border-radius: var(--gc-radius-pill);
   color: var(--gc-muted);
-  font-size: 0.85em;
+  font-size: var(--gc-fs-xs);
+  font-variant-numeric: tabular-nums;
 }
 
 .gc-tree {
@@ -938,23 +1287,32 @@ pre {
 .gc-tree__row {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--gc-space-3);
   min-height: var(--gc-hit);
-  padding-right: 6px;
+  padding-right: var(--gc-space-3);
 }
 
 .gc-tree__row:hover {
   background: var(--vscode-list-hoverBackground);
 }
 
+/* The keyboard cursor inside the treegrid, distinct from `:focus-visible`. */
+.gc-tree__row--active {
+  background: var(--vscode-list-activeSelectionBackground);
+  color: var(--vscode-list-activeSelectionForeground);
+  outline: 1px solid var(--vscode-contrastActiveBorder, transparent);
+  outline-offset: -1px;
+}
+
 .gc-tree__folder,
 .gc-tree__file {
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: var(--gc-space-2);
   flex: 1 1 auto;
   min-width: 0;
   min-height: var(--gc-hit);
+  padding: 0;
   border: none;
   background: transparent;
   color: inherit;
@@ -963,44 +1321,77 @@ pre {
   cursor: pointer;
 }
 
+/*
+ * `role="gridcell"` needs a real element, so each cell is a span. These two grow
+ * because they hold the name; the rest size to content.
+ */
+.gc-tree__folder-cell,
+.gc-tree__file-cell {
+  display: flex;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.gc-tree__twisty {
+  flex: 0 0 auto;
+  width: 1em;
+  text-align: center;
+}
+
 .gc-tree__name {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
+.gc-tree__folder .gc-tree__name {
+  font-weight: var(--gc-weight-strong);
+}
+
+/*
+ * Status is a glyph, a letter, and an Indonesian word: three channels, so a
+ * monochrome theme loses nothing. The glyph column is fixed-width so the letters
+ * line up down the panel.
+ */
 .gc-tree__status {
   display: inline-flex;
   flex: 0 0 auto;
   align-items: center;
-  gap: 4px;
+  gap: var(--gc-space-2);
+}
+
+.gc-status__glyph {
+  min-width: 1em;
+  text-align: center;
 }
 
 .gc-status__code {
   min-width: 1.2em;
   text-align: center;
-  color: var(--gc-muted);
+  color: var(--vscode-foreground);
 }
 
 .gc-status__label {
   color: var(--gc-muted);
-  font-size: 0.85em;
+  font-size: var(--gc-fs-xs);
 }
 
 .gc-tree__stats,
 .gc-filelist__stats {
   display: inline-flex;
   flex: 0 0 auto;
-  gap: 6px;
+  gap: var(--gc-space-3);
+  font-size: var(--gc-fs-xs);
   font-variant-numeric: tabular-nums;
 }
 
 .gc-tree__binary,
 .gc-filelist__binary {
   color: var(--gc-muted);
-  font-size: 0.85em;
+  font-size: var(--gc-fs-xs);
 }
 
+/* `+`/`−` prefix the number, so churn direction survives without the colour. */
 .gc-stat--add {
   color: var(--vscode-gitDecoration-addedResourceForeground, var(--vscode-charts-green));
 }
@@ -1014,8 +1405,8 @@ pre {
 .gc-commit {
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  padding-top: var(--gc-gap);
+  gap: var(--gc-space-3);
+  padding-top: var(--gc-space-3);
   border-top: 1px solid var(--gc-border);
 }
 
@@ -1023,10 +1414,17 @@ pre {
   width: 100%;
 }
 
+.gc-commit__hint {
+  margin: 0;
+  color: var(--gc-muted);
+  font-size: var(--gc-fs-xs);
+}
+
 .gc-commit__actions {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: var(--gc-gap);
+  gap: var(--gc-space-3);
 }
 
 /* ----------------------------------------------------------------- inspector */
@@ -1034,31 +1432,41 @@ pre {
 .gc-inspector {
   display: flex;
   flex-direction: column;
-  gap: var(--gc-gap);
+  gap: var(--gc-space-4);
+}
+
+.gc-inspector__head {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gc-space-2);
 }
 
 .gc-inspector__subject {
   margin: 0;
-  font-size: 1.05em;
+  font-size: var(--gc-fs-lg);
+  font-weight: var(--gc-weight-strong);
+  overflow-wrap: anywhere;
 }
 
 .gc-inspector__hashes {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 6px;
+  gap: var(--gc-space-2);
 }
 
 .gc-inspector__full {
   overflow-wrap: anywhere;
   color: var(--gc-muted);
+  font-size: var(--gc-fs-xs);
 }
 
 .gc-inspector__meta {
   display: grid;
   grid-template-columns: auto 1fr;
-  gap: 2px 10px;
+  gap: var(--gc-space-1) var(--gc-space-4);
   margin: 0;
+  font-size: var(--gc-fs-sm);
 }
 
 .gc-inspector__meta dt {
@@ -1074,7 +1482,7 @@ pre {
 .gc-inspector__refs {
   display: flex;
   flex-wrap: wrap;
-  gap: 4px;
+  gap: var(--gc-space-2);
   margin: 0;
   padding: 0;
   list-style: none;
@@ -1084,19 +1492,22 @@ pre {
   max-height: 14em;
   overflow: auto;
   margin: 0;
-  padding: 6px;
+  padding: var(--gc-space-3);
+  border-radius: var(--gc-radius);
   background: var(--vscode-textCodeBlock-background, var(--vscode-editor-background));
   white-space: pre-wrap;
 }
 
 .gc-inspector__toolbar {
   display: flex;
-  gap: 6px;
+  gap: var(--gc-space-2);
 }
 
 .gc-inspector__totals {
   margin: 0;
   color: var(--gc-muted);
+  font-size: var(--gc-fs-xs);
+  font-variant-numeric: tabular-nums;
 }
 
 .gc-filelist {
@@ -1108,17 +1519,18 @@ pre {
 .gc-filelist__item {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--gc-space-3);
+  min-height: var(--gc-hit);
 }
 
 .gc-filelist__button {
   display: flex;
   flex: 1 1 auto;
   align-items: center;
-  gap: 8px;
+  gap: var(--gc-space-3);
   min-width: 0;
   min-height: var(--gc-hit);
-  padding: 2px 4px;
+  padding: var(--gc-space-1) var(--gc-space-2);
   border: none;
   border-radius: var(--gc-radius);
   background: transparent;
@@ -1144,7 +1556,7 @@ pre {
   min-width: 0;
   overflow: hidden;
   color: var(--gc-muted);
-  font-size: 0.85em;
+  font-size: var(--gc-fs-xs);
   text-overflow: ellipsis;
   white-space: nowrap;
   direction: rtl;
@@ -1154,16 +1566,27 @@ pre {
 /* ----------------------------------------------------------------- conflicts */
 
 .gc-conflicts {
-  padding: 6px;
+  padding: var(--gc-space-3);
   border: 1px solid var(--gc-warning);
+  border-radius: var(--gc-radius);
 }
 
 .gc-conflicts__title {
-  margin: 0 0 4px;
-  font-size: 0.95em;
+  margin: 0 0 var(--gc-space-2);
+  font-size: var(--gc-fs-sm);
+  font-weight: var(--gc-weight-strong);
+}
+
+.gc-conflicts__hint {
+  margin: 0 0 var(--gc-space-3);
+  color: var(--gc-muted);
+  font-size: var(--gc-fs-xs);
 }
 
 .gc-conflicts__list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gc-space-2);
   margin: 0;
   padding: 0;
   list-style: none;
@@ -1173,7 +1596,7 @@ pre {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 6px;
+  gap: var(--gc-space-3);
   min-height: var(--gc-hit);
 }
 
@@ -1186,18 +1609,22 @@ pre {
 }
 
 .gc-conflicts__code {
+  flex: 0 0 auto;
   color: var(--gc-muted);
-  font-size: 0.85em;
+  font-size: var(--gc-fs-xs);
 }
 
 .gc-conflicts__actions,
 .gc-conflicts__footer {
   display: flex;
-  gap: 6px;
+  flex-wrap: wrap;
+  gap: var(--gc-space-2);
 }
 
 .gc-conflicts__footer {
-  margin-top: 6px;
+  margin-top: var(--gc-space-3);
+  padding-top: var(--gc-space-3);
+  border-top: 1px solid var(--gc-border);
 }
 
 /* -------------------------------------------------------------------- github */
@@ -1209,8 +1636,8 @@ pre {
 .gc-github {
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  padding: 6px;
+  gap: var(--gc-space-3);
+  padding: var(--gc-space-3);
   border: 1px solid var(--gc-border);
   border-radius: var(--gc-radius);
 }
@@ -1219,36 +1646,43 @@ pre {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 6px;
+  gap: var(--gc-space-3);
 }
 
 .gc-github__title {
   margin: 0;
-  font-size: 0.95em;
+  font-size: var(--gc-fs-xs);
+  font-weight: var(--gc-weight-strong);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--gc-muted);
 }
 
 .gc-github__badge {
   display: inline-flex;
   align-items: center;
   min-height: 18px;
-  padding: 0 6px;
+  padding: 0 var(--gc-space-3);
   border: 1px solid var(--gc-border);
-  border-radius: 9px;
-  font-size: 0.85em;
+  border-radius: var(--gc-radius-pill);
+  font-size: var(--gc-fs-xs);
 }
 
 .gc-github__badge--info {
   color: var(--gc-muted);
 }
 
+/* Warning tone: a rule plus a bold border. The label already says why. */
 .gc-github__badge--warning {
   border-color: var(--gc-warning);
+  border-width: 2px;
   color: var(--vscode-foreground);
+  font-weight: var(--gc-weight-strong);
 }
 
 .gc-github__state {
   margin: 0;
-  font-size: 0.9em;
+  font-size: var(--gc-fs-sm);
 }
 
 .gc-github__repo {
@@ -1258,19 +1692,19 @@ pre {
 .gc-github__note {
   margin: 0;
   color: var(--gc-muted);
-  font-size: 0.85em;
+  font-size: var(--gc-fs-xs);
 }
 
 .gc-github__actions {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px;
+  gap: var(--gc-space-2);
 }
 
 .gc-github__prs {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: var(--gc-space-2);
   margin: 0;
   padding: 0;
   list-style: none;
@@ -1278,14 +1712,15 @@ pre {
 
 .gc-chip--pr {
   display: flex;
-  gap: 6px;
+  gap: var(--gc-space-3);
   align-items: baseline;
   max-width: 100%;
   min-height: var(--gc-hit);
-  padding: 2px 8px;
+  padding: var(--gc-space-1) var(--gc-space-3);
   background: transparent;
   color: var(--vscode-foreground);
   font-family: inherit;
+  font-size: var(--gc-fs-xs);
   cursor: pointer;
   text-align: left;
 }
@@ -1294,12 +1729,18 @@ pre {
   background: var(--vscode-list-hoverBackground);
 }
 
+/*
+ * PR state uses border STYLE, not colour: solid+focus border for open, double for
+ * merged, dashed for closed. The chip text also spells the state
+ * (`Terbuka`/`Digabung`/`Ditutup`), so this is redundancy, not the only signal.
+ */
 .gc-chip--pr-open {
   border-color: var(--vscode-focusBorder);
 }
 
 .gc-chip--pr-merged {
   border-style: double;
+  border-width: 3px;
 }
 
 .gc-chip--pr-closed {
@@ -1309,6 +1750,7 @@ pre {
 .gc-github__pr-number {
   flex: 0 0 auto;
   color: var(--gc-muted);
+  font-variant-numeric: tabular-nums;
 }
 
 .gc-github__pr-title {
@@ -1323,20 +1765,28 @@ pre {
 
 .gc-toasts {
   position: fixed;
-  right: 12px;
-  bottom: 12px;
+  right: var(--gc-space-4);
+  bottom: var(--gc-space-4);
   z-index: 50;
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  max-width: 28em;
+  gap: var(--gc-space-2);
+  max-width: min(28em, calc(100vw - 2 * var(--gc-space-4)));
+}
+
+/* Two live regions stacked; each is empty (and so invisible) until it has toasts. */
+.gc-toasts__urgent,
+.gc-toasts__polite {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gc-space-2);
 }
 
 .gc-toast {
   display: flex;
   align-items: flex-start;
-  gap: 8px;
-  padding: 8px 10px;
+  gap: var(--gc-space-3);
+  padding: var(--gc-space-3) var(--gc-space-4);
   border: 1px solid var(--gc-border);
   border-left-width: 3px;
   border-radius: var(--gc-radius);
@@ -1358,24 +1808,42 @@ pre {
 }
 
 .gc-toast__glyph {
+  flex: 0 0 auto;
+  min-width: 1em;
+  text-align: center;
   font-weight: bold;
+}
+
+.gc-toast--warning .gc-toast__glyph {
+  color: var(--gc-warning);
+}
+
+.gc-toast--error .gc-toast__glyph {
+  color: var(--gc-danger);
 }
 
 .gc-toast__body {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: var(--gc-space-1);
   min-width: 0;
+  flex: 1 1 auto;
 }
 
 .gc-toast__detail {
   color: var(--gc-muted);
-  font-size: 0.85em;
+  font-size: var(--gc-fs-xs);
   overflow-wrap: anywhere;
 }
 
 /* ------------------------------------------------------- reduced motion */
 
+/*
+ * Everything that moves here is decorative reassurance (a pulse, a spinner, a
+ * hover fade), so `reduce` turns all of it off outright rather than shortening it.
+ * The spinner keeps its ring and its text label, which is what actually carries
+ * "still working".
+ */
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
@@ -1385,10 +1853,24 @@ pre {
     transition-duration: 0.001ms !important;
     scroll-behavior: auto !important;
   }
+
+  .gc-skeleton {
+    opacity: 0.7;
+  }
+
+  .gc-spinner__dot {
+    border-top-color: var(--vscode-focusBorder);
+    opacity: 0.7;
+  }
 }
 
 /* --------------------------------------------------------- high contrast */
 
+/*
+ * Forced-colours mode discards our colours entirely, so every boundary that was
+ * carrying meaning through colour needs a real border to survive. Shapes, dash
+ * patterns, glyphs, and words already work — this only restores the edges.
+ */
 @media (forced-colors: active) {
   .gc-button,
   .gc-icon-button,
@@ -1398,16 +1880,40 @@ pre {
   .gc-badge,
   .gc-menu,
   .gc-modal,
-  .gc-toast {
+  .gc-toast,
+  .gc-banner,
+  .gc-legend,
+  .gc-conflicts,
+  .gc-github,
+  .gc-canvas {
     border: 1px solid ButtonBorder;
   }
 
-  .gc-row--selected {
+  .gc-button--primary,
+  .gc-button--danger {
+    border: 2px solid ButtonBorder;
+  }
+
+  .gc-row--selected,
+  .gc-tree__row--active {
     outline: 2px solid Highlight;
+    outline-offset: -2px;
+  }
+
+  /* Opacity is invisible in forced colours, so dimming gets a text cue instead. */
+  .gc-row--dim,
+  .gc-node--dim {
+    opacity: 1;
   }
 
   .gc-skeleton {
     animation: none;
     border: 1px solid ButtonBorder;
+  }
+
+  .gc-legend__swatch,
+  .gc-legend__line,
+  .gc-legend__lane-color {
+    forced-color-adjust: none;
   }
 }

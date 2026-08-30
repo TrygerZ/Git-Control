@@ -1,7 +1,15 @@
 /**
- * Legend: the teaching surface. Every glyph, dash pattern, and badge used by the
- * canvas is explained here in Indonesian, because "understand your git" is the
- * point of the extension — not decoration.
+ * Legend: the teaching surface.
+ *
+ * Every glyph, dash pattern, line weight, and badge the canvas draws is explained
+ * here in Indonesian — not as a key ("dashed = local") but as a short answer to
+ * "what does this tell me, and what should I do about it?". Understanding git is
+ * the point of this extension, so this panel is a feature, not a footnote.
+ *
+ * Rules held here: each swatch is built from the same CSS the canvas uses, so a
+ * sample cannot drift from reality; every entry names at least two visual channels
+ * (shape plus badge, weight plus curve), which is why the graph stays readable with
+ * no colour at all.
  */
 import { useState, type JSX } from 'react';
 import { sanitizeGitText } from './format';
@@ -22,6 +30,7 @@ function laneLabel(lane: GraphLane): string {
 
 export function BranchLegend({ lanes }: Props): JSX.Element {
   const [open, setOpen] = useState(false);
+  const bodyId = 'gc-legend-body';
 
   return (
     <section className="gc-legend" aria-label="Keterangan simbol grafik">
@@ -29,48 +38,63 @@ export function BranchLegend({ lanes }: Props): JSX.Element {
         type="button"
         className="gc-legend__toggle"
         aria-expanded={open}
+        aria-controls={bodyId}
         onClick={() => setOpen(!open)}
       >
-        {open ? 'Sembunyikan keterangan' : 'Tampilkan keterangan'}
+        <span className="gc-legend__toggle-glyph" aria-hidden="true">
+          {open ? '▾' : '▸'}
+        </span>
+        <span>{open ? 'Sembunyikan keterangan simbol' : 'Apa arti simbol di grafik?'}</span>
       </button>
 
       {open && (
-        <div className="gc-legend__body">
+        <div className="gc-legend__body" id={bodyId}>
+          <p className="gc-legend__intro">
+            Grafik ini membaca dari bawah ke atas: commit paling lama di bawah, paling baru di atas.
+            Setiap bulatan adalah satu commit, dan setiap garis adalah hubungan induk—anak di antara
+            dua commit.
+          </p>
+
           <h3 className="gc-legend__heading">Bentuk commit</h3>
           <dl className="gc-legend__list">
             <dt>
               <span className="gc-legend__swatch gc-legend__swatch--head" aria-hidden="true" />
-              HEAD
+              HEAD — posisi Anda
             </dt>
             <dd>
-              Cincin ganda plus badge <strong>HEAD</strong>. Ini posisi Anda sekarang — commit
-              berikutnya akan menempel di sini.
+              Cincin ganda plus badge <strong>HEAD</strong>. Inilah commit yang sedang Anda tempati;
+              commit berikutnya akan menempel persis di atasnya. Kalau badge ini jauh di bawah puncak
+              sebuah branch, berarti Anda sedang tidak berada di ujung branch itu.
             </dd>
 
             <dt>
               <span className="gc-legend__swatch gc-legend__swatch--remote" aria-hidden="true" />
-              Sudah ada di remote
+              Bulatan penuh — sudah ada di remote
             </dt>
             <dd>
-              Bulatan penuh. Commit sudah terkirim, jadi orang lain sudah bisa melihatnya.
+              Commit ini sudah terkirim ke remote, jadi rekan Anda bisa mengambilnya dan salinannya
+              tidak hanya ada di komputer ini. Mengubah histori di bawah titik ini akan menyulitkan
+              orang lain, karena mereka mungkin sudah memakainya.
             </dd>
 
             <dt>
               <span className="gc-legend__swatch gc-legend__swatch--local" aria-hidden="true" />
-              Lokal, belum dipush
+              Bulatan kosong garis putus-putus — lokal, belum dipush
             </dt>
             <dd>
-              Garis putus-putus plus badge <strong>↑</strong>. Commit hanya ada di komputer Anda.
-              Push agar tidak hilang bila perangkat bermasalah.
+              Ditandai juga badge <strong>↑ lokal</strong>. Commit ini hanya ada di komputer Anda:
+              belum ada cadangan di remote, dan belum ada yang bisa melihatnya. Push agar aman.
+              Selama masih lokal, commit ini relatif murah untuk diubah atau disusun ulang.
             </dd>
 
             <dt>
               <span className="gc-legend__swatch gc-legend__swatch--merge" aria-hidden="true" />
-              Commit merge
+              Bulatan besar bercincin — commit merge
             </dt>
             <dd>
-              Bulatan lebih besar dengan cincin tambahan. Commit ini punya dua induk: dua jalur
-              kerja bertemu di sini.
+              Ditandai juga badge <strong>⑃ merge</strong>. Commit ini punya dua induk atau lebih:
+              dua jalur kerja yang tadinya berpisah bertemu di sini. Karena itu ia punya dua garis
+              yang masuk dari bawah, bukan satu.
             </dd>
           </dl>
 
@@ -78,14 +102,21 @@ export function BranchLegend({ lanes }: Props): JSX.Element {
           <dl className="gc-legend__list">
             <dt>
               <span className="gc-legend__line gc-legend__line--direct" aria-hidden="true" />
-              Garis lurus
+              Garis tipis — induk pertama
             </dt>
-            <dd>Hubungan induk pertama: kelanjutan langsung dari commit di bawahnya.</dd>
+            <dd>
+              Kelanjutan langsung: commit di atas dibuat tepat setelah commit di bawahnya, pada jalur
+              yang sama. Ikuti garis tipis ke bawah untuk menelusuri sejarah utama sebuah branch.
+            </dd>
             <dt>
               <span className="gc-legend__line gc-legend__line--merge" aria-hidden="true" />
-              Garis melengkung tebal
+              Garis tebal melengkung — induk kedua
             </dt>
-            <dd>Hubungan merge: induk kedua dan seterusnya, biasanya dari jalur lain.</dd>
+            <dd>
+              Hubungan merge: kerja dari jalur lain masuk ke jalur ini. Garisnya sengaja hampir dua
+              kali lebih tebal dan melengkung menyeberangi jalur, supaya titik penggabungan terlihat
+              sekilas tanpa perlu melihat warna.
+            </dd>
           </dl>
 
           <h3 className="gc-legend__heading">Label ref</h3>
@@ -93,19 +124,32 @@ export function BranchLegend({ lanes }: Props): JSX.Element {
             <dt>
               <span className="gc-chip gc-chip--current">◆ main</span>
             </dt>
-            <dd>Branch aktif. Ditandai belah ketupat dan diberi tekanan visual utama.</dd>
+            <dd>
+              Branch yang sedang aktif — belah ketupat, garis tepi warna fokus, dan tulisan tebal.
+              Commit baru akan menambah panjang branch inilah.
+            </dd>
             <dt>
               <span className="gc-chip gc-chip--local">● fitur</span>
             </dt>
-            <dd>Branch lokal lain.</dd>
+            <dd>
+              Branch lokal lain. Ada di komputer Anda tapi bukan yang sedang Anda tempati; pindah ke
+              sana lewat menu tindakan pada commit.
+            </dd>
             <dt>
               <span className="gc-chip gc-chip--remote">☁ origin/main</span>
             </dt>
-            <dd>Branch di remote. Dibedakan lewat glyph awan dan awalan nama remote.</dd>
+            <dd>
+              Branch di remote, ditandai glyph awan, garis tepi putus-putus, dan awalan nama remote.
+              Jarak antara chip ini dan branch lokal senama adalah jumlah commit yang belum Anda push
+              atau belum Anda ambil.
+            </dd>
             <dt>
               <span className="gc-chip gc-chip--tag">⚑ v1.0</span>
             </dt>
-            <dd>Tag: penanda tetap pada satu commit.</dd>
+            <dd>
+              Tag: penanda tetap pada satu commit, biasanya sebuah rilis. Bentuknya kotak, bukan
+              kapsul, karena tag tidak bergerak mengikuti commit baru seperti branch.
+            </dd>
           </dl>
 
           {lanes.length > 0 && (
@@ -124,8 +168,10 @@ export function BranchLegend({ lanes }: Props): JSX.Element {
                 ))}
               </ul>
               <p className="gc-legend__note">
-                Warna jalur hanya alat bantu. Setiap keadaan commit juga punya bentuk, garis, atau
-                badge sendiri sehingga tetap terbaca tanpa warna.
+                Warna jalur hanya alat bantu untuk mengikuti satu branch dengan mata, dan warnanya
+                bisa berubah saat histori dimuat lebih banyak. Setiap keadaan commit selalu punya
+                bentuk, ketebalan garis, atau badge sendiri, jadi grafik tetap terbaca pada tema
+                kontras tinggi maupun tanpa warna.
               </p>
             </>
           )}
@@ -134,6 +180,12 @@ export function BranchLegend({ lanes }: Props): JSX.Element {
           <ul className="gc-legend__keys">
             <li>
               <kbd>↑</kbd> <kbd>↓</kbd> pindah pilihan commit
+            </li>
+            <li>
+              <kbd>←</kbd> <kbd>→</kbd> geser kanvas ke kiri / kanan
+            </li>
+            <li>
+              <kbd>PageUp</kbd> <kbd>PageDown</kbd> pindah satu layar
             </li>
             <li>
               <kbd>Home</kbd> <kbd>End</kbd> ke commit terbaru / terlama
@@ -145,7 +197,7 @@ export function BranchLegend({ lanes }: Props): JSX.Element {
               <kbd>Shift</kbd>+<kbd>F10</kbd> buka menu tindakan
             </li>
             <li>
-              <kbd>+</kbd> <kbd>-</kbd> perbesar / perkecil
+              <kbd>+</kbd> <kbd>-</kbd> perbesar / perkecil, <kbd>0</kbd> kembali ke 100%
             </li>
             <li>
               <kbd>Space</kbd>+geser tetikus untuk menggeser kanvas

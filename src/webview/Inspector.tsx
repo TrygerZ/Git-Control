@@ -135,7 +135,7 @@ export function Inspector({ hash }: Props): JSX.Element {
     return (
       <EmptyState
         title="Belum ada commit dipilih."
-        hint="Pilih satu commit pada grafik untuk melihat detailnya."
+        hint="Klik satu commit pada grafik, atau tekan Enter saat kursor berada di baris commit, untuk melihat penulis, pesan lengkap, dan daftar file yang berubah."
       />
     );
   }
@@ -157,10 +157,16 @@ export function Inspector({ hash }: Props): JSX.Element {
     );
   }
 
-  if (detail === null) return <EmptyState title="Detail commit tidak tersedia." />;
+  if (detail === null)
+    return (
+      <EmptyState
+        title="Detail commit tidak tersedia."
+        hint="Commit ini mungkin sudah hilang dari repository, misalnya setelah rebase. Muat ulang grafik lalu pilih commit lain."
+      />
+    );
 
   return (
-    <div className="gc-inspector" aria-label="Detail commit">
+    <section className="gc-inspector" aria-label="Detail commit">
       <header className="gc-inspector__head">
         <h2 className="gc-inspector__subject">{sanitizeGitText(detail.subject)}</h2>
         <div className="gc-inspector__hashes">
@@ -168,6 +174,7 @@ export function Inspector({ hash }: Props): JSX.Element {
           <button
             type="button"
             className="gc-button gc-button--quiet"
+            aria-label={`Salin hash pendek ${shortHash(detail.hash)}`}
             onClick={() => void copy(shortHash(detail.hash))}
           >
             Salin hash pendek
@@ -176,6 +183,7 @@ export function Inspector({ hash }: Props): JSX.Element {
           <button
             type="button"
             className="gc-button gc-button--quiet"
+            aria-label="Salin hash lengkap 40 karakter"
             onClick={() => void copy(detail.hash)}
           >
             Salin hash lengkap
@@ -185,6 +193,7 @@ export function Inspector({ hash }: Props): JSX.Element {
             <button
               type="button"
               className="gc-button gc-button--quiet"
+              aria-label={`Buka commit ${detail.shortHash} di GitHub`}
               onClick={() => void openCommit(detail.hash)}
             >
               Buka di GitHub
@@ -235,7 +244,9 @@ export function Inspector({ hash }: Props): JSX.Element {
       )}
 
       {detail.body.trim().length > 0 && (
-        <pre className="gc-inspector__body">{sanitizeGitText(detail.body.trim())}</pre>
+        <pre className="gc-inspector__body" aria-label="Isi pesan commit">
+          {sanitizeGitText(detail.body.trim())}
+        </pre>
       )}
 
       {detail.parents.length > 1 && (
@@ -287,33 +298,45 @@ export function Inspector({ hash }: Props): JSX.Element {
       )}
 
       {detail.files.length === 0 ? (
-        <EmptyState title="Commit ini tidak mengubah file." />
+        <EmptyState
+          title="Commit ini tidak mengubah file."
+          hint="Biasanya ini commit merge tanpa konflik, atau commit kosong yang dibuat dengan --allow-empty."
+        />
       ) : (
-        <ul className="gc-filelist" aria-label="File yang berubah">
+        <ul className="gc-filelist" aria-label={`${formatCount(detail.files.length)} file yang berubah`}>
           {detail.files.map((file) => {
             // Paths come from git; sanitise once so the title and the two visible
             // spans cannot disagree. `baseName` sanitises internally too.
             const safePath = sanitizeGitText(file.path);
+            const churn = file.binary
+              ? 'file binary, diff teks tidak tersedia'
+              : `${file.additions ?? 0} baris ditambah, ${file.deletions ?? 0} baris dihapus`;
             return (
               <li key={file.path} className="gc-filelist__item">
                 <button
                   type="button"
                   className="gc-filelist__button"
+                  // The visible row splits path and churn across three spans; the
+                  // name puts them back in one sentence so nothing is lost or
+                  // read out of order.
+                  aria-label={`Buka diff ${safePath}, ${churn}`}
                   onClick={() => void openDiff(file)}
                   disabled={opening === file.path}
                 >
-                  <span className="gc-filelist__name" title={safePath}>
+                  <span className="gc-filelist__name" aria-hidden="true" title={safePath}>
                     {file.origPath !== undefined
                       ? `${sanitizeGitText(file.origPath)} → ${baseName(file.path)}`
                       : baseName(file.path)}
                   </span>
-                  <span className="gc-filelist__dir">{safePath}</span>
+                  <span className="gc-filelist__dir" aria-hidden="true">
+                    {safePath}
+                  </span>
                   {file.binary ? (
-                    <span className="gc-filelist__binary">
-                      Diff teks tidak tersedia untuk file binary.
+                    <span className="gc-filelist__binary" aria-hidden="true">
+                      binary
                     </span>
                   ) : (
-                    <span className="gc-filelist__stats">
+                    <span className="gc-filelist__stats" aria-hidden="true">
                       <span className="gc-stat gc-stat--add">+{file.additions ?? 0}</span>
                       <span className="gc-stat gc-stat--del">−{file.deletions ?? 0}</span>
                     </span>
@@ -340,6 +363,6 @@ export function Inspector({ hash }: Props): JSX.Element {
           {paging && <Spinner label="Memuat file berikutnya…" />}
         </InfoBanner>
       )}
-    </div>
+    </section>
   );
 }

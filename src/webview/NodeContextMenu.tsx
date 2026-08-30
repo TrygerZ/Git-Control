@@ -8,7 +8,7 @@
  * Destructive items carry a risk glyph AND the word `berisiko`, never colour
  * alone. Force push is not offered here or anywhere else.
  */
-import { useEffect, useRef, type JSX, type KeyboardEvent } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, type JSX, type KeyboardEvent } from 'react';
 import { sanitizeGitText, shortHash } from './format';
 import type { GitActionRequest, GraphNode, RefInfo, RemoteInfo, RepoStatus } from '../messages';
 
@@ -204,6 +204,9 @@ export function NodeContextMenu({
   const items = menuItemsFor(node, status, refs, githubUrl);
   const listRef = useRef<HTMLDivElement>(null);
   const returnFocus = useRef<Element | null>(null);
+  // Roving tabindex: exactly one item is tabbable, and the arrow keys move it.
+  const [active, setActive] = useState(0);
+  const [placed, setPlaced] = useState<MenuAnchor>(anchor);
 
   useEffect(() => {
     returnFocus.current = document.activeElement;
@@ -214,6 +217,25 @@ export function NodeContextMenu({
       if (previous instanceof HTMLElement) previous.focus();
     };
   }, []);
+
+  /**
+   * Keep the menu on screen.
+   *
+   * Opened from a row near the bottom edge — which is where `Shift+F10` puts it,
+   * since the anchor is the row's `bottom` — a 12-item menu would otherwise run off
+   * the viewport with no way to scroll to the rest.
+   */
+  useLayoutEffect(() => {
+    const element = listRef.current;
+    if (element === null) return;
+    const box = element.getBoundingClientRect();
+    const margin = 8;
+    const maxX = window.innerWidth - box.width - margin;
+    const maxY = window.innerHeight - box.height - margin;
+    const x = Math.max(margin, Math.min(anchor.x, Math.max(margin, maxX)));
+    const y = Math.max(margin, Math.min(anchor.y, Math.max(margin, maxY)));
+    if (x !== placed.x || y !== placed.y) setPlaced({ x, y });
+  }, [anchor.x, anchor.y, placed.x, placed.y]);
 
   // Any outside click closes; pointerdown beats the next context menu opening.
   useEffect(() => {
@@ -229,8 +251,18 @@ export function NodeContextMenu({
     if (node_ === null) return;
     const buttons = Array.from(node_.querySelectorAll<HTMLElement>('[role="menuitem"]'));
     const index = buttons.findIndex((b) => b === document.activeElement);
-    const next = buttons[(index + delta + buttons.length) % buttons.length];
-    next?.focus();
+    const nextIndex = (index + delta + buttons.length) % buttons.length;
+    setActive(nextIndex);
+    buttons[nextIndex]?.focus();
+  };
+
+  const jump = (to: 'first' | 'last'): void => {
+    const buttons = Array.from(
+      listRef.current?.querySelectorAll<HTMLElement>('[role="menuitem"]') ?? [],
+    );
+    const index = to === 'first' ? 0 : buttons.length - 1;
+    setActive(index);
+    buttons[index]?.focus();
   };
 
   const onKeyDown = (event: KeyboardEvent<HTMLDivElement>): void => {
@@ -247,17 +279,20 @@ export function NodeContextMenu({
         event.preventDefault();
         move(-1);
         return;
-      case 'Home': {
+      // A vertical menu closes on Left and activates on Right in the ARIA pattern;
+      // there are no submenus here, so Left simply dismisses.
+      case 'ArrowLeft':
         event.preventDefault();
-        listRef.current?.querySelector<HTMLElement>('[role="menuitem"]')?.focus();
+        onClose();
         return;
-      }
-      case 'End': {
+      case 'Home':
         event.preventDefault();
-        const all = listRef.current?.querySelectorAll<HTMLElement>('[role="menuitem"]');
-        all?.[all.length - 1]?.focus();
+        jump('first');
         return;
-      }
+      case 'End':
+        event.preventDefault();
+        jump('last');
+        return;
       case 'Tab':
         // A menu is not part of the tab ring; close and let focus return.
         event.preventDefault();
@@ -271,17 +306,27 @@ export function NodeContextMenu({
     <div
       className="gc-menu"
       role="menu"
+      aria-orientation="vertical"
       aria-label={`Tindakan untuk commit ${node.shortHash}`}
       ref={listRef}
       onKeyDown={onKeyDown}
-      style={{ left: `${anchor.x}px`, top: `${anchor.y}px` }}
+      style={{ left: `${placed.x}px`, top: `${placed.y}px` }}
     >
-      {items.map((item) => (
+      {items.map((item, index) => (
         <button
           key={item.id}
           type="button"
           role="menuitem"
+          tabIndex={index === active ? 0 : -1}
+          // The hint is teaching copy, not a second name: it rides in
+          // `aria-describedby` territory conceptually, but a menuitem cannot own a
+          // description reliably across AT, so the name carries both — the risk word
+          // included, because that is the fact that must not be missed.
+          aria-label={
+            item.risky === true ? `${item.label} — berisiko. ${item.hint ?? ''}`.trim() : undefined
+          }
           className={item.risky === true ? 'gc-menu__item gc-menu__item--risky' : 'gc-menu__item'}
+          onFocus={() => setActive(index)}
           onClick={() => {
             onSelect(item);
             onClose();
@@ -293,8 +338,8 @@ export function NodeContextMenu({
                 ⚠
               </span>
             )}
-            {item.label}
-            {item.risky === true && <span className="gc-menu__risk-word"> — berisiko</span>}
+            <span>{item.label}</span>
+            {item.risky === true && <span className="gc-menu__risk-word">berisiko</span>}
           </span>
           {item.hint !== undefined && <span className="gc-menu__hint">{item.hint}</span>}
         </button>
