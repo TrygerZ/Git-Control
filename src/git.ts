@@ -760,7 +760,7 @@ export class GitRunner {
   }
 
   async mergeContinue(): Promise<void> {
-    await this.runExclusive(() => this.run(['merge', '--continue'], { input: '' }));
+    await this.runExclusive(() => this.run(['-c', 'core.editor=true', 'merge', '--continue'], { input: '' }));
   }
 
   async mergeAbort(): Promise<void> {
