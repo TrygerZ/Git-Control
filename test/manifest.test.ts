@@ -100,6 +100,26 @@ test('marketplace metadata is complete', () => {
   assert.ok(m.galleryBanner?.color);
 });
 
+test('the marketplace icon is a 128x128 PNG', () => {
+  // The marketplace rejects SVG and silently rescales anything that is not 128px,
+  // so both the reference and the dimensions are pinned here. Read straight from
+  // IHDR: 8-byte signature, 4-byte length, 4-byte type, then width/height as
+  // big-endian uint32s.
+  const icon = manifest().icon;
+  assert.equal(icon, 'resources/icon.png');
+  const bytes = fs.readFileSync(path.join(__dirname, '..', '..', icon as string));
+  assert.deepEqual(
+    [...bytes.subarray(0, 8)],
+    [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a],
+    'PNG signature',
+  );
+  assert.equal(bytes.toString('ascii', 12, 16), 'IHDR');
+  assert.equal(bytes.readUInt32BE(16), 128, 'width');
+  assert.equal(bytes.readUInt32BE(20), 128, 'height');
+  assert.equal(bytes[24], 8, 'bit depth 8');
+  assert.equal(bytes[25], 6, 'colour type 6: truecolour with alpha, so the background is transparent');
+});
+
 test('every declared command has a title', () => {
   for (const command of manifest().contributes?.commands ?? []) {
     assert.ok(command.command, 'command id is required');
