@@ -7,10 +7,12 @@
  */
 import type {
   ChangeEntry,
+  ConflictEntry,
   ErrorBody,
   ErrorCode,
   GitActionRequest,
   GitHubRateLimit,
+  GraphNode,
   OperationState,
   PullRequestInfo,
   Remedy,
@@ -172,6 +174,9 @@ const STATUS_LABELS: Readonly<Record<string, StatusLabel>> = {
 
 const UNKNOWN_STATUS: StatusLabel = { code: '·', label: 'Tidak diketahui', glyph: '·' };
 
+/** Every porcelain letter this UI must be able to name. Pinned by `a11y.test.ts`. */
+export const PORCELAIN_CODES = ['M', 'A', 'D', 'R', 'C', 'T', 'U', '?', '!', ' '] as const;
+
 /** Map a porcelain letter onto its Indonesian label. Space means "tidak berubah". */
 export function statusLabel(code: string): StatusLabel {
   const key = code.trim().charAt(0).toUpperCase();
@@ -197,6 +202,95 @@ export function displayPath(entry: ChangeEntry): string {
 export function baseName(path: string): string {
   const parts = sanitizeGitText(path).split('/');
   return parts[parts.length - 1] ?? path;
+}
+
+// ------------------------------------------------------- accessible names
+
+/**
+ * Accessible name for one file row in the change tree.
+ *
+ * A sighted user reads four things off that row: the path, the status letter with
+ * its Indonesian word, the churn, and whether the file is binary. All four go in
+ * here, in that order, so the two renderings cannot disagree. The visual spans are
+ * `aria-hidden` at the render site precisely because this string replaces them.
+ */
+export function fileRowLabel(entry: ChangeEntry): string {
+  const status = entryStatus(entry);
+  const parts = [displayPath(entry), status.label];
+  if (entry.binary) parts.push('file binary');
+  else parts.push(`${entry.additions ?? 0} baris ditambah, ${entry.deletions ?? 0} baris dihapus`);
+  return parts.join(', ');
+}
+
+/** Accessible name for a folder row: name plus how many files it holds. */
+export function folderRowLabel(name: string, fileCount: number): string {
+  return `Folder ${sanitizeGitText(name)}, ${formatCount(fileCount)} file`;
+}
+
+/**
+ * Accessible name for a conflict row's action buttons.
+ *
+ * Without the path every row's buttons are called `Selesaikan`, and a screen
+ * reader user tabbing a ten-file conflict list hears the same word ten times.
+ */
+export function conflictActionLabel(action: string, path: string): string {
+  return `${action} ${sanitizeGitText(path)}`;
+}
+
+/** Accessible name for a conflict row itself: path plus the explained code. */
+export function conflictRowLabel(entry: ConflictEntry): string {
+  return `${sanitizeGitText(entry.path)}, ${conflictLabel(entry.code)}`;
+}
+
+/**
+ * Accessible name for a commit row.
+ *
+ * Lives here rather than in `GraphCanvas.tsx` so it can be asserted without a DOM:
+ * this string is the entire row for a screen-reader user, and it must carry every
+ * fact the visual row shows. The visual row shows, left to right: the short hash,
+ * the HEAD / local / merge badges, the ref chips, the subject, the author, and the
+ * relative time. All of them appear below, in reading order, and each visual part
+ * is `aria-hidden` at the render site because this replaces it.
+ *
+ * Sanitised for the same reason the visual row is: a screen-reader user makes the
+ * same decisions from this string that a sighted user makes from the row, and the
+ * two must not be able to disagree.
+ */
+export function rowLabel(node: GraphNode, now: number): string {
+  const parts = [
+    `commit ${shortHash(node.hash)}`,
+    sanitizeGitText(node.subject),
+    `oleh ${sanitizeGitText(node.authorName)}`,
+    relativeTime(node.authoredAt, now),
+  ];
+  if (node.isHead) parts.push('HEAD');
+  if (node.isMerge) parts.push('commit merge');
+  if (node.local) parts.push('lokal belum dipush');
+  else parts.push('sudah ada di remote');
+  // Ref chips are visual-only (`aria-hidden`), so their text must land here too.
+  const refs = refNamesLabel(node.refNames);
+  if (refs !== null) parts.push(refs);
+  return parts.join(', ');
+}
+
+/**
+ * Ref names of a commit, spelled out in Indonesian, or `null` when there are none.
+ * `tag: v1` becomes `tag v1` and `origin/main` becomes `remote origin/main`, which
+ * is the same distinction the chip glyphs make visually.
+ */
+export function refNamesLabel(refNames: readonly string[]): string | null {
+  const out: string[] = [];
+  for (const raw of refNames) {
+    const name = sanitizeGitText(raw).trim();
+    if (name.length === 0 || name === 'HEAD') continue;
+    if (name.startsWith('tag: ')) {
+      out.push(`tag ${name.slice(5)}`);
+      continue;
+    }
+    const short = name.replace('refs/heads/', '').replace('refs/remotes/', '');
+    out.push(short.includes('/') && !name.startsWith('refs/heads/') ? `remote ${short}` : short);
+  }
+  return out.length === 0 ? null : `ref ${out.join(', ')}`;
 }
 
 // ------------------------------------------------------------------ conflicts
@@ -321,10 +415,41 @@ const ERROR_TEXT: Readonly<Record<ErrorCode, { title: string; explanation: strin
   },
 };
 
+/**
+ * Remedies to offer when the host names none.
+ *
+ * A banner with no way forward is a dead end, and `['cancel']` for every code is
+ * only technically a way out. These are the buttons that actually match the
+ * situation; the host's own list always wins when it supplies one. Force push is
+ * absent by construction — `REMOTE_AHEAD` and `NON_FAST_FORWARD` lead to Fetch.
+ */
+const DEFAULT_REMEDIES: Readonly<Record<ErrorCode, readonly Remedy[]>> = {
+  VALIDATION_ERROR: ['cancel'],
+  AUTH_ERROR: ['cancel'],
+  FORBIDDEN: ['cancel'],
+  NOT_FOUND: ['cancel'],
+  CONFLICT: ['fetch', 'cancel'],
+  RATE_LIMITED: ['cancel'],
+  SERVER_ERROR: ['cancel'],
+  UNAVAILABLE: ['cancel'],
+  REPOSITORY_LOCKED: ['cancel'],
+  DIRTY_TREE: ['commit', 'stash', 'cancel'],
+  REMOTE_AHEAD: ['fetch', 'cancel'],
+  STALE_STATUS: ['fetch', 'cancel'],
+  NON_FAST_FORWARD: ['fetch', 'cancel'],
+  HOOK_REJECTED: ['cancel'],
+  CONFIRMATION_REQUIRED: ['confirm', 'cancel'],
+};
+
+/** Every {@link ErrorCode}, derived from the text table so it cannot drift. */
+export const ERROR_CODES = Object.keys(ERROR_TEXT) as readonly ErrorCode[];
+
 /** Turn an {@link ErrorBody} into everything the UI needs to render it. */
 export function presentError(error: ErrorBody): ErrorPresentation {
   const text = ERROR_TEXT[error.code] ?? ERROR_TEXT.SERVER_ERROR;
-  const remedies = error.remedies !== undefined && error.remedies.length > 0 ? error.remedies : ['cancel'];
+  const fallback = DEFAULT_REMEDIES[error.code] ?? ['cancel'];
+  const remedies =
+    error.remedies !== undefined && error.remedies.length > 0 ? error.remedies : [...fallback];
   // `error.message` can be git stderr, which means it can be hook output, which
   // means a repository chose it.
   const message = sanitizeGitText(error.message);
