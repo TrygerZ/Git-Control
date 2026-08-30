@@ -5,7 +5,26 @@
   "publisher": "TrygerZ",
   "version": "0.0.1",
   "license": "MIT",
-  "private": true,
+  "private": false,
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/TrygerZ/Git-Control.git"
+  },
+  "bugs": {
+    "url": "https://github.com/TrygerZ/Git-Control/issues"
+  },
+  "homepage": "https://github.com/TrygerZ/Git-Control#readme",
+  "keywords": [
+    "git",
+    "visualization",
+    "source control",
+    "dag",
+    "pending changes"
+  ],
+  "galleryBanner": {
+    "color": "#1e1e1e",
+    "theme": "dark"
+  },
   "engines": {
     "vscode": "^1.90.0"
   },
@@ -120,7 +139,8 @@
     "build": "node esbuild.js",
     "watch": "node esbuild.js --watch",
     "typecheck": "tsc --noEmit",
-    "test": "node esbuild.js && node --test \"out/test/*.test.js\""
+    "test": "node esbuild.js && node --test \"out/test/*.test.js\"",
+    "test:integration": "node esbuild.js && node test/integration-runner.js"
   },
   "dependencies": {
     "react": "19.2.8",
