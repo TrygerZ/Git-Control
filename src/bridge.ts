@@ -152,6 +152,14 @@ export class MessageBridge {
   private readonly subscription: { dispose(): void };
   /** Bounded, TTL'd store of completed mutations keyed by idempotency key. */
   private readonly completed = new Map<string, { at: number; outcome: Outcome }>();
+  /**
+   * Mutations that are running right now, keyed the same way.
+   *
+   * `completed` only answers a repeat that arrives after the first one finished. A
+   * double click produces two requests microseconds apart, so the second one finds
+   * an empty cache and starts a second `git push`. This map closes that window.
+   */
+  private readonly inFlight = new Map<string, Promise<Outcome>>();
   private disposed = false;
 
   constructor(webview: WebviewLike, host: BridgeHost) {
@@ -166,6 +174,7 @@ export class MessageBridge {
     this.disposed = true;
     this.subscription.dispose();
     this.completed.clear();
+    this.inFlight.clear();
   }
 
   /** Push an unsolicited event to the webview. */
@@ -207,8 +216,33 @@ export class MessageBridge {
         void this.webview.postMessage(stamp(request.id, prior));
         return;
       }
+      // Same key, still running: join it instead of starting a second one. Without
+      // this the second half of a double click races the first through an empty
+      // cache and both reach git (PRD Kasus 2).
+      const running = this.inFlight.get(key);
+      if (running !== undefined) {
+        this.host.logger.info('bridge/join', `${request.kind} ${key}`);
+        const outcome = await running;
+        if (!this.disposed) void this.webview.postMessage(stamp(request.id, outcome));
+        return;
+      }
     }
 
+    const settled = this.runRequest(request, key);
+    if (key !== null) {
+      this.inFlight.set(key, settled);
+      // Detached: `settled` never rejects, and the map must be cleared whether or
+      // not anyone joined.
+      void settled.finally(() => {
+        this.inFlight.delete(key);
+      });
+    }
+    const outcome = await settled;
+    if (!this.disposed) void this.webview.postMessage(stamp(request.id, outcome));
+  }
+
+  /** Run one request to an outcome. Never rejects. */
+  private async runRequest(request: Request, key: string | null): Promise<Outcome> {
     const operationId = this.host.logger.nextOperationId();
     const started = Date.now();
     this.host.logger.log({ operationId, kind: request.kind, status: 'start' });
@@ -235,7 +269,7 @@ export class MessageBridge {
     }
 
     if (key !== null) this.remember(key, outcome);
-    if (!this.disposed) void this.webview.postMessage(stamp(request.id, outcome));
+    return outcome;
   }
 
   /**
