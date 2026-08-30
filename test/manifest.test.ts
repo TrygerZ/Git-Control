@@ -21,6 +21,14 @@ interface ConfigProperty {
 }
 
 interface Manifest {
+  engines?: { vscode?: string };
+  private?: boolean;
+  repository?: { url?: string };
+  bugs?: { url?: string };
+  homepage?: string;
+  keywords?: string[];
+  icon?: string;
+  galleryBanner?: { color?: string; theme?: string };
   capabilities?: {
     untrustedWorkspaces?: {
       supported?: boolean | 'limited';
@@ -29,6 +37,7 @@ interface Manifest {
     };
   };
   contributes?: {
+    commands?: Array<{ command?: string; title?: string }>;
     configuration?: { properties?: Record<string, ConfigProperty> };
   };
 }
@@ -78,5 +87,43 @@ test('gitPath and githubApiUrl stay machine-scoped (SEC-005)', () => {
       'machine',
       `${key} names a program we execute or a host we send the token to`,
     );
+  }
+});
+
+test('marketplace metadata is complete', () => {
+  const m = manifest();
+  assert.equal(m.private, false);
+  assert.match(m.repository?.url ?? '', /^https:\/\//);
+  assert.match(m.bugs?.url ?? '', /^https:\/\//);
+  assert.match(m.homepage ?? '', /^https:\/\//);
+  assert.ok((m.keywords?.length ?? 0) > 0);
+  assert.ok(m.galleryBanner?.color);
+});
+
+test('every declared command has a title', () => {
+  for (const command of manifest().contributes?.commands ?? []) {
+    assert.ok(command.command, 'command id is required');
+    assert.ok(command.title, `${command.command} must have a title`);
+  }
+});
+
+test('every configuration property has a description', () => {
+  for (const [key, property] of Object.entries(manifest().contributes?.configuration?.properties ?? {})) {
+    assert.ok(property.description, `${key} must have a description`);
+  }
+});
+
+test('@types/vscode matches engines.vscode major/minor', () => {
+  const declared = manifest().engines?.vscode ?? '';
+  const types = JSON.parse(fs.readFileSync(path.join(__dirname, '..', '..', 'node_modules', '@types', 'vscode', 'package.json'), 'utf8')) as { version: string };
+  const range = declared.match(/(\d+)\.(\d+)/);
+  assert.ok(range, 'engines.vscode must contain a version');
+  assert.equal(types.version, `${range[1]}.${range[2]}.0`);
+});
+
+test('.vscodeignore excludes source, tests, maps, dependencies, and markdown', () => {
+  const ignore = fs.readFileSync(path.join(__dirname, '..', '..', '.vscodeignore'), 'utf8');
+  for (const pattern of ['src/**', 'test/**', '**/*.map', 'node_modules/**', '*.md']) {
+    assert.match(ignore, new RegExp(`^${pattern.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'm'), pattern);
   }
 });
