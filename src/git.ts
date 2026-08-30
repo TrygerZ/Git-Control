@@ -410,9 +410,19 @@ export class GitRunner {
     return parseLog(stdout)[0] ?? null;
   }
 
-  /** True when `ancestor` is reachable from `descendant` (i.e. fast-forwardable). */
+  /**
+   * True when `ancestor` is reachable from `descendant` (i.e. fast-forwardable).
+   *
+   * Both sides accept a hash or a ref name. The ancestor side has to: asking
+   * "would pushing X to origin/Y be a fast-forward?" means asking whether the
+   * *remote-tracking ref* is reachable from X, and that ref is a name, not a hash
+   * the caller already has. `validateBranchName` still rejects anything git would
+   * read as an option, and `sanitizeRefArg` is applied to both.
+   */
   async isAncestor(ancestor: string, descendant: string): Promise<boolean> {
-    this.assertHash(ancestor);
+    if (!validateHash(ancestor) && !validateBranchName(ancestor)) {
+      throw new GitError({ code: 'VALIDATION_ERROR', message: `Invalid ref: ${ancestor}` });
+    }
     if (!validateHash(descendant) && !validateBranchName(descendant)) {
       throw new GitError({ code: 'VALIDATION_ERROR', message: `Invalid ref: ${descendant}` });
     }

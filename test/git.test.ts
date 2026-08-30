@@ -165,6 +165,14 @@ test('repoRoot, commitMeta, and isAncestor read real objects', async (t) => {
   // The first commit is an ancestor of the second, but not the reverse.
   assert.equal(await git.isAncestor(first, second as string), true);
   assert.equal(await git.isAncestor(second as string, first), false);
+
+  // A ref name is accepted on BOTH sides. The push-up-to fast-forward check asks
+  // "is refs/remotes/origin/<branch> reachable from <hash>?", so the ancestor side
+  // is a name the caller has no hash for; rejecting it there made every partial
+  // push look non-linear.
+  assert.equal(await git.isAncestor('main', 'main'), true);
+  assert.equal(await git.isAncestor(first, 'main'), true);
+  await assert.rejects(() => git.isAncestor('-x', 'main'), /Invalid ref/);
 });
 
 test('onBusyChange brackets exclusive operations', async (t) => {

@@ -616,9 +616,20 @@ export class MessageBridge {
     this.gate(payload as GuardAction, status, payload);
 
     // `push-up-to` must be fast-forward; the remedy is fetch, never force.
+    //
+    // Direction matters and is easy to get backwards: a push of `hash` onto the
+    // remote branch fast-forwards only when the REMOTE tip is reachable from
+    // `hash`. Asking it the other way round ("is `hash` already on the remote?")
+    // is true only for a commit that has been pushed already, so it rejected every
+    // partial push that actually had something to send.
+    //
+    // A missing remote-tracking ref (never fetched, or a branch the remote does
+    // not have yet) makes `isAncestor` fail; that is not a divergence, so it falls
+    // through to git, which enforces fast-forward itself and reports
+    // NON_FAST_FORWARD through the stderr classifier.
     if (payload.action === 'push-up-to') {
-      const ff = await repo.git.isAncestor(payload.hash, `refs/remotes/${payload.remote}/${payload.branch}`)
-        .catch(() => true);
+      const remoteRef = `refs/remotes/${payload.remote}/${payload.branch}`;
+      const ff = await repo.git.isAncestor(remoteRef, payload.hash).catch(() => true);
       if (!ff) {
         fail(409, 'NON_FAST_FORWARD', BRIDGE_MESSAGES.nonFastForward, { remedies: ['fetch'] });
       }
