@@ -1,7 +1,7 @@
 ﻿# Markdown is developer-only scratch space (PRD, audits, notes). Never shipped,
 # never committed.
 *.md
-referensi/
+foto/
 
 node_modules/
 out/
