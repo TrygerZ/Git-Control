@@ -351,6 +351,8 @@ export class MessageBridge {
     return repo.graph({
       ...(payload.limit === undefined ? {} : { limit: payload.limit }),
       ...(payload.cursor === undefined ? {} : { cursor: payload.cursor }),
+      ...(payload.laneHeight === undefined ? {} : { laneHeight: payload.laneHeight }),
+      ...(payload.columnWidth === undefined ? {} : { columnWidth: payload.columnWidth }),
       ...(payload.rowHeight === undefined ? {} : { rowHeight: payload.rowHeight }),
       ...(payload.laneWidth === undefined ? {} : { laneWidth: payload.laneWidth }),
     });

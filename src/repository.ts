@@ -46,13 +46,15 @@ export interface GraphRequest {
   limit?: number;
   /** Number of commits to skip; `undefined` starts at the newest commit. */
   cursor?: number;
+  laneHeight?: number;
+  columnWidth?: number;
   rowHeight?: number;
   laneWidth?: number;
 }
 
 export const MAX_COMMIT_LIMIT = 10_000;
-const DEFAULT_PAGE_SIZE = 500;
-const DEFAULT_FILE_LIMIT = 2000;
+export const DEFAULT_PAGE_SIZE = 500;
+export const DEFAULT_FILE_LIMIT = 2000;
 /**
  * Above this many changed files, `status` stops asking git for line counts. Past
  * that point the panel is a bulk view where per-file churn is not read, and two
@@ -152,14 +154,26 @@ export class RepositoryService {
 
       const layout = layoutGraph(
         {
-          commits: commits.map((c) => ({ hash: c.hash, parents: c.parents })),
+          commits: commits.map((c) => ({
+            hash: c.hash,
+            parents: c.parents,
+            committedAt: c.committedAt,
+          })),
           refs: refs.map(toLayoutRef),
           head: current.head,
           currentBranch: current.branch,
         },
         {
-          ...(request.rowHeight === undefined ? {} : { rowHeight: request.rowHeight }),
-          ...(request.laneWidth === undefined ? {} : { laneWidth: request.laneWidth }),
+          ...(request.laneHeight !== undefined
+            ? { laneHeight: request.laneHeight }
+            : request.rowHeight !== undefined
+              ? { laneHeight: request.rowHeight }
+              : {}),
+          ...(request.columnWidth !== undefined
+            ? { columnWidth: request.columnWidth }
+            : request.laneWidth !== undefined
+              ? { columnWidth: request.laneWidth }
+              : {}),
         },
       );
 
@@ -190,6 +204,7 @@ export class RepositoryService {
         nodes,
         edges: layout.edges,
         lanes: layout.lanes,
+        dateBuckets: layout.dateBuckets,
         refs: refs.map(toRefInfo),
         head: current.head,
         truncated: atCap && pageFull,
@@ -298,6 +313,7 @@ export class RepositoryService {
       nodes: [],
       edges: [],
       lanes: [],
+      dateBuckets: [],
       refs: refs.map(toRefInfo),
       head: current.head,
       truncated: true,

@@ -142,10 +142,19 @@ export interface GraphLane {
   color: string;
 }
 
+export interface DateBucket {
+  label: string;
+  timestamp: number;
+  startX: number;
+  width: number;
+  commitCount: number;
+}
+
 export interface RepoGraph {
   nodes: GraphNode[];
   edges: GraphEdge[];
   lanes: GraphLane[];
+  dateBuckets: DateBucket[];
   refs: RefInfo[];
   head: string | null;
   truncated: boolean;
@@ -235,6 +244,8 @@ export interface GraphPayload {
   limit?: number;
   /** Opaque page cursor; currently the number of commits to skip. */
   cursor?: number;
+  laneHeight?: number;
+  columnWidth?: number;
   rowHeight?: number;
   laneWidth?: number;
 }
