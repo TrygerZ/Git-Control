@@ -26,6 +26,9 @@ import {
 } from './validation';
 import type {
   ActionResult,
+  CommitAuthorInfo,
+  CommitAuthorsPayload,
+  CommitAuthorsResult,
   CommitDetail,
   CommitDetailPayload,
   CommitPayload,
@@ -92,6 +95,7 @@ export interface BridgeHost {
   openExternal?(url: string): Promise<boolean>;
   githubRepo?(payload: GitHubRepoPayload): Promise<GitHubRepoInfo>;
   githubPullRequests?(payload: PullRequestsPayload): Promise<PullRequestsResult>;
+  githubCommitAuthors?(payload: CommitAuthorsPayload): Promise<CommitAuthorsResult>;
   githubLinkage?(): Promise<GitHubLinkage>;
 }
 
@@ -312,6 +316,8 @@ export class MessageBridge {
         return this.handleGitHubRepo(request.payload as GitHubRepoPayload);
       case 'github/pullRequests':
         return this.handleGitHubPullRequests(request.payload as PullRequestsPayload);
+      case 'github/commitAuthors':
+        return this.handleGitHubCommitAuthors(request.payload as CommitAuthorsPayload);
       case 'github/linkage':
         validateEmptyPayload(request.payload);
         return this.handleGitHubLinkage();
@@ -531,6 +537,23 @@ export class MessageBridge {
     const list = this.host.githubPullRequests;
     if (list === undefined) fail(503, 'UNAVAILABLE', BRIDGE_MESSAGES.githubPending);
     return list(payload);
+  }
+
+  private async handleGitHubCommitAuthors(payload: CommitAuthorsPayload): Promise<CommitAuthorsResult> {
+    if (!isSlug(payload.owner) || !isSlug(payload.repo)) {
+      fail(400, 'VALIDATION_ERROR', BRIDGE_MESSAGES.invalid, { detail: 'owner/repo' });
+    }
+    if (!Array.isArray(payload.hashes) || payload.hashes.length > 50) {
+      fail(400, 'VALIDATION_ERROR', BRIDGE_MESSAGES.invalid, { detail: 'hashes' });
+    }
+    for (const h of payload.hashes) {
+      if (!validateHash(h)) {
+        fail(400, 'VALIDATION_ERROR', BRIDGE_MESSAGES.invalid, { detail: 'hashes' });
+      }
+    }
+    const authors = this.host.githubCommitAuthors;
+    if (authors === undefined) fail(503, 'UNAVAILABLE', BRIDGE_MESSAGES.githubPending);
+    return authors(payload);
   }
 
   private async handleGitHubLinkage(): Promise<GitHubLinkage> {

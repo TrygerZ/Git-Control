@@ -22,6 +22,8 @@ import { clampZoom } from './webview/viewport';
 import { MAX_COMMIT_LIMIT, RepositoryService } from './repository';
 import { RepoWatcher } from './watcher';
 import type {
+  CommitAuthorsPayload,
+  CommitAuthorsResult,
   GitHubAuthState,
   GitHubLinkage,
   GitHubRepoInfo,
@@ -513,6 +515,7 @@ class Controller implements vscode.Disposable {
       openExternal: (url) => this.openExternal(url),
       githubRepo: (payload) => this.githubRepo(payload),
       githubPullRequests: (payload) => this.githubPullRequests(payload),
+      githubCommitAuthors: (payload) => this.githubCommitAuthors(payload),
       githubLinkage: () => this.githubLinkage(),
     };
   }
@@ -759,6 +762,12 @@ class Controller implements vscode.Disposable {
     return { pullRequests: result.data, rateLimit: client.rateLimit(result.cached) };
   }
 
+  private async githubCommitAuthors(payload: CommitAuthorsPayload): Promise<CommitAuthorsResult> {
+    const { client } = await this.githubClient();
+    const result = await client.commitAuthors(payload.owner, payload.repo, payload.hashes);
+    return { authors: result.data, rateLimit: client.rateLimit(result.cached) };
+  }
+
   /** GitHub linkage for the detected remote, used for "Buka di GitHub". */
   private async githubLinkage(): Promise<GitHubLinkage> {
     const remote = await this.detectRemote();
@@ -805,9 +814,12 @@ class Controller implements vscode.Disposable {
     const style = webview.asWebviewUri(
       vscode.Uri.joinPath(this.context.extensionUri, 'dist', 'webview.css'),
     );
+    // Only https://avatars.githubusercontent.com is added to img-src so the
+    // webview can render author profile avatars without opening image loading
+    // to arbitrary remote hosts or wildcard domains.
     const csp = [
       "default-src 'none'",
-      `img-src ${webview.cspSource} data:`,
+      `img-src ${webview.cspSource} data: https://avatars.githubusercontent.com`,
       `style-src ${webview.cspSource} 'nonce-${nonce}'`,
       `script-src 'nonce-${nonce}'`,
       `font-src ${webview.cspSource}`,

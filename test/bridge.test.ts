@@ -715,6 +715,11 @@ test('github handlers reach the host and report UNAVAILABLE without one', async 
         pullRequests: [],
         rateLimit: { limit: 5000, remaining: 4999, resetAt: null, cached: false, offline: false },
       }),
+    githubCommitAuthors: () =>
+      Promise.resolve({
+        authors: [{ hash: 'a'.repeat(40), login: 'octocat', avatarUrl: 'https://avatars.githubusercontent.com/u/1' }],
+        rateLimit: { limit: 5000, remaining: 4999, resetAt: null, cached: false, offline: false },
+      }),
     githubLinkage: () =>
       Promise.resolve({
         available: true,
@@ -735,6 +740,17 @@ test('github handlers reach the host and report UNAVAILABLE without one', async 
 
   const prs = await withHost.webview.send(req('github/pullRequests', { owner: 'o', repo: 'r' }));
   assert.equal(prs.ok, true);
+
+  const authors = await withHost.webview.send(
+    req('github/commitAuthors', { owner: 'o', repo: 'r', hashes: ['a'.repeat(40)] }),
+  );
+  assert.equal(authors.ok, true);
+
+  const badAuthors = await withHost.webview.send(
+    req('github/commitAuthors', { owner: 'o', repo: 'r', hashes: ['not-a-hash'] }),
+  );
+  assert.equal(badAuthors.ok, false);
+  if (!badAuthors.ok) assert.equal(badAuthors.error.code, 'VALIDATION_ERROR');
 
   const linkage = await withHost.webview.send(req('github/linkage', {}));
   assert.equal(linkage.ok, true);

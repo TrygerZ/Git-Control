@@ -508,3 +508,105 @@ test('returned data never carries the token', async () => {
   const viewer = await h.gh.viewer();
   assert.ok(!JSON.stringify(viewer).includes(TOKEN));
 });
+
+// ----------------------------------------------------------- commit authors
+
+test('commitAuthors returns author login and avatar URL', async () => {
+  const h = client([
+    response(200, {
+      author: {
+        login: 'octocat',
+        avatar_url: 'https://avatars.githubusercontent.com/u/583231?v=4',
+      },
+    }),
+  ]);
+  const hash = 'a'.repeat(40);
+  const result = await h.gh.commitAuthors('owner', 'repo', [hash]);
+  assert.equal(result.cached, false);
+  assert.deepEqual(result.data, [
+    {
+      hash,
+      login: 'octocat',
+      avatarUrl: 'https://avatars.githubusercontent.com/u/583231?v=4',
+    },
+  ]);
+  assert.ok(h.calls[0]?.url.endsWith(`/repos/owner/repo/commits/${hash}`));
+});
+
+test('commitAuthors serves second identical hash from cache without new request', async () => {
+  const h = client([
+    response(200, {
+      author: {
+        login: 'octocat',
+        avatar_url: 'https://avatars.githubusercontent.com/u/583231?v=4',
+      },
+    }),
+  ]);
+  const hash = 'b'.repeat(40);
+  const first = await h.gh.commitAuthors('owner', 'repo', [hash]);
+  assert.equal(first.cached, false);
+  assert.equal(h.calls.length, 1);
+
+  const second = await h.gh.commitAuthors('owner', 'repo', [hash]);
+  assert.equal(second.cached, true);
+  assert.equal(h.calls.length, 1, 'served from cache, no network request');
+  assert.deepEqual(second.data, first.data);
+});
+
+test('commitAuthors handles a failed hash (404) without failing the whole batch', async () => {
+  const hashGood = '1'.repeat(40);
+  const hashBad = '2'.repeat(40);
+  const h = client([
+    response(404, { message: 'Not Found' }),
+    response(200, {
+      author: {
+        login: 'goodauthor',
+        avatar_url: 'https://avatars.githubusercontent.com/u/123?v=4',
+      },
+    }),
+  ]);
+
+  const result = await h.gh.commitAuthors('owner', 'repo', [hashBad, hashGood]);
+  assert.deepEqual(result.data, [
+    { hash: hashBad, login: null, avatarUrl: null },
+    {
+      hash: hashGood,
+      login: 'goodauthor',
+      avatarUrl: 'https://avatars.githubusercontent.com/u/123?v=4',
+    },
+  ]);
+});
+
+test('commitAuthors rejects invalid hashes without making requests', async () => {
+  const h = client([response(200, {})]);
+  await assert.rejects(
+    () => h.gh.commitAuthors('owner', 'repo', ['not-a-hash']),
+    (err: unknown) => {
+      assert.ok(err instanceof GitHubError);
+      assert.equal(err.code, 'VALIDATION_ERROR');
+      return true;
+    },
+  );
+  assert.equal(h.calls.length, 0);
+
+  // Batch size > 50 is also rejected
+  const oversized = Array.from({ length: 51 }, (_, i) => `${i}`.padStart(40, '0'));
+  await assert.rejects(
+    () => h.gh.commitAuthors('owner', 'repo', oversized),
+    (err: unknown) => {
+      assert.ok(err instanceof GitHubError);
+      assert.equal(err.code, 'VALIDATION_ERROR');
+      return true;
+    },
+  );
+  assert.equal(h.calls.length, 0);
+});
+
+test('commitAuthors handles commit.author === null with avatarUrl: null', async () => {
+  const h = client([response(200, { author: null })]);
+  const hash = 'c'.repeat(40);
+  const result = await h.gh.commitAuthors('owner', 'repo', [hash]);
+  assert.deepEqual(result.data, [
+    { hash, login: null, avatarUrl: null },
+  ]);
+});

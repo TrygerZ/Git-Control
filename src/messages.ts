@@ -437,6 +437,29 @@ export interface PullRequestsResult {
   rateLimit: GitHubRateLimit;
 }
 
+export interface CommitAuthorInfo {
+  hash: string;
+  login: string | null;
+  avatarUrl: string | null;
+}
+
+export interface CommitAuthorsPayload {
+  owner: string;
+  repo: string;
+  hashes: string[];
+}
+
+/**
+ * Commit authors result carrying resolved avatar URLs and logins.
+ *
+ * Rate-limit snapshot included so author avatar fetching reports cache and
+ * quota state consistently with pullRequests and repo queries.
+ */
+export interface CommitAuthorsResult {
+  authors: CommitAuthorInfo[];
+  rateLimit: GitHubRateLimit;
+}
+
 /**
  * GitHub linkage for the active repository's detected remote.
  *
@@ -481,6 +504,12 @@ export interface RequestMap {
   'github/disconnect': { payload: Record<string, never>; response: GitHubAuthState };
   'github/repo': { payload: GitHubRepoPayload; response: GitHubRepoInfo };
   'github/pullRequests': { payload: PullRequestsPayload; response: PullRequestsResult };
+  /**
+   * Fetch author profile avatars and logins for a set of commit hashes.
+   * Host-side metadata query so the webview can decorate commit authors with
+   * GitHub avatars without making direct network calls or managing auth tokens.
+   */
+  'github/commitAuthors': { payload: CommitAuthorsPayload; response: CommitAuthorsResult };
   'github/linkage': { payload: Record<string, never>; response: GitHubLinkage };
   'settings/get': { payload: SettingsGetPayload; response: SettingsSnapshot };
   'settings/set': { payload: SettingsSetPayload; response: SettingsSnapshot };

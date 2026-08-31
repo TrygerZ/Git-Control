@@ -16,7 +16,8 @@
  * or any returned value. {@link redact} is applied to everything logged.
  */
 import { redact } from './logger';
-import type { ErrorCode, GitHubRateLimit, PullRequestInfo } from './messages';
+import type { CommitAuthorInfo, ErrorCode, GitHubRateLimit, PullRequestInfo } from './messages';
+import { validateHash } from './validation';
 
 export const GITHUB_MESSAGES = {
   invalidToken: 'Token GitHub tidak valid.',
@@ -25,6 +26,7 @@ export const GITHUB_MESSAGES = {
   rateLimited: 'Batas permintaan GitHub tercapai.',
   forbidden: 'Akses GitHub ditolak.',
   scopeMissing: 'Token tidak punya scope repo:status untuk repository privat.',
+  invalidHash: 'Hash commit tidak valid.',
 } as const;
 
 /** Minimum scope for private repositories, per the PRD. */
@@ -109,6 +111,7 @@ const BREAKER_WINDOW_MS = 60_000;
 const REPO_TTL_MS = 300_000;
 const PR_TTL_MS = 60_000;
 const VIEWER_TTL_MS = 300_000;
+const AUTHOR_TTL_MS = 300_000;
 const REQUEST_TIMEOUT_MS = 15_000;
 /**
  * Cap on cached responses. Same bound and same eviction policy as the bridge's
@@ -246,6 +249,78 @@ export class GitHubClient {
     return this.get<PullRequestInfo[]>(path, `commitPulls:${owner}/${repo}:${hash}`, PR_TTL_MS, (body) =>
       toPullRequests(body),
     );
+  }
+
+  /**
+   * Commit authors and avatars for a batch of commit hashes.
+   *
+   * Queries `GET /repos/{owner}/{repo}/commits/{sha}` per unique hash. Cached per-hash
+   * under `commitAuthor:{owner}/{repo}:{hash}` with 5-minute TTL.
+   * Failures for individual hashes degrade gracefully to `login: null, avatarUrl: null`
+   * without failing the whole batch.
+   */
+  async commitAuthors(
+    owner: string,
+    repo: string,
+    hashes: string[],
+  ): Promise<Fetched<CommitAuthorInfo[]>> {
+    if (hashes.length > 50) {
+      throw new GitHubError({
+        status: 400,
+        code: 'VALIDATION_ERROR',
+        message: GITHUB_MESSAGES.invalidHash,
+        detail: 'hashes batch size exceeds 50',
+      });
+    }
+
+    for (const hash of hashes) {
+      if (!validateHash(hash)) {
+        throw new GitHubError({
+          status: 400,
+          code: 'VALIDATION_ERROR',
+          message: GITHUB_MESSAGES.invalidHash,
+          detail: `invalid hash: ${hash}`,
+        });
+      }
+    }
+
+    let allCached = true;
+    const authors: CommitAuthorInfo[] = [];
+
+    for (const hash of hashes) {
+      const path =
+        `/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}` +
+        `/commits/${encodeURIComponent(hash)}`;
+      try {
+        const fetched = await this.get<{ login: string | null; avatarUrl: string | null }>(
+          path,
+          `commitAuthor:${owner}/${repo}:${hash}`,
+          AUTHOR_TTL_MS,
+          (body) => {
+            const json = body as { author?: { login?: unknown; avatar_url?: unknown } | null };
+            const author = json.author;
+            return {
+              login: typeof author?.login === 'string' ? author.login : null,
+              avatarUrl: typeof author?.avatar_url === 'string' ? author.avatar_url : null,
+            };
+          },
+        );
+        if (!fetched.cached) allCached = false;
+        authors.push({
+          hash,
+          login: fetched.data.login,
+          avatarUrl: fetched.data.avatarUrl,
+        });
+      } catch {
+        authors.push({ hash, login: null, avatarUrl: null });
+      }
+    }
+
+    return {
+      data: authors,
+      cached: hashes.length === 0 ? false : allCached,
+      rateLimit: this.rateLimit(allCached),
+    };
   }
 
   /**
