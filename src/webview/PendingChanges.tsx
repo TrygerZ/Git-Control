@@ -193,18 +193,15 @@ export function PendingChangesApp(): JSX.Element {
           <strong>Jumlah baris tidak lengkap.</strong>
           <span>
             Perubahannya terlalu banyak untuk dihitung semua, jadi sebagian file menampilkan{' '}
-            {UNKNOWN_CHURN} pada kolom + dan −. Itu bukan berarti file tersebut tidak berubah —
+            {UNKNOWN_CHURN} pada kolom + dan −. Itu bukan berarti file tersebut tidak berubah,
             hanya jumlah barisnya yang tidak dihitung.
           </span>
         </InfoBanner>
       )}
 
       {/*
-        Two tiers, like the reference toolbar: the acts that change the repository
-        (`Stage`, `Unstage`) plus a refresh, then the selection helpers pushed into
-        the quiet tier. `Commit` is NOT here — it lives on the form that owns the
-        message it needs, because a Commit button far from its message field teaches
-        that the two are unrelated.
+        Primary actions (Stage, Unstage, Refresh) with secondary actions (Pilih semua, Kosongkan)
+        grouped cleanly. Filter disclosure toggle keeps toolbar clean and uncluttered.
       */}
       <div
         className="gc-pending__bar gc-toolbar--actions"
@@ -212,56 +209,51 @@ export function PendingChangesApp(): JSX.Element {
         aria-label="Tindakan perubahan"
         aria-orientation="horizontal"
       >
-        {/*
-          The count rides in the accessible name rather than only in the adjacent
-          span: a screen reader user who tabs straight to the button otherwise hears
-          `Stage` with no idea how many files it will touch.
-        */}
-        <button
-          type="button"
-          className="gc-button gc-button--action"
-          aria-label={`Stage ${formatCount(stageable.length)} file terpilih`}
-          title="Masukkan file terpilih ke staging area, supaya ikut pada commit berikutnya."
-          disabled={busy || stageable.length === 0}
-          onClick={() => void stage(stageablePaths())}
-        >
-          <span aria-hidden="true">↓ </span>Stage
-        </button>
-        <button
-          type="button"
-          className="gc-button gc-button--action"
-          aria-label={`Unstage ${formatCount(selected.length)} file terpilih`}
-          title="Keluarkan file terpilih dari staging area. Isi file tidak diubah, hanya tidak ikut di-commit."
-          disabled={busy || selected.length === 0}
-          onClick={() => void unstage(selected)}
-        >
-          <span aria-hidden="true">↑ </span>Unstage
-        </button>
+        <div className="gc-toolbar__primary-group">
+          <button
+            type="button"
+            className="gc-button gc-button--action"
+            aria-label={`Stage ${formatCount(stageable.length)} file terpilih`}
+            title="Masukkan file terpilih ke staging area, supaya ikut pada commit berikutnya."
+            disabled={busy || stageable.length === 0}
+            onClick={() => void stage(stageablePaths())}
+          >
+            <span aria-hidden="true">↓ </span>Stage
+          </button>
+          <button
+            type="button"
+            className="gc-button gc-button--action"
+            aria-label={`Unstage ${formatCount(selected.length)} file terpilih`}
+            title="Keluarkan file terpilih dari staging area. Isi file tidak diubah, hanya tidak ikut di-commit."
+            disabled={busy || selected.length === 0}
+            onClick={() => void unstage(selected)}
+          >
+            <span aria-hidden="true">↑ </span>Unstage
+          </button>
+        </div>
 
-        <span className="gc-toolbar__divider" aria-hidden="true" />
-
-        <button
-          type="button"
-          className="gc-button gc-button--quiet"
-          title="Centang semua file di daftar. Belum ada yang di-stage sampai Anda menekan Stage."
-          disabled={changes.length === 0}
-          onClick={selectAll}
-        >
-          Pilih semua
-        </button>
-        <button
-          type="button"
-          className="gc-button gc-button--quiet"
-          title="Hapus semua centang. Isi file dan staging area tidak berubah."
-          disabled={selected.length === 0}
-          onClick={clear}
-        >
-          Kosongkan pilihan
-        </button>
+        <div className="gc-toolbar__secondary-group">
+          <button
+            type="button"
+            className="gc-button gc-button--quiet"
+            title="Centang semua file di daftar. Belum ada yang di-stage sampai Anda menekan Stage."
+            disabled={changes.length === 0}
+            onClick={selectAll}
+          >
+            Pilih semua
+          </button>
+          <button
+            type="button"
+            className="gc-button gc-button--quiet"
+            title="Hapus semua centang. Isi file dan staging area tidak berubah."
+            disabled={selected.length === 0}
+            onClick={clear}
+          >
+            Kosongkan
+          </button>
+        </div>
 
         <div className="gc-toolbar__end">
-          {/* `aria-live` stays off: this changes on every checkbox tick, and the
-              checkbox itself already announces its own new state. */}
           <span className="gc-pending__count" aria-live="off">
             {formatCount(selected.length)} dipilih
           </span>
@@ -283,55 +275,51 @@ export function PendingChangesApp(): JSX.Element {
       ) : changes.length === 0 ? (
         <EmptyState
           title="Tidak ada perubahan."
-          hint="Semua file di folder kerja sudah sama dengan commit terakhir."
-          steps={[
-            'Buka sebuah file di editor dan ubah isinya, lalu simpan.',
-            'File itu akan muncul di sini pada bagian “Belum disiapkan”.',
-            'Centang file tersebut, tekan Stage, tulis pesan, lalu Commit.',
-          ]}
+          hint="Folder kerja bersih dan sinkron dengan commit terakhir."
         />
       ) : (
         <>
           {/*
-            Filter box at the top right of the list, as in the reference. It is a
-            view filter, not a selection change: a file hidden here stays selected,
-            which is why the count above keeps counting it.
+            List header with integrated search filter disclosure.
           */}
           <div className="gc-listbar">
-            <h2 className="gc-listbar__title">
-              Perubahan
-              <span className="gc-listbar__total">{formatCount(changes.length)} file</span>
-            </h2>
-            <label className="gc-field gc-listbar__filter">
-              <span className="gc-field__label">Saring berdasarkan nama file</span>
+            <div className="gc-listbar__header">
+              <h2 className="gc-listbar__title">
+                Perubahan
+                <span className="gc-listbar__total">{formatCount(changes.length)} file</span>
+              </h2>
+            </div>
+            <div className="gc-listbar__search-wrap">
               <input
                 type="search"
+                className="gc-listbar__input"
                 value={filter}
                 maxLength={100}
-                placeholder="mis. src/webview"
+                placeholder="Cari file..."
+                aria-label="Saring berdasarkan nama file"
                 aria-describedby={filterCountId}
                 onChange={(event) => setFilter(event.target.value)}
               />
-            </label>
-            <p className="gc-help-text gc-listbar__count" id={filterCountId} role="status" aria-live="polite">
-              {needle.length === 0
-                ? `${formatCount(changes.length)} file ditampilkan.`
-                : `${formatCount(visible.length)} dari ${formatCount(changes.length)} file cocok dengan saringan.`}
-            </p>
+            </div>
+            {needle.length > 0 && (
+              <p className="gc-help-text gc-listbar__count" id={filterCountId} role="status" aria-live="polite">
+                {formatCount(visible.length)} dari {formatCount(changes.length)} file cocok
+              </p>
+            )}
           </div>
 
           {visible.length === 0 ? (
             <EmptyState
-              title="Tidak ada file yang cocok dengan saringan."
-              hint={`Tidak ada path yang memuat “${sanitizeGitText(filter.trim())}”. Kosongkan kotak saringan untuk melihat semua ${formatCount(changes.length)} file lagi.`}
+              title="Tidak ada file yang cocok."
+              hint={`Tidak ada file yang memuat “${sanitizeGitText(filter.trim())}”.`}
               action={
                 <button
                   type="button"
-                  className="gc-button"
-                  title="Tampilkan kembali semua file. Hanya mengubah apa yang terlihat, bukan repository."
+                  className="gc-button gc-button--quiet"
+                  title="Tampilkan kembali semua file."
                   onClick={() => setFilter('')}
                 >
-                  Kosongkan saringan
+                  Kosongkan pencarian
                 </button>
               }
             />
@@ -348,11 +336,6 @@ export function PendingChangesApp(): JSX.Element {
                 return (
                   <section className="gc-section" key={section} aria-label={SECTION_TITLES[section]}>
                     <h3 className="gc-section__title">
-                      {/*
-                        The box is `aria-hidden` because the heading text right after
-                        it is the same fact in words; announcing "S, Siap di-commit"
-                        adds a letter nobody asked for.
-                      */}
                       <span
                         className={`gc-section__badge gc-section__badge--${badge.tone}`}
                         aria-hidden="true"
@@ -360,9 +343,8 @@ export function PendingChangesApp(): JSX.Element {
                         {badge.letter}
                       </span>
                       <span className="gc-section__name">{SECTION_TITLES[section]}</span>
-                      <span className="gc-section__count">{formatCount(entries.length)} file</span>
+                      <span className="gc-section__count">{formatCount(entries.length)}</span>
                     </h3>
-                    <p className="gc-help-text gc-section__hint">{SECTION_HINTS[section]}</p>
                     <ChangeTree
                       entries={entries}
                       selection={selection}

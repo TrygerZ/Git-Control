@@ -52,26 +52,21 @@ export function CommitForm(): JSX.Element {
     <form className="gc-commit" onSubmit={submit} aria-label="Buat commit">
       <h2 className="gc-commit__title">Simpan perubahan (commit)</h2>
 
-      <label className="gc-field gc-commit__field">
-        <span className="gc-field__label">Pesan commit</span>
+      <div className="gc-commit__field-wrap">
         <textarea
           ref={textareaRef}
           className="gc-commit__message"
           value={message}
-          rows={3}
+          rows={2}
           required
           minLength={COMMIT_MESSAGE_MIN}
           aria-invalid={messageError !== null}
+          aria-label="Pesan commit"
           aria-describedby={messageError !== null ? `${errorId} ${hintId}` : hintId}
-          placeholder="Jelaskan singkat apa yang Anda ubah"
+          placeholder="Pesan commit (minimal 3 karakter)..."
           onChange={(e) => setMessage(e.target.value)}
         />
-      </label>
-
-      <p className="gc-commit__hint" id={hintId}>
-        Minimal {COMMIT_MESSAGE_MIN} karakter. Tulis apa yang berubah dan mengapa — pesan ini yang akan
-        Anda baca lagi berbulan-bulan kemudian.
-      </p>
+      </div>
 
       {messageError !== null && (
         <p className="gc-field__error" id={errorId} role="alert">
@@ -80,65 +75,59 @@ export function CommitForm(): JSX.Element {
         </p>
       )}
 
-      <label className="gc-checkbox">
-        <input
-          type="checkbox"
-          checked={pushAfter}
-          disabled={busy}
-          onChange={(e) => setPushAfter(e.target.checked)}
-        />
-        <span className="gc-checkbox__text">
-          <span>Push ke remote setelah commit berhasil</span>
-          {/* The consequence, not the mechanism: this is the box that makes work
-              visible to other people, and that is the part worth knowing. */}
-          <span className="gc-checkbox__hint">
-            Commit langsung dikirim ke remote, sehingga rekan Anda bisa melihatnya.
-          </span>
-        </span>
-      </label>
+      <details className="gc-commit__advanced">
+        <summary className="gc-commit__advanced-toggle">
+          Opsi lanjutan
+        </summary>
+        <div className="gc-commit__options">
+          <label className="gc-checkbox" title="Commit langsung dikirim ke remote setelah berhasil dibuat.">
+            <input
+              type="checkbox"
+              checked={pushAfter}
+              disabled={busy}
+              onChange={(e) => setPushAfter(e.target.checked)}
+            />
+            <span className="gc-checkbox__text">
+              <span>Push ke remote setelah commit</span>
+            </span>
+          </label>
 
-      <label className="gc-checkbox">
-        <input
-          type="checkbox"
-          checked={includeUntracked}
-          disabled={busy}
-          onChange={(e) => setIncludeUntracked(e.target.checked)}
-        />
-        <span className="gc-checkbox__text">
-          <span>Sertakan file yang belum dilacak saat stage</span>
-          <span className="gc-checkbox__hint">
-            Tanpa ini, file baru tetap diabaikan meski Anda mencentangnya.
-          </span>
-        </span>
-      </label>
+          <label className="gc-checkbox" title="File baru (untracked) akan otomatis diikutsertakan saat stage.">
+            <input
+              type="checkbox"
+              checked={includeUntracked}
+              disabled={busy}
+              onChange={(e) => setIncludeUntracked(e.target.checked)}
+            />
+            <span className="gc-checkbox__text">
+              <span>Sertakan file belum dilacak saat stage</span>
+            </span>
+          </label>
+        </div>
+      </details>
 
-      {/*
-        What the button will actually commit, stated before it is pressed. "Commit"
-        acting on an invisible set is the most common surprise in this panel: a user
-        who ticked five files but staged none commits nothing.
-      */}
       <p className="gc-commit__scope" id={scopeId}>
         {stagedCount === 0
-          ? 'Belum ada file di staging area, jadi belum ada yang bisa di-commit. Centang file lalu tekan Stage.'
-          : `Akan menyimpan ${formatCount(stagedCount)} file yang ada di staging area.`}
+          ? 'Belum ada file di staging area.'
+          : `${formatCount(stagedCount)} file siap di-commit.`}
       </p>
 
       <div className="gc-commit__actions">
         <button
           type="submit"
           className="gc-button gc-button--primary gc-button--lg"
-          title="Simpan isi staging area sebagai satu commit di komputer ini. Belum dikirim ke remote kecuali kotak push dicentang."
-          disabled={busy}
+          title="Simpan isi staging area sebagai satu commit di komputer ini."
+          disabled={busy || stagedCount === 0}
           aria-describedby={tooShort ? `${hintId} ${scopeId}` : scopeId}
         >
           Commit
         </button>
-        {busy && <Spinner label="Menjalankan commit…" />}
+        {busy && <Spinner label="Menyimpan commit…" />}
         {retryPush !== null && (
           <button
             type="button"
             className="gc-button"
-            title="Kirim ulang commit yang sudah tersimpan ke remote. Commit-nya sendiri sudah aman di komputer ini."
+            title="Kirim ulang commit yang sudah tersimpan ke remote."
             disabled={busy}
             onClick={() => void retryPush()}
           >

@@ -246,24 +246,22 @@ function FileRow({
   return (
     <>
       {/*
-        Four channels for one fact, and the colour is the last of them: a filled box
-        (the Unity reference's `C`/`D`/`A` chip) holding the porcelain LETTER, the
-        text glyph beside it, and the Indonesian word after that. Drop the colour and
-        all three still read; drop the word and the letter and glyph still read.
-
-        The composite is hidden from AT because `fileRowLabel` on the button below
-        already carries all of it, in order, without repeating the letter.
+        File row presentation:
+        - Porcelain status box (colored indicator)
+        - Clean file name with ellipsis, directory in tooltip
+        - Precise tabular churn count
+        - Quick inline Stage/Unstage button on hover
       */}
       <span className="gc-tree__status" role="gridcell" aria-colindex={2} aria-hidden="true">
-        <span className={`gc-status__box gc-status__box--${tone}`}>{status.code}</span>
-        <span className="gc-status__glyph">{status.glyph}</span>
-        <span className="gc-status__label">{status.label}</span>
+        <span className={`gc-status__box gc-status__box--${tone}`} title={status.label}>
+          {status.code}
+        </span>
       </span>
       <span role="gridcell" aria-colindex={3} className="gc-tree__file-cell">
         <button
           type="button"
           className="gc-tree__file"
-          title={`${path} — klik untuk membuka diff`}
+          title={`${path}: klik untuk membuka diff`}
           aria-label={`Buka diff ${fileRowLabel(entry, churnTruncated)}`}
           onClick={() => onOpenDiff(entry)}
         >
@@ -275,8 +273,6 @@ function FileRow({
           binary
         </span>
       ) : churnUnknown ? (
-        // `+0 / −0` would claim the file is unchanged; an untracked file is simply
-        // absent from every diff.
         <span
           className="gc-tree__stats"
           role="gridcell"
@@ -293,17 +289,15 @@ function FileRow({
         </span>
       )}
       {fileAction !== null && (
-        <span role="gridcell" aria-colindex={5}>
+        <span role="gridcell" aria-colindex={5} className="gc-tree__action-cell">
           <button
             type="button"
             className="gc-button gc-button--quiet gc-tree__action"
-            // Without the path every row's button is called `Stage`, and a screen
-            // reader user tabbing a long list hears the same word repeatedly.
             aria-label={`${fileAction.label} ${sanitizeGitText(entry.path)}`}
             title={
               fileAction.label === 'Stage'
                 ? 'Masukkan file ini ke staging area.'
-                : 'Keluarkan file ini dari staging area. Isinya tidak diubah.'
+                : 'Keluarkan file ini dari staging area.'
             }
             disabled={busy}
             onClick={() => fileAction.run(entry)}
