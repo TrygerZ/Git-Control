@@ -149,6 +149,15 @@ export function validateStashMessage(value: unknown): boolean {
   return !CONTROL_CHARS.test(value);
 }
 
+export function parseCommitTimestamp(val?: string | number | null): number {
+  if (typeof val === 'number') return Number.isFinite(val) && !Number.isNaN(val) && val > 0 ? val : 0;
+  if (typeof val === 'string' && val.length > 0) {
+    const parsed = Date.parse(val);
+    if (!Number.isNaN(parsed) && Number.isFinite(parsed) && parsed > 0) return parsed;
+  }
+  return 0;
+}
+
 /**
  * Defends against: unbounded `git log` invocations used as a denial-of-service
  * against the extension host.

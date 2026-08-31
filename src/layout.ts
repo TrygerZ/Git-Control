@@ -3,9 +3,12 @@
  * Same input always produces byte-identical output, which the tests assert.
  */
 
+import { parseCommitTimestamp } from './validation';
+
 export interface LayoutCommit {
   hash: string;
   parents: string[];
+  committedAt?: string | number;
 }
 
 export interface LayoutRef {
@@ -16,8 +19,11 @@ export interface LayoutRef {
 }
 
 export interface LayoutOptions {
-  rowHeight?: number;
-  laneWidth?: number;
+  laneHeight?: number;
+  columnWidth?: number;
+  dayGap?: number;
+  gutterX?: number;
+  rulerHeight?: number;
 }
 
 export interface LayoutInput {
@@ -35,6 +41,8 @@ export interface LayoutNode {
   x: number;
   y: number;
   lane: number;
+  /** Global chronological order (0 = oldest, N-1 = newest). */
+  index: number;
   isHead: boolean;
   isMerge: boolean;
   /** True when unreachable from every remote-tracking ref. */
@@ -55,14 +63,27 @@ export interface LayoutLane {
   color: string;
 }
 
+export interface DateBucket {
+  label: string;
+  timestamp: number;
+  startX: number;
+  width: number;
+  commitCount: number;
+}
+
 export interface LayoutResult {
   nodes: LayoutNode[];
   edges: LayoutEdge[];
   lanes: LayoutLane[];
+  dateBuckets: DateBucket[];
 }
 
-const DEFAULT_ROW_HEIGHT = 24;
-const DEFAULT_LANE_WIDTH = 16;
+export const COLUMN_WIDTH = 96;
+export const LANE_HEIGHT = 88;
+export const NODE_RADIUS = 14;
+export const DAY_GAP = 48;
+export const RULER_HEIGHT = 32;
+export const GUTTER_X = 32;
 
 /** Fixed palette: index-based so colors are stable across renders. */
 const LANE_COLORS = [
@@ -83,9 +104,24 @@ const RANK_LOCAL = 2;
 const RANK_DETACHED_HEAD = 3;
 const RANK_TAG = 4;
 
+function formatDateLabel(timestamp: number): string {
+  if (timestamp <= 0) return 'Tanggal tidak diketahui';
+  const d = new Date(timestamp);
+  const pad = (n: number): string => String(n).padStart(2, '0');
+  return `${pad(d.getDate())}/${pad(d.getMonth() + 1)}/${d.getFullYear()}`;
+}
+
+function dayKey(timestamp: number): string {
+  if (timestamp <= 0) return 'unknown-date';
+  const d = new Date(timestamp);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
 export function layoutGraph(input: LayoutInput, options: LayoutOptions = {}): LayoutResult {
-  const rowHeight = options.rowHeight ?? DEFAULT_ROW_HEIGHT;
-  const laneWidth = options.laneWidth ?? DEFAULT_LANE_WIDTH;
+  const laneHeight = options.laneHeight ?? LANE_HEIGHT;
+  const columnWidth = options.columnWidth ?? COLUMN_WIDTH;
+  const dayGap = options.dayGap ?? DAY_GAP;
+  const gutterX = options.gutterX ?? GUTTER_X;
 
   const known = new Set(input.commits.map((c) => c.hash));
   const byHash = new Map(input.commits.map((c) => [c.hash, c]));
@@ -106,9 +142,8 @@ export function layoutGraph(input: LayoutInput, options: LayoutOptions = {}): La
   }
 
   const laneOf = new Map<string, number>();
-  const nodes: LayoutNode[] = [];
 
-  input.commits.forEach((commit, index) => {
+  input.commits.forEach((commit) => {
     let lane = laneExpect.indexOf(commit.hash);
     if (lane === -1) lane = claimLane(laneExpect, commit.hash);
     laneOf.set(commit.hash, lane);
@@ -129,17 +164,92 @@ export function layoutGraph(input: LayoutInput, options: LayoutOptions = {}): La
       if (laneExpect.includes(parent)) continue;
       claimLane(laneExpect, parent);
     }
-
-    nodes.push({
-      hash: commit.hash,
-      x: lane * laneWidth,
-      y: index * rowHeight,
-      lane,
-      isHead: input.head !== null && commit.hash === input.head,
-      isMerge: parents.length > 1,
-      local: localOnly.has(commit.hash),
-    });
   });
+
+  // Sort chronological (oldest to newest: left to right).
+  // Stable sort: when timestamps tie (or when no timestamp), preserve reverse input order (oldest first).
+  const indexedCommits = input.commits.map((commit, inputIdx) => ({
+    commit,
+    inputIdx,
+    timestamp: parseCommitTimestamp(commit.committedAt),
+  }));
+
+  const chronological = [...indexedCommits].sort((a, b) => {
+    if (a.timestamp !== b.timestamp) return a.timestamp - b.timestamp;
+    // Lower reverse input index means older in topological git log output
+    return b.inputIdx - a.inputIdx;
+  });
+
+  // Group into calendar day buckets
+  const bucketsMap = new Map<string, { key: string; timestamp: number; commits: typeof chronological }>();
+  for (const item of chronological) {
+    const key = dayKey(item.timestamp);
+    let bucket = bucketsMap.get(key);
+    if (!bucket) {
+      // Start of day timestamp (local time)
+      let sod = 0;
+      if (item.timestamp > 0) {
+        const d = new Date(item.timestamp);
+        sod = new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+      }
+      bucket = { key, timestamp: sod, commits: [] };
+      bucketsMap.set(key, bucket);
+    }
+    bucket.commits.push(item);
+  }
+
+  const dateBuckets: DateBucket[] = [];
+  const nodes: LayoutNode[] = [];
+  let currentX = gutterX;
+
+  let globalIndex = 0;
+  const isFirstBucket = true;
+  let bucketIdx = 0;
+
+  for (const bucket of bucketsMap.values()) {
+    if (bucketIdx > 0) {
+      currentX += dayGap;
+    }
+    const startX = currentX;
+    const count = bucket.commits.length;
+
+    for (let i = 0; i < count; i += 1) {
+      const item = bucket.commits[i] as (typeof chronological)[0];
+      const commit = item.commit;
+      const lane = laneOf.get(commit.hash) ?? 0;
+      const nodeX = currentX + i * columnWidth;
+      const nodeY = lane * laneHeight;
+
+      nodes.push({
+        hash: commit.hash,
+        x: nodeX,
+        y: nodeY,
+        lane,
+        index: globalIndex,
+        isHead: input.head !== null && commit.hash === input.head,
+        isMerge: commit.parents.length > 1,
+        local: localOnly.has(commit.hash),
+      });
+
+      globalIndex += 1;
+    }
+
+    const bucketWidth = count * columnWidth;
+    dateBuckets.push({
+      label: formatDateLabel(bucket.timestamp),
+      timestamp: bucket.timestamp,
+      startX,
+      width: bucketWidth,
+      commitCount: count,
+    });
+
+    currentX += bucketWidth;
+    bucketIdx += 1;
+  }
+
+  // Restore nodes order to match input.commits or keep chronological?
+  // Let's re-order nodes to match chronological (left to right) with node.index = 0..N-1
+  // nodes array is already chronological (left to right).
 
   const edges: LayoutEdge[] = [];
   for (const commit of input.commits) {
@@ -170,7 +280,7 @@ export function layoutGraph(input: LayoutInput, options: LayoutOptions = {}): La
     });
   }
 
-  return { nodes, edges, lanes };
+  return { nodes, edges, lanes, dateBuckets };
 }
 
 /**
