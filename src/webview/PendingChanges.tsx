@@ -209,26 +209,26 @@ export function PendingChangesApp(): JSX.Element {
         aria-label="Tindakan perubahan"
         aria-orientation="horizontal"
       >
-        <div className="gc-toolbar__primary-group">
+        <div className="gc-toolbar__primary-group gc-segmented">
           <button
             type="button"
-            className="gc-button gc-button--action"
+            className="gc-button gc-button--action gc-button--stage"
             aria-label={`Stage ${formatCount(stageable.length)} file terpilih`}
             title="Masukkan file terpilih ke staging area, supaya ikut pada commit berikutnya."
             disabled={busy || stageable.length === 0}
             onClick={() => void stage(stageablePaths())}
           >
-            <Icon name="arrow-down" /> Stage
+            <Icon name="arrow-down" />Stage
           </button>
           <button
             type="button"
-            className="gc-button gc-button--action"
+            className="gc-button gc-button--action gc-button--unstage"
             aria-label={`Unstage ${formatCount(selected.length)} file terpilih`}
             title="Keluarkan file terpilih dari staging area. Isi file tidak diubah, hanya tidak ikut di-commit."
             disabled={busy || selected.length === 0}
             onClick={() => void unstage(selected)}
           >
-            <Icon name="arrow-up" /> Unstage
+            <Icon name="arrow-up" />Unstage
           </button>
         </div>
 

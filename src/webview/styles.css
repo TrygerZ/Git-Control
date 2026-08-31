@@ -24,7 +24,10 @@
  *             pending panel, `Lanjutkan merge` while a merge is unfinished. Filled
  *             with the theme's button background.
  *   action    `.gc-button--action` — repository-changing but reversible: `Stage`,
- *             `Unstage`. Outlined, with the accent on the border only.
+ *             `Unstage`. Outlined, with the accent on the border only. On segmented
+ *             pairs, the leading action (`Stage`) carries an inset accent rule and
+ *             strong weight, while the trailing action (`Unstage`) stays quieter with
+ *             normal weight.
  *   quiet     `.gc-button--quiet`, `.gc-icon-button` — view-only or per-row work:
  *             selection helpers, refresh, copy, per-file Stage. No fill, no border
  *             until hover.
@@ -199,6 +202,7 @@ h3 {
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  gap: var(--gc-space-2);
   min-height: var(--gc-hit);
   min-width: var(--gc-hit);
   padding: var(--gc-space-1) var(--gc-space-4);
@@ -816,6 +820,61 @@ h3 {
   display: flex;
   align-items: center;
   gap: var(--gc-space-2);
+}
+
+/*
+ * Two buttons that always act on the same selection, drawn as one control: the outer
+ * corners round, the inner pair meets on a single shared rule. `margin-left: -1px`
+ * is what collapses the two adjacent borders into that one rule, and `position` plus
+ * the raised `z-index` on `:focus-visible` keeps the focus ring from being clipped by
+ * the neighbour it overlaps.
+ */
+.gc-segmented {
+  display: inline-flex;
+  align-items: stretch;
+  gap: 0;
+}
+
+.gc-segmented .gc-button {
+  border-radius: 0;
+  position: relative;
+}
+
+.gc-segmented .gc-button:first-child {
+  border-top-left-radius: var(--gc-radius);
+  border-bottom-left-radius: var(--gc-radius);
+}
+
+.gc-segmented .gc-button:last-child {
+  border-top-right-radius: var(--gc-radius);
+  border-bottom-right-radius: var(--gc-radius);
+}
+
+.gc-segmented .gc-button + .gc-button {
+  margin-left: -1px;
+}
+
+.gc-segmented .gc-button:focus-visible {
+  z-index: 2;
+}
+
+/*
+ * Within the pair, `Stage` leads. Both stay in tier two - promoting `Stage` to a fill
+ * would put two primary buttons on a panel that already has `Commit` - so the lead is
+ * carried by an inset accent rule and a heavier weight. Two channels, neither of them
+ * colour, and the inset rule is the same idiom `.gc-button--danger` already uses.
+ *
+ * `forced-colors` drops the shadow, but the weight survives and the arrows still point
+ * in opposite directions, so the pair does not collapse into two identical buttons.
+ */
+.gc-button--stage {
+  box-shadow: inset 0 0 0 1px var(--vscode-focusBorder);
+  font-weight: var(--gc-weight-strong);
+  z-index: 1;
+}
+
+.gc-button--unstage {
+  font-weight: normal;
 }
 
 .gc-toolbar__secondary-group {
