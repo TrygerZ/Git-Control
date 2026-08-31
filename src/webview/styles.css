@@ -1137,6 +1137,15 @@ h3 {
   user-select: none;
 }
 
+/*
+ * Author profile avatar inside the node.
+ * Pointer events disabled to ensure .gc-node__hit receives pointer events.
+ */
+.gc-node__avatar {
+  pointer-events: none;
+  user-select: none;
+}
+
 /* Local-only commits: dashed outline, hollow fill. Never colour alone. */
 .gc-node--local .gc-node__dot {
   stroke-dasharray: 2 2;

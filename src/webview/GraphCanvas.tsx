@@ -47,7 +47,7 @@ import {
   shortHash,
   truncate,
 } from './format';
-import { useRepoStore, useSettingsStore } from './store';
+import { useGitHubStore, useRepoStore, useSettingsStore } from './store';
 import {
   COLUMN_WIDTH,
   DAY_GAP,
@@ -101,6 +101,12 @@ export function computeStaggerMap(nodes: readonly GraphNode[]): Map<string, 'abo
   return map;
 }
 const MINIMAP_HEIGHT = 160;
+
+/**
+ * `range` is recomputed on every `scrollLeft` change, so without a pause one continuous
+ * scroll gesture would ask for avatars once per frame.
+ */
+const AVATAR_REQUEST_DEBOUNCE_MS = 150;
 
 /**
  * Radius of a commit node.
@@ -239,6 +245,8 @@ export function GraphCanvas({
   const selectedHash = useRepoStore((s) => s.selectedHash);
   const selectCommit = useRepoStore((s) => s.selectCommit);
   const loadMore = useRepoStore((s) => s.loadMore);
+  const avatars = useGitHubStore((s) => s.avatars);
+  const loadCommitAuthors = useGitHubStore((s) => s.loadCommitAuthors);
 
   const scrollRef = useRef<HTMLDivElement>(null);
   const legendButtonRef = useRef<HTMLButtonElement>(null);
@@ -517,6 +525,20 @@ export function GraphCanvas({
   const openMenuAt = useCallback((node: GraphNode, anchor: MenuAnchor): void => {
     setMenu({ node, anchor });
   }, []);
+
+  // Avatars are fetched for the rendered window only: at 10 000 commits asking for all of
+  // them would spend the whole GitHub quota on faces nobody is looking at.
+  useEffect(() => {
+    if (rows.length === 0) return undefined;
+    const visibleNodes = rows.slice(range.start, range.end);
+    const visibleHashes = visibleNodes.map((n) => n.hash);
+    if (visibleHashes.length === 0) return undefined;
+
+    const timer = window.setTimeout(() => {
+      loadCommitAuthors(visibleHashes);
+    }, AVATAR_REQUEST_DEBOUNCE_MS);
+    return () => window.clearTimeout(timer);
+  }, [range.start, range.end, rows, loadCommitAuthors]);
 
   /** Horizontal and vertical pan, so a wide canvas is reachable without a mouse. */
   const panBy = useCallback((dx: number, dy: number = 0): void => {
@@ -878,6 +900,7 @@ export function GraphCanvas({
                       <NodeMark
                         key={node.hash}
                         node={node}
+                        avatarUrl={avatars[node.hash] ?? null}
                         y={laneY(node.lane, LANE_HEIGHT, RULER_HEIGHT)}
                         color={laneColor(node.lane)}
                         dim={dim}
@@ -1104,6 +1127,7 @@ export function edgePath(edge: GraphEdge, fromX: number, toX: number): string {
 
 function NodeMark({
   node,
+  avatarUrl,
   y,
   color,
   dim,
@@ -1114,6 +1138,7 @@ function NodeMark({
   onHoverChange,
 }: {
   node: GraphNode;
+  avatarUrl: string | null;
   y: number;
   color: string;
   dim: boolean;
@@ -1123,16 +1148,25 @@ function NodeMark({
   onOpen(): void;
   onHoverChange(hovered: boolean): void;
 }): JSX.Element {
+  const [imgFailed, setImgFailed] = useState(false);
   const x = node.x;
   // Merge nodes keep their extra pixel, so "bigger circle = merge" still holds.
   const r = node.isMerge ? NODE_RADIUS + 2 : AVATAR_RADIUS;
+  // 2 px inside the dot, not flush with it: the selection ring is a 2.5 px stroke centred on
+  // the dot's path, so 1.25 px of it falls inside the radius and a flush avatar would cover
+  // the half that says "this commit is selected".
+  const avatarRadius = r - 2;
   const classes = ['gc-node'];
   if (node.local) classes.push('gc-node--local');
   if (dim) classes.push('gc-node--dim');
   if (selected) classes.push('gc-node--selected');
-  // The initial is unreadable below `TEXT_MIN_ZOOM`, the same threshold the outside label
+  // Both the initial and avatar are unreadable below `TEXT_MIN_ZOOM`, the same threshold the outside label
   // uses, so both vanish together.
-  const showInitial = zoom >= TEXT_MIN_ZOOM;
+  const showContent = zoom >= TEXT_MIN_ZOOM;
+  // A local commit has no avatar to show - it is not on GitHub yet - and its hollow dashed
+  // dot is a signal an image would paint over.
+  const hasAvatar = showContent && !node.local && avatarUrl !== null && !imgFailed;
+  const clipId = `clip-${node.hash}`;
   // Hit circle world radius: ensures rendered pixel radius is max(NODE_RADIUS * zoom, 14) px,
   // clamped so it cannot exceed half of min(COLUMN_WIDTH, LANE_HEIGHT).
   const maxHitRadius = Math.min(COLUMN_WIDTH, LANE_HEIGHT) / 2; // 44 world px (half lane height, targets never overlap in world space)
@@ -1152,11 +1186,13 @@ function NodeMark({
         onPointerEnter={() => onHoverChange(true)}
         onPointerLeave={() => onHoverChange(false)}
       />
-      {/* `r + 3`, not `r + 4`: at lane 0 the centre sits at `RULER_HEIGHT + LANE_HEIGHT / 2`,
-          and a merge head-ring at `r + 4` plus a 1.5 stroke reaches 11.75 — a
-          quarter pixel from the SVG edge, which rounds to a clipped ring. */}
-      {node.isHead && <circle className="gc-node__head-ring" cx={x} cy={y} r={r + 3} stroke={color} />}
-      {node.isMerge && <circle className="gc-node__merge-ring" cx={x} cy={y} r={r + 2} stroke={color} />}
+      {hasAvatar && (
+        <defs>
+          <clipPath id={clipId}>
+            <circle cx={x} cy={y} r={avatarRadius} />
+          </clipPath>
+        </defs>
+      )}
       <circle
         className="gc-node__dot"
         cx={x}
@@ -1165,9 +1201,25 @@ function NodeMark({
         stroke={color}
         fill={node.local ? 'var(--vscode-editor-background)' : color}
       />
+      {hasAvatar && (
+        <image
+          className="gc-node__avatar"
+          href={avatarUrl}
+          x={x - avatarRadius}
+          y={y - avatarRadius}
+          width={avatarRadius * 2}
+          height={avatarRadius * 2}
+          clipPath={`url(#${clipId})`}
+          preserveAspectRatio="xMidYMid slice"
+          aria-hidden="true"
+          onError={() => setImgFailed(true)}
+        />
+      )}
       {/*
         Author initial inside the node, as in the Unity Branch Explorer: it turns the
         graph into "who did what" at a glance without reading a single row.
+        Still the fallback whenever there is no avatar to draw: no linked account, an image
+        that failed to load, or a local commit.
 
         `aria-hidden` is mandatory, not defensive — `rowLabel` already carries the
         full author name for this row, and a screen reader that reads the SVG text
@@ -1178,7 +1230,7 @@ function NodeMark({
         filled dot needs the editor background to stay legible against it. Both are
         theme tokens or lane data, never a literal.
       */}
-      {showInitial && (
+      {showContent && !hasAvatar && (
         <text
           className="gc-node__initial"
           x={x}
@@ -1189,6 +1241,13 @@ function NodeMark({
           {authorInitials(node.authorName)}
         </text>
       )}
+      {/*
+        Rings last so they sit above the avatar. `r + 3`, not `r + 4`: at lane 0 the centre
+        sits at `RULER_HEIGHT + LANE_HEIGHT / 2`, and a merge head-ring at `r + 4` plus a 1.5
+        stroke reaches a quarter pixel from the SVG edge, which rounds to a clipped ring.
+      */}
+      {node.isHead && <circle className="gc-node__head-ring" cx={x} cy={y} r={r + 3} stroke={color} />}
+      {node.isMerge && <circle className="gc-node__merge-ring" cx={x} cy={y} r={r + 2} stroke={color} />}
     </g>
   );
 }
