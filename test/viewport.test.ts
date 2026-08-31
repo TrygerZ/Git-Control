@@ -303,54 +303,6 @@ test('minimapScrollFor clamps out-of-range input', () => {
 
 // ---------------------------------------------------------------- graph enhancements
 
-function calendarDayOrdinal(timestamp: number): number {
-  if (!Number.isFinite(timestamp)) return 0;
-  const dt = new Date(timestamp);
-  let y = dt.getFullYear();
-  let m = dt.getMonth() + 1;
-  const d = dt.getDate();
-  if (m <= 2) {
-    y -= 1;
-    m += 12;
-  }
-  const era = Math.floor(y / 400);
-  const yoe = y - era * 400;
-  const doy = Math.floor((153 * (m - 3) + 2) / 5) + d - 1;
-  const doe = yoe * 365 + Math.floor(yoe / 4) - Math.floor(yoe / 100) + doy;
-  return era * 146097 + doe;
-}
-
-test('zebra parity is stable when buckets are filtered (calendar day-ordinal parity)', () => {
-  const getParity = (timestamp: number) => Math.abs(calendarDayOrdinal(timestamp)) % 2;
-
-  // Consecutive days in 2026
-  const day1 = new Date(2026, 7, 1).getTime();
-  const day2 = new Date(2026, 7, 2).getTime();
-  const day3 = new Date(2026, 7, 3).getTime();
-
-  assert.notEqual(getParity(day1), getParity(day2), 'adjacent days in 2026 have different parity');
-  assert.equal(getParity(day1), getParity(day3), 'alternate days in 2026 have same parity');
-
-  // Pre-1970 dates (negative epoch timestamp)
-  const pre1970Day1 = new Date(1969, 11, 30).getTime();
-  const pre1970Day2 = new Date(1969, 11, 31).getTime();
-  const pre1970Day3 = new Date(1970, 0, 1).getTime();
-
-  assert.notEqual(getParity(pre1970Day1), getParity(pre1970Day2), 'adjacent pre-1970 days have different parity');
-  assert.notEqual(getParity(pre1970Day2), getParity(pre1970Day3), '1969-12-31 to 1970-01-01 boundary alternates parity');
-
-  // Year 1950
-  const y1950Day1 = new Date(1950, 5, 10).getTime();
-  const y1950Day2 = new Date(1950, 5, 11).getTime();
-  assert.notEqual(getParity(y1950Day1), getParity(y1950Day2), 'adjacent 1950 days alternate');
-
-  // Filter stability invariant: skipping days does not change the day's parity
-  const allBuckets = [{ timestamp: day1 }, { timestamp: day2 }, { timestamp: day3 }];
-  const filteredBuckets = [{ timestamp: day1 }, { timestamp: day3 }];
-  assert.equal(getParity(allBuckets[0]!.timestamp), getParity(filteredBuckets[0]!.timestamp));
-  assert.equal(getParity(allBuckets[2]!.timestamp), getParity(filteredBuckets[1]!.timestamp));
-});
-
 test('hit-circle radius compensation maintains rendered target size across zoom', () => {
   const nodeRadius = 14;
   const avatarRadius = 15; // NODE_RADIUS + 1

@@ -372,3 +372,85 @@ test('computeStaggerMap assigns alternating placement to same-lane x-neighbours'
   assert.equal(map.get('c4'), 'below');
   assert.equal(map.get('c5'), 'above');
 });
+
+test('band geometry is contiguous, covers the left gutter, and centres nodes in their share', () => {
+  // Days 1, 3, and 7: the calendar gaps are what used to break the alternation.
+  const multiDay: LayoutInput = {
+    commits: [
+      { hash: A, parents: [B], committedAt: '2026-08-07T12:00:00Z' },
+      { hash: B, parents: [C], committedAt: '2026-08-03T09:00:00Z' },
+      { hash: C, parents: [D], committedAt: '2026-08-01T14:00:00Z' },
+      { hash: D, parents: [], committedAt: '2026-08-01T10:00:00Z' },
+    ],
+    refs: [{ refName: 'refs/heads/main', objectName: A }],
+    head: A,
+    currentBranch: 'main',
+  };
+
+  const gutter = 32;
+  const colW = 96;
+  const gap = 48;
+  const halfColumn = colW / 2;
+  const halfGap = gap / 2;
+  const result = layoutGraph(multiDay, { gutterX: gutter, columnWidth: colW, dayGap: gap });
+
+  // Three buckets: day 1 holds D and C, day 3 holds B, day 7 holds A.
+  assert.equal(result.dateBuckets.length, 3);
+  const buckets = result.dateBuckets;
+  const first = buckets[0]!;
+
+  // The left gutter (32) is narrower than half a column plus half a gap (72), so the
+  // first band would start at a negative x and is clamped instead.
+  assert.equal(first.bandStartX, 0);
+
+  for (const [i, bucket] of buckets.entries()) {
+    assert.equal(bucket.index, i, 'index is the ordinal position, not a calendar day');
+
+    // Contiguous: one band ends exactly where the next begins, so no seam goes unpainted.
+    const next = buckets[i + 1];
+    if (next !== undefined) {
+      assert.equal(bucket.bandStartX + bucket.bandWidth, next.bandStartX);
+    }
+
+    // Every band except the clamped first one starts half a column plus half a gap
+    // before its first node, which is what puts that node in the middle of its share.
+    if (i > 0) {
+      assert.equal(bucket.startX - bucket.bandStartX, halfColumn + halfGap);
+    }
+    const lastNodeX = bucket.startX + bucket.width - colW;
+    assert.equal(bucket.bandStartX + bucket.bandWidth - lastNodeX, halfColumn + halfGap);
+  }
+
+  // Parity alternates across adjacent buckets even though the dates jump.
+  assert.deepEqual(
+    buckets.map((b) => b.index % 2),
+    [0, 1, 0],
+  );
+
+  // Every node's own column sits inside its band. The first node of the clamped
+  // first band is the one exception on the left edge.
+  for (const node of result.nodes) {
+    const bucket = buckets.find((b) => node.x >= b.startX && node.x < b.startX + b.width)!;
+    assert.ok(bucket !== undefined, `node ${node.hash} belongs to a bucket`);
+    const bandEndX = bucket.bandStartX + bucket.bandWidth;
+    const clampedEdge = bucket.index === 0 && node.x === bucket.startX;
+    if (!clampedEdge) {
+      assert.ok(node.x - halfColumn >= bucket.bandStartX, `${node.hash} column starts inside its band`);
+    }
+    assert.ok(node.x + halfColumn <= bandEndX, `${node.hash} column ends inside its band`);
+  }
+
+  // A single-node bucket is the clearest case: its node is equidistant from both edges.
+  const middle = buckets[1]!;
+  assert.equal(middle.commitCount, 1);
+  assert.equal(middle.startX - middle.bandStartX, middle.bandStartX + middle.bandWidth - middle.startX);
+
+  // The canvas drops buckets that hold no visible node when a branch filter is on, so
+  // parity has to survive that: it belongs to the bucket, not to its position in
+  // whatever subset is being drawn.
+  const kept = buckets.filter((b) => b.index !== 1);
+  assert.deepEqual(
+    kept.map((b) => b.index % 2),
+    [0, 0],
+  );
+});

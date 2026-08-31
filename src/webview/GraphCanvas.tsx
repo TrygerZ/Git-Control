@@ -73,27 +73,6 @@ import {
 } from './viewport';
 import type { DateBucket, GraphEdge, GraphNode, RefInfo, RepoGraph, RepoStatus } from '../messages';
 
-/**
- * Compute calendar day ordinal from a local timestamp.
- * Monotonic integer per Gregorian calendar day, timezone-safe and pre-1970-safe.
- */
-function calendarDayOrdinal(timestamp: number): number {
-  if (!Number.isFinite(timestamp)) return 0;
-  const dt = new Date(timestamp);
-  let y = dt.getFullYear();
-  let m = dt.getMonth() + 1;
-  const d = dt.getDate();
-  if (m <= 2) {
-    y -= 1;
-    m += 12;
-  }
-  const era = Math.floor(y / 400);
-  const yoe = y - era * 400;
-  const doy = Math.floor((153 * (m - 3) + 2) / 5) + d - 1;
-  const doe = yoe * 365 + Math.floor(yoe / 4) - Math.floor(yoe / 100) + doy;
-  return era * 146097 + doe;
-}
-
 /** Pre-pass to compute label position (below vs above) to prevent collisions of neighbouring nodes in the same lane. */
 export function computeStaggerMap(nodes: readonly GraphNode[]): Map<string, 'above' | 'below'> {
   const map = new Map<string, 'above' | 'below'>();
@@ -831,8 +810,8 @@ export function GraphCanvas({
                     key={bucket.timestamp}
                     className="gc-ruler__cell"
                     style={{
-                      left: `${bucket.startX * zoom}px`,
-                      width: `${bucket.width * zoom}px`,
+                      left: `${bucket.bandStartX * zoom}px`,
+                      width: `${bucket.bandWidth * zoom}px`,
                     }}
                   >
                     <span>{bucket.label}</span>
@@ -858,25 +837,24 @@ export function GraphCanvas({
                 focusable="false"
               >
                 <g transform={`scale(${zoom})`}>
-                  {/* Alternating day backgrounds & separator lines */}
+                  {/* Alternating day backgrounds & separator lines aligned with band geometry */}
                   {dateBuckets.map((bucket) => {
-                    const dayOrdinal = calendarDayOrdinal(bucket.timestamp);
                     return (
                       <g key={`day-bg-${bucket.timestamp}`}>
-                        {Math.abs(dayOrdinal) % 2 === 1 && (
+                        {bucket.index % 2 === 1 && (
                           <rect
                             className="gc-canvas__day-band"
-                            x={bucket.startX}
+                            x={bucket.bandStartX}
                             y={RULER_HEIGHT}
-                            width={bucket.width}
+                            width={bucket.bandWidth}
                             height={totalWorldH - RULER_HEIGHT}
                           />
                         )}
                         <line
                           className="gc-canvas__day-line"
-                          x1={bucket.startX + bucket.width}
+                          x1={bucket.bandStartX + bucket.bandWidth}
                           y1={RULER_HEIGHT}
-                          x2={bucket.startX + bucket.width}
+                          x2={bucket.bandStartX + bucket.bandWidth}
                           y2={totalWorldH}
                         />
                       </g>

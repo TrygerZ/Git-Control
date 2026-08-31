@@ -148,6 +148,12 @@ export interface DateBucket {
   startX: number;
   width: number;
   commitCount: number;
+  /** 0-based ordinal position among all date buckets in chronological order. */
+  index: number;
+  /** World-space X coordinate where the day band background and ruler cell begin. */
+  bandStartX: number;
+  /** World-space width of the day band and ruler cell. */
+  bandWidth: number;
 }
 
 export interface RepoGraph {

@@ -69,6 +69,12 @@ export interface DateBucket {
   startX: number;
   width: number;
   commitCount: number;
+  /** 0-based ordinal position among all date buckets in chronological order. */
+  index: number;
+  /** World-space X coordinate where the day band background and ruler cell begin. */
+  bandStartX: number;
+  /** World-space width of the day band and ruler cell. */
+  bandWidth: number;
 }
 
 export interface LayoutResult {
@@ -198,12 +204,17 @@ export function layoutGraph(input: LayoutInput, options: LayoutOptions = {}): La
     bucket.commits.push(item);
   }
 
-  const dateBuckets: DateBucket[] = [];
+  const rawBuckets: Array<{
+    label: string;
+    timestamp: number;
+    startX: number;
+    width: number;
+    commitCount: number;
+  }> = [];
   const nodes: LayoutNode[] = [];
   let currentX = gutterX;
 
   let globalIndex = 0;
-  const isFirstBucket = true;
   let bucketIdx = 0;
 
   for (const bucket of bucketsMap.values()) {
@@ -235,7 +246,7 @@ export function layoutGraph(input: LayoutInput, options: LayoutOptions = {}): La
     }
 
     const bucketWidth = count * columnWidth;
-    dateBuckets.push({
+    rawBuckets.push({
       label: formatDateLabel(bucket.timestamp),
       timestamp: bucket.timestamp,
       startX,
@@ -247,9 +258,33 @@ export function layoutGraph(input: LayoutInput, options: LayoutOptions = {}): La
     bucketIdx += 1;
   }
 
-  // Restore nodes order to match input.commits or keep chronological?
-  // Let's re-order nodes to match chronological (left to right) with node.index = 0..N-1
-  // nodes array is already chronological (left to right).
+  // Band geometry, separate from `startX`/`width` because those describe where the
+  // nodes are and a band has to describe the space they occupy. A node's `x` is a
+  // column CENTRE, so a band drawn from `startX` starts halfway through its own first
+  // node; the half column comes off both ends to put each node in the middle of its
+  // share. Half the day gap is added on each side so the band of one day meets the
+  // band of the next with no unpainted seam between them, and the first band clamps
+  // to 0 so the left gutter is covered rather than left as a stripe of nothing.
+  const halfColumn = columnWidth / 2;
+  const halfGap = dayGap / 2;
+  const dateBuckets: DateBucket[] = rawBuckets.map((b, idx) => {
+    const rawStart = b.startX - halfColumn - halfGap;
+    const bandStartX = idx === 0 ? Math.max(0, rawStart) : rawStart;
+    const bandWidth = b.startX + b.width - halfColumn + halfGap - bandStartX;
+
+    return {
+      label: b.label,
+      timestamp: b.timestamp,
+      startX: b.startX,
+      width: b.width,
+      commitCount: b.commitCount,
+      index: idx,
+      bandStartX,
+      bandWidth,
+    };
+  });
+
+  // `nodes` is already left-to-right chronological, matching `node.index`.
 
   const edges: LayoutEdge[] = [];
   for (const commit of input.commits) {
