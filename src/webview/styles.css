@@ -14,6 +14,29 @@
  * Spacing and type are two scales, not ad-hoc numbers. Every margin, padding, and
  * gap below is one of `--gc-space-*`; every font size is one of `--gc-fs-*`. That
  * is what makes the panel read as one surface instead of six.
+ *
+ * Emphasis ladder
+ * ---------------
+ * Everything used to be one weight, which meant nothing led. There are now exactly
+ * three tiers, and every control sits in one of them on purpose:
+ *
+ *   primary   `.gc-button--primary` (+ `--lg`) — one per surface. `Commit` on the
+ *             pending panel, `Lanjutkan merge` while a merge is unfinished. Filled
+ *             with the theme's button background.
+ *   action    `.gc-button--action` — repository-changing but reversible: `Stage`,
+ *             `Unstage`. Outlined, with the accent on the border only.
+ *   quiet     `.gc-button--quiet`, `.gc-icon-button` — view-only or per-row work:
+ *             selection helpers, refresh, copy, per-file Stage. No fill, no border
+ *             until hover.
+ *
+ * Text follows the same three steps: `.gc-section__name` and `.gc-inspector__heading`
+ * are headings, `.gc-help-text` is the sentence under a heading, and metadata
+ * (`.gc-row__meta`, `.gc-status__label`) is `--gc-fs-2xs` in muted colour. Anything
+ * that would be a fourth tier is a sign the surface is doing too much.
+ *
+ * Status colour is always the LAST channel. A `.gc-status__box` is a filled square
+ * holding the porcelain letter, next to a glyph and an Indonesian word; remove the
+ * colour and three channels remain. Same for `.gc-section__badge`.
  */
 
 :root {
@@ -26,13 +49,24 @@
   --gc-space-4: 12px;
   --gc-space-5: 16px;
   --gc-space-6: 24px;
+  /* Only for the gap BETWEEN file sections, which has to beat the gap inside one. */
+  --gc-space-7: 32px;
 
-  /* Type scale. Relative so the whole UI follows the editor font size and zoom. */
+  /*
+   * Type scale. Relative so the whole UI follows the editor font size and zoom.
+   *
+   * `node` is below `2xs` on purpose and has exactly one caller: the author
+   * initial drawn inside a commit node, which has to fit a 14 px circle at 100 %
+   * zoom. It is not a text size for prose and nothing else may use it.
+   */
+  --gc-fs-node: 0.62em;
+  --gc-fs-2xs: 0.78em;
   --gc-fs-xs: 0.85em;
   --gc-fs-sm: 0.92em;
   --gc-fs-md: 1em;
   --gc-fs-lg: 1.08em;
   --gc-fs-xl: 1.2em;
+  --gc-fs-2xl: 1.35em;
   --gc-weight-strong: 600;
 
   --gc-radius: 3px;
@@ -40,10 +74,33 @@
   --gc-row-height: 24px;
   /* WCAG 2.5.8 target size (minimum). Every clickable element honours it. */
   --gc-hit: 24px;
+  /*
+   * Comfortable target for the one primary button per surface. Not a replacement
+   * for `--gc-hit`: that stays the floor everything else is measured against.
+   */
+  --gc-hit-lg: 32px;
+  /* Avatar circle in the inspector head. Sized to hold one initial, nothing more. */
+  --gc-avatar: 28px;
   --gc-border: var(--vscode-panel-border, var(--vscode-contrastBorder, transparent));
   --gc-muted: var(--vscode-descriptionForeground, var(--vscode-foreground));
   --gc-danger: var(--vscode-editorError-foreground, var(--vscode-errorForeground));
   --gc-warning: var(--vscode-editorWarning-foreground, var(--vscode-foreground));
+
+  /*
+   * Status tones for the letter badges on section headings and file rows.
+   *
+   * `--vscode-charts-*` are the only theme tokens meant to be distinguishable
+   * from each other AND readable against the editor background, which is exactly
+   * what a status badge needs. Each falls back to plain foreground rather than to
+   * another hue, because a wrong hue reads as a wrong status.
+   *
+   * These are chrome, not data: lane colours still arrive inline from the host.
+   */
+  --gc-tone-added: var(--vscode-charts-green, var(--vscode-foreground));
+  --gc-tone-removed: var(--vscode-charts-red, var(--vscode-foreground));
+  --gc-tone-changed: var(--vscode-charts-blue, var(--vscode-foreground));
+  --gc-tone-pending: var(--vscode-charts-orange, var(--vscode-foreground));
+  --gc-tone-special: var(--vscode-charts-purple, var(--vscode-foreground));
 }
 
 * {
@@ -69,7 +126,7 @@ pre {
 /* Hashes and counts are compared by eye down a column, so they get fixed advance. */
 code,
 .gc-row__hash,
-.gc-status__code {
+.gc-status__box {
   font-variant-numeric: tabular-nums;
 }
 
@@ -149,10 +206,39 @@ h3 {
 .gc-button--primary {
   background: var(--vscode-button-background);
   color: var(--vscode-button-foreground);
+  font-weight: var(--gc-weight-strong);
 }
 
 .gc-button--primary:hover:not(:disabled) {
   background: var(--vscode-button-hoverBackground);
+}
+
+/*
+ * The one loud button on a surface. Taller and wider than the tier below it, so the
+ * hierarchy survives a theme where `button-background` and `button-secondaryBackground`
+ * are nearly the same colour — size is the channel that cannot be themed away.
+ */
+.gc-button--lg {
+  min-height: var(--gc-hit-lg);
+  padding: var(--gc-space-2) var(--gc-space-6);
+  font-size: var(--gc-fs-lg);
+}
+
+/*
+ * Tier two: changes the repository, but reversibly. Outlined rather than filled, so
+ * `Stage` reads as "an act" next to `Pilih semua` while never competing with
+ * `Commit`. The accent is on the border, which is also the only part a forced-colours
+ * theme keeps.
+ */
+.gc-button--action {
+  background: transparent;
+  border-color: var(--vscode-focusBorder);
+  color: var(--vscode-foreground);
+  font-weight: var(--gc-weight-strong);
+}
+
+.gc-button--action:hover:not(:disabled) {
+  background: var(--vscode-list-hoverBackground);
 }
 
 /*
@@ -257,10 +343,28 @@ h3 {
 
 .gc-checkbox {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: var(--gc-space-3);
   min-height: var(--gc-hit);
   cursor: pointer;
+}
+
+/*
+ * A checkbox whose label is two lines: the choice, then what it will cause. `align-items:
+ * flex-start` on the row and this column keep the box level with the FIRST line rather
+ * than centred against both, which is what makes a two-line label look accidental.
+ */
+.gc-checkbox__text {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gc-space-1);
+  min-width: 0;
+  padding-top: var(--gc-space-2);
+}
+
+.gc-checkbox__hint {
+  color: var(--gc-muted);
+  font-size: var(--gc-fs-2xs);
 }
 
 /*
@@ -449,6 +553,23 @@ h3 {
   font-size: var(--gc-fs-sm);
 }
 
+/*
+ * The "what to do next" list. Numbered, because these are ordered steps and a bullet
+ * would say they are interchangeable. Padding is the marker gutter, so it is an `em`
+ * value tied to the digits rather than a spacing token.
+ */
+.gc-empty__steps {
+  margin: 0;
+  padding-left: 1.4em;
+  max-width: 44em;
+  color: var(--gc-muted);
+  font-size: var(--gc-fs-sm);
+}
+
+.gc-empty__steps li {
+  margin-bottom: var(--gc-space-2);
+}
+
 .gc-empty__actions {
   display: flex;
   flex-wrap: wrap;
@@ -588,6 +709,53 @@ h3 {
   gap: var(--gc-space-3);
 }
 
+/*
+ * The filter row above the graph. A framed strip rather than loose controls: it
+ * groups "things that narrow what you see" and separates them from the canvas
+ * below, which is what the reference's `Filters:` row does with its own rule.
+ */
+.gc-toolbar--filters {
+  align-items: flex-end;
+  padding: var(--gc-space-2) var(--gc-space-3);
+  border: 1px solid var(--gc-border);
+  border-radius: var(--gc-radius);
+  background: var(--vscode-editorWidget-background, var(--vscode-editor-background));
+}
+
+/* Word in front of the fields, so the strip reads as one labelled group. */
+.gc-toolbar__legend {
+  align-self: center;
+  color: var(--gc-muted);
+  font-size: var(--gc-fs-xs);
+  font-weight: var(--gc-weight-strong);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+/*
+ * The action row on the pending panel. Loud pair first, quiet helpers after a
+ * divider, counters and refresh pushed to the end.
+ */
+.gc-toolbar--actions {
+  align-items: center;
+  row-gap: var(--gc-space-2);
+}
+
+/* Hairline between the tiers. Decorative, `aria-hidden` at the render site. */
+.gc-toolbar__divider {
+  align-self: stretch;
+  width: 1px;
+  min-height: var(--gc-hit);
+  background: var(--gc-border);
+}
+
+.gc-toolbar__end {
+  display: flex;
+  align-items: center;
+  gap: var(--gc-space-3);
+  margin-left: auto;
+}
+
 .gc-toolbar__search {
   flex: 1 1 12em;
   min-width: 8em;
@@ -597,17 +765,97 @@ h3 {
   width: 100%;
 }
 
-.gc-zoom {
-  display: flex;
-  align-items: center;
-  gap: var(--gc-space-2);
+.gc-toolbar__branch select {
+  max-width: 14em;
 }
 
 .gc-zoom__value {
-  min-width: 4em;
+  min-width: 3.5em;
   text-align: center;
-  color: var(--vscode-foreground);
+  color: inherit;
   font-variant-numeric: tabular-nums;
+}
+
+/* ---------------------------------------------------------------- context bar */
+
+/*
+ * Which repository, which branch, how it stands against the remote. Quiet by
+ * construction — a bottom rule and muted text — because it is the answer to a
+ * question the user only asks when something looks wrong.
+ */
+.gc-context {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gc-space-1);
+  padding-bottom: var(--gc-space-3);
+  border-bottom: 1px solid var(--gc-border);
+}
+
+.gc-context__crumbs {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--gc-space-2);
+  min-width: 0;
+}
+
+/* The repository is the loudest crumb: it is the thing everything else is inside. */
+.gc-context__repo {
+  overflow: hidden;
+  max-width: 16em;
+  color: var(--vscode-foreground);
+  font-size: var(--gc-fs-lg);
+  font-weight: var(--gc-weight-strong);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.gc-context__sep {
+  color: var(--gc-muted);
+}
+
+.gc-context__hash {
+  color: var(--gc-muted);
+  font-size: var(--gc-fs-2xs);
+}
+
+/* Last commit subject: one line, ellipsised, full text in `title`. */
+.gc-context__subject {
+  margin: 0;
+  overflow: hidden;
+  color: var(--gc-muted);
+  font-size: var(--gc-fs-xs);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.gc-context__sync {
+  margin: 0;
+  color: var(--gc-muted);
+  font-size: var(--gc-fs-xs);
+}
+
+/* ------------------------------------------------------------------- avatar */
+
+/*
+ * One initial in a circle, matching the node avatars on the canvas so the same
+ * person reads the same way in both places. `aria-hidden` at every render site: the
+ * full name is always adjacent.
+ */
+.gc-avatar {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  width: var(--gc-avatar);
+  height: var(--gc-avatar);
+  border: 1px solid var(--gc-border);
+  border-radius: 50%;
+  background: var(--vscode-badge-background, var(--vscode-editorWidget-background));
+  color: var(--vscode-badge-foreground, var(--vscode-foreground));
+  font-size: var(--gc-fs-sm);
+  font-weight: var(--gc-weight-strong);
+  line-height: 1;
 }
 
 /* --------------------------------------------------------------------- graph */
@@ -642,6 +890,21 @@ h3 {
   gap: var(--gc-space-3);
 }
 
+/*
+ * Positioned parent for the floating canvas controls.
+ *
+ * They cannot be children of `.gc-canvas`: that element is the scroll container, and
+ * an absolutely positioned child of a scroller scrolls with the content. This
+ * wrapper does not scroll, so `position: absolute` inside it stays put.
+ */
+.gc-graph__stage {
+  position: relative;
+  display: flex;
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+}
+
 .gc-canvas {
   position: relative;
   flex: 1 1 auto;
@@ -650,6 +913,44 @@ h3 {
   border: 1px solid var(--gc-border);
   border-radius: var(--gc-radius);
   background: var(--vscode-editor-background);
+}
+
+/*
+ * Floating zoom / home controls, bottom right, as in the Unity reference.
+ *
+ * A column rather than a row: in a 300 px sidebar a horizontal strip would cover the
+ * commit subjects it sits on top of. `right`/`bottom` are one step off the edge so
+ * the group never overlaps the scrollbar gutter.
+ */
+.gc-canvas__controls {
+  position: absolute;
+  right: var(--gc-space-5);
+  bottom: var(--gc-space-4);
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  gap: var(--gc-space-2);
+}
+
+/*
+ * Floating controls need their own surface: they sit over commit rows, so a
+ * transparent button would be unreadable against whatever scrolled under it.
+ */
+.gc-button--float,
+.gc-icon-button--float {
+  border-color: var(--gc-border);
+  background: var(--vscode-editorWidget-background, var(--vscode-editor-background));
+  color: var(--vscode-foreground);
+  box-shadow: 0 1px 4px var(--vscode-widget-shadow, transparent);
+}
+
+.gc-button--float:hover:not(:disabled),
+.gc-icon-button--float:hover:not(:disabled) {
+  background: var(--vscode-toolbar-hoverBackground, var(--vscode-list-hoverBackground));
+}
+
+.gc-button--float {
+  padding: 0 var(--gc-space-2);
 }
 
 /*
@@ -690,6 +991,27 @@ h3 {
 
 .gc-node__dot {
   stroke-width: 1.5;
+}
+
+/*
+ * Author initial inside the node.
+ *
+ * `dominant-baseline: central` plus `text-anchor: middle` is what centres a glyph on
+ * an SVG point; without the former the letter sits a third of its height too low.
+ * `pointer-events: none` keeps the letter from eating the click that selects the
+ * commit — the whole `<svg>` already opts out, but a `<text>` node is the one child
+ * that commonly gets its own handler bolted on later.
+ *
+ * `fill` is set inline (lane colour or editor background), so it is absent here.
+ */
+.gc-node__initial {
+  font-family: var(--vscode-font-family);
+  font-size: var(--gc-fs-node);
+  font-weight: var(--gc-weight-strong);
+  text-anchor: middle;
+  dominant-baseline: central;
+  pointer-events: none;
+  user-select: none;
 }
 
 /* Local-only commits: dashed outline, hollow fill. Never colour alone. */
@@ -769,17 +1091,12 @@ h3 {
 }
 
 /*
- * Type hierarchy in a row: the subject is the primary text at full weight and
- * full contrast; the hash, author, and date are metadata and step down in both
- * size and contrast. Nothing is smaller than `--gc-fs-xs`.
+ * Type hierarchy in a row, three steps: the subject is primary text at full weight
+ * and full contrast; the ref chips and badges are adjacent to the node they belong
+ * to; the hash, author, and date are metadata, collected into one group at the far
+ * end at `--gc-fs-2xs` and muted, so the eye can skip the whole column at once
+ * instead of stepping over three interleaved sizes.
  */
-.gc-row__hash {
-  flex: 0 0 auto;
-  color: var(--gc-muted);
-  font-family: var(--vscode-editor-font-family, monospace);
-  font-size: var(--gc-fs-sm);
-}
-
 .gc-row__subject {
   flex: 1 1 auto;
   min-width: 0;
@@ -788,17 +1105,28 @@ h3 {
   text-overflow: ellipsis;
 }
 
-.gc-row__author,
-.gc-row__date {
+/*
+ * The metadata group. `margin-left: auto` pins it right, as in the reference's
+ * `Created by` column, so the eye can compare authors down a straight edge.
+ */
+.gc-row__meta {
+  display: flex;
   flex: 0 0 auto;
+  align-items: center;
+  gap: var(--gc-space-3);
+  margin-left: auto;
   color: var(--gc-muted);
-  font-size: var(--gc-fs-xs);
+  font-size: var(--gc-fs-2xs);
 }
 
 .gc-row__author {
-  max-width: 12em;
+  max-width: 10em;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.gc-row__hash {
+  font-family: var(--vscode-editor-font-family, monospace);
 }
 
 .gc-row__badges,
@@ -806,6 +1134,15 @@ h3 {
   display: flex;
   flex: 0 0 auto;
   gap: var(--gc-space-2);
+}
+
+/*
+ * A selected row inverts its background, and the metadata inside it must follow:
+ * `--gc-muted` against `list-activeSelectionBackground` is the one place in this
+ * file where a muted colour can land on an unrelated fill.
+ */
+.gc-row--selected .gc-row__meta {
+  color: inherit;
 }
 
 .gc-mark {
@@ -860,6 +1197,18 @@ h3 {
 /* The active branch is the one fact worth extra weight anywhere in the row. */
 .gc-chip--current {
   border-color: var(--vscode-focusBorder);
+  color: var(--vscode-foreground);
+  font-weight: var(--gc-weight-strong);
+}
+
+/*
+ * Detached HEAD in the breadcrumb: a warning border plus the ⚑ glyph, and the word
+ * `detached` is in the text. Three channels, because this is the state where a
+ * newcomer's next commit lands on no branch at all.
+ */
+.gc-chip--detached {
+  border-color: var(--gc-warning);
+  border-style: dashed;
   color: var(--vscode-foreground);
   font-weight: var(--gc-weight-strong);
 }
@@ -980,6 +1329,17 @@ h3 {
   border-radius: 50%;
 }
 
+/*
+ * The avatar sample in the legend is smaller than the inspector one: it sits inline
+ * in a `dt` next to 12 px swatches, and a 28 px circle there would out-shout the row
+ * it is explaining.
+ */
+.gc-legend__avatar {
+  width: 18px;
+  height: 18px;
+  font-size: var(--gc-fs-2xs);
+}
+
 .gc-legend__swatch--head {
   box-shadow: 0 0 0 2px var(--vscode-editor-background), 0 0 0 3px var(--vscode-foreground);
 }
@@ -1066,7 +1426,14 @@ h3 {
   display: flex;
   flex-direction: column;
   min-width: 16em;
-  max-width: 26em;
+  /*
+   * `min(...)` rather than a flat `26em`: the items now carry a sentence each, so the
+   * box grows to the cap, and 26em is wider than a 300 px sidebar. The placement
+   * effect can only clamp the LEFT edge — it has no way to shrink a box that is wider
+   * than the viewport — so the cap has to be viewport-relative or the last few
+   * characters of every hint sit off-screen with no way to scroll to them.
+   */
+  max-width: min(26em, calc(100vw - 2 * var(--gc-space-3)));
   max-height: 80vh;
   overflow: auto;
   padding: var(--gc-space-2);
@@ -1082,6 +1449,7 @@ h3 {
   flex-direction: column;
   align-items: flex-start;
   gap: var(--gc-space-1);
+  width: 100%;
   min-height: var(--gc-hit);
   padding: var(--gc-space-2) var(--gc-space-3);
   border: none;
@@ -1100,6 +1468,40 @@ h3 {
   color: var(--vscode-menu-selectionForeground, inherit);
 }
 
+/* ------------------------------------------------------------- menu groups */
+
+/*
+ * The two halves of the menu: what only looks, and what changes the repository.
+ *
+ * A flat list of git verbs gives a newcomer no way to tell `Salin hash` from `Reset
+ * hard` without reading every line, so the group is a real boundary — a heading, a
+ * sentence, and a rule above the second half.
+ */
+.gc-menu__group {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.gc-menu__group-title {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gc-space-1);
+  padding: var(--gc-space-2) var(--gc-space-3);
+  color: var(--gc-muted);
+  font-size: var(--gc-fs-2xs);
+  font-weight: var(--gc-weight-strong);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+/* The promise under the heading. Sentence case, so it reads as prose not a label. */
+.gc-menu__group-hint {
+  font-weight: normal;
+  text-transform: none;
+  letter-spacing: normal;
+}
+
 .gc-menu__label {
   display: flex;
   align-items: baseline;
@@ -1112,7 +1514,22 @@ h3 {
   background: var(--gc-border);
 }
 
-/* Risk is a glyph, the word `berisiko`, and a colour — three channels, not one. */
+/*
+ * Risk is a glyph, the word `berisiko`, a left rule, and a colour — four channels.
+ *
+ * The rule matters more than it looks: the glyph and the word sit at the start of a
+ * line the eye has not read yet, whereas an edge marker is visible while scanning the
+ * list, so a user can see WHICH entries need thought before deciding what to hover.
+ * Border and colour share one token so the marker cannot disagree with the word.
+ */
+.gc-menu__item--risky {
+  border-left: 3px solid var(--gc-danger);
+  border-top-left-radius: 0;
+  border-bottom-left-radius: 0;
+  /* The 3 px rule replaces part of the padding, so the label does not shift. */
+  padding-left: calc(var(--gc-space-3) - 3px);
+}
+
 .gc-menu__item--risky .gc-menu__risk,
 .gc-menu__item--risky .gc-menu__risk-word {
   color: var(--gc-danger);
@@ -1168,9 +1585,43 @@ h3 {
 }
 
 .gc-modal__title {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--gc-space-3);
   margin: 0;
   font-size: var(--gc-fs-xl);
   font-weight: var(--gc-weight-strong);
+}
+
+/*
+ * Level 2: the confirmation you cannot take back.
+ *
+ * Level 1 keeps the plain frame. If every guard looked like this the frame would stop
+ * meaning anything, and the one dialog that had to look different would look like all
+ * the others. The tone is `--gc-tone-removed` — the same hue the `D` status box uses
+ * for a deleted file — so "this removes things" is one visual language across the
+ * whole panel rather than a second red invented here.
+ */
+.gc-modal--severe {
+  border-color: var(--gc-tone-removed);
+  box-shadow: inset 0 0 0 1px var(--gc-tone-removed);
+}
+
+/*
+ * The word next to the title. Colour is the third channel here: the glyph is first,
+ * the word `Permanen` second, and both survive a theme that discards the tone.
+ */
+.gc-modal__severity {
+  flex: 0 0 auto;
+  padding: 0 var(--gc-space-3);
+  border: 1px solid var(--gc-tone-removed);
+  border-radius: var(--gc-radius-pill);
+  color: var(--gc-tone-removed);
+  font-size: var(--gc-fs-xs);
+  font-weight: var(--gc-weight-strong);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
 }
 
 .gc-modal__facts {
@@ -1209,12 +1660,18 @@ h3 {
   background: var(--vscode-textBlockQuote-background, transparent);
 }
 
+/*
+ * The stage-2 warning. Bordered in the same `removed` tone as the dialog frame rather
+ * than in `--gc-danger`, so the frame, the badge, and this box read as one statement
+ * about one action instead of three separate alarms in two different reds.
+ */
 .gc-modal__warning {
   display: flex;
   align-items: flex-start;
   gap: var(--gc-space-2);
   padding: var(--gc-space-3);
-  border: 1px solid var(--gc-danger);
+  border: 1px solid var(--gc-tone-removed);
+  border-left-width: 3px;
   border-radius: var(--gc-radius);
   color: var(--vscode-foreground);
   font-weight: var(--gc-weight-strong);
@@ -1238,6 +1695,23 @@ h3 {
 .gc-modal__command-label {
   color: var(--gc-muted);
   font-size: var(--gc-fs-xs);
+}
+
+/*
+ * The sentence that turns the command box from a technical aside into the teaching
+ * device it is meant to be. Quiet, under the code, at metadata size: it is read once
+ * and then never again, unlike the command itself.
+ */
+.gc-modal__command-note {
+  color: var(--gc-muted);
+  font-size: var(--gc-fs-2xs);
+}
+
+/* Titled wrapper for hook output, so it is attributable to the repository. */
+.gc-modal__detail-group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gc-space-1);
 }
 
 .gc-modal__actions {
@@ -1264,35 +1738,147 @@ h3 {
 }
 
 .gc-pending__count {
-  margin-left: auto;
   align-self: center;
-  color: var(--vscode-foreground);
+  color: var(--gc-muted);
+  font-size: var(--gc-fs-xs);
   font-variant-numeric: tabular-nums;
 }
 
+/*
+ * Header of the file list: what it is, how many, and the filter box on the right —
+ * the same arrangement as the reference's `Path` header with its `Filter` field.
+ *
+ * `flex-wrap` plus a filter that grows from `12em` is what makes this work in a
+ * 300 px sidebar: the box drops onto its own line rather than crushing the title.
+ */
+.gc-listbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: var(--gc-space-3);
+  padding-bottom: var(--gc-space-2);
+  border-bottom: 1px solid var(--gc-border);
+}
+
+.gc-listbar__title {
+  display: flex;
+  align-items: center;
+  gap: var(--gc-space-3);
+  margin: 0;
+  font-size: var(--gc-fs-md);
+  font-weight: var(--gc-weight-strong);
+}
+
+.gc-listbar__total {
+  color: var(--gc-muted);
+  font-size: var(--gc-fs-2xs);
+  font-weight: normal;
+  font-variant-numeric: tabular-nums;
+}
+
+.gc-listbar__filter {
+  flex: 1 1 12em;
+  min-width: 8em;
+  margin-left: auto;
+}
+
+.gc-listbar__filter input {
+  width: 100%;
+}
+
+/* The live count sits on its own line under the box, so it never shifts the row. */
+.gc-listbar__count {
+  flex: 1 1 100%;
+  margin: 0;
+}
+
+/*
+ * Sections are the strongest grouping in the panel, so the gap between them is a
+ * step above every gap inside one. Without that the four groups read as one long
+ * list with occasional headings.
+ */
 .gc-section {
+  margin-bottom: var(--gc-space-7);
+}
+
+.gc-section:last-child {
   margin-bottom: var(--gc-space-4);
 }
 
+/*
+ * The heading is a real heading now, not a caption: sentence case at body size, so
+ * it outranks both the hint below it and the rows under that. `text-transform:
+ * uppercase` is gone deliberately — it shrank the perceived size of the one line
+ * that has to lead, and Indonesian section names are long enough to wrap in a
+ * sidebar when spaced out.
+ */
 .gc-section__title {
   display: flex;
   align-items: center;
   gap: var(--gc-space-3);
   margin: 0 0 var(--gc-space-1);
-  color: var(--gc-muted);
-  font-size: var(--gc-fs-xs);
+  color: var(--vscode-foreground);
+  font-size: var(--gc-fs-md);
   font-weight: var(--gc-weight-strong);
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
+}
+
+.gc-section__name {
+  min-width: 0;
+}
+
+/*
+ * The letter box from the reference, one per section.
+ *
+ * A filled square with the letter inside, not a bare coloured dot: the letter is the
+ * signal and the fill is the accent. `forced-color-adjust` is deliberately NOT set,
+ * so a high-contrast theme repaints it with system colours and the letter survives.
+ */
+.gc-section__badge {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border: 1px solid currentColor;
+  border-radius: var(--gc-radius);
+  font-size: var(--gc-fs-2xs);
+  font-weight: var(--gc-weight-strong);
+  line-height: 1;
+}
+
+.gc-section__badge--added {
+  color: var(--gc-tone-added);
+}
+
+.gc-section__badge--removed {
+  color: var(--gc-tone-removed);
+}
+
+.gc-section__badge--changed {
+  color: var(--gc-tone-changed);
+}
+
+.gc-section__badge--pending {
+  color: var(--gc-tone-pending);
 }
 
 .gc-section__count {
+  margin-left: auto;
   padding: 0 var(--gc-space-3);
   border: 1px solid var(--gc-border);
   border-radius: var(--gc-radius-pill);
   color: var(--gc-muted);
-  font-size: var(--gc-fs-xs);
+  font-size: var(--gc-fs-2xs);
+  font-weight: normal;
   font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* The explaining sentence: indented under its heading so it reads as attached. */
+.gc-section__hint {
+  margin: 0 0 var(--gc-space-2);
+  max-width: 52em;
 }
 
 .gc-tree {
@@ -1366,9 +1952,10 @@ h3 {
 }
 
 /*
- * Status is a glyph, a letter, and an Indonesian word: three channels, so a
- * monochrome theme loses nothing. The glyph column is fixed-width so the letters
- * line up down the panel.
+ * Status is a filled letter box, a glyph, and an Indonesian word: three channels
+ * before the colour is counted, so a monochrome theme loses nothing. Fixed widths
+ * keep the letters and glyphs on one vertical line down the panel — the reference's
+ * whole trick for making a long file list scannable.
  */
 .gc-tree__status {
   display: inline-flex;
@@ -1377,22 +1964,69 @@ h3 {
   gap: var(--gc-space-2);
 }
 
-.gc-status__glyph {
-  min-width: 1em;
-  text-align: center;
+/*
+ * The letter box, matching `.gc-section__badge` so a section heading and the rows
+ * under it speak the same language. Colour comes from a `--gc-tone-*` token and is
+ * the last channel, never the first.
+ */
+.gc-status__box {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  border: 1px solid currentColor;
+  border-radius: var(--gc-radius);
+  font-family: var(--vscode-editor-font-family, monospace);
+  font-size: var(--gc-fs-2xs);
+  font-weight: var(--gc-weight-strong);
+  line-height: 1;
 }
 
-.gc-status__code {
-  min-width: 1.2em;
+.gc-status__box--added {
+  color: var(--gc-tone-added);
+}
+
+.gc-status__box--removed {
+  color: var(--gc-tone-removed);
+}
+
+.gc-status__box--changed {
+  color: var(--gc-tone-changed);
+}
+
+.gc-status__box--pending {
+  color: var(--gc-tone-pending);
+}
+
+.gc-status__box--special {
+  color: var(--gc-tone-special);
+}
+
+.gc-status__box--neutral {
+  color: var(--gc-muted);
+}
+
+.gc-status__glyph {
+  min-width: 1em;
+  color: var(--gc-muted);
   text-align: center;
-  color: var(--vscode-foreground);
 }
 
 .gc-status__label {
   color: var(--gc-muted);
-  font-size: var(--gc-fs-xs);
+  font-size: var(--gc-fs-2xs);
 }
 
+/*
+ * The churn column.
+ *
+ * `min-width` on each half plus `text-align: right` gives `+12` and `−3` a fixed
+ * column each, so the numbers align down the list instead of drifting with the file
+ * name. This is the column the previous pass made correct; this pass makes it
+ * readable — before, `+n`/`−n` shared one collapsing flex box and moved on every row.
+ */
 .gc-tree__stats,
 .gc-filelist__stats {
   display: inline-flex;
@@ -1402,10 +2036,21 @@ h3 {
   font-variant-numeric: tabular-nums;
 }
 
+.gc-tree__stats .gc-stat,
+.gc-filelist__stats .gc-stat {
+  min-width: 2.5em;
+  text-align: right;
+}
+
 .gc-tree__binary,
 .gc-filelist__binary {
   color: var(--gc-muted);
-  font-size: var(--gc-fs-xs);
+  font-size: var(--gc-fs-2xs);
+}
+
+/* Per-row action: quiet until the row is hovered or focused, so a long list is calm. */
+.gc-tree__action {
+  font-size: var(--gc-fs-2xs);
 }
 
 /* `+`/`−` prefix the number, so churn direction survives without the colour. */
@@ -1417,14 +2062,40 @@ h3 {
   color: var(--vscode-gitDecoration-deletedResourceForeground, var(--vscode-charts-red));
 }
 
+/*
+ * `—` for "not counted". Muted rather than tinted: a dash in the additions colour
+ * would read as a change of zero, which is the exact lie `UNKNOWN_CHURN` exists to
+ * avoid. The `title` on the span says why the count is missing.
+ */
+.gc-stat--unknown {
+  color: var(--gc-muted);
+}
+
 /* ---------------------------------------------------------------- commit form */
 
+/*
+ * The panel's terminal step, so it is framed rather than merely separated: a top
+ * rule plus its own padding makes it read as "the box you finish in", which is what
+ * a newcomer needs after four sections of file lists.
+ */
 .gc-commit {
   display: flex;
   flex-direction: column;
   gap: var(--gc-space-3);
-  padding-top: var(--gc-space-3);
+  padding-top: var(--gc-space-4);
   border-top: 1px solid var(--gc-border);
+}
+
+.gc-commit__title {
+  margin: 0;
+  font-size: var(--gc-fs-md);
+  font-weight: var(--gc-weight-strong);
+}
+
+/* The field must fill the form, not shrink to its inline-flex content width. */
+.gc-commit__field {
+  display: flex;
+  width: 100%;
 }
 
 .gc-commit__message {
@@ -1434,6 +2105,19 @@ h3 {
 .gc-commit__hint {
   margin: 0;
   color: var(--gc-muted);
+  font-size: var(--gc-fs-xs);
+}
+
+/*
+ * What Commit will actually save, stated above the button. Bordered on the leading
+ * edge so it is not mistaken for another hint: this is the one line that tells the
+ * user whether pressing the button does anything at all.
+ */
+.gc-commit__scope {
+  margin: 0;
+  padding: var(--gc-space-2) var(--gc-space-3);
+  border-left: 3px solid var(--vscode-focusBorder);
+  background: var(--vscode-textBlockQuote-background, transparent);
   font-size: var(--gc-fs-xs);
 }
 
@@ -1455,14 +2139,59 @@ h3 {
 .gc-inspector__head {
   display: flex;
   flex-direction: column;
-  gap: var(--gc-space-2);
+  gap: var(--gc-space-3);
+  padding-bottom: var(--gc-space-3);
+  border-bottom: 1px solid var(--gc-border);
 }
 
+/* Avatar beside the title, as in the reference's `KE  99 (Changeset)` header. */
+.gc-inspector__identity {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--gc-space-3);
+  min-width: 0;
+}
+
+.gc-inspector__titles {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gc-space-1);
+  min-width: 0;
+}
+
+/*
+ * The one big title on this panel. `--gc-fs-2xl` rather than `lg`: it is the answer
+ * to "what am I looking at", and everything below it is detail about that answer.
+ */
 .gc-inspector__subject {
   margin: 0;
-  font-size: var(--gc-fs-lg);
+  font-size: var(--gc-fs-2xl);
   font-weight: var(--gc-weight-strong);
+  line-height: 1.25;
   overflow-wrap: anywhere;
+}
+
+/* `oleh <penulis> · <kapan>` — the reference's `by … on …` line. */
+.gc-inspector__byline {
+  margin: 0;
+  color: var(--gc-muted);
+  font-size: var(--gc-fs-xs);
+  overflow-wrap: anywhere;
+}
+
+/*
+ * Section headings inside the inspector (`Keterangan`, `Ref`, `File yang berubah`),
+ * the reference's `Comments` / `Attributes` pattern. Quieter than the title and
+ * louder than body text: uppercase at small size is legible here because each label
+ * is a single short word.
+ */
+.gc-inspector__heading {
+  margin: var(--gc-space-2) 0 0;
+  color: var(--gc-muted);
+  font-size: var(--gc-fs-xs);
+  font-weight: var(--gc-weight-strong);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
 }
 
 .gc-inspector__hashes {
@@ -1472,10 +2201,8 @@ h3 {
   gap: var(--gc-space-2);
 }
 
-.gc-inspector__full {
-  overflow-wrap: anywhere;
+.gc-inspector__short {
   color: var(--gc-muted);
-  font-size: var(--gc-fs-xs);
 }
 
 .gc-inspector__meta {
@@ -1518,6 +2245,22 @@ h3 {
 .gc-inspector__toolbar {
   display: flex;
   gap: var(--gc-space-2);
+}
+
+/*
+ * The selected half of the diff-mode pair.
+ *
+ * Styled off `aria-pressed` rather than an extra class: the attribute is already the
+ * state, so there is nothing to keep in sync. It is deliberately NOT `--primary` —
+ * that tier means "the one action on this surface", and picking a diff layout changes
+ * nothing in the repository. An inset rule plus full-contrast text is the "on" signal,
+ * which is also what forced colours keeps.
+ */
+.gc-inspector__toolbar .gc-button[aria-pressed='true'] {
+  border-color: var(--vscode-focusBorder);
+  box-shadow: inset 0 0 0 1px var(--vscode-focusBorder);
+  color: var(--vscode-foreground);
+  font-weight: var(--gc-weight-strong);
 }
 
 .gc-inspector__totals {
@@ -1589,9 +2332,33 @@ h3 {
 }
 
 .gc-conflicts__title {
+  display: flex;
+  align-items: center;
+  gap: var(--gc-space-3);
   margin: 0 0 var(--gc-space-2);
-  font-size: var(--gc-fs-sm);
+  font-size: var(--gc-fs-md);
   font-weight: var(--gc-weight-strong);
+}
+
+/*
+ * `U` — the porcelain code every conflicted file carries. Same box as the section
+ * badges so the panel and the list speak one language; `aria-hidden`, because the
+ * sentence beside it already says how many files need work.
+ */
+.gc-conflicts__badge {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border: 1px solid currentColor;
+  border-radius: var(--gc-radius);
+  color: var(--gc-tone-removed);
+  font-family: var(--vscode-editor-font-family, monospace);
+  font-size: var(--gc-fs-2xs);
+  font-weight: var(--gc-weight-strong);
+  line-height: 1;
 }
 
 .gc-conflicts__hint {
@@ -1812,16 +2579,25 @@ h3 {
   box-shadow: 0 2px 8px var(--vscode-widget-shadow, transparent);
 }
 
+/*
+ * Level tones, from the same `--gc-tone-*` tokens the status boxes use: an error is
+ * `removed`, a warning is `pending`, information is `changed`. Reusing them keeps one
+ * colour vocabulary across the extension — the hue that marks a deleted file is the
+ * hue that marks a failed operation.
+ *
+ * Colour is still the LAST channel: `.gc-toast__level` prints the word, the glyph is
+ * distinct per level, and both survive a forced-colours theme that drops the border.
+ */
 .gc-toast--info {
-  border-left-color: var(--vscode-editorInfo-foreground, var(--vscode-focusBorder));
+  border-left-color: var(--gc-tone-changed);
 }
 
 .gc-toast--warning {
-  border-left-color: var(--gc-warning);
+  border-left-color: var(--gc-tone-pending);
 }
 
 .gc-toast--error {
-  border-left-color: var(--gc-danger);
+  border-left-color: var(--gc-tone-removed);
 }
 
 .gc-toast__glyph {
@@ -1831,12 +2607,16 @@ h3 {
   font-weight: bold;
 }
 
+.gc-toast--info .gc-toast__glyph {
+  color: var(--gc-tone-changed);
+}
+
 .gc-toast--warning .gc-toast__glyph {
-  color: var(--gc-warning);
+  color: var(--gc-tone-pending);
 }
 
 .gc-toast--error .gc-toast__glyph {
-  color: var(--gc-danger);
+  color: var(--gc-tone-removed);
 }
 
 .gc-toast__body {
@@ -1847,10 +2627,51 @@ h3 {
   flex: 1 1 auto;
 }
 
+/*
+ * The severity word, now visible rather than screen-reader-only. Uppercase and small
+ * so it reads as a label on the message instead of a second sentence competing with
+ * it, and inline-block so `Kesalahan:` cannot be split across lines from its message.
+ */
+.gc-toast__level {
+  align-self: flex-start;
+  color: var(--gc-muted);
+  font-size: var(--gc-fs-2xs);
+  font-weight: var(--gc-weight-strong);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.gc-toast--info .gc-toast__level {
+  color: var(--gc-tone-changed);
+}
+
+.gc-toast--warning .gc-toast__level {
+  color: var(--gc-tone-pending);
+}
+
+.gc-toast--error .gc-toast__level {
+  color: var(--gc-tone-removed);
+}
+
 .gc-toast__detail {
   color: var(--gc-muted);
   font-size: var(--gc-fs-xs);
   overflow-wrap: anywhere;
+}
+
+/*
+ * The "this one waits for you" line on an error.
+ *
+ * An error toast never auto-dismisses, which is correct and invisible: the user waits
+ * for it to fade, it does not, and the UI looks stuck. A dashed top rule separates the
+ * affordance from the message it is about without adding another colour.
+ */
+.gc-toast__persist {
+  margin-top: var(--gc-space-1);
+  padding-top: var(--gc-space-2);
+  border-top: 1px dashed var(--gc-border);
+  color: var(--gc-muted);
+  font-size: var(--gc-fs-2xs);
 }
 
 /* ------------------------------------------------------- reduced motion */
@@ -1902,13 +2723,46 @@ h3 {
   .gc-legend,
   .gc-conflicts,
   .gc-github,
-  .gc-canvas {
+  .gc-canvas,
+  /* The letter boxes and the avatar are borders plus a glyph once the fill is gone. */
+  .gc-status__box,
+  .gc-section__badge,
+  .gc-avatar {
     border: 1px solid ButtonBorder;
   }
 
   .gc-button--primary,
-  .gc-button--danger {
+  .gc-button--danger,
+  /* Tier two must stay distinguishable from a quiet button with no fill to help. */
+  .gc-button--action {
     border: 2px solid ButtonBorder;
+  }
+
+  /*
+   * The level-2 guard frame and the risk rule in the menu both carry meaning through
+   * a tone that forced colours discards, and the generic `.gc-modal` rule above would
+   * otherwise flatten the severe dialog back to a plain 1 px box. Doubling the width
+   * keeps "this one is different" visible; the `Permanen` badge and the word
+   * `berisiko` are what actually say why.
+   */
+  .gc-modal--severe {
+    border: 2px solid ButtonBorder;
+    box-shadow: none;
+  }
+
+  .gc-menu__item--risky {
+    border-left: 3px solid ButtonBorder;
+  }
+
+  /*
+   * The pressed half of the diff-mode pair signals "on" with an inset rule, and
+   * `box-shadow` is discarded in forced colours — leaving two identical buttons for a
+   * choice that has to be readable. A real 2 px border restores it; `aria-pressed` is
+   * what AT was reading all along.
+   */
+  .gc-inspector__toolbar .gc-button[aria-pressed='true'] {
+    border: 2px solid Highlight;
+    box-shadow: none;
   }
 
   .gc-row--selected,
@@ -1923,6 +2777,17 @@ h3 {
     opacity: 1;
   }
 
+  /*
+   * The floating controls lose their fill, which would leave them sitting invisibly
+   * on top of commit rows. A solid `Canvas` background plus a border restores the
+   * "these are chrome, not content" boundary the shadow was providing.
+   */
+  .gc-canvas__controls .gc-button,
+  .gc-canvas__controls .gc-icon-button {
+    background: Canvas;
+    box-shadow: none;
+  }
+
   .gc-skeleton {
     animation: none;
     border: 1px solid ButtonBorder;
@@ -1932,5 +2797,39 @@ h3 {
   .gc-legend__line,
   .gc-legend__lane-color {
     forced-color-adjust: none;
+  }
+}
+
+/* --------------------------------------------------------- narrow sidebar */
+
+/*
+ * Below ~420 px the panel is a VS Code sidebar, not a view. Two things break there
+ * and both are fixed by dropping the least load-bearing text rather than by shrinking
+ * everything: the status word after each letter box, and the last-commit line in the
+ * breadcrumb.
+ *
+ * Dropping the word is safe ONLY because it is not the sole channel — the letter box
+ * keeps the porcelain code, the glyph stays, and `fileRowLabel` still reads the full
+ * Indonesian word to assistive tech regardless of width. `display: none` on a span
+ * that is already `aria-hidden` removes nothing from AT.
+ */
+@media (max-width: 420px) {
+  .gc-status__label {
+    display: none;
+  }
+
+  .gc-context__subject {
+    display: none;
+  }
+
+  /* One column of floating controls would eat a third of the canvas; tuck it in. */
+  .gc-canvas__controls {
+    right: var(--gc-space-3);
+    bottom: var(--gc-space-3);
+  }
+
+  .gc-listbar__filter {
+    flex-basis: 100%;
+    margin-left: 0;
   }
 }
