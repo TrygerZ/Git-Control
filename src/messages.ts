@@ -92,6 +92,19 @@ export interface RepoStatus {
   operation: OperationState;
   changes: ChangeEntry[];
   conflicts: ConflictEntry[];
+  /**
+   * True when the per-file line counts in {@link changes} are known to be
+   * incomplete, so a `null` churn on a tracked file means "not counted" and not
+   * "not changed".
+   *
+   * Two different causes set this: a `git diff --numstat` read that hit its byte
+   * cap, and a change list so large that the counts were never asked for at all.
+   * They stay ONE boolean rather than a variant union because the reader's
+   * situation is identical in both - some rows show no numbers even though the
+   * file did change - and no consumer would render, log, or act on the two causes
+   * differently. A union would add a branch nobody takes.
+   */
+  churnTruncated: boolean;
   /** Server-computed token used to reject actions built on stale status. */
   statusToken: string;
   lastFetchedAt: string | null;

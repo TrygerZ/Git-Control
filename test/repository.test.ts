@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import { GitRunner } from '../src/git';
-import { RepositoryService, type PersistentStore } from '../src/repository';
+import { MAX_STAT_ENTRIES, RepositoryService, type PersistentStore } from '../src/repository';
 import { cleanup, makeFixture } from './repoFixture';
 
 /** `workspaceState` stand-in so the service can be exercised without vscode. */
@@ -59,8 +59,92 @@ test('status reports branch, cleanliness, and a stable token', async (t) => {
   assert.deepEqual(dirty.changes.map((c) => [c.path, c.untracked]), [['dirty.txt', true]]);
 });
 
-test('markFetched persists the fetch clock and invalidates status', async (t) => {
+/**
+ * The panel shows churn per file, so `status` has to carry it. `null` and `0` are
+ * different answers: an untracked file is in no diff at all, and rendering it as
+ * `+0` would claim the new file is empty.
+ */
+test('status carries per-file line counts, summing staged and unstaged hunks', async (t) => {
   const dir = await makeRepo();
+  t.after(() => cleanup(dir));
+  const git = new GitRunner({ gitPath: 'git', cwd: dir });
+
+  await fs.writeFile(path.join(dir, 'tracked.txt'), 'a\nb\nc\n', 'utf8');
+  await git.stage(['tracked.txt']);
+  await git.commit('add tracked file');
+
+  // Stage one added line, then leave a second one unstaged in the same file.
+  await fs.writeFile(path.join(dir, 'tracked.txt'), 'a\nb\nc\nstaged\n', 'utf8');
+  await git.stage(['tracked.txt']);
+  await fs.writeFile(path.join(dir, 'tracked.txt'), 'a\nb\nc\nstaged\nunstaged\n', 'utf8');
+  await fs.writeFile(path.join(dir, 'brand-new.txt'), 'x\n', 'utf8');
+
+  const repo = service(dir);
+  const status = await repo.status();
+  const tracked = status.changes.find((c) => c.path === 'tracked.txt');
+  assert.equal(tracked?.additions, 2, 'staged + unstaged additions');
+  assert.equal(tracked?.deletions, 0);
+  assert.equal(tracked?.binary, false);
+
+  const untracked = status.changes.find((c) => c.path === 'brand-new.txt');
+  assert.equal(untracked?.untracked, true);
+  assert.equal(untracked?.additions, null, 'never diffed, so never counted');
+  assert.equal(untracked?.deletions, null);
+});
+
+test('status reports a binary change without inventing line counts', async (t) => {
+  const dir = await makeRepo();
+  t.after(() => cleanup(dir));
+  const git = new GitRunner({ gitPath: 'git', cwd: dir });
+  await fs.writeFile(path.join(dir, 'blob.bin'), Buffer.from([0, 1, 2, 0, 255, 7]));
+  await git.stage(['blob.bin']);
+  await git.commit('add binary blob');
+  await fs.writeFile(path.join(dir, 'blob.bin'), Buffer.from([0, 9, 9, 0, 1, 2, 3]));
+
+  const repo = service(dir);
+  const entry = (await repo.status()).changes.find((c) => c.path === 'blob.bin');
+  assert.equal(entry?.binary, true);
+  assert.equal(entry?.additions, null);
+  assert.equal(entry?.deletions, null);
+});
+
+/**
+ * A count the host never computed must be announced, not implied. The panel draws
+ * a dash for a missing count, and a dash reads as "unchanged" unless the status
+ * says the numbers are incomplete — which is exactly the case once the change list
+ * grows past MAX_STAT_ENTRIES and the two `git diff --numstat` runs are skipped.
+ */
+test('status flags churn as truncated when the change list is too large to count', async (t) => {
+  const dir = await makeRepo();
+  t.after(() => cleanup(dir));
+
+  const writes: Promise<void>[] = [];
+  for (let i = 0; i <= MAX_STAT_ENTRIES; i += 1) {
+    writes.push(fs.writeFile(path.join(dir, `bulk-${String(i).padStart(5, '0')}.txt`), `${i}\n`, 'utf8'));
+  }
+  await Promise.all(writes);
+
+  const status = await service(dir).status();
+  assert.ok(status.changes.length > MAX_STAT_ENTRIES, 'the guard is actually engaged');
+  assert.equal(status.churnTruncated, true);
+});
+
+/** Nothing changed is not the same as something uncounted: a clean tree is complete. */
+test('status does not flag churn as truncated when there is nothing to count', async (t) => {
+  const dir = await makeRepo();
+  t.after(() => cleanup(dir));
+
+  const clean = await service(dir).status();
+  assert.equal(clean.changes.length, 0);
+  assert.equal(clean.churnTruncated, false);
+
+  await fs.writeFile(path.join(dir, 'small.txt'), 'x\n', 'utf8');
+  const small = await service(dir).status();
+  assert.equal(small.changes.length, 1);
+  assert.equal(small.churnTruncated, false, 'a countable list is complete');
+});
+
+test('markFetched persists the fetch clock and invalidates status', async (t) => {  const dir = await makeRepo();
   t.after(() => cleanup(dir));
   const store = new MemoryStore();
   const repo = new RepositoryService({ folderPath: dir, gitPath: 'git', store });

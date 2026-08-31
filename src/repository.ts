@@ -20,7 +20,7 @@ import type {
   RepoGraph,
   RepoStatus,
 } from './messages';
-import type { ParsedCommit, ParsedRef, ParsedStatusEntry } from './gitParse';
+import type { ParsedCommit, ParsedNumstatEntry, ParsedRef, ParsedStatusEntry } from './gitParse';
 
 /** Narrow slice of `vscode.Memento` that this service needs. */
 export interface PersistentStore {
@@ -53,6 +53,12 @@ export interface GraphRequest {
 export const MAX_COMMIT_LIMIT = 10_000;
 const DEFAULT_PAGE_SIZE = 500;
 const DEFAULT_FILE_LIMIT = 2000;
+/**
+ * Above this many changed files, `status` stops asking git for line counts. Past
+ * that point the panel is a bulk view where per-file churn is not read, and two
+ * `git diff --numstat` runs over a huge worktree would dominate every refresh.
+ */
+export const MAX_STAT_ENTRIES = 2000;
 const LAST_FETCH_KEY_PREFIX = 'gitControl.lastFetchAt:';
 
 export class RepositoryService {
@@ -112,7 +118,12 @@ export class RepositoryService {
     opts: { includeIgnored?: boolean } = {},
   ): Promise<{ changes: ChangeEntry[]; conflicts: ConflictEntry[] }> {
     const entries = await this.git.status({ includeIgnored: opts.includeIgnored === true });
-    return { changes: entries.map(toChangeEntry), conflicts: toConflicts(entries) };
+    // No line counts here: this path is the conflict list, and `status()` is what
+    // the panel reads for churn.
+    return {
+      changes: entries.map((entry) => toChangeEntry(entry, undefined)),
+      conflicts: toConflicts(entries),
+    };
   }
 
   /**
@@ -302,10 +313,49 @@ export class RepositoryService {
       this.git.status({ includeIgnored }),
       this.git.operationState(),
     ]);
+
+    /*
+     * Line counts cost two extra `git diff` runs, and `repos/status` is the most
+     * frequently called request in the extension: the webview refreshes it on every
+     * repository event AND before every mutation, to prove the status token is
+     * fresh. So the counts are bought only when they can be shown and only while
+     * they stay cheap — a clean tree needs no diff at all, and a worktree with more
+     * than MAX_STAT_ENTRIES changed files is a bulk operation where the numbers are
+     * noise anyway. When skipped the counts stay `null`, which the UI renders as
+     * "not computed" rather than as zero.
+     *
+     * Both runs are started before the upstream lookups below so they overlap with
+     * them instead of adding their own round trip. A failure degrades to no counts:
+     * churn is decoration, and it must never be able to fail a status read.
+     *
+     * A degraded read is REPORTED, not hidden. Skipping past MAX_STAT_ENTRIES and a
+     * `--numstat` cut off by its byte cap both leave rows without numbers, and a
+     * reader who is not told assumes those files did not change. A failed diff
+     * counts too: it also produces a change list with counts missing. An empty
+     * worktree is the one case that is not incomplete — there was nothing to count.
+     */
+    const wantStats = entries.length > 0 && entries.length <= MAX_STAT_ENTRIES;
+    const statsPromise: Promise<{
+      worktree: ParsedNumstatEntry[];
+      index: ParsedNumstatEntry[];
+      truncated: boolean;
+    }> = wantStats
+      ? Promise.all([this.git.diffNumstat({}), this.git.diffNumstat({ cached: true })])
+          .then(([worktree, index]) => ({
+            worktree: worktree.entries,
+            index: index.entries,
+            truncated: worktree.truncated || index.truncated,
+          }))
+          .catch(() => ({ worktree: [], index: [], truncated: true }))
+      : Promise.resolve({ worktree: [], index: [], truncated: entries.length > 0 });
+
     const upstream = current.branch === null ? null : await this.git.upstreamOf(current.branch);
     const counts = upstream === null ? { ahead: 0, behind: 0 } : await this.git.aheadBehind();
+    const { worktree: worktreeStat, index: indexStat, truncated: churnTruncated } =
+      await statsPromise;
 
-    const changes = entries.map(toChangeEntry);
+    const stats = mergeNumstat(worktreeStat, indexStat);
+    const changes = entries.map((entry) => toChangeEntry(entry, stats.get(entry.path)));
     const conflicts = toConflicts(entries);
     const dirty = entries.some((e) => e.unstaged || e.untracked || e.conflicted);
     const staged = entries.some((e) => e.staged);
@@ -326,6 +376,7 @@ export class RepositoryService {
       operation,
       changes,
       conflicts,
+      churnTruncated,
       statusToken: statusToken({
         head: current.head,
         branch: current.branch,
@@ -361,7 +412,7 @@ function statusToken(input: {
   return hash.digest('hex').slice(0, 16);
 }
 
-function toChangeEntry(entry: ParsedStatusEntry): ChangeEntry {
+function toChangeEntry(entry: ParsedStatusEntry, stat: ParsedNumstatEntry | undefined): ChangeEntry {
   return {
     path: entry.path,
     ...(entry.origPath === undefined ? {} : { origPath: entry.origPath }),
@@ -370,11 +421,47 @@ function toChangeEntry(entry: ParsedStatusEntry): ChangeEntry {
     staged: entry.staged,
     unstaged: entry.unstaged,
     untracked: entry.untracked,
-    // Per-file line counts are resolved lazily by the diff view, not here.
-    additions: null,
-    deletions: null,
-    binary: false,
+    // `null` means "not counted", not "zero": an untracked file is in no diff at
+    // all, and a binary file has no line counts to report.
+    additions: stat === undefined || stat.binary ? null : stat.additions,
+    deletions: stat === undefined || stat.binary ? null : stat.deletions,
+    binary: stat?.binary ?? false,
   };
+}
+
+/**
+ * One churn record per path, summing the index and the working tree.
+ *
+ * A file can be half staged: `git diff` reports the unstaged hunks and
+ * `git diff --cached` the staged ones, and the panel shows one row for the file, so
+ * the row must show the total change against HEAD. Binary wins over counts, because
+ * a file that is binary on either side has no meaningful sum.
+ */
+function mergeNumstat(
+  worktree: readonly ParsedNumstatEntry[],
+  index: readonly ParsedNumstatEntry[],
+): Map<string, ParsedNumstatEntry> {
+  const merged = new Map<string, ParsedNumstatEntry>();
+  for (const stat of [...worktree, ...index]) {
+    const previous = merged.get(stat.path);
+    if (previous === undefined) {
+      merged.set(stat.path, stat);
+      continue;
+    }
+    const binary = previous.binary || stat.binary;
+    merged.set(stat.path, {
+      path: stat.path,
+      ...(stat.origPath === undefined
+        ? previous.origPath === undefined
+          ? {}
+          : { origPath: previous.origPath }
+        : { origPath: stat.origPath }),
+      additions: binary ? null : (previous.additions ?? 0) + (stat.additions ?? 0),
+      deletions: binary ? null : (previous.deletions ?? 0) + (stat.deletions ?? 0),
+      binary,
+    });
+  }
+  return merged;
 }
 
 function toConflicts(entries: readonly ParsedStatusEntry[]): ConflictEntry[] {
