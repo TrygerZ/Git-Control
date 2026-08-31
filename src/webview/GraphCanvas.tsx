@@ -48,28 +48,30 @@ import {
 } from './format';
 import { useRepoStore, useSettingsStore } from './store';
 import {
+  COLUMN_WIDTH,
+  DAY_GAP,
   DEFAULT_OVERSCAN,
-  LANE_WIDTH,
+  GUTTER_X,
+  LANE_HEIGHT,
   MAX_ZOOM,
   MIN_ZOOM,
   NODE_RADIUS,
-  ROW_HEIGHT,
+  RULER_HEIGHT,
   clampZoom,
   edgeIntersectsBand,
-  laneX,
-  rowY,
-  scrollToRow,
+  laneY,
+  columnX,
+  scrollToCommit,
   stepZoom,
-  visibleRowRange,
+  visibleColumnRange,
   visibleWorldBand,
-  worldContentWidth,
   worldHeight,
   worldWidth,
 } from './viewport';
 import { EmptyState, GraphSkeleton, InfoBanner, Spinner } from './ui';
-import type { GraphEdge, GraphNode, RefInfo, RepoGraph, RepoStatus } from '../messages';
+import type { DateBucket, GraphEdge, GraphNode, RefInfo, RepoGraph, RepoStatus } from '../messages';
 
-const SUBJECT_MAX = 72;
+const SUBJECT_MAX = 40;
 const MINIMAP_HEIGHT = 160;
 
 /**
@@ -78,7 +80,7 @@ const MINIMAP_HEIGHT = 160;
  * `NODE_RADIUS + 1` (6 px) is the smallest circle that can hold a legible letter at
  * 100 % zoom; a merge node stays one pixel larger than that, exactly as before, so
  * the "merge nodes are bigger" channel the legend describes is unchanged. Lanes are
- * `LANE_WIDTH` (16 px) apart, so nothing here brings two nodes closer than the merge
+ * `LANE_HEIGHT` (88 px) apart, so nothing here brings two nodes closer than the merge
  * ring already did.
  *
  * Both constants are presentation-only and stay here rather than in `viewport.ts`,
@@ -216,8 +218,8 @@ export function GraphCanvas({
   const loadMore = useRepoStore((s) => s.loadMore);
 
   const scrollRef = useRef<HTMLDivElement>(null);
-  const [scrollTop, setScrollTop] = useState(0);
-  const [viewportHeight, setViewportHeight] = useState(600);
+  const [scrollLeft, setScrollLeft] = useState(0);
+  const [viewportWidthState, setViewportWidthState] = useState(800);
   const [menu, setMenu] = useState<{ node: GraphNode; anchor: MenuAnchor } | null>(null);
   const [focusRow, setFocusRow] = useState(0);
   const spaceHeld = useRef(false);
@@ -228,12 +230,18 @@ export function GraphCanvas({
   const helpId = useId();
   const countId = useId();
 
-  // Track the viewport height so the row window matches reality after a resize.
+  // Track viewport width so horizontal column culling matches reality after resize or initial layout.
   useLayoutEffect(() => {
     const node = scrollRef.current;
     if (node === null) return undefined;
-    setViewportHeight(node.clientHeight);
-    const observer = new ResizeObserver(() => setViewportHeight(node.clientHeight));
+    if (node.clientWidth > 0) setViewportWidthState(node.clientWidth);
+
+    const observer = new ResizeObserver((entries) => {
+      for (const entry of entries) {
+        const { width } = entry.contentRect;
+        if (width > 0) setViewportWidthState(width);
+      }
+    });
     observer.observe(node);
     return () => observer.disconnect();
   }, []);
@@ -254,15 +262,24 @@ export function GraphCanvas({
     };
   }, []);
 
-  // ctrl/cmd + wheel zooms. Registered natively because React's wheel handler
-  // is passive and cannot call `preventDefault`.
+  // Wheel handling:
+  // - Ctrl/Cmd + Wheel: Zoom in/out
+  // - Vertical wheel without Shift: convert deltaY to horizontal pan (natural for mouse wheel on horizontal timeline)
+  //   Trackpads naturally emit deltaX on horizontal swipes, which native scrolling handles when not prevented.
   useEffect(() => {
     const node = scrollRef.current;
     if (node === null) return undefined;
     const onWheel = (event: WheelEvent): void => {
-      if (!event.ctrlKey && !event.metaKey) return;
-      event.preventDefault();
-      setZoom(clampZoom(zoom * (event.deltaY < 0 ? 1.1 : 1 / 1.1)));
+      if (event.ctrlKey || event.metaKey) {
+        event.preventDefault();
+        setZoom(clampZoom(zoom * (event.deltaY < 0 ? 1.1 : 1 / 1.1)));
+        return;
+      }
+      // If user scrolls vertically without shift and not currently pan-dragging, pan horizontally
+      if (Math.abs(event.deltaY) > Math.abs(event.deltaX) && !event.shiftKey) {
+        node.scrollLeft += event.deltaY;
+        event.preventDefault();
+      }
     };
     node.addEventListener('wheel', onWheel, { passive: false });
     return () => node.removeEventListener('wheel', onWheel);
@@ -274,6 +291,15 @@ export function GraphCanvas({
     return keep === null ? graph.nodes : graph.nodes.filter((n) => keep.has(n.lane));
   }, [graph, branchFilter]);
 
+  /** Date buckets filtered to only those containing visible nodes */
+  const dateBuckets: DateBucket[] = useMemo(() => {
+    if (graph === null) return [];
+    if (rows.length === graph.nodes.length) return graph.dateBuckets;
+    return graph.dateBuckets.filter((bucket) =>
+      rows.some((n) => n.x >= bucket.startX && n.x < bucket.startX + bucket.width),
+    );
+  }, [graph, rows]);
+
   /** hash → row index, so edges can be placed without scanning. */
   const rowIndex = useMemo(() => {
     const map = new Map<string, number>();
@@ -281,34 +307,49 @@ export function GraphCanvas({
     return map;
   }, [rows]);
 
-  const laneCount = graph === null ? 1 : Math.max(1, graph.lanes.length);
-  const range = visibleRowRange({
-    scrollTop,
-    viewportHeight,
-    rowCount: rows.length,
+  const laneCount = useMemo(() => {
+    if (graph === null) return 1;
+    if (rows.length === 0) return 1;
+    const maxLane = rows.reduce((max, n) => Math.max(max, n.lane), 0);
+    return maxLane + 1;
+  }, [graph, rows]);
+
+  const visibleLanes = useMemo(() => {
+    if (graph === null) return [];
+    const usedLanes = new Set(rows.map((n) => n.lane));
+    return graph.lanes.filter((l) => usedLanes.has(l.index));
+  }, [graph, rows]);
+
+  const maxNodeX = useMemo(() => {
+    return rows.reduce((max, n) => Math.max(max, n.x), 0);
+  }, [rows]);
+  const totalWorldW = worldWidth(maxNodeX + COLUMN_WIDTH, GUTTER_X);
+  const totalWorldH = worldHeight(laneCount, LANE_HEIGHT, RULER_HEIGHT);
+
+  const range = visibleColumnRange({
+    scrollLeft,
+    viewportWidth: viewportWidthState,
+    nodeCount: rows.length,
     zoom,
-    rowHeight: ROW_HEIGHT,
+    columnWidth: COLUMN_WIDTH,
     overscan: DEFAULT_OVERSCAN,
   });
-  const band = visibleWorldBand(scrollTop, viewportHeight, zoom, DEFAULT_OVERSCAN, ROW_HEIGHT);
-  const gutterWidth = worldWidth(laneCount, LANE_WIDTH);
+  const band = visibleWorldBand(scrollLeft, viewportWidthState, zoom, DEFAULT_OVERSCAN, COLUMN_WIDTH);
 
   const visibleEdges = useMemo(() => {
     if (graph === null) return [];
-    const out: Array<{ edge: GraphEdge; fromY: number; toY: number }> = [];
+    const out: Array<{ edge: GraphEdge; fromX: number; toX: number }> = [];
     for (const edge of graph.edges) {
-      const from = rowIndex.get(edge.from);
-      const to = rowIndex.get(edge.to);
-      if (from === undefined || to === undefined) continue;
-      const fromY = rowY(from, ROW_HEIGHT);
-      const toY = rowY(to, ROW_HEIGHT);
-      // Keeps an edge whose endpoints are both off-screen but which spans the
-      // viewport — otherwise long branches appear disconnected while scrolling.
-      if (!edgeIntersectsBand(fromY, toY, band)) continue;
-      out.push({ edge, fromY, toY });
+      const fromNode = rows.find((n) => n.hash === edge.from);
+      const toNode = rows.find((n) => n.hash === edge.to);
+      if (fromNode === undefined || toNode === undefined) continue;
+      const fromX = fromNode.x;
+      const toX = toNode.x;
+      if (!edgeIntersectsBand(fromX, toX, band)) continue;
+      out.push({ edge, fromX, toX });
     }
     return out;
-  }, [graph, rowIndex, band.top, band.bottom]);
+  }, [graph, rows, band.left, band.right]);
 
   const laneColor = useCallback(
     (lane: number): string => graph?.lanes[lane]?.color ?? 'currentColor',
@@ -322,23 +363,21 @@ export function GraphCanvas({
 
   /**
    * Scroll `index` into view and focus it WITHOUT changing the selection.
-   *
-   * Used when Tab lands on the canvas: moving the keyboard cursor is not the same
-   * act as selecting a commit, and tabbing past the graph must not silently change
-   * what the inspector shows.
    */
   const revealRow = useCallback(
     (index: number): void => {
       const node = scrollRef.current;
       if (node === null) return;
-      const top = index * ROW_HEIGHT * zoom;
-      const bottom = top + ROW_HEIGHT * zoom;
-      if (top < node.scrollTop || bottom > node.scrollTop + node.clientHeight) {
-        node.scrollTop = scrollToRow(index, viewportHeight, zoom, rows.length, ROW_HEIGHT);
+      const target = rows[index];
+      if (target === undefined) return;
+      const left = target.x * zoom;
+      const right = left + COLUMN_WIDTH * zoom;
+      if (left < node.scrollLeft || right > node.scrollLeft + node.clientWidth) {
+        node.scrollLeft = scrollToCommit(target.x, viewportWidthState, zoom, totalWorldW);
       }
       requestAnimationFrame(() => focusRowElement(index));
     },
-    [focusRowElement, rows.length, viewportHeight, zoom],
+    [focusRowElement, rows, totalWorldW, viewportWidthState, zoom],
   );
 
   const goToRow = useCallback(
@@ -348,30 +387,30 @@ export function GraphCanvas({
       if (target === undefined) return;
       setFocusRow(clamped);
       selectCommit(target.hash);
-      const next = scrollToRow(clamped, viewportHeight, zoom, rows.length, ROW_HEIGHT);
+      const next = scrollToCommit(target.x, viewportWidthState, zoom, totalWorldW);
       const node = scrollRef.current;
       if (node !== null) {
-        const top = clamped * ROW_HEIGHT * zoom;
-        const bottom = top + ROW_HEIGHT * zoom;
-        if (top < node.scrollTop || bottom > node.scrollTop + node.clientHeight) {
-          node.scrollTop = next;
+        const left = target.x * zoom;
+        const right = left + COLUMN_WIDTH * zoom;
+        if (left < node.scrollLeft || right > node.scrollLeft + node.clientWidth) {
+          node.scrollLeft = next;
         }
       }
-      // The row may not exist yet when it was outside the window; wait a frame.
       requestAnimationFrame(() => focusRowElement(clamped));
     },
-    [focusRowElement, rows, selectCommit, viewportHeight, zoom],
+    [focusRowElement, rows, selectCommit, totalWorldW, viewportWidthState, zoom],
   );
 
   const openMenuAt = useCallback((node: GraphNode, anchor: MenuAnchor): void => {
     setMenu({ node, anchor });
   }, []);
 
-  /** Horizontal pan, so a wide lane gutter is reachable without a mouse. */
-  const panBy = useCallback((dx: number): void => {
+  /** Horizontal and vertical pan, so a wide canvas is reachable without a mouse. */
+  const panBy = useCallback((dx: number, dy: number = 0): void => {
     const node = scrollRef.current;
     if (node === null) return;
-    node.scrollLeft = Math.max(0, node.scrollLeft + dx);
+    if (dx !== 0) node.scrollLeft = Math.max(0, node.scrollLeft + dx);
+    if (dy !== 0) node.scrollTop = Math.max(0, node.scrollTop + dy);
   }, []);
 
   // Align the keyboard cursor with a selection restored from persisted state.
@@ -383,31 +422,55 @@ export function GraphCanvas({
 
   const onKeyDown = (event: KeyboardEvent<HTMLDivElement>): void => {
     switch (event.key) {
-      case 'ArrowDown':
+      case 'ArrowRight':
         event.preventDefault();
         goToRow(focusRow + 1);
         return;
-      case 'ArrowUp':
+      case 'ArrowLeft':
         event.preventDefault();
         goToRow(focusRow - 1);
         return;
-      // Horizontal pan from the keyboard. Without these, a graph wider than the
-      // viewport is only reachable with a mouse.
-      case 'ArrowLeft':
+      case 'ArrowDown': {
         event.preventDefault();
-        panBy(-LANE_WIDTH * zoom * 2);
+        // Move to node in next lane down near same X if available, else pan vertically
+        const current = rows[focusRow];
+        if (current !== undefined) {
+          const inNextLane = rows
+            .map((n, i) => ({ n, i }))
+            .filter(({ n }) => n.lane > current.lane)
+            .sort((a, b) => Math.abs(a.n.x - current.x) - Math.abs(b.n.x - current.x));
+          if (inNextLane.length > 0 && inNextLane[0]) {
+            goToRow(inNextLane[0].i);
+          } else {
+            panBy(0, 40);
+          }
+        }
         return;
-      case 'ArrowRight':
+      }
+      case 'ArrowUp': {
         event.preventDefault();
-        panBy(LANE_WIDTH * zoom * 2);
+        // Move to node in previous lane up near same X if available, else pan vertically
+        const current = rows[focusRow];
+        if (current !== undefined) {
+          const inPrevLane = rows
+            .map((n, i) => ({ n, i }))
+            .filter(({ n }) => n.lane < current.lane)
+            .sort((a, b) => Math.abs(a.n.x - current.x) - Math.abs(b.n.x - current.x));
+          if (inPrevLane.length > 0 && inPrevLane[0]) {
+            goToRow(inPrevLane[0].i);
+          } else {
+            panBy(0, -40);
+          }
+        }
         return;
+      }
       case 'PageDown':
         event.preventDefault();
-        goToRow(focusRow + Math.max(1, Math.floor(viewportHeight / (ROW_HEIGHT * zoom)) - 1));
+        goToRow(focusRow + Math.max(1, Math.floor(viewportWidthState / (COLUMN_WIDTH * zoom)) - 1));
         return;
       case 'PageUp':
         event.preventDefault();
-        goToRow(focusRow - Math.max(1, Math.floor(viewportHeight / (ROW_HEIGHT * zoom)) - 1));
+        goToRow(focusRow - Math.max(1, Math.floor(viewportWidthState / (COLUMN_WIDTH * zoom)) - 1));
         return;
       case 'Home':
         event.preventDefault();
@@ -501,13 +564,13 @@ export function GraphCanvas({
           'Buka panel Pending Changes.',
           'Centang file yang ingin Anda simpan, lalu tekan Stage.',
           'Tulis pesan singkat tentang apa yang Anda ubah.',
-          'Tekan Commit — commit pertama itu akan langsung muncul di grafik ini.',
+          'Tekan Commit. Commit pertama itu akan langsung muncul di grafik ini.',
         ]}
       />
     );
   }
 
-  const worldH = worldHeight(rows.length, ROW_HEIGHT) * zoom;
+  const worldH = totalWorldH;
   const currentBranch = status?.branch ?? null;
   const matchCount = search.length === 0 ? rows.length : rows.filter((n) => matchesSearch(n, search)).length;
   /** Row holding HEAD, so the floating "back to HEAD" control has somewhere to go. */
@@ -560,8 +623,8 @@ export function GraphCanvas({
       )}
 
       <p className="gc-visually-hidden" id={helpId}>
-        Gunakan panah atas dan bawah untuk berpindah commit, panah kiri dan kanan untuk menggeser
-        kanvas, Enter untuk membuka detail, Shift F10 untuk menu tindakan, tanda plus dan minus untuk
+        Gunakan panah kiri dan kanan untuk berpindah commit, panah atas dan bawah untuk berpindah antar jalur,
+        Enter untuk membuka detail, Shift F10 untuk menu tindakan, tanda plus dan minus untuk
         perbesaran, dan angka nol untuk mengembalikan perbesaran ke 100 persen.
       </p>
 
@@ -588,13 +651,14 @@ export function GraphCanvas({
             aria-label="Grafik commit"
             aria-rowcount={rows.length}
             aria-colcount={1}
+            aria-orientation="horizontal"
             aria-describedby={helpId}
             tabIndex={0}
             onFocus={(event) => {
               if (event.target !== event.currentTarget) return;
               if (rows.length > 0) revealRow(focusRow);
             }}
-            onScroll={(event) => setScrollTop(event.currentTarget.scrollTop)}
+            onScroll={(event) => setScrollLeft(event.currentTarget.scrollLeft)}
             onKeyDown={onKeyDown}
             onPointerDown={onPointerDown}
             onPointerMove={onPointerMove}
@@ -602,50 +666,90 @@ export function GraphCanvas({
             onPointerCancel={endPan}
             onContextMenu={onContextMenu}
           >
-            {/*
-              `role="rowgroup"` because the world div sits between the grid and its
-              rows: a `grid` may only own `row` or `rowgroup` children, and without
-              this the rows are not part of the grid as far as AT is concerned.
+            {/* Sticky Date Ruler at top of scroller */}
+            <div
+              className="gc-ruler"
+              style={{
+                width: `${totalWorldW * zoom}px`,
+                minWidth: '100%',
+              }}
+              aria-hidden="true"
+            >
+              <div className="gc-ruler__track">
+                {dateBuckets.map((bucket) => (
+                  <div
+                    key={bucket.timestamp}
+                    className="gc-ruler__cell"
+                    style={{
+                      left: `${bucket.startX * zoom}px`,
+                      width: `${bucket.width * zoom}px`,
+                    }}
+                  >
+                    <span>{bucket.label}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
 
-              `minWidth` is what keeps the rows visible: they are absolutely
-              positioned between `left = gutter × zoom` and `right: 0`, so the world
-              must be at least that wide plus the text column, otherwise a wide
-              history at high zoom collapses every row to zero width.
-            */}
             <div
               className="gc-canvas__world"
               role="rowgroup"
               style={{
-                height: `${worldH}px`,
-                minWidth: `${worldContentWidth(laneCount, zoom, LANE_WIDTH)}px`,
+                height: `${totalWorldH * zoom}px`,
+                minWidth: `${totalWorldW * zoom}px`,
+                width: `${totalWorldW * zoom}px`,
               }}
             >
               <svg
                 className="gc-canvas__svg"
-                width={gutterWidth * zoom}
-                height={worldH}
+                width={totalWorldW * zoom}
+                height={totalWorldH * zoom}
                 aria-hidden="true"
                 focusable="false"
               >
                 <g transform={`scale(${zoom})`}>
-                  {visibleEdges.map(({ edge, fromY, toY }) => (
+                  {/* Alternating day backgrounds & separator lines */}
+                  {dateBuckets.map((bucket, idx) => (
+                    <g key={`day-bg-${bucket.timestamp}`}>
+                      {idx % 2 === 1 && (
+                        <rect
+                          className="gc-canvas__day-band"
+                          x={bucket.startX}
+                          y={RULER_HEIGHT}
+                          width={bucket.width}
+                          height={totalWorldH - RULER_HEIGHT}
+                        />
+                      )}
+                      <line
+                        className="gc-canvas__day-line"
+                        x1={bucket.startX + bucket.width}
+                        y1={RULER_HEIGHT}
+                        x2={bucket.startX + bucket.width}
+                        y2={totalWorldH}
+                      />
+                    </g>
+                  ))}
+
+                  {/* Edges */}
+                  {visibleEdges.map(({ edge, fromX, toX }) => (
                     <path
                       key={`${edge.from}->${edge.to}`}
                       className={
                         edge.kind === 'merge' ? 'gc-edge gc-edge--merge' : 'gc-edge gc-edge--direct'
                       }
-                      d={edgePath(edge, fromY, toY)}
+                      d={edgePath(edge, fromX, toX)}
                       stroke={laneColor(edge.kind === 'merge' ? edge.toLane : edge.fromLane)}
                     />
                   ))}
-                  {rows.slice(range.start, range.end).map((node, offset) => {
-                    const index = range.start + offset;
+
+                  {/* Nodes */}
+                  {rows.slice(range.start, range.end).map((node) => {
                     const dim = !matchesSearch(node, search);
                     return (
                       <NodeMark
                         key={node.hash}
                         node={node}
-                        y={rowY(index, ROW_HEIGHT)}
+                        y={laneY(node.lane, LANE_HEIGHT, RULER_HEIGHT)}
                         color={laneColor(node.lane)}
                         dim={dim}
                         selected={node.hash === selectedHash}
@@ -656,6 +760,29 @@ export function GraphCanvas({
                 </g>
               </svg>
 
+              {/* Branch pill on branch tips */}
+              {rows.slice(range.start, range.end).map((node) => {
+                const chips = chipsFor(node.refNames, currentBranch);
+                if (chips.length === 0) return null;
+                const branchChip = chips[0];
+                if (!branchChip) return null;
+                return (
+                  <div
+                    key={`pill-${node.hash}`}
+                    className={`gc-pill gc-pill--${branchChip.kind}`}
+                    style={{
+                      left: `${node.x * zoom}px`,
+                      top: `${(laneY(node.lane, LANE_HEIGHT, RULER_HEIGHT) - NODE_RADIUS - 6) * zoom}px`,
+                    }}
+                    aria-hidden="true"
+                  >
+                    <span>{branchChip.glyph}</span>
+                    <span>{branchChip.prefix}{branchChip.name}</span>
+                  </div>
+                );
+              })}
+
+              {/* Compact commit card / label positioned below each node */}
               {rows.slice(range.start, range.end).map((node, offset) => {
                 const index = range.start + offset;
                 return (
@@ -664,7 +791,7 @@ export function GraphCanvas({
                     node={node}
                     index={index}
                     zoom={zoom}
-                    left={gutterWidth * zoom}
+                    left={node.x * zoom}
                     now={now}
                     search={search}
                     currentBranch={currentBranch}
@@ -746,16 +873,17 @@ export function GraphCanvas({
           <GraphMinimap
             nodes={rows}
             laneCount={laneCount}
-            scrollTop={scrollTop}
-            viewportHeight={viewportHeight}
+            scrollLeft={scrollLeft}
+            viewportWidth={viewportWidthState}
             zoom={zoom}
-            height={MINIMAP_HEIGHT}
-            onScroll={(top) => {
+            totalWorldWidth={totalWorldW}
+            width={160}
+            onScroll={(left) => {
               const node = scrollRef.current;
-              if (node !== null) node.scrollTop = top;
+              if (node !== null) node.scrollLeft = left;
             }}
           />
-          <BranchLegend lanes={graph?.lanes ?? []} />
+          <BranchLegend lanes={visibleLanes} />
         </aside>
       </div>
 
@@ -792,16 +920,14 @@ export function GraphCanvas({
 // -------------------------------------------------------------------- pieces
 
 /**
- * Edge geometry. First-parent edges inside one lane are a straight vertical
- * segment; a lane change or a merge uses a cubic bezier so the eye can follow
- * the curve across lanes.
+ * Edge geometry in horizontal layout: fromX/toX horizontal span, fromY/toY vertical lane centres.
  */
-export function edgePath(edge: GraphEdge, fromY: number, toY: number): string {
-  const x1 = laneX(edge.fromLane, LANE_WIDTH);
-  const x2 = laneX(edge.toLane, LANE_WIDTH);
-  if (x1 === x2) return `M${x1} ${fromY}L${x2} ${toY}`;
-  const mid = (fromY + toY) / 2;
-  return `M${x1} ${fromY}C${x1} ${mid} ${x2} ${mid} ${x2} ${toY}`;
+export function edgePath(edge: GraphEdge, fromX: number, toX: number): string {
+  const y1 = laneY(edge.fromLane, LANE_HEIGHT, RULER_HEIGHT);
+  const y2 = laneY(edge.toLane, LANE_HEIGHT, RULER_HEIGHT);
+  if (y1 === y2) return `M${fromX} ${y1}L${toX} ${y2}`;
+  const mid = (fromX + toX) / 2;
+  return `M${fromX} ${y1}C${mid} ${y1} ${mid} ${y2} ${toX} ${y2}`;
 }
 
 function NodeMark({
@@ -819,7 +945,7 @@ function NodeMark({
   selected: boolean;
   zoom: number;
 }): JSX.Element {
-  const x = laneX(node.lane, LANE_WIDTH);
+  const x = node.x;
   // Merge nodes keep their extra pixel, so "bigger circle = merge" still holds.
   const r = node.isMerge ? NODE_RADIUS + 2 : AVATAR_RADIUS;
   const classes = ['gc-node'];
@@ -832,7 +958,7 @@ function NodeMark({
 
   return (
     <g className={classes.join(' ')}>
-      {/* `r + 3`, not `r + 4`: at row 0 the centre sits at `ROW_HEIGHT / 2 = 12`,
+      {/* `r + 3`, not `r + 4`: at lane 0 the centre sits at `RULER_HEIGHT + LANE_HEIGHT / 2`,
           and a merge head-ring at `r + 4` plus a 1.5 stroke reaches 11.75 — a
           quarter pixel from the SVG edge, which rounds to a clipped ring. */}
       {node.isHead && <circle className="gc-node__head-ring" cx={x} cy={y} r={r + 3} stroke={color} />}
@@ -901,14 +1027,18 @@ function Row({
   onOpen,
 }: RowProps): JSX.Element {
   const dim = !matchesSearch(node, search);
-  const chips = chipsFor(node.refNames, currentBranch);
   const classes = ['gc-row'];
   if (selected) classes.push('gc-row--selected');
   if (dim) classes.push('gc-row--dim');
   // Both come from git. Sanitised once here so the `title` attribute and the
   // visible text cannot disagree.
   const subject = sanitizeGitText(node.subject);
-  const authorName = sanitizeGitText(node.authorName);
+  const author = sanitizeGitText(node.authorName);
+  const time = relativeTime(node.authoredAt, now);
+
+  // Position row right below node center
+  const nodeCenterY = laneY(node.lane, LANE_HEIGHT, RULER_HEIGHT);
+  const topY = (nodeCenterY + NODE_RADIUS + 6) * zoom;
 
   return (
     <div
@@ -919,9 +1049,9 @@ function Row({
       data-row={index}
       tabIndex={focused ? 0 : -1}
       style={{
-        top: `${index * ROW_HEIGHT * zoom}px`,
-        height: `${ROW_HEIGHT * zoom}px`,
+        top: `${topY}px`,
         left: `${left}px`,
+        transform: 'translateX(-50%)',
       }}
       onClick={onSelect}
       onDoubleClick={onOpen}
@@ -934,43 +1064,13 @@ function Row({
         aria-colindex={1}
         aria-label={rowLabel(node, now)}
       >
-        {/*
-          Ref chips sit closest to the node, as in the Unity reference where the
-          `/main` label is attached to the circle it belongs to. The subject follows
-          as the row's primary text; the hash, author, and date are metadata and are
-          pushed into a quiet group at the far end.
-        */}
-        <span className="gc-row__chips" aria-hidden="true">
-          {chips.map((chip) => (
-            <span key={`${chip.kind}-${chip.name}`} className={`gc-chip gc-chip--${chip.kind}`}>
-              <span aria-hidden="true">{chip.glyph} </span>
-              {chip.prefix}
-              {chip.name}
-            </span>
-          ))}
-        </span>
-        <span className="gc-row__badges" aria-hidden="true">
-          {node.isHead && <span className="gc-badge gc-badge--head">HEAD</span>}
-          {node.local && (
-            <span className="gc-badge gc-badge--local" title="Lokal, belum dipush">
-              ↑ lokal
-            </span>
-          )}
-          {node.isMerge && (
-            <span className="gc-badge gc-badge--merge" title="Commit merge: punya dua induk">
-              ⑃ merge
-            </span>
-          )}
-        </span>
         <span className="gc-row__subject" title={subject} aria-hidden="true">
           <Highlight text={truncate(subject, SUBJECT_MAX)} needle={search} />
         </span>
         <span className="gc-row__meta" aria-hidden="true">
-          <span className="gc-row__author">
-            <Highlight text={authorName} needle={search} />
-          </span>
-          <span className="gc-row__date">{relativeTime(node.authoredAt, now)}</span>
-          <span className="gc-row__hash">{shortHash(node.hash)}</span>
+          <span className="gc-row__author" title={author}>{author}</span>
+          <span className="gc-row__dot">·</span>
+          <span className="gc-row__time">{time}</span>
         </span>
       </span>
     </div>
@@ -1024,25 +1124,27 @@ function Toolbar({
       aria-label="Saringan grafik"
       aria-orientation="horizontal"
     >
-      <span className="gc-toolbar__legend" aria-hidden="true">
-        Saring
-      </span>
-
-      <label className="gc-field gc-toolbar__search">
-        <span className="gc-field__label">Cari commit</span>
+      <div className="gc-toolbar__search-wrap">
+        <span className="gc-toolbar__search-icon" aria-hidden="true">🔍</span>
         <input
           type="search"
+          className="gc-toolbar__search-input"
           value={search}
           maxLength={100}
-          placeholder="hash, subjek, atau penulis"
+          placeholder="Cari commit (hash, pesan, penulis)..."
+          aria-label="Cari commit"
           aria-describedby={countId}
           onChange={(e) => onSearch(e.target.value)}
         />
-      </label>
+      </div>
 
-      <label className="gc-field gc-toolbar__branch">
-        <span className="gc-field__label">Branch</span>
-        <select value={branchFilter} onChange={(e) => onBranchFilter(e.target.value)}>
+      <div className="gc-toolbar__branch-wrap">
+        <select
+          className="gc-toolbar__branch-select"
+          value={branchFilter}
+          aria-label="Filter branch"
+          onChange={(e) => onBranchFilter(e.target.value)}
+        >
           <option value="">Semua branch</option>
           {branches.map((ref) => (
             // `value` stays raw: it is compared against lane refs host-side.
@@ -1054,19 +1156,19 @@ function Toolbar({
             </option>
           ))}
         </select>
-      </label>
+      </div>
 
       {(search.length > 0 || branchFilter.length > 0) && (
         <button
           type="button"
-          className="gc-button gc-button--quiet"
-          title="Tampilkan kembali semua commit. Hanya mengubah apa yang terlihat, bukan repository."
+          className="gc-button gc-button--quiet gc-toolbar__clear"
+          title="Tampilkan kembali semua commit."
           onClick={() => {
             onSearch('');
             onBranchFilter('');
           }}
         >
-          Kosongkan saringan
+          Reset
         </button>
       )}
     </div>

@@ -10,113 +10,113 @@
  */
 import { useCallback, useRef, type JSX, type PointerEvent } from 'react';
 import { formatCount } from './format';
-import { minimapGeometry, minimapScrollFor, ROW_HEIGHT } from './viewport';
+import { minimapGeometry, minimapScrollFor, COLUMN_WIDTH } from './viewport';
 import type { GraphNode } from '../messages';
 
 interface Props {
   nodes: readonly GraphNode[];
   laneCount: number;
-  scrollTop: number;
-  viewportHeight: number;
+  scrollLeft: number;
+  viewportWidth: number;
   zoom: number;
-  height: number;
-  onScroll(scrollTop: number): void;
+  totalWorldWidth: number;
+  width: number;
+  onScroll(scrollLeft: number): void;
 }
 
-const WIDTH = 56;
+const HEIGHT = 48;
 /** Ticks are sampled so a huge history does not produce a huge path string. */
 const MAX_TICKS = 600;
 
 export function GraphMinimap({
   nodes,
   laneCount,
-  scrollTop,
-  viewportHeight,
+  scrollLeft,
+  viewportWidth,
   zoom,
-  height,
+  totalWorldWidth,
+  width,
   onScroll,
 }: Props): JSX.Element | null {
   const ref = useRef<SVGSVGElement>(null);
   const dragging = useRef(false);
 
   const seek = useCallback(
-    (clientY: number): void => {
+    (clientX: number): void => {
       const box = ref.current?.getBoundingClientRect();
       if (box === undefined) return;
       onScroll(
-        minimapScrollFor(clientY - box.top, viewportHeight, zoom, nodes.length, height, ROW_HEIGHT),
+        minimapScrollFor(clientX - box.left, viewportWidth, zoom, totalWorldWidth, width),
       );
     },
-    [height, nodes.length, onScroll, viewportHeight, zoom],
+    [width, totalWorldWidth, onScroll, viewportWidth, zoom],
   );
 
   if (nodes.length === 0) return null;
 
-  const geometry = minimapGeometry(scrollTop, viewportHeight, zoom, nodes.length, height, ROW_HEIGHT);
+  const geometry = minimapGeometry(scrollLeft, viewportWidth, zoom, totalWorldWidth, width);
   const laneSpan = Math.max(1, laneCount);
   const step = Math.max(1, Math.ceil(nodes.length / MAX_TICKS));
-  const rowScale = height / nodes.length;
+  const colScale = totalWorldWidth > 0 ? width / totalWorldWidth : 0;
 
   const ticks: string[] = [];
   for (let i = 0; i < nodes.length; i += step) {
     const node = nodes[i] as GraphNode;
-    const x = 4 + (node.lane / laneSpan) * (WIDTH - 8);
-    const y = i * rowScale;
-    ticks.push(`M${x.toFixed(1)} ${y.toFixed(1)}h3`);
+    const x = node.x * colScale;
+    const y = 4 + (node.lane / laneSpan) * (HEIGHT - 8);
+    ticks.push(`M${x.toFixed(1)} ${y.toFixed(1)}v3`);
   }
 
   const onPointerDown = (event: PointerEvent<SVGSVGElement>): void => {
     dragging.current = true;
     event.currentTarget.setPointerCapture(event.pointerId);
-    seek(event.clientY);
+    seek(event.clientX);
   };
 
-  const row = Math.round(scrollTop / (ROW_HEIGHT * zoom));
-  /** One screen of rows, so PageUp/PageDown match what the canvas does. */
-  const page = Math.max(1, Math.floor(viewportHeight / (ROW_HEIGHT * zoom)));
+  const col = Math.round(scrollLeft / (COLUMN_WIDTH * zoom));
+  /** One screen of cols, so PageUp/PageDown match what the canvas does. */
+  const page = Math.max(1, Math.floor(viewportWidth / (COLUMN_WIDTH * zoom)));
 
   return (
     <svg
       ref={ref}
       className="gc-minimap"
-      width={WIDTH}
-      height={height}
+      width={width}
+      height={HEIGHT}
       role="slider"
       tabIndex={0}
       aria-label="Ikhtisar grafik"
-      aria-orientation="vertical"
+      aria-orientation="horizontal"
       aria-valuemin={0}
       aria-valuemax={Math.max(0, nodes.length - 1)}
-      aria-valuenow={row}
-      aria-valuetext={`Baris ${formatCount(row + 1)} dari ${formatCount(nodes.length)}`}
+      aria-valuenow={col}
+      aria-valuetext={`Commit ${formatCount(col + 1)} dari ${formatCount(nodes.length)}`}
       onPointerDown={onPointerDown}
       onPointerMove={(event) => {
-        if (dragging.current) seek(event.clientY);
+        if (dragging.current) seek(event.clientX);
       }}
       onPointerUp={(event) => {
         dragging.current = false;
         event.currentTarget.releasePointerCapture(event.pointerId);
       }}
       onKeyDown={(event) => {
-        const max = Math.max(0, nodes.length * ROW_HEIGHT * zoom - viewportHeight);
+        const max = Math.max(0, totalWorldWidth * zoom - viewportWidth);
         const to = (next: number): void => {
           event.preventDefault();
           onScroll(Math.min(max, Math.max(0, next)));
         };
-        // A slider that only answers ArrowUp/ArrowDown is a slider a keyboard user
-        // has to hold a key on for 3 000 rows. Page and Home/End are the way out.
         switch (event.key) {
-          case 'ArrowDown':
-            to(scrollTop + ROW_HEIGHT * zoom);
+          case 'ArrowRight':
+            to(scrollLeft + COLUMN_WIDTH * zoom);
             return;
-          case 'ArrowUp':
-            to(scrollTop - ROW_HEIGHT * zoom);
+          case 'ArrowLeft':
+            to(scrollLeft - COLUMN_WIDTH * zoom);
             return;
           case 'PageDown':
-            to(scrollTop + page * ROW_HEIGHT * zoom);
+            to(scrollLeft + page * COLUMN_WIDTH * zoom);
             return;
           case 'PageUp':
-            to(scrollTop - page * ROW_HEIGHT * zoom);
+            to(scrollLeft - page * COLUMN_WIDTH * zoom);
             return;
           case 'Home':
             to(0);
@@ -131,10 +131,10 @@ export function GraphMinimap({
       <path className="gc-minimap__ticks" d={ticks.join('')} />
       <rect
         className="gc-minimap__viewport"
-        x={0.5}
-        y={geometry.rectTop}
-        width={WIDTH - 1}
-        height={geometry.rectHeight}
+        x={geometry.rectLeft}
+        y={0.5}
+        width={geometry.rectWidth}
+        height={HEIGHT - 1}
         rx={2}
       />
     </svg>
