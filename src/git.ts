@@ -597,6 +597,35 @@ export class GitRunner {
     return parseShowStat(stdout);
   }
 
+  /**
+   * Per-file add/delete counts for the working tree or the index.
+   *
+   * `cached: true` reads the index against HEAD (`--cached`), otherwise the working
+   * tree against the index. Untracked files appear in neither, which is why the
+   * status panel leaves their counts unknown rather than showing zero.
+   *
+   * Truncation follows {@link numstat}: one self-contained record per line, so a
+   * capped read loses trailing files instead of failing the whole status.
+   *
+   * Unlike {@link numstat} this reports truncation in the RETURN VALUE rather than
+   * through a callback. The status panel renders a missing count as "not counted",
+   * which is indistinguishable from "not changed" unless the caller says the list
+   * was cut short - and a callback is easy to pass and then never wire up, which is
+   * exactly how the truncation fact went missing before. A field cannot be
+   * destructured without being seen.
+   */
+  async diffNumstat(
+    opts: { cached?: boolean } = {},
+  ): Promise<{ entries: ParsedNumstatEntry[]; truncated: boolean }> {
+    const args = ['diff', '--numstat', '--no-color'];
+    if (opts.cached === true) args.push('--cached');
+    const { stdout, truncated } = await this.run(args, {
+      maxStdoutBytes: MAX_NUMSTAT_BYTES,
+      truncateStdout: true,
+    });
+    return { entries: parseShowStat(stdout), truncated: truncated === true };
+  }
+
   /** Detect an in-progress git operation by inspecting `.git` marker files. */
   async operationState(): Promise<OperationState> {
     const gitDir = await this.gitDir();
