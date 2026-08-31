@@ -11,7 +11,7 @@
  */
 import { create } from 'zustand';
 import { BridgeRequestError, bridge, isBridgeError, mutation, saveState } from './bridge';
-import { sanitizeGitText } from './format';
+import { linkageChangedRepo, sanitizeGitText } from './format';
 import { pruneSelection, toggleNode, togglePath, type TreeNode } from './tree';
 import type {
   ChangeEntry,
@@ -28,7 +28,7 @@ import type {
   RepoStatus,
   SettingsSnapshot,
 } from '../messages';
-import { clampZoom, COLUMN_WIDTH, LANE_HEIGHT } from './viewport';
+import { clampZoom, COLUMN_WIDTH, LANE_HEIGHT, partitionUnrequestedHashes } from './viewport';
 
 /** Client-side coalescing of host change notifications. */
 const REFRESH_DEBOUNCE_MS = 250;
@@ -561,16 +561,35 @@ export interface GitHubState {
   auth: GitHubAuthState | null;
   linkage: GitHubLinkage | null;
   pullRequests: PullRequestInfo[];
+  avatars: Record<string, string | null>;
   rateLimit: GitHubRateLimit | null;
   loading: boolean;
   /** Set when GitHub itself failed; git keeps working regardless. */
   error: ErrorBody | null;
   load(): Promise<void>;
   loadPullRequests(): Promise<void>;
+  loadCommitAuthors(hashes: string[]): Promise<void>;
   connect(): Promise<void>;
   disconnect(): Promise<void>;
   openCommit(hash: string): Promise<void>;
   openUrl(url: string): Promise<void>;
+}
+
+/**
+ * Commit hashes already asked about, including the ones that came back without an
+ * account. Module-scoped rather than in the store because it is a request ledger, not
+ * state any component renders.
+ */
+const requestedCommitAuthorHashes = new Set<string>();
+
+/**
+ * Drop everything learned about commit authors. Avatars belong to one repository and
+ * to one auth state, so a disconnect or a switch to another remote has to forget them
+ * rather than serve the previous repository's faces.
+ */
+function resetCommitAuthors(set: (partial: Partial<GitHubState>) => void): void {
+  requestedCommitAuthorHashes.clear();
+  set({ avatars: {} });
 }
 
 /**
@@ -584,6 +603,7 @@ export const useGitHubStore = create<GitHubState>((set, get) => ({
   auth: null,
   linkage: null,
   pullRequests: [],
+  avatars: {},
   rateLimit: null,
   loading: false,
   error: null,
@@ -595,6 +615,10 @@ export const useGitHubStore = create<GitHubState>((set, get) => ({
         bridge.request('github/auth', {}),
         bridge.request('github/linkage', {}),
       ]);
+      const prevLinkage = get().linkage;
+      if (linkageChangedRepo(prevLinkage, linkage)) {
+        resetCommitAuthors(set);
+      }
       set({ auth, linkage, loading: false, error: null });
       if (linkage.available) await get().loadPullRequests();
     } catch (err) {
@@ -618,6 +642,39 @@ export const useGitHubStore = create<GitHubState>((set, get) => ({
     }
   },
 
+  async loadCommitAuthors(hashes: string[]) {
+    const linkage = get().linkage;
+    if (linkage === null || !linkage.available || linkage.owner === null || linkage.repo === null) return;
+    const batches = partitionUnrequestedHashes(hashes, requestedCommitAuthorHashes);
+    if (batches.length === 0) return;
+
+    // Recorded before the first await: the canvas fires this on every scroll settle, and
+    // two overlapping calls would otherwise ask for the same hashes twice.
+    for (const batch of batches) {
+      for (const h of batch) {
+        requestedCommitAuthorHashes.add(h);
+      }
+    }
+
+    const { owner, repo } = linkage;
+    for (const batch of batches) {
+      try {
+        const result = await bridge.request('github/commitAuthors', { owner, repo, hashes: batch });
+        set((state) => {
+          const nextAvatars = { ...state.avatars };
+          for (const author of result.authors) {
+            nextAvatars[author.hash] = author.avatarUrl;
+          }
+          return { avatars: nextAvatars, rateLimit: result.rateLimit, error: null };
+        });
+      } catch (err) {
+        // An avatar is decoration. Record it like a failed PR read and keep whatever faces
+        // already arrived; nothing here is worth a toast.
+        set({ error: toErrorBody(err) });
+      }
+    }
+  },
+
   async connect() {
     try {
       const auth = await bridge.request('github/connect', {});
@@ -634,7 +691,9 @@ export const useGitHubStore = create<GitHubState>((set, get) => ({
   async disconnect() {
     try {
       const auth = await bridge.request('github/disconnect', {});
+      resetCommitAuthors(set);
       set({ auth, pullRequests: [], rateLimit: null, error: null });
+
     } catch (err) {
       set({ error: toErrorBody(err) });
     }
