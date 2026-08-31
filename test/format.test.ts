@@ -28,6 +28,7 @@ import {
   shortHash,
   statusLabel,
   truncate,
+  linkageChangedRepo,
 } from '../src/webview/format';
 import type {
   ChangeEntry,
@@ -720,4 +721,37 @@ test('ChangeTree file row gridcells have valid ARIA semantics and no contradicto
   assert.ok(rowCheckboxMatch !== null, 'Row must declare gridcell with aria-colindex={1} for checkbox');
 });
 
+// ---------------------------------------------------------------- linkageChangedRepo
 
+test('linkageChangedRepo returns false when both are null or pointing to same owner and repo', () => {
+  assert.equal(linkageChangedRepo(null, null), false);
+  assert.equal(
+    linkageChangedRepo({ owner: 'alice', repo: 'project' }, { owner: 'alice', repo: 'project' }),
+    false,
+  );
+  assert.equal(linkageChangedRepo({ owner: null, repo: null }, { owner: null, repo: null }), false);
+});
+
+test('linkageChangedRepo returns true when comparing null against non-null', () => {
+  assert.equal(linkageChangedRepo(null, { owner: 'alice', repo: 'project' }), true);
+  assert.equal(linkageChangedRepo({ owner: 'alice', repo: 'project' }, null), true);
+});
+
+test('linkageChangedRepo returns true when owner or repo differs', () => {
+  assert.equal(
+    linkageChangedRepo({ owner: 'alice', repo: 'project' }, { owner: 'bob', repo: 'project' }),
+    true,
+  );
+  assert.equal(
+    linkageChangedRepo({ owner: 'alice', repo: 'project' }, { owner: 'alice', repo: 'other' }),
+    true,
+  );
+  assert.equal(
+    linkageChangedRepo({ owner: 'alice', repo: 'project' }, { owner: 'bob', repo: 'other' }),
+    true,
+  );
+  assert.equal(
+    linkageChangedRepo({ owner: 'alice', repo: null }, { owner: 'alice', repo: 'project' }),
+    true,
+  );
+});

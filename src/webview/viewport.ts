@@ -245,3 +245,37 @@ export function minimapScrollFor(
   const max = Math.max(0, total - Math.max(0, viewportWidth));
   return Math.min(max, Math.max(0, ratio * total - Math.max(0, viewportWidth) / 2));
 }
+
+// ---------------------------------------------------------------- commit authors
+
+export const COMMIT_AUTHORS_BATCH_SIZE = 50;
+
+/**
+ * Hashes still worth asking about, in batches the host will accept.
+ *
+ * A commit whose author has no GitHub account answers `null`, and that answer counts as
+ * asked: without this filter every pan would re-request the same faceless commits for as
+ * long as they stay on screen.
+ */
+export function partitionUnrequestedHashes(
+  hashes: readonly string[],
+  requested: ReadonlySet<string>,
+  batchSize: number = COMMIT_AUTHORS_BATCH_SIZE,
+): string[][] {
+  const needed: string[] = [];
+  const seen = new Set<string>();
+  for (const h of hashes) {
+    if (!requested.has(h) && !seen.has(h)) {
+      seen.add(h);
+      needed.push(h);
+    }
+  }
+  if (needed.length === 0) return [];
+  const batches: string[][] = [];
+  // Clamped rather than trusted: the host rejects anything over the cap outright.
+  const limit = Math.min(Math.max(1, batchSize), COMMIT_AUTHORS_BATCH_SIZE);
+  for (let i = 0; i < needed.length; i += limit) {
+    batches.push(needed.slice(i, i + limit));
+  }
+  return batches;
+}

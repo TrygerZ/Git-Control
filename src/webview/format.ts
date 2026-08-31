@@ -920,3 +920,15 @@ export function githubConnectionLabel(state: {
   return login.length === 0 ? 'Tersambung.' : `Tersambung sebagai ${login}.`;
 }
 
+/**
+ * True when two linkages point at different GitHub repositories, which is when any
+ * per-commit data cached for the previous one has to be dropped.
+ */
+export function linkageChangedRepo(
+  before: { owner: string | null; repo: string | null } | null,
+  after: { owner: string | null; repo: string | null } | null,
+): boolean {
+  if (before === null && after === null) return false;
+  if (before === null || after === null) return true;
+  return before.owner !== after.owner || before.repo !== after.repo;
+}

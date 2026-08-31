@@ -19,6 +19,7 @@ import {
   minimapGeometry,
   minimapScrollFor,
   needsScrollToReveal,
+  partitionUnrequestedHashes,
   scrollToCommit,
   shouldRevealOnContainerFocus,
   stepZoom,
@@ -380,4 +381,29 @@ test('labelVisible clamps nonsense zoom through clampZoom', () => {
   // NaN falls back to zoom 1.
   assert.equal(labelVisible({ zoom: Number.NaN, ...RESTING }), true);
   assert.ok(clampZoom(TEXT_MIN_ZOOM) === TEXT_MIN_ZOOM);
+});
+
+// ----------------------------------------------------------- partitionUnrequestedHashes
+
+test('partitionUnrequestedHashes filters out already requested hashes and duplicates', () => {
+  const requested = new Set(['hash1', 'hash2']);
+  const input = ['hash1', 'hash3', 'hash3', 'hash4', 'hash2', 'hash5'];
+  const batches = partitionUnrequestedHashes(input, requested, 50);
+  assert.deepEqual(batches, [['hash3', 'hash4', 'hash5']]);
+});
+
+test('partitionUnrequestedHashes returns empty array when all hashes are requested or input is empty', () => {
+  const requested = new Set(['hash1', 'hash2']);
+  assert.deepEqual(partitionUnrequestedHashes(['hash1', 'hash2'], requested), []);
+  assert.deepEqual(partitionUnrequestedHashes([], requested), []);
+});
+
+test('partitionUnrequestedHashes splits into chunks bounded by 50', () => {
+  const requested = new Set<string>();
+  const input = Array.from({ length: 125 }, (_, i) => `hash_${i}`);
+  const batches = partitionUnrequestedHashes(input, requested);
+  assert.equal(batches.length, 3);
+  assert.equal(batches[0]?.length, 50);
+  assert.equal(batches[1]?.length, 50);
+  assert.equal(batches[2]?.length, 25);
 });
