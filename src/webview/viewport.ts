@@ -27,6 +27,28 @@ export function clampZoom(zoom: number): number {
   return Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, zoom));
 }
 
+/** Check if target node/column is currently outside the visible scroll view. */
+export function needsScrollToReveal(
+  targetX: number,
+  zoom: number,
+  scrollLeft: number,
+  viewportWidth: number,
+  columnWidth: number = COLUMN_WIDTH,
+): boolean {
+  const z = clampZoom(zoom);
+  const left = targetX * z;
+  const right = left + columnWidth * z;
+  return left < scrollLeft || right > scrollLeft + viewportWidth;
+}
+
+/** Container focus should only reveal active row for keyboard modality, not pointer clicks. */
+export function shouldRevealOnContainerFocus(input: {
+  targetIsContainer: boolean;
+  keyboardModality: boolean;
+}): boolean {
+  return input.targetIsContainer && input.keyboardModality;
+}
+
 /** Next/previous stop on the discrete zoom ladder, so `+`/`-` feel predictable. */
 export function stepZoom(zoom: number, direction: 1 | -1): number {
   const current = clampZoom(zoom);

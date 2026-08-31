@@ -62,7 +62,9 @@ import {
   edgeIntersectsBand,
   laneY,
   columnX,
+  needsScrollToReveal,
   scrollToCommit,
+  shouldRevealOnContainerFocus,
   stepZoom,
   visibleColumnRange,
   visibleWorldBand,
@@ -506,9 +508,7 @@ export function GraphCanvas({
       if (target === undefined) return;
       setFocusRow(index);
       setPendingFocusRow(index);
-      const left = target.x * zoom;
-      const right = left + COLUMN_WIDTH * zoom;
-      if (left < node.scrollLeft || right > node.scrollLeft + node.clientWidth) {
+      if (needsScrollToReveal(target.x, zoom, node.scrollLeft, node.clientWidth)) {
         node.scrollLeft = scrollToCommit(target.x, viewportWidthState, zoom, totalWorldW);
       }
       // If already mounted and rendered in DOM, focus directly
@@ -528,9 +528,7 @@ export function GraphCanvas({
       const next = scrollToCommit(target.x, viewportWidthState, zoom, totalWorldW);
       const node = scrollRef.current;
       if (node !== null) {
-        const left = target.x * zoom;
-        const right = left + COLUMN_WIDTH * zoom;
-        if (left < node.scrollLeft || right > node.scrollLeft + node.clientWidth) {
+        if (needsScrollToReveal(target.x, zoom, node.scrollLeft, node.clientWidth)) {
           node.scrollLeft = next;
         }
       }
@@ -799,7 +797,11 @@ export function GraphCanvas({
             aria-describedby={helpId}
             tabIndex={0}
             onFocus={(event) => {
-              if (event.target !== event.currentTarget) return;
+              const shouldReveal = shouldRevealOnContainerFocus({
+                targetIsContainer: event.target === event.currentTarget,
+                keyboardModality: event.currentTarget.matches(':focus-visible'),
+              });
+              if (!shouldReveal) return;
               if (rows.length > 0) revealRow(focusRow);
             }}
             onScroll={(event) => {

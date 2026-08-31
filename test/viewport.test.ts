@@ -16,7 +16,9 @@ import {
   laneY,
   minimapGeometry,
   minimapScrollFor,
+  needsScrollToReveal,
   scrollToCommit,
+  shouldRevealOnContainerFocus,
   stepZoom,
   visibleColumnRange,
   visibleWorldBand,
@@ -205,6 +207,41 @@ test('scrollToCommit centres the target and clamps to the scrollable range', () 
   assert.equal(middle, targetX - 480);
   assert.equal(scrollToCommit(0, 960, 1, 1000 * COLUMN_WIDTH), 0);
   assert.equal(scrollToCommit(1000 * COLUMN_WIDTH, 960, 1, 1000 * COLUMN_WIDTH), 1000 * COLUMN_WIDTH - 960);
+});
+
+test('needsScrollToReveal determines whether a target is off-screen', () => {
+  // Visible: target column within [scrollLeft, scrollLeft + viewportWidth]
+  assert.equal(needsScrollToReveal(200, 1, 100, 500, COLUMN_WIDTH), false);
+
+  // Off-screen left
+  assert.equal(needsScrollToReveal(50, 1, 200, 500, COLUMN_WIDTH), true);
+
+  // Off-screen right: right edge exceeds viewport
+  assert.equal(needsScrollToReveal(650, 1, 100, 500, COLUMN_WIDTH), true);
+});
+
+test('shouldRevealOnContainerFocus allows reveal only for keyboard modality on container', () => {
+  // Truth table
+  assert.equal(
+    shouldRevealOnContainerFocus({ targetIsContainer: true, keyboardModality: true }),
+    true,
+    'keyboard focus directly on container should reveal',
+  );
+  assert.equal(
+    shouldRevealOnContainerFocus({ targetIsContainer: true, keyboardModality: false }),
+    false,
+    'pointer focus on container should not reveal',
+  );
+  assert.equal(
+    shouldRevealOnContainerFocus({ targetIsContainer: false, keyboardModality: true }),
+    false,
+    'focus on child element with keyboard should not trigger container reveal',
+  );
+  assert.equal(
+    shouldRevealOnContainerFocus({ targetIsContainer: false, keyboardModality: false }),
+    false,
+    'pointer focus on child element should not reveal',
+  );
 });
 
 // ----------------------------------------------------------------- minimap
