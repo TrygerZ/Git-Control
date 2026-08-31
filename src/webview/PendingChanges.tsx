@@ -8,15 +8,19 @@
  * `discard` is deliberately absent: it destroys work and the contract offers no
  * guarded path for it. Adding it without a guard dialog would violate the PRD's
  * safety rule.
+ *
+ * Layout, following the Unity reference: a quiet context breadcrumb, then one
+ * toolbar of few loud actions, then the grouped file list with its own filter box,
+ * then the commit form. Nothing else competes for attention.
  */
-import { useEffect, useMemo, useRef, type JSX } from 'react';
+import { useEffect, useId, useMemo, useRef, useState, type JSX } from 'react';
 import { ChangeTree } from './ChangeTree';
 import { CommitForm } from './CommitForm';
 import { ConflictPanel, OperationBanner } from './ConflictPanel';
 import { GuardDialog } from './GuardDialog';
 import { ToastRegion } from './Toast';
 import { bridge, loadState, saveState } from './bridge';
-import { formatCount } from './format';
+import { formatCount, sanitizeGitText, UNKNOWN_CHURN } from './format';
 import { groupBySection, type ChangeSection } from './tree';
 import {
   toErrorBody,
@@ -26,7 +30,7 @@ import {
   useSettingsStore,
   wireHostEvents,
 } from './store';
-import { EmptyState, ErrorBanner, FileListSkeleton } from './ui';
+import { ContextBar, EmptyState, ErrorBanner, FileListSkeleton, InfoBanner } from './ui';
 import type { ChangeEntry } from '../messages';
 
 const SECTION_TITLES: Record<ChangeSection, string> = {
@@ -49,6 +53,31 @@ const SECTION_HINTS: Record<ChangeSection, string> = {
   unstaged: 'Sudah diubah tapi belum masuk staging area. Tekan Stage agar ikut di-commit.',
   untracked: 'File baru yang belum pernah dicatat git. Stage dulu agar mulai dilacak.',
 };
+
+/**
+ * Letter badge per section, mirroring the Unity reference's `C` / `D` / `A` boxes.
+ *
+ * The letters are not decoration and they are not invented: `U` and `?` are the
+ * porcelain codes those sections actually contain, and `S`/`M` stand for the two
+ * halves of the staging split. They are a scan anchor only — the Indonesian title
+ * next to each one carries the meaning, so a reader who does not know the letters
+ * loses nothing.
+ *
+ * `tone` names a `--gc-tone-*` token, never a colour.
+ */
+const SECTION_BADGES: Record<ChangeSection, { letter: string; tone: string }> = {
+  conflicted: { letter: 'U', tone: 'removed' },
+  staged: { letter: 'S', tone: 'added' },
+  unstaged: { letter: 'M', tone: 'changed' },
+  untracked: { letter: '?', tone: 'pending' },
+};
+
+const SECTION_ORDER: readonly ChangeSection[] = [
+  'conflicted',
+  'staged',
+  'unstaged',
+  'untracked',
+] as const;
 
 export function PendingChangesApp(): JSX.Element {
   const changes = useChangesStore((s) => s.changes);
@@ -80,6 +109,12 @@ export function PendingChangesApp(): JSX.Element {
   const pushToast = useOperationStore((s) => s.pushToast);
   const showLogs = useOperationStore((s) => s.showLogs);
   const scrollRef = useRef<HTMLDivElement>(null);
+  /**
+   * Path filter for the list. Local, not in the store: it narrows what is drawn
+   * and nothing else — no request, no persistence, nothing the host needs to know.
+   */
+  const [filter, setFilter] = useState('');
+  const filterCountId = useId();
 
   // Restore persisted form state, then fetch. The view is rebuilt on every
   // reveal (`retainContextWhenHidden: false`), so this runs often and must be cheap.
@@ -103,8 +138,21 @@ export function PendingChangesApp(): JSX.Element {
     return off;
   }, [load, loadSettings, loadStatus]);
 
-  const groups = useMemo(() => groupBySection(changes), [changes]);
+  const needle = filter.trim().toLowerCase();
+  const visible = useMemo(
+    () =>
+      needle.length === 0
+        ? changes
+        : changes.filter((entry) => entry.path.toLowerCase().includes(needle)),
+    [changes, needle],
+  );
+  const groups = useMemo(() => groupBySection(visible), [visible]);
   const selected = [...selection];
+
+  const refresh = (): void => {
+    void load();
+    void loadStatus();
+  };
 
   const openDiff = async (entry: ChangeEntry): Promise<void> => {
     try {
@@ -130,6 +178,8 @@ export function PendingChangesApp(): JSX.Element {
 
   return (
     <div className="gc-pending">
+      <ContextBar status={status} />
+
       <OperationBanner status={status} />
 
       {error !== null && <ErrorBanner error={error} onShowLogs={showLogs} />}
@@ -138,10 +188,62 @@ export function PendingChangesApp(): JSX.Element {
         <ConflictPanel conflicts={conflicts} operation={status?.operation ?? 'idle'} />
       )}
 
-      <div className="gc-pending__bar" role="toolbar" aria-label="Tindakan perubahan" aria-orientation="horizontal">
+      {churnTruncated && (
+        <InfoBanner tone="info" glyph="?">
+          <strong>Jumlah baris tidak lengkap.</strong>
+          <span>
+            Perubahannya terlalu banyak untuk dihitung semua, jadi sebagian file menampilkan{' '}
+            {UNKNOWN_CHURN} pada kolom + dan −. Itu bukan berarti file tersebut tidak berubah —
+            hanya jumlah barisnya yang tidak dihitung.
+          </span>
+        </InfoBanner>
+      )}
+
+      {/*
+        Two tiers, like the reference toolbar: the acts that change the repository
+        (`Stage`, `Unstage`) plus a refresh, then the selection helpers pushed into
+        the quiet tier. `Commit` is NOT here — it lives on the form that owns the
+        message it needs, because a Commit button far from its message field teaches
+        that the two are unrelated.
+      */}
+      <div
+        className="gc-pending__bar gc-toolbar--actions"
+        role="toolbar"
+        aria-label="Tindakan perubahan"
+        aria-orientation="horizontal"
+      >
+        {/*
+          The count rides in the accessible name rather than only in the adjacent
+          span: a screen reader user who tabs straight to the button otherwise hears
+          `Stage` with no idea how many files it will touch.
+        */}
+        <button
+          type="button"
+          className="gc-button gc-button--action"
+          aria-label={`Stage ${formatCount(stageable.length)} file terpilih`}
+          title="Masukkan file terpilih ke staging area, supaya ikut pada commit berikutnya."
+          disabled={busy || stageable.length === 0}
+          onClick={() => void stage(stageablePaths())}
+        >
+          <span aria-hidden="true">↓ </span>Stage
+        </button>
+        <button
+          type="button"
+          className="gc-button gc-button--action"
+          aria-label={`Unstage ${formatCount(selected.length)} file terpilih`}
+          title="Keluarkan file terpilih dari staging area. Isi file tidak diubah, hanya tidak ikut di-commit."
+          disabled={busy || selected.length === 0}
+          onClick={() => void unstage(selected)}
+        >
+          <span aria-hidden="true">↑ </span>Unstage
+        </button>
+
+        <span className="gc-toolbar__divider" aria-hidden="true" />
+
         <button
           type="button"
           className="gc-button gc-button--quiet"
+          title="Centang semua file di daftar. Belum ada yang di-stage sampai Anda menekan Stage."
           disabled={changes.length === 0}
           onClick={selectAll}
         >
@@ -150,39 +252,30 @@ export function PendingChangesApp(): JSX.Element {
         <button
           type="button"
           className="gc-button gc-button--quiet"
+          title="Hapus semua centang. Isi file dan staging area tidak berubah."
           disabled={selected.length === 0}
           onClick={clear}
         >
           Kosongkan pilihan
         </button>
-        {/*
-          The count rides in the accessible name rather than only in the adjacent
-          span: a screen reader user who tabs straight to the button otherwise hears
-          `Stage` with no idea how many files it will touch.
-        */}
-        <button
-          type="button"
-          className="gc-button"
-          aria-label={`Stage ${formatCount(stageable.length)} file terpilih`}
-          disabled={busy || stageable.length === 0}
-          onClick={() => void stage(stageablePaths())}
-        >
-          Stage
-        </button>
-        <button
-          type="button"
-          className="gc-button"
-          aria-label={`Unstage ${formatCount(selected.length)} file terpilih`}
-          disabled={busy || selected.length === 0}
-          onClick={() => void unstage(selected)}
-        >
-          Unstage
-        </button>
-        {/* `aria-live` stays off: this changes on every checkbox tick, and the
-            checkbox itself already announces its own new state. */}
-        <span className="gc-pending__count" aria-live="off">
-          {formatCount(selected.length)} dipilih
-        </span>
+
+        <div className="gc-toolbar__end">
+          {/* `aria-live` stays off: this changes on every checkbox tick, and the
+              checkbox itself already announces its own new state. */}
+          <span className="gc-pending__count" aria-live="off">
+            {formatCount(selected.length)} dipilih
+          </span>
+          <button
+            type="button"
+            className="gc-icon-button"
+            aria-label="Muat ulang daftar perubahan"
+            title="Baca ulang status repository dari git."
+            disabled={loading}
+            onClick={refresh}
+          >
+            <span aria-hidden="true">⟳</span>
+          </button>
+        </div>
       </div>
 
       {loading && changes.length === 0 ? (
@@ -190,45 +283,109 @@ export function PendingChangesApp(): JSX.Element {
       ) : changes.length === 0 ? (
         <EmptyState
           title="Tidak ada perubahan."
-          hint="Semua file di folder kerja sudah sama dengan commit terakhir. Ubah sebuah file, lalu ia akan muncul di sini siap untuk di-stage."
+          hint="Semua file di folder kerja sudah sama dengan commit terakhir."
+          steps={[
+            'Buka sebuah file di editor dan ubah isinya, lalu simpan.',
+            'File itu akan muncul di sini pada bagian “Belum disiapkan”.',
+            'Centang file tersebut, tekan Stage, tulis pesan, lalu Commit.',
+          ]}
         />
       ) : (
-        <div
-          className="gc-pending__sections"
-          ref={scrollRef}
-          onScroll={(event) => saveState({ scrollTop: event.currentTarget.scrollTop })}
-        >
-          {(['conflicted', 'staged', 'unstaged', 'untracked'] as ChangeSection[]).map((section) => {
-            const entries = groups[section];
-            if (entries.length === 0) return null;
-            return (
-              <section className="gc-section" key={section} aria-label={SECTION_TITLES[section]}>
-                <h3 className="gc-section__title">
-                  {SECTION_TITLES[section]}
-                  <span className="gc-section__count">{formatCount(entries.length)}</span>
-                </h3>
-                <p className="gc-help-text">{SECTION_HINTS[section]}</p>
-                <ChangeTree
-                  entries={entries}
-                  selection={selection}
-                  collapsed={collapsed}
-                  busy={busy}
-                  label={`${SECTION_TITLES[section]}: ${formatCount(entries.length)} file`}
-                  churnTruncated={churnTruncated}
-                  onToggleFile={toggle}
-                  onToggleFolder={toggleFolder}
-                  onToggleCollapsed={toggleCollapsed}
-                  onOpenDiff={(entry) => void openDiff(entry)}
-                  fileAction={
-                    section === 'staged'
-                      ? { label: 'Unstage', run: (e) => void unstage([e.path]) }
-                      : { label: 'Stage', run: (e) => void stage([e.path]) }
-                  }
-                />
-              </section>
-            );
-          })}
-        </div>
+        <>
+          {/*
+            Filter box at the top right of the list, as in the reference. It is a
+            view filter, not a selection change: a file hidden here stays selected,
+            which is why the count above keeps counting it.
+          */}
+          <div className="gc-listbar">
+            <h2 className="gc-listbar__title">
+              Perubahan
+              <span className="gc-listbar__total">{formatCount(changes.length)} file</span>
+            </h2>
+            <label className="gc-field gc-listbar__filter">
+              <span className="gc-field__label">Saring berdasarkan nama file</span>
+              <input
+                type="search"
+                value={filter}
+                maxLength={100}
+                placeholder="mis. src/webview"
+                aria-describedby={filterCountId}
+                onChange={(event) => setFilter(event.target.value)}
+              />
+            </label>
+            <p className="gc-help-text gc-listbar__count" id={filterCountId} role="status" aria-live="polite">
+              {needle.length === 0
+                ? `${formatCount(changes.length)} file ditampilkan.`
+                : `${formatCount(visible.length)} dari ${formatCount(changes.length)} file cocok dengan saringan.`}
+            </p>
+          </div>
+
+          {visible.length === 0 ? (
+            <EmptyState
+              title="Tidak ada file yang cocok dengan saringan."
+              hint={`Tidak ada path yang memuat “${sanitizeGitText(filter.trim())}”. Kosongkan kotak saringan untuk melihat semua ${formatCount(changes.length)} file lagi.`}
+              action={
+                <button
+                  type="button"
+                  className="gc-button"
+                  title="Tampilkan kembali semua file. Hanya mengubah apa yang terlihat, bukan repository."
+                  onClick={() => setFilter('')}
+                >
+                  Kosongkan saringan
+                </button>
+              }
+            />
+          ) : (
+            <div
+              className="gc-pending__sections"
+              ref={scrollRef}
+              onScroll={(event) => saveState({ scrollTop: event.currentTarget.scrollTop })}
+            >
+              {SECTION_ORDER.map((section) => {
+                const entries = groups[section];
+                if (entries.length === 0) return null;
+                const badge = SECTION_BADGES[section];
+                return (
+                  <section className="gc-section" key={section} aria-label={SECTION_TITLES[section]}>
+                    <h3 className="gc-section__title">
+                      {/*
+                        The box is `aria-hidden` because the heading text right after
+                        it is the same fact in words; announcing "S, Siap di-commit"
+                        adds a letter nobody asked for.
+                      */}
+                      <span
+                        className={`gc-section__badge gc-section__badge--${badge.tone}`}
+                        aria-hidden="true"
+                      >
+                        {badge.letter}
+                      </span>
+                      <span className="gc-section__name">{SECTION_TITLES[section]}</span>
+                      <span className="gc-section__count">{formatCount(entries.length)} file</span>
+                    </h3>
+                    <p className="gc-help-text gc-section__hint">{SECTION_HINTS[section]}</p>
+                    <ChangeTree
+                      entries={entries}
+                      selection={selection}
+                      collapsed={collapsed}
+                      busy={busy}
+                      label={`${SECTION_TITLES[section]}: ${formatCount(entries.length)} file`}
+                      churnTruncated={churnTruncated}
+                      onToggleFile={toggle}
+                      onToggleFolder={toggleFolder}
+                      onToggleCollapsed={toggleCollapsed}
+                      onOpenDiff={(entry) => void openDiff(entry)}
+                      fileAction={
+                        section === 'staged'
+                          ? { label: 'Unstage', run: (e) => void unstage([e.path]) }
+                          : { label: 'Stage', run: (e) => void stage([e.path]) }
+                      }
+                    />
+                  </section>
+                );
+              })}
+            </div>
+          )}
+        </>
       )}
 
       <CommitForm />
