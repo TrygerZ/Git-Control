@@ -2158,19 +2158,41 @@ h3 {
   align-items: center;
 }
 
+/*
+ * The box holds one codicon and nothing else, so it sits at `--gc-fs-md` rather
+ * than at the metadata step: stacking two fractional em steps was what pushed the
+ * glyph off centre.
+ */
 .gc-status__box {
-  display: inline-flex;
+  display: grid;
+  place-items: center;
   flex: 0 0 auto;
-  align-items: center;
-  justify-content: center;
   width: 18px;
   height: 18px;
   border: 1px solid currentColor;
   border-radius: var(--gc-radius);
   font-family: var(--vscode-editor-font-family, monospace);
-  font-size: var(--gc-fs-2xs);
+  font-size: var(--gc-fs-md);
   font-weight: var(--gc-weight-strong);
   line-height: 1;
+}
+
+/*
+ * Centre the glyph geometrically rather than through font metrics. The global icon
+ * rule places a codicon with `inline-block` plus `vertical-align: middle`, which
+ * resolves against this box's baseline and half-leading and lands the glyph left of
+ * centre. A square em box centred with grid placement has no baseline to drift
+ * against. Scoped to the status box on purpose: every other icon in this file takes
+ * its size from the control around it.
+ */
+.gc-status__box .gc-icon {
+  display: grid;
+  place-items: center;
+  width: 1em;
+  height: 1em;
+  font-size: inherit;
+  line-height: 1;
+  vertical-align: baseline;
 }
 
 .gc-status__box--added {
