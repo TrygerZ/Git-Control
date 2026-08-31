@@ -119,9 +119,11 @@ class WebviewBridge implements Bridge {
   private readonly listeners = new Map<EventKind, Set<(payload: never) => void>>();
 
   constructor() {
-    window.addEventListener('message', (event: MessageEvent<unknown>) => {
-      this.receive(event.data);
-    });
+    if (typeof window !== 'undefined' && typeof window.addEventListener === 'function') {
+      window.addEventListener('message', (event: MessageEvent<unknown>) => {
+        this.receive(event.data);
+      });
+    }
   }
 
   request<K extends RequestKind>(kind: K, payload: RequestPayload<K>): Promise<ResponseData<K>> {
@@ -177,7 +179,7 @@ class WebviewBridge implements Bridge {
   }
 }
 
-export const bridge = new WebviewBridge();
+export const bridge: Bridge = new WebviewBridge();
 
 // ---------------------------------------------------------------- mutations
 

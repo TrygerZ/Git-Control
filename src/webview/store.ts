@@ -13,7 +13,6 @@ import { create } from 'zustand';
 import { BridgeRequestError, bridge, isBridgeError, mutation, saveState } from './bridge';
 import { sanitizeGitText } from './format';
 import { pruneSelection, toggleNode, togglePath, type TreeNode } from './tree';
-import { clampZoom } from './viewport';
 import type {
   ChangeEntry,
   CommitResult,
@@ -29,7 +28,7 @@ import type {
   RepoStatus,
   SettingsSnapshot,
 } from '../messages';
-import { ROW_HEIGHT, LANE_WIDTH } from './viewport';
+import { clampZoom, COLUMN_WIDTH, LANE_HEIGHT } from './viewport';
 
 /** Client-side coalescing of host change notifications. */
 const REFRESH_DEBOUNCE_MS = 250;
@@ -100,8 +99,8 @@ export const useRepoStore = create<RepoState>((set, get) => ({
     set({ loading: true });
     try {
       const graph = await bridge.request('repos/graph', {
-        rowHeight: ROW_HEIGHT,
-        laneWidth: LANE_WIDTH,
+        laneHeight: LANE_HEIGHT,
+        columnWidth: COLUMN_WIDTH,
       });
       set({ graph, stale: graph.stale, loading: false, error: null });
     } catch (err) {
@@ -109,18 +108,21 @@ export const useRepoStore = create<RepoState>((set, get) => ({
     }
   },
 
-  /** Append the next page. Cursor comes from the server, never computed here. */
+  /** Load expanded window. Layout and global coordinates come from host in one go. */
   async loadMore() {
     const current = get().graph;
     if (current === null || current.nextCursor === null || get().paging) return;
     set({ paging: true });
     try {
+      const pageSize = current.nodes.length > 0 ? current.nodes.length : 500;
+      const nextLimit = Math.min(current.nextCursor + pageSize, 10_000);
       const page = await bridge.request('repos/graph', {
-        cursor: current.nextCursor,
-        rowHeight: ROW_HEIGHT,
-        laneWidth: LANE_WIDTH,
+        cursor: 0,
+        limit: nextLimit,
+        laneHeight: LANE_HEIGHT,
+        columnWidth: COLUMN_WIDTH,
       });
-      set({ graph: mergeGraph(current, page), stale: page.stale, paging: false, error: null });
+      set({ graph: page, stale: page.stale, paging: false, error: null });
     } catch (err) {
       set({ paging: false, error: toErrorBody(err) });
     }
@@ -135,33 +137,6 @@ export const useRepoStore = create<RepoState>((set, get) => ({
     await Promise.all([get().loadStatus(), get().loadGraph()]);
   },
 }));
-
-/**
- * Concatenate a page onto the loaded graph.
- *
- * The host lays out each page independently, so a later page's `y` restarts at
- * 0. Rows are re-stacked here by index; lane assignment is left untouched
- * because re-laying-out client-side would contradict "do not reimplement layout".
- */
-export function mergeGraph(base: RepoGraph, page: RepoGraph): RepoGraph {
-  const seen = new Set(base.nodes.map((n) => n.hash));
-  const offset = base.nodes.length;
-  const added = page.nodes
-    .filter((n) => !seen.has(n.hash))
-    .map((n, i) => ({ ...n, y: (offset + i) * ROW_HEIGHT }));
-  const edgeKey = (e: { from: string; to: string }): string => `${e.from}->${e.to}`;
-  const edgeSeen = new Set(base.edges.map(edgeKey));
-  const laneCount = Math.max(base.lanes.length, page.lanes.length);
-  const lanes = laneCount === base.lanes.length ? base.lanes : page.lanes;
-
-  return {
-    ...page,
-    nodes: [...base.nodes, ...added],
-    edges: [...base.edges, ...page.edges.filter((e) => !edgeSeen.has(edgeKey(e)))],
-    lanes,
-    refs: page.refs.length > 0 ? page.refs : base.refs,
-  };
-}
 
 // ------------------------------------------------------------- changesStore
 
