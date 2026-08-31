@@ -191,6 +191,55 @@ export function entryStatus(entry: ChangeEntry): StatusLabel {
   return statusLabel(code);
 }
 
+/**
+ * Tone key for a status letter, used to pick the badge colour token in CSS.
+ *
+ * Colour is the THIRD channel here, never the first: the glyph and the Indonesian
+ * word from {@link statusLabel} already carry the state, and this only adds the
+ * "at a glance" hue the Unity reference gets from its C/D/A boxes. Several letters
+ * deliberately share a tone (`A` and `C` are both "something appeared"), because a
+ * hue per letter would invent nine colours nobody can tell apart.
+ */
+export type StatusTone = 'added' | 'removed' | 'changed' | 'pending' | 'special' | 'neutral';
+
+const STATUS_TONES: Readonly<Record<string, StatusTone>> = {
+  M: 'changed',
+  A: 'added',
+  D: 'removed',
+  R: 'special',
+  C: 'added',
+  T: 'special',
+  U: 'removed',
+  '?': 'pending',
+  '!': 'neutral',
+};
+
+/** Tone for a porcelain letter. Unknown letters stay neutral rather than guessing. */
+export function statusTone(code: string): StatusTone {
+  return STATUS_TONES[code.trim().charAt(0).toUpperCase()] ?? 'neutral';
+}
+
+/**
+ * One uppercase initial for an author, used inside a commit node like the avatars
+ * in the Unity Branch Explorer.
+ *
+ * One letter, not two: the node is 12–14 px across at 100 % zoom inside a 16 px
+ * lane, and two glyphs at that size are a smudge rather than a label. The full
+ * name is still in the row text and in {@link rowLabel}, so this is a scanning
+ * aid, never the only channel — which is also why the SVG text is `aria-hidden`
+ * at the render site.
+ *
+ * Sanitised, and falls back to `?` when the name has no letter or digit at all
+ * (an empty `user.name`, or a name made entirely of marks we replace).
+ */
+export function authorInitials(name: string): string {
+  const clean = sanitizeGitText(name).trim();
+  for (const char of clean) {
+    if (/[\p{L}\p{N}]/u.test(char)) return char.toLocaleUpperCase('id-ID');
+  }
+  return '?';
+}
+
 /** `lama → baru` for renames, plain path otherwise. Sanitised: paths come from git. */
 export function displayPath(entry: ChangeEntry): string {
   const path = sanitizeGitText(entry.path);
@@ -204,7 +253,79 @@ export function baseName(path: string): string {
   return parts[parts.length - 1] ?? path;
 }
 
+// ------------------------------------------------------------------ breadcrumb
+
+/**
+ * Folder name of a repository root, for the context breadcrumb.
+ *
+ * The full absolute path is noise in a header and can be long enough to push the
+ * branch name off screen in a sidebar; the folder name is what the user calls the
+ * project. Handles both separators because the host runs on Windows too, and a
+ * trailing separator (a drive root) falls back to the whole cleaned string rather
+ * than to an empty crumb.
+ */
+export function repoName(repoRoot: string): string {
+  const clean = sanitizeGitText(repoRoot).replace(/[\\/]+$/, '');
+  const parts = clean.split(/[\\/]/);
+  const last = parts[parts.length - 1] ?? '';
+  return last.length === 0 ? clean : last;
+}
+
+/**
+ * Where the branch stands against its remote, in one plain-Indonesian sentence.
+ *
+ * `ahead`/`behind` are the two numbers a newcomer most often misreads — a bare
+ * `↑2 ↓3` says nothing about which direction is theirs — so each one is spelled out
+ * as an action instead of a symbol. No upstream is stated as a fact plus its
+ * consequence, because "no remote" is the case where work is silently unbacked.
+ */
+export function syncSummary(status: {
+  upstream: string | null;
+  ahead: number;
+  behind: number;
+}): string {
+  if (status.upstream === null) {
+    return 'Belum terhubung ke remote — commit Anda baru ada di komputer ini.';
+  }
+  const upstream = sanitizeGitText(status.upstream);
+  const parts: string[] = [];
+  if (status.ahead > 0) parts.push(`${formatCount(status.ahead)} commit siap dipush`);
+  if (status.behind > 0) parts.push(`${formatCount(status.behind)} commit baru menunggu diambil`);
+  if (parts.length === 0) return `Sama dengan ${upstream}.`;
+  return `${parts.join(', ')} (${upstream}).`;
+}
+
 // ------------------------------------------------------- accessible names
+
+/**
+ * Text shown where a churn count would be when git reported none.
+ *
+ * `+0 / −0` is a lie for an untracked file: it has every line added, git simply
+ * never diffs it. An em dash says "not counted", which is the truth.
+ */
+export const UNKNOWN_CHURN = '—';
+
+/**
+ * Why a row has no line counts, used as the `title` next to {@link UNKNOWN_CHURN}.
+ *
+ * The reasons are NOT interchangeable, which is why they are spelled out
+ * separately. "Belum dilacak" tells the reader the file is new and git never
+ * diffed it; the truncation reason tells them git was never asked, because the
+ * change list was too large to count — a fact the reader cannot deduce from a dash
+ * and would otherwise read as "this file did not change".
+ *
+ * `churnTruncated` is a PARAMETER, not a store read: this module is pure so the
+ * visual row and the accessible name are built from the same words, and a store
+ * lookup here would make both untestable.
+ */
+export function churnUnknownReason(entry: ChangeEntry, churnTruncated = false): string {
+  if (entry.untracked) return 'file baru, belum dilacak git';
+  if (entry.binary) return 'file binary, tidak ada jumlah baris';
+  if (churnTruncated) {
+    return 'jumlah baris tidak dihitung karena daftar perubahannya terlalu besar — bukan berarti file ini tidak berubah';
+  }
+  return 'jumlah baris belum dihitung';
+}
 
 /**
  * Accessible name for one file row in the change tree.
@@ -213,11 +334,17 @@ export function baseName(path: string): string {
  * its Indonesian word, the churn, and whether the file is binary. All four go in
  * here, in that order, so the two renderings cannot disagree. The visual spans are
  * `aria-hidden` at the render site precisely because this string replaces them.
+ *
+ * `null` counts are reported as unknown rather than as zero, matching the visual
+ * `—`: a screen-reader user hearing "0 baris ditambah" for a brand-new file would
+ * be told the file is empty.
  */
-export function fileRowLabel(entry: ChangeEntry): string {
+export function fileRowLabel(entry: ChangeEntry, churnTruncated = false): string {
   const status = entryStatus(entry);
   const parts = [displayPath(entry), status.label];
   if (entry.binary) parts.push('file binary');
+  else if (entry.additions === null && entry.deletions === null)
+    parts.push(churnUnknownReason(entry, churnTruncated));
   else parts.push(`${entry.additions ?? 0} baris ditambah, ${entry.deletions ?? 0} baris dihapus`);
   return parts.join(', ');
 }
@@ -247,10 +374,17 @@ export function conflictRowLabel(entry: ConflictEntry): string {
  *
  * Lives here rather than in `GraphCanvas.tsx` so it can be asserted without a DOM:
  * this string is the entire row for a screen-reader user, and it must carry every
- * fact the visual row shows. The visual row shows, left to right: the short hash,
- * the HEAD / local / merge badges, the ref chips, the subject, the author, and the
- * relative time. All of them appear below, in reading order, and each visual part
- * is `aria-hidden` at the render site because this replaces it.
+ * fact the visual row shows. The visual row shows, left to right: the ref chips, the
+ * HEAD / local / merge badges, the subject, then a quiet metadata group holding the
+ * author, the relative time, and the short hash. All of them appear below, and each
+ * visual part is `aria-hidden` at the render site because this replaces it.
+ *
+ * The ORDER here deliberately differs from the visual one: identity first (hash,
+ * then subject), decorations last. A sighted user takes in a row at once and can
+ * skip the chips; a screen-reader user hears it strictly in sequence, and leading
+ * with "ref main, ref origin/main, HEAD" delays the two facts that identify which
+ * commit is being described. Nothing is added or dropped, only ordered for a linear
+ * reader.
  *
  * Sanitised for the same reason the visual row is: a screen-reader user makes the
  * same decisions from this string that a sighted user makes from the row, and the
@@ -339,6 +473,60 @@ const REMEDY_LABELS: Readonly<Record<Remedy, string>> = {
 
 export function remedyLabel(remedy: Remedy): string {
   return REMEDY_LABELS[remedy];
+}
+
+/**
+ * What pressing a remedy button will actually do to the repository.
+ *
+ * Every label above is one word, and those words are the vocabulary the user came
+ * here NOT knowing — `Stash` is meaningless to someone avoiding the terminal, and a
+ * button whose name is a term of art is a button pressed by guesswork. These
+ * sentences ride in `title` on every remedy button so the answer to "and then what
+ * happens to my files?" is one hover away, in the same voice as the file-row titles.
+ */
+const REMEDY_CONSEQUENCES: Readonly<Record<Remedy, string>> = {
+  commit:
+    'Menutup dialog ini dan mengarahkan Anda ke panel Pending Changes untuk menyimpan perubahan lebih dulu. Tidak ada perintah git yang dijalankan sekarang.',
+  stash:
+    'Menyimpan perubahan Anda ke tumpukan stash lalu membersihkan folder kerja. Perubahan tidak hilang — bisa diambil kembali nanti.',
+  fetch:
+    'Mengambil data terbaru dari remote. Isi folder kerja dan commit Anda tidak diubah sama sekali.',
+  cancel: 'Menutup dialog tanpa menjalankan perintah apa pun. Tidak ada yang berubah.',
+  'resolve-conflicts':
+    'Menutup dialog dan mengarahkan Anda ke daftar file konflik yang harus diselesaikan lebih dulu.',
+  confirm: 'Menjalankan perintah git yang tertulis di dialog ini.',
+};
+
+export function remedyConsequence(remedy: Remedy): string {
+  return REMEDY_CONSEQUENCES[remedy];
+}
+
+/**
+ * Display order for remedy buttons: the confirmation first, every safe way out
+ * after it, and `Batal` last.
+ *
+ * `.gc-modal__actions` is right-aligned, so "last" is the bottom-right corner — the
+ * spot a hand goes to without reading, because that is where `OK` lives in every
+ * dialog the user has ever dismissed. This dialog exists to stop exactly that press,
+ * so the corner is reserved for `Batal` no matter what order the host sent. The
+ * default lists already end in `cancel`; this makes that a guarantee rather than a
+ * coincidence, because a host that supplies `['cancel', 'confirm']` would otherwise
+ * park an irreversible command under the reflex.
+ *
+ * Order only; nothing is added or removed, so a host that offers no `cancel` still
+ * offers no `cancel` and the dialog's own fallback button still appears.
+ */
+const REMEDY_ORDER: Readonly<Record<Remedy, number>> = {
+  confirm: 0,
+  commit: 1,
+  stash: 1,
+  fetch: 1,
+  'resolve-conflicts': 1,
+  cancel: 2,
+};
+
+export function orderedRemedies(remedies: readonly Remedy[]): Remedy[] {
+  return [...remedies].sort((a, b) => REMEDY_ORDER[a] - REMEDY_ORDER[b]);
 }
 
 export interface ErrorPresentation {
