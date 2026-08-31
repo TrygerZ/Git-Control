@@ -71,9 +71,9 @@
 
   --gc-radius: 3px;
   --gc-radius-pill: 9px;
-  --gc-row-height: 24px;
+  --gc-row-height: 28px;
   /* WCAG 2.5.8 target size (minimum). Every clickable element honours it. */
-  --gc-hit: 24px;
+  --gc-hit: 28px;
   /*
    * Comfortable target for the one primary button per surface. Not a replacement
    * for `--gc-hit`: that stays the floor everything else is measured against.
@@ -105,6 +105,18 @@
 
 * {
   box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  min-height: 0;
+}
+
+#root {
+  display: flex;
+  flex-direction: column;
 }
 
 body {
@@ -613,9 +625,12 @@ h3 {
   display: flex;
   flex-direction: column;
   gap: var(--gc-space-3);
-  height: 100vh;
+  height: 100%;
+  min-height: 0;
+  flex: 1 1 auto;
   padding: var(--gc-space-3);
   overflow: hidden;
+  box-sizing: border-box;
 }
 
 .gc-explorer__split {
@@ -623,20 +638,24 @@ h3 {
   flex: 1 1 auto;
   gap: var(--gc-space-3);
   min-height: 0;
+  min-width: 0;
 }
 
 .gc-explorer__graph {
   flex: 1 1 auto;
   min-width: 0;
-  min-height: 0;
+  min-height: 240px;
+  display: flex;
+  flex-direction: column;
 }
 
 .gc-explorer__aside {
-  flex: 0 0 340px;
+  flex: 0 0 320px;
   display: flex;
   flex-direction: column;
   gap: var(--gc-space-3);
   min-height: 0;
+  min-width: 0;
   padding-left: var(--gc-space-3);
   border-left: 1px solid var(--gc-border);
   overflow: auto;
@@ -644,11 +663,24 @@ h3 {
 
 .gc-explorer__aside--closed {
   flex-basis: auto;
+  border-left: none;
+  padding-left: 0;
 }
 
 .gc-explorer__aside-head {
   display: flex;
   justify-content: flex-end;
+}
+
+.gc-explorer__aside-toggle {
+  font-size: var(--gc-fs-xs);
+  padding: var(--gc-space-1) var(--gc-space-2);
+}
+
+.gc-explorer__aside-content {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gc-space-4);
 }
 
 /*
@@ -663,9 +695,15 @@ h3 {
     flex-direction: column;
   }
 
+  .gc-explorer__graph {
+    flex: 1 1 300px;
+    min-height: 240px;
+  }
+
   .gc-explorer__aside {
-    flex: 0 0 auto;
+    flex: 0 1 50vh;
     max-height: 50vh;
+    min-height: 120px;
     padding-left: 0;
     padding-top: var(--gc-space-3);
     border-left: none;
@@ -710,43 +748,88 @@ h3 {
 }
 
 /*
- * The filter row above the graph. A framed strip rather than loose controls: it
- * groups "things that narrow what you see" and separates them from the canvas
- * below, which is what the reference's `Filters:` row does with its own rule.
+ * The filter row above the graph. Clean, unified one-line strip.
  */
 .gc-toolbar--filters {
-  align-items: flex-end;
+  display: flex;
+  align-items: center;
+  gap: var(--gc-space-3);
   padding: var(--gc-space-2) var(--gc-space-3);
   border: 1px solid var(--gc-border);
   border-radius: var(--gc-radius);
   background: var(--vscode-editorWidget-background, var(--vscode-editor-background));
 }
 
-/* Word in front of the fields, so the strip reads as one labelled group. */
-.gc-toolbar__legend {
-  align-self: center;
+.gc-toolbar__search-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+  flex: 1 1 14em;
+  min-width: 10em;
+}
+
+.gc-toolbar__search-icon {
+  position: absolute;
+  left: var(--gc-space-3);
   color: var(--gc-muted);
   font-size: var(--gc-fs-xs);
-  font-weight: var(--gc-weight-strong);
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
+  pointer-events: none;
+}
+
+.gc-toolbar__search-input {
+  width: 100%;
+  min-height: var(--gc-hit);
+  padding: var(--gc-space-1) var(--gc-space-3) var(--gc-space-1) var(--gc-space-6);
+  border: 1px solid var(--vscode-input-border, var(--gc-border));
+  border-radius: var(--gc-radius);
+  background: var(--vscode-input-background);
+  color: var(--vscode-input-foreground);
+  font-family: inherit;
+  font-size: var(--gc-fs-sm);
+}
+
+.gc-toolbar__branch-wrap {
+  display: flex;
+  align-items: center;
+}
+
+.gc-toolbar__branch-select {
+  min-height: var(--gc-hit);
+  padding: var(--gc-space-1) var(--gc-space-3);
+  border: 1px solid var(--vscode-input-border, var(--gc-border));
+  border-radius: var(--gc-radius);
+  background: var(--vscode-input-background);
+  color: var(--vscode-input-foreground);
+  font-family: inherit;
+  font-size: var(--gc-fs-sm);
+  max-width: 14em;
+}
+
+.gc-toolbar__clear {
+  margin-left: auto;
 }
 
 /*
- * The action row on the pending panel. Loud pair first, quiet helpers after a
- * divider, counters and refresh pushed to the end.
+ * The action row on the pending panel. Primary pair, secondary helpers, count and refresh.
  */
 .gc-toolbar--actions {
+  display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  row-gap: var(--gc-space-2);
+  gap: var(--gc-space-3);
+  padding-bottom: var(--gc-space-2);
 }
 
-/* Hairline between the tiers. Decorative, `aria-hidden` at the render site. */
-.gc-toolbar__divider {
-  align-self: stretch;
-  width: 1px;
-  min-height: var(--gc-hit);
-  background: var(--gc-border);
+.gc-toolbar__primary-group {
+  display: flex;
+  align-items: center;
+  gap: var(--gc-space-2);
+}
+
+.gc-toolbar__secondary-group {
+  display: flex;
+  align-items: center;
+  gap: var(--gc-space-1);
 }
 
 .gc-toolbar__end {
@@ -754,19 +837,6 @@ h3 {
   align-items: center;
   gap: var(--gc-space-3);
   margin-left: auto;
-}
-
-.gc-toolbar__search {
-  flex: 1 1 12em;
-  min-width: 8em;
-}
-
-.gc-toolbar__search input {
-  width: 100%;
-}
-
-.gc-toolbar__branch select {
-  max-width: 14em;
 }
 
 .gc-zoom__value {
@@ -1042,24 +1112,26 @@ h3 {
 /* ----------------------------------------------------------------- graph row */
 
 /*
- * `left` is set inline (the zoomed lane gutter) and `right: 0` stretches the row to
- * the end of the world. That pair is only safe because `.gc-canvas__world` now
- * reserves `gutter × zoom + 320px`, so the resolved width can no longer reach zero.
- * `min-width` is kept as the floor of last resort: if `left` ever exceeds the world
- * width, `min-width` wins over `right` and the text stays readable instead of the
- * row vanishing. Cheapest correct option — no extra wrapper, no width maths in JS.
+ * Horizontal timeline: .gc-row is a compact card positioned right below each commit node.
+ * It is positioned at (node.x * zoom, (laneY + NODE_RADIUS + 4) * zoom).
  */
 .gc-row {
   position: absolute;
-  right: 0;
-  min-width: 320px;
+  width: 140px;
+  max-width: 160px;
   display: flex;
+  flex-direction: column;
   align-items: center;
-  gap: var(--gc-space-3);
-  padding: 0 var(--gc-space-3);
+  gap: var(--gc-space-1);
+  padding: var(--gc-space-1) var(--gc-space-2);
   overflow: hidden;
-  white-space: nowrap;
+  text-align: center;
   cursor: default;
+  border-radius: var(--gc-radius);
+  user-select: none;
+  transition-property: background-color, outline-color;
+  transition-duration: 80ms;
+  transition-timing-function: ease-out;
 }
 
 .gc-row:hover {
@@ -1074,9 +1146,7 @@ h3 {
 }
 
 /*
- * Search misses are dimmed rather than hidden so the topology stays intact, but
- * 0.42 put muted text under 3:1. 0.55 keeps the "this is not a match" signal while
- * staying readable, and the `<mark>` on the hits is the stronger signal anyway.
+ * Search misses are dimmed rather than hidden so the topology stays intact.
  */
 .gc-row--dim {
   opacity: 0.55;
@@ -1084,45 +1154,127 @@ h3 {
 
 .gc-row__cell-group {
   display: flex;
+  flex-direction: column;
   align-items: center;
-  gap: var(--gc-space-3);
+  gap: var(--gc-space-1);
   width: 100%;
   min-width: 0;
 }
 
 /*
- * Type hierarchy in a row, three steps: the subject is primary text at full weight
- * and full contrast; the ref chips and badges are adjacent to the node they belong
- * to; the hash, author, and date are metadata, collected into one group at the far
- * end at `--gc-fs-2xs` and muted, so the eye can skip the whole column at once
- * instead of stepping over three interleaved sizes.
+ * Short subject below node: 1-2 lines clamped with ellipsis.
  */
 .gc-row__subject {
-  flex: 1 1 auto;
+  width: 100%;
   min-width: 0;
   overflow: hidden;
   color: inherit;
+  font-size: var(--gc-fs-xs);
+  font-weight: var(--gc-weight-strong);
+  line-height: 1.25;
   text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-/*
- * The metadata group. `margin-left: auto` pins it right, as in the reference's
- * `Created by` column, so the eye can compare authors down a straight edge.
- */
 .gc-row__meta {
-  display: flex;
-  flex: 0 0 auto;
+  display: inline-flex;
   align-items: center;
-  gap: var(--gc-space-3);
-  margin-left: auto;
+  justify-content: center;
+  gap: var(--gc-space-1);
+  width: 100%;
+  min-width: 0;
   color: var(--gc-muted);
   font-size: var(--gc-fs-2xs);
+  line-height: 1.2;
 }
 
 .gc-row__author {
-  max-width: 10em;
+  max-width: 8em;
   overflow: hidden;
   text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.gc-row__dot {
+  opacity: 0.7;
+}
+
+.gc-row__time {
+  white-space: nowrap;
+}
+
+/*
+ * Branch pill positioned above lane / node.
+ */
+.gc-pill {
+  position: absolute;
+  transform: translate(-50%, -100%);
+  display: inline-flex;
+  align-items: center;
+  gap: var(--gc-space-1);
+  padding: var(--gc-space-1) var(--gc-space-3);
+  border: 1px solid var(--gc-border);
+  border-radius: var(--gc-radius-pill);
+  background: var(--vscode-badge-background, var(--vscode-editorWidget-background));
+  color: var(--vscode-badge-foreground, var(--vscode-foreground));
+  font-size: var(--gc-fs-2xs);
+  font-weight: var(--gc-weight-strong);
+  line-height: 1.4;
+  white-space: nowrap;
+  pointer-events: none;
+  z-index: 2;
+  box-shadow: 0 1px 3px var(--vscode-widget-shadow, transparent);
+}
+
+.gc-pill--current {
+  border-color: var(--vscode-focusBorder);
+  outline: 1px solid var(--vscode-focusBorder);
+}
+
+.gc-pill--remote {
+  border-style: dashed;
+}
+
+/* Date ruler sticky at top */
+.gc-ruler {
+  position: sticky;
+  top: 0;
+  left: 0;
+  height: 32px;
+  z-index: 5;
+  pointer-events: none;
+  background: var(--vscode-editor-background);
+  border-bottom: 1px solid var(--gc-border);
+}
+
+.gc-ruler__track {
+  position: relative;
+  height: 100%;
+}
+
+.gc-ruler__cell {
+  position: absolute;
+  top: 0;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  padding: 0 var(--gc-space-3);
+  color: var(--gc-muted);
+  font-size: var(--gc-fs-xs);
+  font-weight: var(--gc-weight-strong);
+  border-right: 1px solid var(--gc-border);
+  white-space: nowrap;
+  box-sizing: border-box;
+}
+
+.gc-canvas__day-band {
+  fill: var(--vscode-list-hoverBackground);
+  opacity: 0.25;
+}
+
+.gc-canvas__day-line {
+  stroke: var(--gc-border);
+  stroke-width: 1;
 }
 
 .gc-row__hash {
@@ -1745,25 +1897,26 @@ h3 {
 }
 
 /*
- * Header of the file list: what it is, how many, and the filter box on the right —
- * the same arrangement as the reference's `Path` header with its `Filter` field.
- *
- * `flex-wrap` plus a filter that grows from `12em` is what makes this work in a
- * 300 px sidebar: the box drops onto its own line rather than crushing the title.
+ * Header of the file list: title, total count, search input.
  */
 .gc-listbar {
   display: flex;
-  flex-wrap: wrap;
-  align-items: flex-end;
-  gap: var(--gc-space-3);
-  padding-bottom: var(--gc-space-2);
+  flex-direction: column;
+  gap: var(--gc-space-2);
+  padding: var(--gc-space-2) 0;
   border-bottom: 1px solid var(--gc-border);
+}
+
+.gc-listbar__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
 }
 
 .gc-listbar__title {
   display: flex;
   align-items: center;
-  gap: var(--gc-space-3);
+  gap: var(--gc-space-2);
   margin: 0;
   font-size: var(--gc-fs-md);
   font-weight: var(--gc-weight-strong);
@@ -1771,54 +1924,52 @@ h3 {
 
 .gc-listbar__total {
   color: var(--gc-muted);
-  font-size: var(--gc-fs-2xs);
+  font-size: var(--gc-fs-xs);
   font-weight: normal;
   font-variant-numeric: tabular-nums;
 }
 
-.gc-listbar__filter {
-  flex: 1 1 12em;
-  min-width: 8em;
-  margin-left: auto;
-}
-
-.gc-listbar__filter input {
+.gc-listbar__search-wrap {
+  display: flex;
   width: 100%;
 }
 
-/* The live count sits on its own line under the box, so it never shifts the row. */
+.gc-listbar__input {
+  width: 100%;
+  min-height: var(--gc-hit);
+  padding: var(--gc-space-1) var(--gc-space-3);
+  border: 1px solid var(--vscode-input-border, var(--gc-border));
+  border-radius: var(--gc-radius);
+  background: var(--vscode-input-background);
+  color: var(--vscode-input-foreground);
+  font-family: inherit;
+  font-size: var(--gc-fs-sm);
+}
+
 .gc-listbar__count {
-  flex: 1 1 100%;
   margin: 0;
+  font-size: var(--gc-fs-xs);
+  color: var(--gc-muted);
 }
 
 /*
- * Sections are the strongest grouping in the panel, so the gap between them is a
- * step above every gap inside one. Without that the four groups read as one long
- * list with occasional headings.
+ * Sections with refined spacing rhythm.
  */
 .gc-section {
-  margin-bottom: var(--gc-space-7);
+  margin-bottom: var(--gc-space-5);
 }
 
 .gc-section:last-child {
-  margin-bottom: var(--gc-space-4);
+  margin-bottom: var(--gc-space-3);
 }
 
-/*
- * The heading is a real heading now, not a caption: sentence case at body size, so
- * it outranks both the hint below it and the rows under that. `text-transform:
- * uppercase` is gone deliberately — it shrank the perceived size of the one line
- * that has to lead, and Indonesian section names are long enough to wrap in a
- * sidebar when spaced out.
- */
 .gc-section__title {
   display: flex;
   align-items: center;
-  gap: var(--gc-space-3);
-  margin: 0 0 var(--gc-space-1);
+  gap: var(--gc-space-2);
+  margin: 0 0 var(--gc-space-2);
   color: var(--vscode-foreground);
-  font-size: var(--gc-fs-md);
+  font-size: var(--gc-fs-sm);
   font-weight: var(--gc-weight-strong);
 }
 
@@ -1826,13 +1977,6 @@ h3 {
   min-width: 0;
 }
 
-/*
- * The letter box from the reference, one per section.
- *
- * A filled square with the letter inside, not a bare coloured dot: the letter is the
- * signal and the fill is the accent. `forced-color-adjust` is deliberately NOT set,
- * so a high-contrast theme repaints it with system colours and the letter survives.
- */
 .gc-section__badge {
   display: inline-flex;
   flex: 0 0 auto;
@@ -1865,20 +2009,13 @@ h3 {
 
 .gc-section__count {
   margin-left: auto;
-  padding: 0 var(--gc-space-3);
-  border: 1px solid var(--gc-border);
+  padding: 0 var(--gc-space-2);
   border-radius: var(--gc-radius-pill);
   color: var(--gc-muted);
   font-size: var(--gc-fs-2xs);
   font-weight: normal;
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
-}
-
-/* The explaining sentence: indented under its heading so it reads as attached. */
-.gc-section__hint {
-  margin: 0 0 var(--gc-space-2);
-  max-width: 52em;
 }
 
 .gc-tree {
@@ -1890,16 +2027,16 @@ h3 {
 .gc-tree__row {
   display: flex;
   align-items: center;
-  gap: var(--gc-space-3);
+  gap: var(--gc-space-2);
   min-height: var(--gc-hit);
-  padding-right: var(--gc-space-3);
+  padding: var(--gc-space-1) var(--gc-space-2);
+  border-radius: var(--gc-radius);
 }
 
 .gc-tree__row:hover {
   background: var(--vscode-list-hoverBackground);
 }
 
-/* The keyboard cursor inside the treegrid, distinct from `:focus-visible`. */
 .gc-tree__row--active {
   background: var(--vscode-list-activeSelectionBackground);
   color: var(--vscode-list-activeSelectionForeground);
@@ -1924,15 +2061,16 @@ h3 {
   cursor: pointer;
 }
 
-/*
- * `role="gridcell"` needs a real element, so each cell is a span. These two grow
- * because they hold the name; the rest size to content.
- */
 .gc-tree__folder-cell,
 .gc-tree__file-cell {
   display: flex;
   flex: 1 1 auto;
   min-width: 0;
+}
+
+.gc-tree__action-cell {
+  display: flex;
+  align-items: center;
 }
 
 .gc-tree__twisty {
@@ -1951,31 +2089,19 @@ h3 {
   font-weight: var(--gc-weight-strong);
 }
 
-/*
- * Status is a filled letter box, a glyph, and an Indonesian word: three channels
- * before the colour is counted, so a monochrome theme loses nothing. Fixed widths
- * keep the letters and glyphs on one vertical line down the panel — the reference's
- * whole trick for making a long file list scannable.
- */
 .gc-tree__status {
   display: inline-flex;
   flex: 0 0 auto;
   align-items: center;
-  gap: var(--gc-space-2);
 }
 
-/*
- * The letter box, matching `.gc-section__badge` so a section heading and the rows
- * under it speak the same language. Colour comes from a `--gc-tone-*` token and is
- * the last channel, never the first.
- */
 .gc-status__box {
   display: inline-flex;
   flex: 0 0 auto;
   align-items: center;
   justify-content: center;
-  width: 16px;
-  height: 16px;
+  width: 18px;
+  height: 18px;
   border: 1px solid currentColor;
   border-radius: var(--gc-radius);
   font-family: var(--vscode-editor-font-family, monospace);
@@ -2019,26 +2145,18 @@ h3 {
   font-size: var(--gc-fs-2xs);
 }
 
-/*
- * The churn column.
- *
- * `min-width` on each half plus `text-align: right` gives `+12` and `−3` a fixed
- * column each, so the numbers align down the list instead of drifting with the file
- * name. This is the column the previous pass made correct; this pass makes it
- * readable — before, `+n`/`−n` shared one collapsing flex box and moved on every row.
- */
 .gc-tree__stats,
 .gc-filelist__stats {
   display: inline-flex;
   flex: 0 0 auto;
-  gap: var(--gc-space-3);
+  gap: var(--gc-space-2);
   font-size: var(--gc-fs-xs);
   font-variant-numeric: tabular-nums;
 }
 
 .gc-tree__stats .gc-stat,
 .gc-filelist__stats .gc-stat {
-  min-width: 2.5em;
+  min-width: 2.2em;
   text-align: right;
 }
 
@@ -2048,12 +2166,11 @@ h3 {
   font-size: var(--gc-fs-2xs);
 }
 
-/* Per-row action: quiet until the row is hovered or focused, so a long list is calm. */
 .gc-tree__action {
+  padding: 0 var(--gc-space-2);
   font-size: var(--gc-fs-2xs);
 }
 
-/* `+`/`−` prefix the number, so churn direction survives without the colour. */
 .gc-stat--add {
   color: var(--vscode-gitDecoration-addedResourceForeground, var(--vscode-charts-green));
 }
@@ -2062,62 +2179,74 @@ h3 {
   color: var(--vscode-gitDecoration-deletedResourceForeground, var(--vscode-charts-red));
 }
 
-/*
- * `—` for "not counted". Muted rather than tinted: a dash in the additions colour
- * would read as a change of zero, which is the exact lie `UNKNOWN_CHURN` exists to
- * avoid. The `title` on the span says why the count is missing.
- */
 .gc-stat--unknown {
   color: var(--gc-muted);
 }
 
 /* ---------------------------------------------------------------- commit form */
 
-/*
- * The panel's terminal step, so it is framed rather than merely separated: a top
- * rule plus its own padding makes it read as "the box you finish in", which is what
- * a newcomer needs after four sections of file lists.
- */
 .gc-commit {
   display: flex;
   flex-direction: column;
   gap: var(--gc-space-3);
-  padding-top: var(--gc-space-4);
+  padding-top: var(--gc-space-3);
   border-top: 1px solid var(--gc-border);
 }
 
 .gc-commit__title {
   margin: 0;
-  font-size: var(--gc-fs-md);
+  font-size: var(--gc-fs-sm);
   font-weight: var(--gc-weight-strong);
 }
 
-/* The field must fill the form, not shrink to its inline-flex content width. */
-.gc-commit__field {
+.gc-commit__field-wrap {
   display: flex;
   width: 100%;
 }
 
 .gc-commit__message {
   width: 100%;
+  padding: var(--gc-space-2) var(--gc-space-3);
+  border: 1px solid var(--vscode-input-border, var(--gc-border));
+  border-radius: var(--gc-radius);
+  background: var(--vscode-input-background);
+  color: var(--vscode-input-foreground);
+  font-family: inherit;
+  font-size: var(--gc-fs-sm);
+  line-height: 1.4;
+  resize: vertical;
 }
 
 .gc-commit__hint {
   margin: 0;
   color: var(--gc-muted);
-  font-size: var(--gc-fs-xs);
+  font-size: var(--gc-fs-2xs);
 }
 
-/*
- * What Commit will actually save, stated above the button. Bordered on the leading
- * edge so it is not mistaken for another hint: this is the one line that tells the
- * user whether pressing the button does anything at all.
- */
+.gc-commit__advanced {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gc-space-2);
+}
+
+.gc-commit__advanced-toggle {
+  color: var(--vscode-textLink-foreground, var(--vscode-foreground));
+  font-size: var(--gc-fs-xs);
+  cursor: pointer;
+  padding: var(--gc-space-1) 0;
+  user-select: none;
+}
+
+.gc-commit__options {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gc-space-2);
+  padding: var(--gc-space-2) 0 var(--gc-space-1);
+}
+
 .gc-commit__scope {
   margin: 0;
-  padding: var(--gc-space-2) var(--gc-space-3);
-  border-left: 3px solid var(--vscode-focusBorder);
-  background: var(--vscode-textBlockQuote-background, transparent);
+  color: var(--gc-muted);
   font-size: var(--gc-fs-xs);
 }
 
@@ -2826,10 +2955,5 @@ h3 {
   .gc-canvas__controls {
     right: var(--gc-space-3);
     bottom: var(--gc-space-3);
-  }
-
-  .gc-listbar__filter {
-    flex-basis: 100%;
-    margin-left: 0;
   }
 }
