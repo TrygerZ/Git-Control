@@ -17,6 +17,14 @@ export const LANE_WIDTH = 16;
 /** Left padding before lane 0 so the first node's ring is not clipped. */
 export const GUTTER_X = 20;
 export const NODE_RADIUS = 5;
+/**
+ * Narrowest the commit text column may become.
+ *
+ * The lane gutter grows with the branch count and is multiplied by zoom, so on a
+ * wide history at high zoom it can exceed the canvas on its own. Without a floor
+ * the text column is squeezed to nothing and the commit rows disappear.
+ */
+export const MIN_ROW_WIDTH = 320;
 
 const ZOOM_STEPS = [0.25, 0.4, 0.5, 0.75, 1, 1.25, 1.5, 2, 3, 4] as const;
 
@@ -117,6 +125,16 @@ export function worldHeight(rowCount: number, rowHeight: number = ROW_HEIGHT): n
 /** World width wide enough for `laneCount` lanes plus the gutter. */
 export function worldWidth(laneCount: number, laneWidth: number = LANE_WIDTH): number {
   return GUTTER_X * 2 + Math.max(1, laneCount) * laneWidth;
+}
+
+/**
+ * Total scrollable world width: the zoomed lane gutter plus the commit text column.
+ *
+ * The gutter scales with zoom because the SVG is scaled; {@link MIN_ROW_WIDTH} does
+ * not, because it is a text-legibility floor rather than a world measurement.
+ */
+export function worldContentWidth(laneCount: number, zoom: number, laneWidth?: number): number {
+  return worldWidth(laneCount, laneWidth) * clampZoom(zoom) + MIN_ROW_WIDTH;
 }
 
 /** World x for a lane centre, including the gutter. */

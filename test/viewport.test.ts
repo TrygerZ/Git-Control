@@ -5,6 +5,7 @@ import {
   GUTTER_X,
   LANE_WIDTH,
   MAX_ZOOM,
+  MIN_ROW_WIDTH,
   MIN_ZOOM,
   ROW_HEIGHT,
   clampZoom,
@@ -18,6 +19,7 @@ import {
   stepZoom,
   visibleRowRange,
   visibleWorldBand,
+  worldContentWidth,
   worldHeight,
   worldWidth,
 } from '../src/webview/viewport';
@@ -162,8 +164,29 @@ test('worldHeight and worldWidth scale with rows and lanes', () => {
   assert.equal(worldWidth(0), GUTTER_X * 2 + LANE_WIDTH);
 });
 
-test('laneX and rowY place a node at its lane centre and row centre', () => {
-  assert.equal(laneX(0), GUTTER_X);
+/**
+ * The commit rows live between `left = gutter × zoom` and the right edge of the
+ * world, so the world must reserve the gutter AND the text column. Without the
+ * MIN_ROW_WIDTH term a wide history at high zoom collapses every row to nothing.
+ */
+test('worldContentWidth reserves the zoomed gutter plus the text column', () => {
+  assert.equal(worldContentWidth(3, 1), worldWidth(3) + MIN_ROW_WIDTH);
+  assert.equal(worldContentWidth(3, 2), worldWidth(3) * 2 + MIN_ROW_WIDTH);
+  // Never narrower than the text column, whatever the lane count.
+  assert.ok(worldContentWidth(0, MIN_ZOOM) >= MIN_ROW_WIDTH);
+});
+
+test('worldContentWidth clamps zoom the same way the canvas does', () => {
+  assert.equal(worldContentWidth(2, 99), worldWidth(2) * MAX_ZOOM + MIN_ROW_WIDTH);
+  assert.equal(worldContentWidth(2, 0), worldWidth(2) * MIN_ZOOM + MIN_ROW_WIDTH, 'zero clamps up');
+  assert.equal(worldContentWidth(2, Number.NaN), worldWidth(2) + MIN_ROW_WIDTH, 'NaN falls back to 1');
+});
+
+test('worldContentWidth honours a custom lane width', () => {
+  assert.equal(worldContentWidth(4, 1, 32), worldWidth(4, 32) + MIN_ROW_WIDTH);
+});
+
+test('laneX and rowY place a node at its lane centre and row centre', () => {  assert.equal(laneX(0), GUTTER_X);
   assert.equal(laneX(2), GUTTER_X + 2 * LANE_WIDTH);
   assert.equal(rowY(0), ROW_HEIGHT / 2);
   assert.equal(rowY(3), 3 * ROW_HEIGHT + ROW_HEIGHT / 2);

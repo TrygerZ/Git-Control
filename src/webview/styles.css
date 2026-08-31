@@ -533,9 +533,11 @@ h3 {
 /*
  * Narrow panel or 200 % text zoom: stack instead of squeezing. A 340 px aside
  * beside a graph inside a 600 px sidebar leaves neither readable, and the sidebar
- * is where this view usually lives.
+ * is where this view usually lives. The breakpoint is 1100 px rather than 900 px
+ * because the aside (340 px) and the minimap column (260 px) together leave the
+ * canvas under 400 px well before 900 px.
  */
-@media (max-width: 900px) {
+@media (max-width: 1100px) {
   .gc-explorer__split {
     flex-direction: column;
   }
@@ -650,9 +652,15 @@ h3 {
   background: var(--vscode-editor-background);
 }
 
+/*
+ * `min-width`, not `width`: the world is as wide as the canvas OR as wide as the
+ * lanes plus the commit text column, whichever is larger. `width: 100%` pinned it
+ * to the canvas, which made `.gc-row`'s `right: 0` collapse once the zoomed gutter
+ * reached the canvas edge.
+ */
 .gc-canvas__world {
   position: relative;
-  width: 100%;
+  min-width: 100%;
 }
 
 .gc-canvas__svg {
@@ -711,9 +719,18 @@ h3 {
 
 /* ----------------------------------------------------------------- graph row */
 
+/*
+ * `left` is set inline (the zoomed lane gutter) and `right: 0` stretches the row to
+ * the end of the world. That pair is only safe because `.gc-canvas__world` now
+ * reserves `gutter × zoom + 320px`, so the resolved width can no longer reach zero.
+ * `min-width` is kept as the floor of last resort: if `left` ever exceeds the world
+ * width, `min-width` wins over `right` and the text stays readable instead of the
+ * row vanishing. Cheapest correct option — no extra wrapper, no width maths in JS.
+ */
 .gc-row {
   position: absolute;
   right: 0;
+  min-width: 320px;
   display: flex;
   align-items: center;
   gap: var(--gc-space-3);
