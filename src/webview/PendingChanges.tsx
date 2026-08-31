@@ -69,6 +69,12 @@ export function PendingChangesApp(): JSX.Element {
   const unstage = useChangesStore((s) => s.unstage);
 
   const status = useRepoStore((s) => s.status);
+  /**
+   * Whether the host managed to count every file's lines. A row without numbers is
+   * otherwise indistinguishable from an unchanged file, and one panel-level sentence
+   * explains all of them at once instead of hiding the fact in per-row tooltips.
+   */
+  const churnTruncated = status?.churnTruncated === true;
   const loadStatus = useRepoStore((s) => s.loadStatus);
   const loadSettings = useSettingsStore((s) => s.load);
   const pushToast = useOperationStore((s) => s.pushToast);
@@ -208,6 +214,7 @@ export function PendingChangesApp(): JSX.Element {
                   collapsed={collapsed}
                   busy={busy}
                   label={`${SECTION_TITLES[section]}: ${formatCount(entries.length)} file`}
+                  churnTruncated={churnTruncated}
                   onToggleFile={toggle}
                   onToggleFolder={toggleFolder}
                   onToggleCollapsed={toggleCollapsed}

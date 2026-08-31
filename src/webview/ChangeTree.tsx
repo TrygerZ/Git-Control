@@ -16,11 +16,15 @@
  */
 import { useEffect, useRef, useState, type JSX, type KeyboardEvent } from 'react';
 import {
+  UNKNOWN_CHURN,
+  baseName,
+  churnUnknownReason,
   displayPath,
   entryStatus,
   fileRowLabel,
   folderRowLabel,
   sanitizeGitText,
+  statusTone,
 } from './format';
 import { buildTree, collectPaths, flattenTree, triState, type FolderNode, type TreeNode } from './tree';
 import type { ChangeEntry } from '../messages';
@@ -32,6 +36,11 @@ interface Props {
   busy: boolean;
   /** Names the surrounding section, so the treegrid is not just "Daftar perubahan". */
   label: string;
+  /**
+   * True when the host could not count every file's lines. Passed down rather than
+   * read from the store so `format.ts` stays pure and the row titles can be tested.
+   */
+  churnTruncated: boolean;
   onToggleFile(path: string): void;
   onToggleFolder(node: TreeNode): void;
   onToggleCollapsed(prefix: string): void;
@@ -46,6 +55,7 @@ export function ChangeTree({
   collapsed,
   busy,
   label,
+  churnTruncated,
   onToggleFile,
   onToggleFolder,
   onToggleCollapsed,
@@ -194,7 +204,13 @@ export function ChangeTree({
                 </button>
               </span>
             ) : (
-              <FileRow entry={node.entry} onOpenDiff={onOpenDiff} fileAction={fileAction} busy={busy} />
+              <FileRow
+                entry={node.entry}
+                onOpenDiff={onOpenDiff}
+                fileAction={fileAction}
+                busy={busy}
+                churnTruncated={churnTruncated}
+              />
             )}
           </li>
         );
@@ -208,38 +224,67 @@ function FileRow({
   onOpenDiff,
   fileAction,
   busy,
+  churnTruncated,
 }: {
   entry: ChangeEntry;
   onOpenDiff(entry: ChangeEntry): void;
   fileAction: { label: string; run(entry: ChangeEntry): void } | null;
   busy: boolean;
+  churnTruncated: boolean;
 }): JSX.Element {
   const status = entryStatus(entry);
+  const tone = statusTone(status.code);
   const path = displayPath(entry);
+  // Visible text is the basename: the row already sits under its folder, and the
+  // name column ellipsises at the END, so a full path hid the one part that
+  // identifies the file. `title` and the accessible name keep the full path.
+  const name =
+    entry.origPath === undefined || entry.origPath.length === 0
+      ? baseName(entry.path)
+      : `${baseName(entry.origPath)} → ${baseName(entry.path)}`;
+  const churnUnknown = entry.additions === null && entry.deletions === null;
   return (
     <>
-      {/* Glyph, letter, and Indonesian word: three channels for one fact. The
-          composite is hidden from AT because `fileRowLabel` on the button below
-          already carries all of it, in order, without repeating the letter. */}
+      {/*
+        Four channels for one fact, and the colour is the last of them: a filled box
+        (the Unity reference's `C`/`D`/`A` chip) holding the porcelain LETTER, the
+        text glyph beside it, and the Indonesian word after that. Drop the colour and
+        all three still read; drop the word and the letter and glyph still read.
+
+        The composite is hidden from AT because `fileRowLabel` on the button below
+        already carries all of it, in order, without repeating the letter.
+      */}
       <span className="gc-tree__status" role="gridcell" aria-colindex={2} aria-hidden="true">
+        <span className={`gc-status__box gc-status__box--${tone}`}>{status.code}</span>
         <span className="gc-status__glyph">{status.glyph}</span>
-        <code className="gc-status__code">{status.code}</code>
         <span className="gc-status__label">{status.label}</span>
       </span>
       <span role="gridcell" aria-colindex={3} className="gc-tree__file-cell">
         <button
           type="button"
           className="gc-tree__file"
-          title={path}
-          aria-label={`Buka diff ${fileRowLabel(entry)}`}
+          title={`${path} — klik untuk membuka diff`}
+          aria-label={`Buka diff ${fileRowLabel(entry, churnTruncated)}`}
           onClick={() => onOpenDiff(entry)}
         >
-          <span className="gc-tree__name">{path}</span>
+          <span className="gc-tree__name">{name}</span>
         </button>
       </span>
       {entry.binary ? (
         <span className="gc-tree__binary" role="gridcell" aria-colindex={4} aria-hidden="true">
           binary
+        </span>
+      ) : churnUnknown ? (
+        // `+0 / −0` would claim the file is unchanged; an untracked file is simply
+        // absent from every diff.
+        <span
+          className="gc-tree__stats"
+          role="gridcell"
+          aria-colindex={4}
+          title={churnUnknownReason(entry, churnTruncated)}
+          aria-hidden="true"
+        >
+          <span className="gc-stat gc-stat--unknown">{UNKNOWN_CHURN}</span>
         </span>
       ) : (
         <span className="gc-tree__stats" role="gridcell" aria-colindex={4} aria-hidden="true">
@@ -251,10 +296,15 @@ function FileRow({
         <span role="gridcell" aria-colindex={5}>
           <button
             type="button"
-            className="gc-button gc-button--quiet"
+            className="gc-button gc-button--quiet gc-tree__action"
             // Without the path every row's button is called `Stage`, and a screen
             // reader user tabbing a long list hears the same word repeatedly.
             aria-label={`${fileAction.label} ${sanitizeGitText(entry.path)}`}
+            title={
+              fileAction.label === 'Stage'
+                ? 'Masukkan file ini ke staging area.'
+                : 'Keluarkan file ini dari staging area. Isinya tidak diubah.'
+            }
             disabled={busy}
             onClick={() => fileAction.run(entry)}
           >
