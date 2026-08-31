@@ -37,7 +37,15 @@ import {
 import { BranchLegend } from './BranchLegend';
 import { GraphMinimap } from './GraphMinimap';
 import { NodeContextMenu, type MenuAnchor, type MenuItem } from './NodeContextMenu';
-import { formatCount, relativeTime, rowLabel, sanitizeGitText, shortHash, truncate } from './format';
+import {
+  authorInitials,
+  formatCount,
+  relativeTime,
+  rowLabel,
+  sanitizeGitText,
+  shortHash,
+  truncate,
+} from './format';
 import { useRepoStore, useSettingsStore } from './store';
 import {
   DEFAULT_OVERSCAN,
@@ -54,6 +62,7 @@ import {
   stepZoom,
   visibleRowRange,
   visibleWorldBand,
+  worldContentWidth,
   worldHeight,
   worldWidth,
 } from './viewport';
@@ -62,6 +71,25 @@ import type { GraphEdge, GraphNode, RefInfo, RepoGraph, RepoStatus } from '../me
 
 const SUBJECT_MAX = 72;
 const MINIMAP_HEIGHT = 160;
+
+/**
+ * Radius of a commit node, and the zoom below which its author initial is dropped.
+ *
+ * `NODE_RADIUS + 1` (6 px) is the smallest circle that can hold a legible letter at
+ * 100 % zoom; a merge node stays one pixel larger than that, exactly as before, so
+ * the "merge nodes are bigger" channel the legend describes is unchanged. Lanes are
+ * `LANE_WIDTH` (16 px) apart, so nothing here brings two nodes closer than the merge
+ * ring already did.
+ *
+ * Both constants are presentation-only and stay here rather than in `viewport.ts`,
+ * which owns the layout maths the host and the tests agree on.
+ *
+ * Below 75 % the letter is a smudge rather than a label, so it is not drawn at all —
+ * the dot, the rings, and the row text all still say everything they said before.
+ */
+const AVATAR_RADIUS = NODE_RADIUS + 1;
+const INITIAL_MIN_ZOOM = 0.75;
+
 
 interface Props {
   graph: RepoGraph | null;
@@ -468,7 +496,13 @@ export function GraphCanvas({
     return (
       <EmptyState
         title="Belum ada commit di repository ini."
-        hint="Grafik menggambar riwayat commit, jadi ia baru punya isi setelah commit pertama. Buka panel Pending Changes, pilih file yang ingin disimpan, tulis pesan singkat, lalu tekan Commit."
+        hint="Grafik menggambar riwayat commit, jadi ia baru punya isi setelah commit pertama."
+        steps={[
+          'Buka panel Pending Changes.',
+          'Centang file yang ingin Anda simpan, lalu tekan Stage.',
+          'Tulis pesan singkat tentang apa yang Anda ubah.',
+          'Tekan Commit — commit pertama itu akan langsung muncul di grafik ini.',
+        ]}
       />
     );
   }
@@ -476,16 +510,17 @@ export function GraphCanvas({
   const worldH = worldHeight(rows.length, ROW_HEIGHT) * zoom;
   const currentBranch = status?.branch ?? null;
   const matchCount = search.length === 0 ? rows.length : rows.filter((n) => matchesSearch(n, search)).length;
+  /** Row holding HEAD, so the floating "back to HEAD" control has somewhere to go. */
+  const headHash = graph === null ? null : graph.head;
+  const headRow = headHash === null ? undefined : rowIndex.get(headHash);
 
   return (
     <div className="gc-graph">
       <Toolbar
-        zoom={zoom}
         search={search}
         branchFilter={branchFilter}
         refs={graph?.refs ?? []}
         countId={countId}
-        onZoom={setZoom}
         onSearch={setSearch}
         onBranchFilter={setBranchFilter}
       />
@@ -514,6 +549,7 @@ export function GraphCanvas({
           <button
             type="button"
             className="gc-button gc-button--quiet"
+            title="Ambil 10.000 commit berikutnya dari histori. Hanya menambah isi grafik, tidak mengubah repository."
             disabled={paging || graph.nextCursor === null}
             onClick={() => void loadMore()}
           >
@@ -531,101 +567,178 @@ export function GraphCanvas({
 
       <div className="gc-graph__main">
         {/*
-          One tab stop for the whole grid. Tab lands on the container, which
-          immediately hands focus to the cursor row (`onFocus` below) so the row's
-          accessible name is announced; the arrow keys then move the cursor. The
-          container stays focusable rather than relying only on the roving row
-          `tabIndex`, because the cursor row may be scrolled out of the rendered
-          window, and a grid that Tab cannot reach at all is the worse failure.
+          Positioned wrapper so the floating controls can sit over the canvas
+          without scrolling with it. They cannot live INSIDE `.gc-canvas`: that
+          element is the scroll container, and an absolutely positioned child of a
+          scroller drifts away with the content.
         */}
-        <div
-          className="gc-canvas"
-          ref={scrollRef}
-          role="grid"
-          aria-label="Grafik commit"
-          aria-rowcount={rows.length}
-          aria-colcount={1}
-          aria-describedby={helpId}
-          tabIndex={0}
-          onFocus={(event) => {
-            if (event.target !== event.currentTarget) return;
-            if (rows.length > 0) revealRow(focusRow);
-          }}
-          onScroll={(event) => setScrollTop(event.currentTarget.scrollTop)}
-          onKeyDown={onKeyDown}
-          onPointerDown={onPointerDown}
-          onPointerMove={onPointerMove}
-          onPointerUp={endPan}
-          onPointerCancel={endPan}
-          onContextMenu={onContextMenu}
-        >
+        <div className="gc-graph__stage">
           {/*
-            `role="rowgroup"` because the world div sits between the grid and its
-            rows: a `grid` may only own `row` or `rowgroup` children, and without
-            this the rows are not part of the grid as far as AT is concerned.
+            One tab stop for the whole grid. Tab lands on the container, which
+            immediately hands focus to the cursor row (`onFocus` below) so the row's
+            accessible name is announced; the arrow keys then move the cursor. The
+            container stays focusable rather than relying only on the roving row
+            `tabIndex`, because the cursor row may be scrolled out of the rendered
+            window, and a grid that Tab cannot reach at all is the worse failure.
           */}
           <div
-            className="gc-canvas__world"
-            role="rowgroup"
-            style={{ height: `${worldH}px` }}
+            className="gc-canvas"
+            ref={scrollRef}
+            role="grid"
+            aria-label="Grafik commit"
+            aria-rowcount={rows.length}
+            aria-colcount={1}
+            aria-describedby={helpId}
+            tabIndex={0}
+            onFocus={(event) => {
+              if (event.target !== event.currentTarget) return;
+              if (rows.length > 0) revealRow(focusRow);
+            }}
+            onScroll={(event) => setScrollTop(event.currentTarget.scrollTop)}
+            onKeyDown={onKeyDown}
+            onPointerDown={onPointerDown}
+            onPointerMove={onPointerMove}
+            onPointerUp={endPan}
+            onPointerCancel={endPan}
+            onContextMenu={onContextMenu}
           >
-            <svg
-              className="gc-canvas__svg"
-              width={gutterWidth * zoom}
-              height={worldH}
-              aria-hidden="true"
-              focusable="false"
-            >
-              <g transform={`scale(${zoom})`}>
-                {visibleEdges.map(({ edge, fromY, toY }) => (
-                  <path
-                    key={`${edge.from}->${edge.to}`}
-                    className={
-                      edge.kind === 'merge' ? 'gc-edge gc-edge--merge' : 'gc-edge gc-edge--direct'
-                    }
-                    d={edgePath(edge, fromY, toY)}
-                    stroke={laneColor(edge.kind === 'merge' ? edge.toLane : edge.fromLane)}
-                  />
-                ))}
-                {rows.slice(range.start, range.end).map((node, offset) => {
-                  const index = range.start + offset;
-                  const dim = !matchesSearch(node, search);
-                  return (
-                    <NodeMark
-                      key={node.hash}
-                      node={node}
-                      y={rowY(index, ROW_HEIGHT)}
-                      color={laneColor(node.lane)}
-                      dim={dim}
-                      selected={node.hash === selectedHash}
-                    />
-                  );
-                })}
-              </g>
-            </svg>
+            {/*
+              `role="rowgroup"` because the world div sits between the grid and its
+              rows: a `grid` may only own `row` or `rowgroup` children, and without
+              this the rows are not part of the grid as far as AT is concerned.
 
-            {rows.slice(range.start, range.end).map((node, offset) => {
-              const index = range.start + offset;
-              return (
-                <Row
-                  key={node.hash}
-                  node={node}
-                  index={index}
-                  zoom={zoom}
-                  left={gutterWidth * zoom}
-                  now={now}
-                  search={search}
-                  currentBranch={currentBranch}
-                  selected={node.hash === selectedHash}
-                  focused={index === focusRow}
-                  onSelect={() => {
-                    setFocusRow(index);
-                    selectCommit(node.hash);
-                  }}
-                  onOpen={() => onOpenInspector(node.hash)}
-                />
-              );
-            })}
+              `minWidth` is what keeps the rows visible: they are absolutely
+              positioned between `left = gutter × zoom` and `right: 0`, so the world
+              must be at least that wide plus the text column, otherwise a wide
+              history at high zoom collapses every row to zero width.
+            */}
+            <div
+              className="gc-canvas__world"
+              role="rowgroup"
+              style={{
+                height: `${worldH}px`,
+                minWidth: `${worldContentWidth(laneCount, zoom, LANE_WIDTH)}px`,
+              }}
+            >
+              <svg
+                className="gc-canvas__svg"
+                width={gutterWidth * zoom}
+                height={worldH}
+                aria-hidden="true"
+                focusable="false"
+              >
+                <g transform={`scale(${zoom})`}>
+                  {visibleEdges.map(({ edge, fromY, toY }) => (
+                    <path
+                      key={`${edge.from}->${edge.to}`}
+                      className={
+                        edge.kind === 'merge' ? 'gc-edge gc-edge--merge' : 'gc-edge gc-edge--direct'
+                      }
+                      d={edgePath(edge, fromY, toY)}
+                      stroke={laneColor(edge.kind === 'merge' ? edge.toLane : edge.fromLane)}
+                    />
+                  ))}
+                  {rows.slice(range.start, range.end).map((node, offset) => {
+                    const index = range.start + offset;
+                    const dim = !matchesSearch(node, search);
+                    return (
+                      <NodeMark
+                        key={node.hash}
+                        node={node}
+                        y={rowY(index, ROW_HEIGHT)}
+                        color={laneColor(node.lane)}
+                        dim={dim}
+                        selected={node.hash === selectedHash}
+                        zoom={zoom}
+                      />
+                    );
+                  })}
+                </g>
+              </svg>
+
+              {rows.slice(range.start, range.end).map((node, offset) => {
+                const index = range.start + offset;
+                return (
+                  <Row
+                    key={node.hash}
+                    node={node}
+                    index={index}
+                    zoom={zoom}
+                    left={gutterWidth * zoom}
+                    now={now}
+                    search={search}
+                    currentBranch={currentBranch}
+                    selected={node.hash === selectedHash}
+                    focused={index === focusRow}
+                    onSelect={() => {
+                      setFocusRow(index);
+                      selectCommit(node.hash);
+                    }}
+                    onOpen={() => onOpenInspector(node.hash)}
+                  />
+                );
+              })}
+            </div>
+          </div>
+
+          {/*
+            Floating canvas controls, bottom right, as in the Unity reference: go to
+            HEAD, then zoom. They are here rather than in the top toolbar because
+            they act on the canvas the pointer is already over, and the top toolbar
+            is for filtering — a different job.
+
+            Every one is a real button with a text label, and each glyph is
+            `aria-hidden`, so the group is reachable by Tab and readable by AT even
+            though it looks like a set of icons.
+          */}
+          <div className="gc-canvas__controls" role="group" aria-label="Kontrol tampilan kanvas">
+            <button
+              type="button"
+              className="gc-icon-button gc-icon-button--float"
+              aria-label="Lompat ke commit HEAD"
+              title="Kembali ke posisi Anda sekarang (HEAD)."
+              disabled={headRow === undefined}
+              onClick={() => {
+                if (headRow !== undefined) goToRow(headRow);
+              }}
+            >
+              <span aria-hidden="true">⌂</span>
+            </button>
+            <button
+              type="button"
+              className="gc-icon-button gc-icon-button--float"
+              aria-label="Perbesar grafik"
+              title="Perbesar (juga: tombol +)"
+              disabled={zoom >= MAX_ZOOM}
+              onClick={() => setZoom(stepZoom(zoom, 1))}
+            >
+              <span aria-hidden="true">+</span>
+            </button>
+            <button
+              type="button"
+              className="gc-icon-button gc-icon-button--float"
+              aria-label="Perkecil grafik"
+              title="Perkecil (juga: tombol −)"
+              disabled={zoom <= MIN_ZOOM}
+              onClick={() => setZoom(stepZoom(zoom, -1))}
+            >
+              <span aria-hidden="true">−</span>
+            </button>
+            <button
+              type="button"
+              className="gc-button gc-button--float"
+              aria-label="Kembalikan perbesaran ke 100 persen"
+              title="Kembali ke 100% (juga: tombol 0)"
+              onClick={() => setZoom(1)}
+            >
+              {/*
+                `aria-live` is off deliberately: the value is announced by the buttons
+                that changed it, and a live region here would fire on every wheel notch.
+              */}
+              <span className="gc-zoom__value" aria-live="off">
+                {Math.round(zoom * 100)}%
+              </span>
+            </button>
           </div>
         </div>
 
@@ -651,6 +764,7 @@ export function GraphCanvas({
           <button
             type="button"
             className="gc-button"
+            title="Ambil halaman commit berikutnya dari histori. Hanya menambah isi grafik, tidak mengubah repository."
             disabled={paging}
             onClick={() => void loadMore()}
           >
@@ -696,23 +810,32 @@ function NodeMark({
   color,
   dim,
   selected,
+  zoom,
 }: {
   node: GraphNode;
   y: number;
   color: string;
   dim: boolean;
   selected: boolean;
+  zoom: number;
 }): JSX.Element {
   const x = laneX(node.lane, LANE_WIDTH);
-  const r = node.isMerge ? NODE_RADIUS + 2 : NODE_RADIUS;
+  // Merge nodes keep their extra pixel, so "bigger circle = merge" still holds.
+  const r = node.isMerge ? NODE_RADIUS + 2 : AVATAR_RADIUS;
   const classes = ['gc-node'];
   if (node.local) classes.push('gc-node--local');
   if (dim) classes.push('gc-node--dim');
   if (selected) classes.push('gc-node--selected');
+  // The initial is unreadable below ~75 %, and a merge node is the only one wide
+  // enough to hold a glyph without touching its own ring.
+  const showInitial = zoom >= INITIAL_MIN_ZOOM;
 
   return (
     <g className={classes.join(' ')}>
-      {node.isHead && <circle className="gc-node__head-ring" cx={x} cy={y} r={r + 4} stroke={color} />}
+      {/* `r + 3`, not `r + 4`: at row 0 the centre sits at `ROW_HEIGHT / 2 = 12`,
+          and a merge head-ring at `r + 4` plus a 1.5 stroke reaches 11.75 — a
+          quarter pixel from the SVG edge, which rounds to a clipped ring. */}
+      {node.isHead && <circle className="gc-node__head-ring" cx={x} cy={y} r={r + 3} stroke={color} />}
       {node.isMerge && <circle className="gc-node__merge-ring" cx={x} cy={y} r={r + 2} stroke={color} />}
       <circle
         className="gc-node__dot"
@@ -722,6 +845,30 @@ function NodeMark({
         stroke={color}
         fill={node.local ? 'var(--vscode-editor-background)' : color}
       />
+      {/*
+        Author initial inside the node, as in the Unity Branch Explorer: it turns the
+        graph into "who did what" at a glance without reading a single row.
+
+        `aria-hidden` is mandatory, not defensive — `rowLabel` already carries the
+        full author name for this row, and a screen reader that reads the SVG text
+        too would announce the author twice, once as a whole name and once as a
+        stray letter.
+
+        A local commit has a hollow dot, so its letter takes the lane colour; a
+        filled dot needs the editor background to stay legible against it. Both are
+        theme tokens or lane data, never a literal.
+      */}
+      {showInitial && (
+        <text
+          className="gc-node__initial"
+          x={x}
+          y={y}
+          fill={node.local ? color : 'var(--vscode-editor-background)'}
+          aria-hidden="true"
+        >
+          {authorInitials(node.authorName)}
+        </text>
+      )}
     </g>
   );
 }
@@ -787,8 +934,20 @@ function Row({
         aria-colindex={1}
         aria-label={rowLabel(node, now)}
       >
-        <span className="gc-row__hash" aria-hidden="true">
-          {shortHash(node.hash)}
+        {/*
+          Ref chips sit closest to the node, as in the Unity reference where the
+          `/main` label is attached to the circle it belongs to. The subject follows
+          as the row's primary text; the hash, author, and date are metadata and are
+          pushed into a quiet group at the far end.
+        */}
+        <span className="gc-row__chips" aria-hidden="true">
+          {chips.map((chip) => (
+            <span key={`${chip.kind}-${chip.name}`} className={`gc-chip gc-chip--${chip.kind}`}>
+              <span aria-hidden="true">{chip.glyph} </span>
+              {chip.prefix}
+              {chip.name}
+            </span>
+          ))}
         </span>
         <span className="gc-row__badges" aria-hidden="true">
           {node.isHead && <span className="gc-badge gc-badge--head">HEAD</span>}
@@ -803,23 +962,15 @@ function Row({
             </span>
           )}
         </span>
-        <span className="gc-row__chips" aria-hidden="true">
-          {chips.map((chip) => (
-            <span key={`${chip.kind}-${chip.name}`} className={`gc-chip gc-chip--${chip.kind}`}>
-              <span aria-hidden="true">{chip.glyph} </span>
-              {chip.prefix}
-              {chip.name}
-            </span>
-          ))}
-        </span>
         <span className="gc-row__subject" title={subject} aria-hidden="true">
           <Highlight text={truncate(subject, SUBJECT_MAX)} needle={search} />
         </span>
-        <span className="gc-row__author" aria-hidden="true">
-          <Highlight text={authorName} needle={search} />
-        </span>
-        <span className="gc-row__date" aria-hidden="true">
-          {relativeTime(node.authoredAt, now)}
+        <span className="gc-row__meta" aria-hidden="true">
+          <span className="gc-row__author">
+            <Highlight text={authorName} needle={search} />
+          </span>
+          <span className="gc-row__date">{relativeTime(node.authoredAt, now)}</span>
+          <span className="gc-row__hash">{shortHash(node.hash)}</span>
         </span>
       </span>
     </div>
@@ -841,29 +992,42 @@ function Highlight({ text, needle }: { text: string; needle: string }): JSX.Elem
   );
 }
 
+/**
+ * Filter bar above the canvas.
+ *
+ * Zoom used to live here; it now floats over the canvas instead, which leaves this
+ * row with one job — narrowing what is drawn — announced by the label the reference
+ * puts in front of its own filter row. Two fields, both labelled in words, so the
+ * row reads as "Saring: nama / branch" rather than as three unrelated widgets.
+ */
 function Toolbar({
-  zoom,
   search,
   branchFilter,
   refs,
   countId,
-  onZoom,
   onSearch,
   onBranchFilter,
 }: {
-  zoom: number;
   search: string;
   branchFilter: string;
   refs: readonly RefInfo[];
   /** Id of the result-count live region, so the search box points at its own output. */
   countId: string;
-  onZoom(zoom: number): void;
   onSearch(value: string): void;
   onBranchFilter(value: string): void;
 }): JSX.Element {
   const branches = refs.filter((r) => r.kind === 'local' || r.kind === 'remote');
   return (
-    <div className="gc-toolbar" role="toolbar" aria-label="Kontrol grafik" aria-orientation="horizontal">
+    <div
+      className="gc-toolbar gc-toolbar--filters"
+      role="toolbar"
+      aria-label="Saringan grafik"
+      aria-orientation="horizontal"
+    >
+      <span className="gc-toolbar__legend" aria-hidden="true">
+        Saring
+      </span>
+
       <label className="gc-field gc-toolbar__search">
         <span className="gc-field__label">Cari commit</span>
         <input
@@ -876,8 +1040,8 @@ function Toolbar({
         />
       </label>
 
-      <label className="gc-field">
-        <span className="gc-field__label">Saring branch</span>
+      <label className="gc-field gc-toolbar__branch">
+        <span className="gc-field__label">Branch</span>
         <select value={branchFilter} onChange={(e) => onBranchFilter(e.target.value)}>
           <option value="">Semua branch</option>
           {branches.map((ref) => (
@@ -892,41 +1056,19 @@ function Toolbar({
         </select>
       </label>
 
-      <div className="gc-zoom" role="group" aria-label="Perbesaran">
-        <button
-          type="button"
-          className="gc-icon-button"
-          aria-label="Perkecil grafik"
-          disabled={zoom <= MIN_ZOOM}
-          onClick={() => onZoom(stepZoom(zoom, -1))}
-        >
-          <span aria-hidden="true">−</span>
-        </button>
-        {/*
-          `aria-live` is off deliberately: the value is announced by the buttons
-          that changed it, and a live region here would fire on every wheel notch.
-        */}
-        <span className="gc-zoom__value" aria-live="off">
-          {Math.round(zoom * 100)}%
-        </span>
-        <button
-          type="button"
-          className="gc-icon-button"
-          aria-label="Perbesar grafik"
-          disabled={zoom >= MAX_ZOOM}
-          onClick={() => onZoom(stepZoom(zoom, 1))}
-        >
-          <span aria-hidden="true">+</span>
-        </button>
+      {(search.length > 0 || branchFilter.length > 0) && (
         <button
           type="button"
           className="gc-button gc-button--quiet"
-          aria-label="Kembalikan perbesaran ke 100 persen"
-          onClick={() => onZoom(1)}
+          title="Tampilkan kembali semua commit. Hanya mengubah apa yang terlihat, bukan repository."
+          onClick={() => {
+            onSearch('');
+            onBranchFilter('');
+          }}
         >
-          100%
+          Kosongkan saringan
         </button>
-      </div>
+      )}
     </div>
   );
 }

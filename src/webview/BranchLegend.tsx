@@ -68,6 +68,19 @@ export function BranchLegend({ lanes }: Props): JSX.Element {
             </dd>
 
             <dt>
+              <span className="gc-avatar gc-legend__avatar" aria-hidden="true">
+                S
+              </span>
+              Huruf di dalam bulatan — penulis commit
+            </dt>
+            <dd>
+              Huruf pertama nama penulis, supaya Anda bisa melihat “siapa mengerjakan apa” tanpa
+              membaca satu baris pun. Nama lengkapnya selalu ada di kolom kanan baris yang sama, jadi
+              huruf ini hanya alat bantu memindai. Pada perbesaran di bawah 75% huruf disembunyikan
+              karena sudah tidak terbaca — bentuk bulatan dan teks barisnya tetap utuh.
+            </dd>
+
+            <dt>
               <span className="gc-legend__swatch gc-legend__swatch--remote" aria-hidden="true" />
               Bulatan penuh — sudah ada di remote
             </dt>
@@ -203,6 +216,11 @@ export function BranchLegend({ lanes }: Props): JSX.Element {
               <kbd>Space</kbd>+geser tetikus untuk menggeser kanvas
             </li>
           </ul>
+
+          <p className="gc-legend__note">
+            Tombol mengapung di pojok kanan bawah kanvas melakukan hal yang sama: ⌂ kembali ke commit
+            HEAD, + dan − mengubah perbesaran, dan angka persen mengembalikannya ke 100%.
+          </p>
         </div>
       )}
     </section>
