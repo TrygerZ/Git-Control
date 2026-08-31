@@ -384,14 +384,16 @@ export class TestRepo {
    */
   harness(options: HarnessOptions = {}): Harness {
     const log = new RecordingLog();
+    const settings: SettingsSnapshot = { ...DEFAULT_SETTINGS, ...options.settings };
     const repo = new RepositoryService({
       folderPath: this.dir,
       gitPath: 'git',
       store: new MemoryStore(),
       logger: (line) => log.push(line),
+      pageSize: settings.pageSize,
+      commitLimit: settings.commitLimit,
     });
     const webview = new RecordingWebview();
-    const settings: SettingsSnapshot = { ...DEFAULT_SETTINGS, ...options.settings };
     const host: BridgeHost = {
       logger: new Logger(new NullSink()),
       resolveRepository: () => Promise.resolve(repo),

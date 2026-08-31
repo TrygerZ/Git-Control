@@ -13,6 +13,7 @@ import {
   displayPath,
   entryStatus,
   formatCount,
+  formatDateLabel,
   gitCommandOf,
   githubConnectionLabel,
   operationLabel,
@@ -50,6 +51,23 @@ test('shortHash takes seven characters by default', () => {
   assert.equal(shortHash(HASH), 'abc1234');
   assert.equal(shortHash(HASH, 10), 'abc1234def');
   assert.equal(shortHash('ab'), 'ab');
+});
+
+test('formatDateLabel formats timestamp into Indonesian date without em-dash', () => {
+  const ts = new Date('2026-08-23T10:00:00.000Z').getTime();
+  const label = formatDateLabel(ts);
+  assert.match(label, /23 Agu 2026|24 Agu 2026/); // handles timezone
+  assert.ok(!label.includes('—'));
+});
+
+test('formatDateLabel handles boundary values consistently (NaN, 0, negative, undefined, empty string)', () => {
+  assert.equal(formatDateLabel(0), 'Tanggal tidak diketahui');
+  assert.equal(formatDateLabel(-1000), 'Tanggal tidak diketahui');
+  assert.equal(formatDateLabel(Number.NaN), 'Tanggal tidak diketahui');
+  assert.equal(formatDateLabel(Number.POSITIVE_INFINITY), 'Tanggal tidak diketahui');
+  assert.equal(formatDateLabel(undefined), 'Tanggal tidak diketahui');
+  assert.equal(formatDateLabel(''), 'Tanggal tidak diketahui');
+  assert.equal(formatDateLabel('invalid-date'), 'Tanggal tidak diketahui');
 });
 
 // ------------------------------------------------------- SEC-007 sanitisation
@@ -399,14 +417,14 @@ test('baseName returns the trailing segment', () => {
 // ---------------------------------------------------------------- conflicts
 
 test('conflictLabel explains every git conflict code', () => {
-  assert.equal(conflictLabel('UU'), 'UU — keduanya mengubah');
-  assert.equal(conflictLabel('DU'), 'DU — dihapus di sini, diubah di sana');
-  assert.equal(conflictLabel('UD'), 'UD — diubah di sini, dihapus di sana');
-  assert.equal(conflictLabel('AA'), 'AA — ditambahkan di kedua sisi');
-  assert.equal(conflictLabel('DD'), 'DD — dihapus di kedua sisi');
-  assert.equal(conflictLabel('AU'), 'AU — ditambahkan di sini, diubah di sana');
-  assert.equal(conflictLabel('UA'), 'UA — diubah di sini, ditambahkan di sana');
-  assert.equal(conflictLabel('xx'), 'XX — konflik tidak dikenal');
+  assert.equal(conflictLabel('UU'), 'UU: keduanya mengubah');
+  assert.equal(conflictLabel('DU'), 'DU: dihapus di sini, diubah di sana');
+  assert.equal(conflictLabel('UD'), 'UD: diubah di sini, dihapus di sana');
+  assert.equal(conflictLabel('AA'), 'AA: ditambahkan di kedua sisi');
+  assert.equal(conflictLabel('DD'), 'DD: dihapus di kedua sisi');
+  assert.equal(conflictLabel('AU'), 'AU: ditambahkan di sini, diubah di sana');
+  assert.equal(conflictLabel('UA'), 'UA: diubah di sini, ditambahkan di sana');
+  assert.equal(conflictLabel('xx'), 'XX: konflik tidak dikenal');
 });
 
 test('operationLabel names every operation state in Indonesian', () => {
@@ -548,7 +566,7 @@ test('actionTarget picks the branch, name, hash, or remote', () => {
   assert.equal(actionTarget({ action: 'create-branch', name: 'fitur', startPoint: HASH }), 'fitur');
   assert.equal(actionTarget({ action: 'revert', hash: HASH }), 'abc1234');
   assert.equal(actionTarget({ action: 'fetch', remote: 'origin' }), 'origin');
-  assert.equal(actionTarget({ action: 'stash-pop' }), '—');
+  assert.equal(actionTarget({ action: 'stash-pop' }), '?');
 });
 
 // ------------------------------------------------------------------ numbers

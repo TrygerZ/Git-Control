@@ -22,6 +22,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
+import * as ts from 'typescript';
 import {
   ERROR_CODES,
   PORCELAIN_CODES,
@@ -832,4 +833,79 @@ test('the severity frame and the menu risk rule survive forced colours', () => {
   const body = bodies.join('\n');
   assert.match(body, /\.gc-modal--severe\s*\{/, 'the level-2 guard frame is restored');
   assert.match(body, /\.gc-menu__item--risky\s*\{/, 'the risky-item rule is restored');
+});
+
+// ------------------------------------------------------------- em-dash guard
+
+test('source code contains no user-facing em-dash or JSX text em-dash', () => {
+  const srcDir = path.join(__dirname, '..', '..', 'src');
+
+  function walk(dir: string): string[] {
+    let res: string[] = [];
+    for (const item of fs.readdirSync(dir)) {
+      const full = path.join(dir, item);
+      if (fs.statSync(full).isDirectory()) {
+        res = res.concat(walk(full));
+      } else if (full.endsWith('.ts') || full.endsWith('.tsx')) {
+        res.push(full);
+      }
+    }
+    return res;
+  }
+
+  const files = walk(srcDir);
+  const violations: string[] = [];
+
+  for (const file of files) {
+    const content = fs.readFileSync(file, 'utf8');
+    if (!content.includes('\u2014')) continue;
+
+    const sourceFile = ts.createSourceFile(
+      file,
+      content,
+      ts.ScriptTarget.Latest,
+      /* setParentNodes */ true,
+      file.endsWith('.tsx') ? ts.ScriptKind.TSX : ts.ScriptKind.TS,
+    );
+
+    function visit(node: ts.Node): void {
+      let isViolation = false;
+      let context = '';
+
+      if (ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node)) {
+        if (node.text.includes('\u2014')) {
+          isViolation = true;
+          context = `string literal: "${node.text}"`;
+        }
+      } else if (ts.isTemplateHead(node) || ts.isTemplateMiddle(node) || ts.isTemplateTail(node)) {
+        if (node.text.includes('\u2014')) {
+          isViolation = true;
+          context = `template literal chunk: "${node.text}"`;
+        }
+      } else if (ts.isJsxText(node)) {
+        if (node.text.includes('\u2014')) {
+          isViolation = true;
+          context = `JSX text: "${node.text.trim()}"`;
+        }
+      } else if (ts.isJsxAttribute(node) && node.initializer) {
+        if (ts.isStringLiteral(node.initializer) && node.initializer.text.includes('\u2014')) {
+          isViolation = true;
+          const attrName = node.name.getText(sourceFile);
+          context = `JSX attribute ${attrName}: "${node.initializer.text}"`;
+        }
+      }
+
+      if (isViolation) {
+        const { line, character } = sourceFile.getLineAndCharacterOfPosition(node.getStart(sourceFile));
+        const relPath = path.relative(path.join(__dirname, '..', '..'), file);
+        violations.push(`${relPath}:${line + 1}:${character + 1} (${context})`);
+      }
+
+      ts.forEachChild(node, visit);
+    }
+
+    visit(sourceFile);
+  }
+
+  assert.deepEqual(violations, [], `User-facing or JSX text em-dash found in:\n${violations.join('\n')}`);
 });

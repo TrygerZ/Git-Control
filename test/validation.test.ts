@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
+  parseCommitTimestamp,
   sanitizeRefArg,
   validateBranchName,
   validateCommitMessage,
@@ -198,4 +199,18 @@ test('sanitizeRefArg throws on option-like values', () => {
   assert.throws(() => sanitizeRefArg('-x'));
   assert.equal(sanitizeRefArg('main'), 'main');
   assert.equal(sanitizeRefArg('abc1234'), 'abc1234');
+});
+
+test('parseCommitTimestamp handles numbers, strings, and invalid inputs consistently', () => {
+  assert.equal(parseCommitTimestamp(undefined), 0);
+  assert.equal(parseCommitTimestamp(''), 0);
+  assert.equal(parseCommitTimestamp('invalid-date'), 0);
+  assert.equal(parseCommitTimestamp(0), 0);
+  assert.equal(parseCommitTimestamp(-1000), 0);
+  assert.equal(parseCommitTimestamp(Infinity), 0);
+  assert.equal(parseCommitTimestamp(-Infinity), 0);
+  assert.equal(parseCommitTimestamp(NaN), 0);
+  assert.equal(parseCommitTimestamp(1700000000), 1700000000);
+  const ts = new Date('2026-08-23T10:00:00.000Z').getTime();
+  assert.equal(parseCommitTimestamp('2026-08-23T10:00:00.000Z'), ts);
 });
