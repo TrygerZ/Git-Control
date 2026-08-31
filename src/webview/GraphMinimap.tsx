@@ -68,12 +68,37 @@ export function GraphMinimap({
   }
 
   const onPointerDown = (event: PointerEvent<SVGSVGElement>): void => {
+    event.stopPropagation();
     dragging.current = true;
     event.currentTarget.setPointerCapture(event.pointerId);
     seek(event.clientX);
   };
 
-  const col = Math.round(scrollLeft / (COLUMN_WIDTH * zoom));
+  const onPointerMove = (event: PointerEvent<SVGSVGElement>): void => {
+    event.stopPropagation();
+    if (dragging.current) seek(event.clientX);
+  };
+
+  const onPointerUp = (event: PointerEvent<SVGSVGElement>): void => {
+    event.stopPropagation();
+    dragging.current = false;
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+  };
+
+  const onPointerCancel = (event: PointerEvent<SVGSVGElement>): void => {
+    event.stopPropagation();
+    dragging.current = false;
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+  };
+
+  const maxScroll = Math.max(0, totalWorldWidth * zoom - viewportWidth);
+  const currentScroll = Math.min(maxScroll, Math.max(0, Math.round(scrollLeft)));
+  const progressPercent = maxScroll > 0 ? Math.round((currentScroll / maxScroll) * 100) : 0;
+
   /** One screen of cols, so PageUp/PageDown match what the canvas does. */
   const page = Math.max(1, Math.floor(viewportWidth / (COLUMN_WIDTH * zoom)));
 
@@ -88,22 +113,17 @@ export function GraphMinimap({
       aria-label="Ikhtisar grafik"
       aria-orientation="horizontal"
       aria-valuemin={0}
-      aria-valuemax={Math.max(0, nodes.length - 1)}
-      aria-valuenow={col}
-      aria-valuetext={`Commit ${formatCount(col + 1)} dari ${formatCount(nodes.length)}`}
+      aria-valuemax={Math.round(maxScroll)}
+      aria-valuenow={currentScroll}
+      aria-valuetext={`Posisi grafik ${progressPercent}%`}
       onPointerDown={onPointerDown}
-      onPointerMove={(event) => {
-        if (dragging.current) seek(event.clientX);
-      }}
-      onPointerUp={(event) => {
-        dragging.current = false;
-        event.currentTarget.releasePointerCapture(event.pointerId);
-      }}
+      onPointerMove={onPointerMove}
+      onPointerUp={onPointerUp}
+      onPointerCancel={onPointerCancel}
       onKeyDown={(event) => {
-        const max = Math.max(0, totalWorldWidth * zoom - viewportWidth);
         const to = (next: number): void => {
           event.preventDefault();
-          onScroll(Math.min(max, Math.max(0, next)));
+          onScroll(Math.min(maxScroll, Math.max(0, next)));
         };
         switch (event.key) {
           case 'ArrowRight':
@@ -122,7 +142,7 @@ export function GraphMinimap({
             to(0);
             return;
           case 'End':
-            to(max);
+            to(maxScroll);
             return;
           default:
         }

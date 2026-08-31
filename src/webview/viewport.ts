@@ -7,7 +7,7 @@
  *   screen — world × zoom, minus the scroll offset
  */
 
-export const MIN_ZOOM = 0.25;
+export const MIN_ZOOM = 0.35;
 export const MAX_ZOOM = 4;
 /** Columns rendered left and right of the viewport so scrolling never shows a gap. */
 export const DEFAULT_OVERSCAN = 6;
@@ -19,9 +19,9 @@ export const DAY_GAP = 48;
 export const RULER_HEIGHT = 32;
 export const GUTTER_X = 32;
 
-const ZOOM_STEPS = [0.25, 0.4, 0.5, 0.75, 1, 1.25, 1.5, 2, 3, 4] as const;
+const ZOOM_STEPS = [0.35, 0.5, 0.75, 1, 1.25, 1.5, 2, 3, 4] as const;
 
-/** Keep zoom inside the 25 %–400 % window. */
+/** Keep zoom inside the 35 %–400 % window. */
 export function clampZoom(zoom: number): number {
   if (!Number.isFinite(zoom)) return 1;
   return Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, zoom));

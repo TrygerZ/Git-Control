@@ -359,20 +359,40 @@ test('absoluteTime renders a zero-padded local timestamp', () => {
 // ----------------------------------------------------------------- statuses
 
 test('statusLabel maps every porcelain letter to Indonesian', () => {
-  assert.deepEqual(statusLabel('M'), { code: 'M', label: 'Dimodifikasi', glyph: '±' });
-  assert.equal(statusLabel('A').label, 'Ditambahkan');
-  assert.equal(statusLabel('D').label, 'Dihapus');
-  assert.equal(statusLabel('R').label, 'Diganti nama');
-  assert.equal(statusLabel('C').label, 'Disalin');
-  assert.equal(statusLabel('T').label, 'Tipe berubah');
-  assert.equal(statusLabel('U').label, 'Konflik');
-  assert.equal(statusLabel('?').label, 'Belum dilacak');
-  assert.equal(statusLabel('!').label, 'Diabaikan');
+  assert.deepEqual(statusLabel('M'), { code: 'M', label: 'Dimodifikasi', icon: 'diff-modified' });
+  assert.deepEqual(statusLabel('A'), { code: 'A', label: 'Ditambahkan', icon: 'diff-added' });
+  assert.deepEqual(statusLabel('D'), { code: 'D', label: 'Dihapus', icon: 'diff-removed' });
+  assert.deepEqual(statusLabel('R'), { code: 'R', label: 'Diganti nama', icon: 'diff-renamed' });
+  assert.deepEqual(statusLabel('C'), { code: 'C', label: 'Disalin', icon: 'copy' });
+  assert.deepEqual(statusLabel('T'), { code: 'T', label: 'Tipe berubah', icon: 'file-symlink-file' });
+  assert.deepEqual(statusLabel('U'), { code: 'U', label: 'Konflik', icon: 'warning' });
+  assert.deepEqual(statusLabel('?'), { code: '?', label: 'Belum dilacak', icon: 'question' });
+  assert.deepEqual(statusLabel('!'), { code: '!', label: 'Diabaikan', icon: 'diff-ignored' });
 });
 
 test('statusLabel treats blank as unchanged and unknown letters as unknown', () => {
-  assert.equal(statusLabel(' ').label, 'Tidak berubah');
-  assert.equal(statusLabel('Z').label, 'Tidak diketahui');
+  assert.deepEqual(statusLabel(' '), { code: ' ', label: 'Tidak berubah', icon: 'dash' });
+  assert.deepEqual(statusLabel('Z'), { code: '·', label: 'Tidak diketahui', icon: 'question' });
+});
+
+test('every STATUS_LABELS entry and statusLabel result has an icon existing in vendored codicon.css', () => {
+  const cssPath = path.join(__dirname, '..', '..', 'node_modules', '@vscode', 'codicons', 'dist', 'codicon.css');
+  const css = fs.readFileSync(cssPath, 'utf8');
+  const codiconClassRegex = /\.codicon-([\w-]+):before/g;
+  const availableIcons = new Set<string>();
+  for (const match of css.matchAll(codiconClassRegex)) {
+    if (match[1]) availableIcons.add(match[1]);
+  }
+
+  const porcelainList = ['M', 'A', 'D', 'R', 'C', 'T', 'U', '?', '!', ' ', 'Z'];
+  for (const code of porcelainList) {
+    const res = statusLabel(code);
+    assert.ok(res.icon !== undefined && res.icon.length > 0, `code ${code} must have non-empty icon`);
+    assert.ok(
+      availableIcons.has(res.icon),
+      `icon "${res.icon}" for code "${code}" must exist in vendored codicon.css`,
+    );
+  }
 });
 
 test('entryStatus prefers the index letter but reports untracked first', () => {
@@ -651,4 +671,53 @@ test('githubConnectionLabel covers connected, anonymous, and invalid-token', () 
     'Token GitHub tidak valid.',
   );
 });
+
+// -------------------------------------------------------- ChangeTree ARIA grid invariants
+
+test('ChangeTree file row gridcells have valid ARIA semantics and no contradictory aria-hidden', () => {
+  // Read ChangeTree source directly to verify static JSX treegrid structure invariants
+  const changeTreePath = path.join(__dirname, '..', '..', 'src', 'webview', 'ChangeTree.tsx');
+  const source = fs.readFileSync(changeTreePath, 'utf8');
+
+  // 1. No element with role="gridcell" has aria-hidden="true" or aria-hidden={...}
+  const gridcellRegex = /<[^>]*role=["']gridcell["'][^>]*>/g;
+  const gridcells = source.match(gridcellRegex) ?? [];
+  assert.ok(gridcells.length > 0, 'must have gridcell definitions');
+  for (const cell of gridcells) {
+    assert.ok(
+      !cell.includes('aria-hidden'),
+      `gridcell element must not have aria-hidden: ${cell}`,
+    );
+  }
+
+  // 2. Treegrid declares aria-colcount={5}
+  assert.match(source, /role=["']treegrid["'][^>]*aria-colcount=\{5\}/);
+
+  // 3. FileRow function body declares contiguous, ordered, unique aria-colindex sequence 2, 3, 4, 5 (col 1 is in parent row checkbox)
+  const fileRowStartIndex = source.indexOf('function FileRow(');
+  assert.ok(fileRowStartIndex !== -1, 'FileRow function must exist');
+  const fileRowEndIndex = source.indexOf('function TriCheckbox(', fileRowStartIndex);
+  assert.ok(fileRowEndIndex !== -1, 'TriCheckbox function must exist after FileRow');
+  const fileRowBody = source.slice(fileRowStartIndex, fileRowEndIndex);
+
+  const colindexRegex = /aria-colindex=\{([0-9]+)\}/g;
+  const colindices = Array.from(fileRowBody.matchAll(colindexRegex)).map((m) => parseInt(m[1] as string, 10));
+
+  // FileRow contains col 2 (status), col 3 (file), col 4 (stats/binary), and optionally col 5 (action)
+  // Check that every index is in range [2, 5] and strictly increasing
+  assert.deepEqual(
+    colindices,
+    [2, 3, 4, 4, 4, 5], // 4 appears in ternary branches for binary / churnUnknown / normal stats
+    'FileRow gridcells must declare contiguous colindex sequence 2 -> 3 -> 4 -> 5',
+  );
+
+  // In each branch of FileRow, the active sequence is [2, 3, 4] or [2, 3, 4, 5]
+  const uniqueIndices = Array.from(new Set(colindices));
+  assert.deepEqual(uniqueIndices, [2, 3, 4, 5], 'FileRow must cover columns 2, 3, 4, 5');
+
+  // Check row item checkbox has colindex 1
+  const rowCheckboxMatch = source.match(/role="gridcell"\s+aria-colindex=\{1\}/);
+  assert.ok(rowCheckboxMatch !== null, 'Row must declare gridcell with aria-colindex={1} for checkbox');
+});
+
 

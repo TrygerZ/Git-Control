@@ -3,7 +3,7 @@
  *
  * Folders derive their state from their descendants (`tree.triState`) and a
  * folder toggle applies recursively (`tree.toggleNode`). Status is shown as a
- * letter, an Indonesian word, and a glyph, so nothing depends on colour.
+ * Codicon icon with an Indonesian tooltip and accessible name, so nothing depends on colour.
  *
  * Accessibility
  * -------------
@@ -26,6 +26,7 @@ import {
   sanitizeGitText,
   statusTone,
 } from './format';
+import { Icon } from './ui';
 import { buildTree, collectPaths, flattenTree, triState, type FolderNode, type TreeNode } from './tree';
 import type { ChangeEntry } from '../messages';
 
@@ -146,6 +147,7 @@ export function ChangeTree({
       role="treegrid"
       aria-label={label}
       aria-rowcount={rows.length}
+      aria-colcount={5}
       ref={listRef}
     >
       {rows.map(({ node, depth }, index) => {
@@ -198,7 +200,7 @@ export function ChangeTree({
                   onClick={() => onToggleCollapsed(node.path)}
                 >
                   <span className="gc-tree__twisty" aria-hidden="true">
-                    {isCollapsed ? '▸' : '▾'}
+                    <Icon name={isCollapsed ? 'chevron-right' : 'chevron-down'} />
                   </span>
                   <span className="gc-tree__name">{safeName}</span>
                 </button>
@@ -247,14 +249,19 @@ function FileRow({
     <>
       {/*
         File row presentation:
-        - Porcelain status box (colored indicator)
+        - Codicon status icon inside colored box with accessible name on cell
         - Clean file name with ellipsis, directory in tooltip
         - Precise tabular churn count
         - Quick inline Stage/Unstage button on hover
       */}
-      <span className="gc-tree__status" role="gridcell" aria-colindex={2} aria-hidden="true">
-        <span className={`gc-status__box gc-status__box--${tone}`} title={status.label}>
-          {status.code}
+      <span
+        className="gc-tree__status"
+        role="gridcell"
+        aria-colindex={2}
+        aria-label={`Status: ${status.label}`}
+      >
+        <span className={`gc-status__box gc-status__box--${tone}`} title={status.label} aria-hidden="true">
+          <Icon name={status.icon} />
         </span>
       </span>
       <span role="gridcell" aria-colindex={3} className="gc-tree__file-cell">
@@ -269,7 +276,12 @@ function FileRow({
         </button>
       </span>
       {entry.binary ? (
-        <span className="gc-tree__binary" role="gridcell" aria-colindex={4} aria-hidden="true">
+        <span
+          className="gc-tree__binary"
+          role="gridcell"
+          aria-colindex={4}
+          aria-label="File binary"
+        >
           binary
         </span>
       ) : churnUnknown ? (
@@ -278,12 +290,17 @@ function FileRow({
           role="gridcell"
           aria-colindex={4}
           title={churnUnknownReason(entry, churnTruncated)}
-          aria-hidden="true"
+          aria-label={churnUnknownReason(entry, churnTruncated)}
         >
           <span className="gc-stat gc-stat--unknown">{UNKNOWN_CHURN}</span>
         </span>
       ) : (
-        <span className="gc-tree__stats" role="gridcell" aria-colindex={4} aria-hidden="true">
+        <span
+          className="gc-tree__stats"
+          role="gridcell"
+          aria-colindex={4}
+          aria-label={`${entry.additions ?? 0} baris ditambah, ${entry.deletions ?? 0} baris dihapus`}
+        >
           <span className="gc-stat gc-stat--add">+{entry.additions ?? 0}</span>
           <span className="gc-stat gc-stat--del">−{entry.deletions ?? 0}</span>
         </span>

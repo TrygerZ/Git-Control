@@ -87,14 +87,14 @@ export function GitHubPanel(): JSX.Element {
       </p>
 
       {auth?.scopeWarning !== undefined && (
-        <InfoBanner tone="warning" glyph="⚠">
+        <InfoBanner tone="warning" glyph="warning">
           <strong>Scope token kurang.</strong>
           <span>{sanitizeGitText(auth.scopeWarning)}</span>
         </InfoBanner>
       )}
 
       {error !== null && (
-        <InfoBanner tone="warning" glyph="!">
+        <InfoBanner tone="warning" glyph="warning">
           <strong>Metadata GitHub tidak lengkap.</strong>
           <span>{sanitizeGitText(error.message)} Operasi git tetap berjalan lewat Git CLI.</span>
         </InfoBanner>

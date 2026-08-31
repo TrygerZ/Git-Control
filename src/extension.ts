@@ -18,6 +18,7 @@ import {
 } from './github';
 import { Logger } from './logger';
 import { parseRemoteUrl, resolveGitHubApiBase, webUrlOf, type GitHubApiBase, type ParsedRemoteUrl } from './remoteUrl';
+import { clampZoom } from './webview/viewport';
 import { MAX_COMMIT_LIMIT, RepositoryService } from './repository';
 import { RepoWatcher } from './watcher';
 import type {
@@ -537,8 +538,16 @@ class Controller implements vscode.Disposable {
 
   private uiPreferences(): UiPreferences {
     const stored = this.context.workspaceState.get<Partial<UiPreferences>>(UI_PREFS_KEY, {});
+    const rawZoom = typeof stored.zoom === 'number' ? stored.zoom : 1;
+    const normalizedZoom = clampZoom(rawZoom);
+    if (stored.zoom !== undefined && stored.zoom !== normalizedZoom) {
+      void this.context.workspaceState.update(UI_PREFS_KEY, {
+        ...stored,
+        zoom: normalizedZoom,
+      });
+    }
     return {
-      zoom: typeof stored.zoom === 'number' ? stored.zoom : 1,
+      zoom: normalizedZoom,
       branchFilter: typeof stored.branchFilter === 'string' ? stored.branchFilter : '',
     };
   }
@@ -546,7 +555,7 @@ class Controller implements vscode.Disposable {
   /** UI prefs live in `workspaceState`. Tokens never do — they go to SecretStorage. */
   private async setUiPreference(payload: SettingsSetPayload): Promise<SettingsSnapshot> {
     const prefs = this.uiPreferences();
-    if (payload.key === 'zoom' && typeof payload.value === 'number') prefs.zoom = payload.value;
+    if (payload.key === 'zoom' && typeof payload.value === 'number') prefs.zoom = clampZoom(payload.value);
     if (payload.key === 'branchFilter' && typeof payload.value === 'string') prefs.branchFilter = payload.value;
     await this.context.workspaceState.update(UI_PREFS_KEY, prefs);
     return this.settingsSnapshot();

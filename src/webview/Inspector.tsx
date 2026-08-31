@@ -397,7 +397,7 @@ export function Inspector({ hash }: Props): JSX.Element {
       )}
 
       {detail.truncated && (
-        <InfoBanner tone="info" glyph="⋯">
+        <InfoBanner tone="info" glyph="ellipsis">
           <strong>Diff dipangkas demi performa.</strong>
           <button
             type="button"

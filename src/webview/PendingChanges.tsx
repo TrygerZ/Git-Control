@@ -30,7 +30,7 @@ import {
   useSettingsStore,
   wireHostEvents,
 } from './store';
-import { ContextBar, EmptyState, ErrorBanner, FileListSkeleton, InfoBanner } from './ui';
+import { ContextBar, EmptyState, ErrorBanner, FileListSkeleton, Icon, InfoBanner } from './ui';
 import type { ChangeEntry } from '../messages';
 
 const SECTION_TITLES: Record<ChangeSection, string> = {
@@ -189,7 +189,7 @@ export function PendingChangesApp(): JSX.Element {
       )}
 
       {churnTruncated && (
-        <InfoBanner tone="info" glyph="?">
+        <InfoBanner tone="info" glyph="question">
           <strong>Jumlah baris tidak lengkap.</strong>
           <span>
             Perubahannya terlalu banyak untuk dihitung semua, jadi sebagian file menampilkan{' '}
@@ -218,7 +218,7 @@ export function PendingChangesApp(): JSX.Element {
             disabled={busy || stageable.length === 0}
             onClick={() => void stage(stageablePaths())}
           >
-            <span aria-hidden="true">↓ </span>Stage
+            <Icon name="arrow-down" /> Stage
           </button>
           <button
             type="button"
@@ -228,7 +228,7 @@ export function PendingChangesApp(): JSX.Element {
             disabled={busy || selected.length === 0}
             onClick={() => void unstage(selected)}
           >
-            <span aria-hidden="true">↑ </span>Unstage
+            <Icon name="arrow-up" /> Unstage
           </button>
         </div>
 
@@ -265,7 +265,7 @@ export function PendingChangesApp(): JSX.Element {
             disabled={loading}
             onClick={refresh}
           >
-            <span aria-hidden="true">⟳</span>
+            <Icon name="refresh" />
           </button>
         </div>
       </div>

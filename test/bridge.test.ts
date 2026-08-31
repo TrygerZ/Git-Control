@@ -753,6 +753,59 @@ test('github handlers reach the host and report UNAVAILABLE without one', async 
   assert.equal(stub.error.status, 503);
 });
 
+test('persisted zoom is normalized to valid range host-side', async (t) => {
+  const store = new MemoryStore();
+  // Simulate an out-of-range legacy stored zoom value (e.g. 0.25 when MIN_ZOOM is now 0.35)
+  await store.update('gitControl.uiPreferences', { zoom: 0.25, branchFilter: 'main' });
+
+  // Stand-in host mirroring Controller.uiPreferences and setUiPreference
+  const readPreferences = () => {
+    const stored = store.get<Partial<{ zoom: number; branchFilter: string }>>('gitControl.uiPreferences', {});
+    const raw = typeof stored.zoom === 'number' ? stored.zoom : 1;
+    const clamped = Math.min(4, Math.max(0.35, raw));
+    if (stored.zoom !== undefined && stored.zoom !== clamped) {
+      void store.update('gitControl.uiPreferences', { ...stored, zoom: clamped });
+    }
+    return { zoom: clamped, branchFilter: typeof stored.branchFilter === 'string' ? stored.branchFilter : '' };
+  };
+
+  const hostSnapshot = (): SettingsSnapshot => ({
+    ...SETTINGS,
+    ui: readPreferences(),
+  });
+
+  const withHost = harness(null, {
+    settings: hostSnapshot,
+    setUiPreference: async (payload) => {
+      const prefs = readPreferences();
+      if (payload.key === 'zoom' && typeof payload.value === 'number') {
+        prefs.zoom = Math.min(4, Math.max(0.35, payload.value));
+      }
+      await store.update('gitControl.uiPreferences', prefs);
+      return hostSnapshot();
+    },
+  });
+  t.after(() => withHost.bridge.dispose());
+
+  // 1. Initial settings/get returns normalized zoom (0.35 instead of 0.25)
+  const getRes = await withHost.webview.send(req('settings/get', {}));
+  assert.equal(getRes.ok, true);
+  if (!getRes.ok) return;
+  assert.equal((getRes.data as SettingsSnapshot).ui.zoom, 0.35);
+
+  // 2. Underlying store was updated to the normalized value
+  const persisted = store.get<{ zoom: number }>('gitControl.uiPreferences', { zoom: 1 });
+  assert.equal(persisted.zoom, 0.35);
+
+  // 3. Attempting to set an out-of-range zoom (e.g. 10 or 0.1) normalizes on write
+  const setRes = await withHost.webview.send(req('settings/set', { key: 'zoom', value: 10 }));
+  assert.equal(setRes.ok, true);
+  if (!setRes.ok) return;
+  assert.equal((setRes.data as SettingsSnapshot).ui.zoom, 4);
+  const persistedAfterSet = store.get<{ zoom: number }>('gitControl.uiPreferences', { zoom: 1 });
+  assert.equal(persistedAfterSet.zoom, 4);
+});
+
 test('a GitHubError maps to its own status and code', () => {
   const auth = toErrorBody(
     new GitHubError({ status: 401, code: 'AUTH_ERROR', message: 'Token GitHub tidak valid.' }),

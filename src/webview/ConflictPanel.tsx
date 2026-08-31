@@ -30,7 +30,7 @@ export function OperationBanner({ status }: { status: RepoStatus | null }): JSX.
   const blockedId = 'gc-continue-blocked';
 
   return (
-    <InfoBanner tone="warning" glyph="⚠">
+    <InfoBanner tone="warning" glyph="warning">
       <strong>{operationLabel(status.operation)}</strong>
       <span>
         {resolved

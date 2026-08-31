@@ -23,6 +23,7 @@
  */
 import { useEffect, useLayoutEffect, useRef, useState, type JSX, type KeyboardEvent } from 'react';
 import { sanitizeGitText, shortHash } from './format';
+import { Icon } from './ui';
 import type { GitActionRequest, GraphNode, RefInfo, RemoteInfo, RepoStatus } from '../messages';
 
 export interface MenuAnchor {
@@ -453,7 +454,7 @@ export function NodeContextMenu({
                 <span className="gc-menu__label">
                   {item.risky === true && (
                     <span className="gc-menu__risk" aria-hidden="true">
-                      ⚠
+                      <Icon name="warning" />
                     </span>
                   )}
                   <span>{item.label}</span>

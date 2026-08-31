@@ -13,6 +13,31 @@ import {
   syncSummary,
 } from './format';
 import type { ErrorBody, Remedy, RepoStatus } from '../messages';
+import type { IconName } from './icons';
+
+export type { IconName };
+
+// ---------------------------------------------------------------------- icon
+
+/**
+ * Reusable icon component rendering VS Code Codicons.
+ *
+ * Decorative by default (`aria-hidden="true"`). When given a `label`, it exposes
+ * `role="img"` with `aria-label` matching the existing a11y contract.
+ */
+export function Icon({
+  name,
+  label,
+}: {
+  name: IconName;
+  label?: string;
+}): JSX.Element {
+  const className = `gc-icon codicon codicon-${name}`;
+  if (label !== undefined && label.length > 0) {
+    return <span className={className} role="img" aria-label={label} />;
+  }
+  return <span className={className} aria-hidden="true" />;
+}
 
 // ------------------------------------------------------------------ skeleton
 
@@ -139,8 +164,8 @@ export function ContextBar({
           state a newcomer needs told in words.
         */}
         <span className={status.detached ? 'gc-chip gc-chip--detached' : 'gc-chip gc-chip--current'}>
-          <span aria-hidden="true">{status.detached ? '⚑ ' : '◆ '}</span>
-          branch {branch}
+          {status.detached ? <Icon name="tag" /> : <Icon name="git-branch" />}
+          {' '}branch {branch}
         </span>
         {head !== null && (
           <code className="gc-context__hash" aria-label={`HEAD di commit ${head}`}>
@@ -213,7 +238,7 @@ export function ErrorBanner({
   return (
     <div className="gc-banner gc-banner--error" role="alert">
       <span className="gc-banner__glyph" aria-hidden="true">
-        !
+        <Icon name="error" />
       </span>
       <div className="gc-banner__body">
         {/* "Kesalahan" spells the severity out; the border colour is only backup. */}
@@ -263,13 +288,13 @@ export function InfoBanner({
   children,
 }: {
   tone: 'info' | 'warning';
-  glyph: string;
+  glyph: IconName;
   children: ReactNode;
 }): JSX.Element {
   return (
     <div className={`gc-banner gc-banner--${tone}`} role="status">
       <span className="gc-banner__glyph" aria-hidden="true">
-        {glyph}
+        <Icon name={glyph} />
       </span>
       <div className="gc-banner__body">
         {/* Warnings say so in words; `role="status"` alone conveys no severity. */}

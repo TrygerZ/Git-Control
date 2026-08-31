@@ -7,7 +7,9 @@ import {
   LANE_HEIGHT,
   layoutGraph,
   type LayoutInput,
+  type LayoutNode,
 } from '../src/layout';
+import { computeStaggerMap } from '../src/webview/GraphCanvas';
 
 const A = 'a'.repeat(40);
 const B = 'b'.repeat(40);
@@ -329,4 +331,44 @@ test('layoutGraph and formatDateLabel agree on invalid dates (undefined, empty s
     assert.equal(layout.dateBuckets[0]!.label, 'Tanggal tidak diketahui');
     assert.equal(layout.dateBuckets[0]!.timestamp, 0);
   }
+});
+
+test('computeStaggerMap assigns alternating placement to same-lane x-neighbours', () => {
+  const node = (hash: string, x: number, lane: number) => ({
+    hash,
+    shortHash: hash.slice(0, 7),
+    x,
+    y: lane * 88,
+    lane,
+    index: 0,
+    isHead: false,
+    isMerge: false,
+    local: false,
+    subject: 'test',
+    authorName: 'Author',
+    authorEmail: 'a@example.com',
+    authoredAt: '2026-08-31T00:00:00Z',
+    committedAt: '2026-08-31T00:00:00Z',
+    parents: [],
+    refNames: [],
+  });
+
+  const testNodes = [
+    node('c1', 0, 0),
+    node('c2', 96, 0),
+    node('c3', 192, 0),
+    node('c4', 0, 1),
+    node('c5', 96, 1),
+  ];
+
+  const map = computeStaggerMap(testNodes);
+
+  // Lane 0: c1 (below), c2 (above), c3 (below)
+  assert.equal(map.get('c1'), 'below');
+  assert.equal(map.get('c2'), 'above');
+  assert.equal(map.get('c3'), 'below');
+
+  // Lane 1: c4 (below), c5 (above)
+  assert.equal(map.get('c4'), 'below');
+  assert.equal(map.get('c5'), 'above');
 });

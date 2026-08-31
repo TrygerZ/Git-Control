@@ -178,7 +178,7 @@ test('Kasus 7: real history timings stay measurable and layout is deterministic'
 
 test('Kasus 7: virtualization remains bounded at cap across scroll and zoom', () => {
   const nodeCount = 10_000;
-  for (const zoom of [0.25, 0.5, 1, 2, 4]) {
+  for (const zoom of [0.35, 0.5, 1, 2, 4]) {
     for (const scrollCol of [0, 50, 500, 5_000, 9_950, 10_000]) {
       const range = visibleColumnRange({
         scrollLeft: scrollCol * COLUMN_WIDTH * zoom,

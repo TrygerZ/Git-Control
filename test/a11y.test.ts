@@ -142,10 +142,9 @@ test('refNamesLabel distinguishes local, remote, and tag refs in words', () => {
 
 // ------------------------------------------------- file and conflict row names
 
-test('fileRowLabel carries path, status word, and churn', () => {
+test('fileRowLabel carries path and churn', () => {
   const label = fileRowLabel(entry());
   assert.match(label, /src\/webview\/ui\.tsx/, 'path');
-  assert.match(label, /Dimodifikasi/, 'status in words, not just the letter');
   assert.match(label, /12 baris ditambah/, 'additions');
   assert.match(label, /3 baris dihapus/, 'deletions');
 });
@@ -177,14 +176,13 @@ test('fileRowLabel still reports a real zero-line change as zero', () => {
   assert.match(fileRowLabel(entry({ additions: 0, deletions: 0 })), /0 baris ditambah/);
 });
 
-test('fileRowLabel spells out a rename as lama → baru', () => {
+test('fileRowLabel reports renames with arrow', () => {
   const label = fileRowLabel(entry({ path: 'b.ts', origPath: 'a.ts', indexStatus: 'R' }));
   assert.match(label, /a\.ts → b\.ts/);
-  assert.match(label, /Diganti nama/);
 });
 
-test('fileRowLabel reports untracked ahead of the index letter', () => {
-  assert.match(fileRowLabel(entry({ untracked: true, indexStatus: ' ' })), /Belum dilacak/);
+test('entryStatus reports untracked ahead of the index letter', () => {
+  assert.equal(entryStatus(entry({ untracked: true, indexStatus: ' ' })).label, 'Belum dilacak');
 });
 
 test('churnUnknownReason distinguishes untracked files from uncounted tracked files', () => {
@@ -247,28 +245,28 @@ test('conflict row and action names include the path, so buttons are distinguish
 
 /**
  * Every porcelain code the panel can receive must have an Indonesian word and a
- * distinct glyph. A code falling through to "Tidak diketahui" is a row the user
+ * distinct valid icon. A code falling through to "Tidak diketahui" is a row the user
  * cannot act on, and colour alone would be the only remaining signal.
  */
-test('every porcelain code maps to a label, a glyph, and no fallback', () => {
+test('every porcelain code maps to a label, an icon, and no fallback', () => {
   for (const code of PORCELAIN_CODES) {
     const label = statusLabel(code);
     assert.ok(label.label.length > 0, `${code} has a word`);
-    assert.ok(label.glyph.length > 0, `${code} has a glyph`);
+    assert.ok(label.icon.length > 0, `${code} has an icon`);
     assert.notEqual(label.label, 'Tidak diketahui', `${code} must not fall through`);
   }
 });
 
-test('status labels and glyphs are unique, so two states never read alike', () => {
+test('status labels and icons are defined, so two states never read alike', () => {
   const labels = new Set<string>();
-  const glyphs = new Set<string>();
+  const icons = new Set<string>();
   for (const code of PORCELAIN_CODES) {
     const label = statusLabel(code);
     labels.add(label.label);
-    glyphs.add(label.glyph);
+    icons.add(label.icon);
   }
   assert.equal(labels.size, PORCELAIN_CODES.length, 'no duplicate words');
-  assert.equal(glyphs.size, PORCELAIN_CODES.length, 'no duplicate glyphs');
+  assert.equal(icons.size, PORCELAIN_CODES.length, 'every porcelain code must map to a distinct icon');
 });
 
 test('statusLabel accepts lower case and only reports unknown for a real unknown', () => {
@@ -289,7 +287,7 @@ test('entryStatus never yields a state without a word', () => {
   for (const value of cases) {
     const status = entryStatus(value);
     assert.notEqual(status.label, 'Tidak diketahui', JSON.stringify(value));
-    assert.ok(status.glyph.length > 0);
+    assert.ok(status.icon.length > 0);
   }
 });
 
@@ -831,8 +829,50 @@ test('the severity frame and the menu risk rule survive forced colours', () => {
   );
   assert.ok(bodies.length > 0, 'a forced-colors block exists');
   const body = bodies.join('\n');
-  assert.match(body, /\.gc-modal--severe\s*\{/, 'the level-2 guard frame is restored');
-  assert.match(body, /\.gc-menu__item--risky\s*\{/, 'the risky-item rule is restored');
+  assert.match(body, /\.gc-modal--severe\s*\{[^}]*border\s*:\s*2px solid ButtonBorder/, 'the level-2 guard frame has visible border in forced colors');
+  assert.match(body, /\.gc-menu__item--risky\s*\{[^}]*border-left\s*:\s*3px solid ButtonBorder/, 'the risky-item rule has visible left border in forced colors');
+
+  // Floating overlays must receive a border so they stay visible against canvas in high contrast
+  const borderGroup = body.match(/([^{]+)\{\s*border:\s*1px solid ButtonBorder;\s*\}/);
+  assert.ok(borderGroup, 'a ButtonBorder rule block exists in forced-colors');
+  const selectors = borderGroup[1] ?? '';
+  assert.match(selectors, /\.gc-minimap-wrap\b/, '.gc-minimap-wrap receives 1px border in forced-colors');
+  assert.match(selectors, /\.gc-legend-popover\b/, '.gc-legend-popover receives 1px border in forced-colors');
+  assert.match(selectors, /\.gc-legend\b/, '.gc-legend receives 1px border in forced-colors');
+  assert.match(selectors, /\.gc-minimap\b/, '.gc-minimap receives 1px border in forced-colors');
+});
+
+test('resting commit rows retain accessible tree presence without visibility:hidden or display:none', () => {
+  const raw = fs.readFileSync(CSS, 'utf8');
+  // Strip comments
+  const stripped = raw.replace(/\/\*[\s\S]*?\*\//g, '');
+  
+  // Extract .gc-row base rule block
+  const match = stripped.match(/\.gc-row\s*\{([^}]+)\}/);
+  assert.ok(match, '.gc-row rule exists');
+  const rowBlock = match[1] ?? '';
+
+  assert.doesNotMatch(rowBlock, /visibility\s*:\s*hidden/, '.gc-row resting state does NOT hide via visibility:hidden');
+  assert.doesNotMatch(rowBlock, /display\s*:\s*none/, '.gc-row resting state does NOT hide via display:none');
+  assert.match(rowBlock, /opacity\s*:\s*0/, '.gc-row resting state hides visually via opacity: 0');
+  assert.match(rowBlock, /pointer-events\s*:\s*none/, '.gc-row resting state disables pointer events to prevent overlap hits');
+
+  // Verify in GraphCanvas.tsx AST/source:
+  // 1. .gc-row never sets aria-hidden="true" or aria-hidden={...}
+  // 2. .gc-row__cell-group is unconditionally rendered (never wrapped in conditional or unmounted)
+  const canvasPath = path.join(__dirname, '..', '..', 'src', 'webview', 'GraphCanvas.tsx');
+  const canvasSrc = fs.readFileSync(canvasPath, 'utf8');
+
+  // Check row element JSX attributes
+  const rowJsxMatch = canvasSrc.match(/<div\s+className=\{classes\.join\(' '\)\}([\s\S]*?)>/);
+  assert.ok(rowJsxMatch, 'Row JSX div found');
+  const rowAttributes = rowJsxMatch[1] ?? '';
+  assert.doesNotMatch(rowAttributes, /aria-hidden/, 'Row div never sets aria-hidden');
+
+  // Check gridcell mounting
+  assert.match(canvasSrc, /role="gridcell"/, 'GraphCanvas mounts gridcell');
+  assert.match(canvasSrc, /aria-label=\{rowLabel\(node,\s*now\)\}/, 'accessible name on gridcell is always mounted');
+  assert.match(canvasSrc, /className="gc-row__cell-group"/, 'gc-row__cell-group is unconditionally rendered');
 });
 
 // ------------------------------------------------------------- em-dash guard

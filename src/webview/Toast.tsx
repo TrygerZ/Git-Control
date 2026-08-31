@@ -14,6 +14,7 @@
  */
 import { useEffect, useRef, useState, type JSX } from 'react';
 import { sanitizeGitText } from './format';
+import { Icon, type IconName } from './ui';
 import { TOAST_TIMEOUT_MS, useOperationStore, type Toast } from './store';
 
 export function ToastRegion(): JSX.Element {
@@ -77,23 +78,17 @@ const LEVEL_LABEL: Record<Toast['level'], string> = {
 };
 
 /**
- * Level glyphs. Deliberately none of them is `×`.
- *
- * The close button on the same row is a `×`, so an error toast used to render two
- * `×` side by side meaning entirely different things — one "this failed", one "make
- * this go away". `✕` versus `×` would not have helped: they are the same shape at
- * 12 px. `⛌` is a distinct glyph, and the pairing is glyph → word → colour, in that
- * order of precedence.
+ * Level glyphs.
  *
  * The tone per level lives in the stylesheet, keyed off `.gc-toast--<level>`, and
  * reuses the `--gc-tone-*` tokens the status boxes use: error → `removed`, warning →
  * `pending`, info → `changed`. One colour vocabulary for the whole extension rather
  * than a second palette invented for notifications.
  */
-const LEVEL_GLYPH: Record<Toast['level'], string> = {
-  info: 'i',
-  warning: '!',
-  error: '⛌',
+const LEVEL_ICON: Record<Toast['level'], IconName> = {
+  info: 'info',
+  warning: 'warning',
+  error: 'error',
 };
 
 function ToastItem({ toast, paused, onDismiss, onShowLogs }: ItemProps): JSX.Element {
@@ -112,7 +107,7 @@ function ToastItem({ toast, paused, onDismiss, onShowLogs }: ItemProps): JSX.Ele
   return (
     <div className={`gc-toast gc-toast--${toast.level}`}>
       <span className="gc-toast__glyph" aria-hidden="true">
-        {LEVEL_GLYPH[toast.level]}
+        <Icon name={LEVEL_ICON[toast.level]} />
       </span>
       <div className="gc-toast__body">
         {/*
@@ -164,7 +159,7 @@ function ToastItem({ toast, paused, onDismiss, onShowLogs }: ItemProps): JSX.Ele
         title="Tutup notifikasi ini."
         onClick={onDismiss}
       >
-        <span aria-hidden="true">×</span>
+        <Icon name="close" />
       </button>
     </div>
   );

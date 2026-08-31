@@ -45,6 +45,7 @@ import {
   sanitizeGitText,
 } from './format';
 import { useOperationStore, type PendingGuard } from './store';
+import { Icon } from './ui';
 import type { GitActionRequest, Remedy } from '../messages';
 
 const FOCUSABLE =
@@ -210,8 +211,8 @@ function GuardDialogBody({ guard }: { guard: PendingGuard }): JSX.Element {
           */}
           {severe && (
             <span className="gc-modal__severity">
-              <span aria-hidden="true">⚠ </span>
-              Permanen
+              <Icon name="warning" />
+              {' '}Permanen
             </span>
           )}
           {actionTitle(request)}
@@ -232,7 +233,7 @@ function GuardDialogBody({ guard }: { guard: PendingGuard }): JSX.Element {
               <dt>Tingkat risiko</dt>
               <dd className="gc-risk">
                 <span className="gc-risk__glyph" aria-hidden="true">
-                  ⚠
+                  <Icon name="warning" />
                 </span>
                 <span>{riskLabel(risk)}</span>
               </dd>
@@ -253,7 +254,7 @@ function GuardDialogBody({ guard }: { guard: PendingGuard }): JSX.Element {
           <p className="gc-modal__consequence">{consequenceOf(request)}</p>
           {stage === 2 && (
             <p className="gc-modal__warning">
-              <span aria-hidden="true">⚠</span>
+              <Icon name="warning" />
               <span>
                 Konfirmasi kedua diperlukan. Perubahan yang dibuang tidak dapat dikembalikan, termasuk
                 oleh Git sendiri.

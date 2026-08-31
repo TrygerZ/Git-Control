@@ -42,6 +42,9 @@ const configs = [
     platform: 'browser',
     format: 'iife',
     target: 'es2022',
+    loader: {
+      '.ttf': 'file',
+    },
   },
 ];
 

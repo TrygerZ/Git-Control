@@ -18,6 +18,7 @@ import type {
   PullRequestInfo,
   Remedy,
 } from '../messages';
+import type { IconName } from './icons';
 
 // --------------------------------------------------------------------- hashes
 
@@ -185,23 +186,23 @@ export interface StatusLabel {
   code: string;
   /** Indonesian word, so status never depends on colour alone. */
   label: string;
-  /** Text glyph; no icon font is permitted under the CSP. */
-  glyph: string;
+  /** Corresponding Codicon name for VS Code icon rendering. */
+  icon: IconName;
 }
 
 const STATUS_LABELS: Readonly<Record<string, StatusLabel>> = {
-  M: { code: 'M', label: 'Dimodifikasi', glyph: '±' },
-  A: { code: 'A', label: 'Ditambahkan', glyph: '+' },
-  D: { code: 'D', label: 'Dihapus', glyph: '−' },
-  R: { code: 'R', label: 'Diganti nama', glyph: '→' },
-  C: { code: 'C', label: 'Disalin', glyph: '⧉' },
-  T: { code: 'T', label: 'Tipe berubah', glyph: '⇄' },
-  U: { code: 'U', label: 'Konflik', glyph: '!' },
-  '?': { code: '?', label: 'Belum dilacak', glyph: '?' },
-  '!': { code: '!', label: 'Diabaikan', glyph: '·' },
+  M: { code: 'M', label: 'Dimodifikasi', icon: 'diff-modified' },
+  A: { code: 'A', label: 'Ditambahkan', icon: 'diff-added' },
+  D: { code: 'D', label: 'Dihapus', icon: 'diff-removed' },
+  R: { code: 'R', label: 'Diganti nama', icon: 'diff-renamed' },
+  C: { code: 'C', label: 'Disalin', icon: 'copy' },
+  T: { code: 'T', label: 'Tipe berubah', icon: 'file-symlink-file' },
+  U: { code: 'U', label: 'Konflik', icon: 'warning' },
+  '?': { code: '?', label: 'Belum dilacak', icon: 'question' },
+  '!': { code: '!', label: 'Diabaikan', icon: 'diff-ignored' },
 };
 
-const UNKNOWN_STATUS: StatusLabel = { code: '·', label: 'Tidak diketahui', glyph: '·' };
+const UNKNOWN_STATUS: StatusLabel = { code: '·', label: 'Tidak diketahui', icon: 'question' };
 
 /** Every porcelain letter this UI must be able to name. Pinned by `a11y.test.ts`. */
 export const PORCELAIN_CODES = ['M', 'A', 'D', 'R', 'C', 'T', 'U', '?', '!', ' '] as const;
@@ -209,7 +210,7 @@ export const PORCELAIN_CODES = ['M', 'A', 'D', 'R', 'C', 'T', 'U', '?', '!', ' '
 /** Map a porcelain letter onto its Indonesian label. Space means "tidak berubah". */
 export function statusLabel(code: string): StatusLabel {
   const key = code.trim().charAt(0).toUpperCase();
-  if (key.length === 0) return { code: ' ', label: 'Tidak berubah', glyph: '=' };
+  if (key.length === 0) return { code: ' ', label: 'Tidak berubah', icon: 'dash' };
   return STATUS_LABELS[key] ?? STATUS_LABELS[code.trim().charAt(0)] ?? UNKNOWN_STATUS;
 }
 
@@ -369,8 +370,7 @@ export function churnUnknownReason(entry: ChangeEntry, churnTruncated = false): 
  * be told the file is empty.
  */
 export function fileRowLabel(entry: ChangeEntry, churnTruncated = false): string {
-  const status = entryStatus(entry);
-  const parts = [displayPath(entry), status.label];
+  const parts = [displayPath(entry)];
   if (entry.binary) parts.push('file binary');
   else if (entry.additions === null && entry.deletions === null)
     parts.push(churnUnknownReason(entry, churnTruncated));
