@@ -76,15 +76,31 @@ const LEVEL_LABEL: Record<Toast['level'], string> = {
   error: 'Kesalahan',
 };
 
+/**
+ * Level glyphs. Deliberately none of them is `×`.
+ *
+ * The close button on the same row is a `×`, so an error toast used to render two
+ * `×` side by side meaning entirely different things — one "this failed", one "make
+ * this go away". `✕` versus `×` would not have helped: they are the same shape at
+ * 12 px. `⛌` is a distinct glyph, and the pairing is glyph → word → colour, in that
+ * order of precedence.
+ *
+ * The tone per level lives in the stylesheet, keyed off `.gc-toast--<level>`, and
+ * reuses the `--gc-tone-*` tokens the status boxes use: error → `removed`, warning →
+ * `pending`, info → `changed`. One colour vocabulary for the whole extension rather
+ * than a second palette invented for notifications.
+ */
 const LEVEL_GLYPH: Record<Toast['level'], string> = {
   info: 'i',
   warning: '!',
-  error: '×',
+  error: '⛌',
 };
 
 function ToastItem({ toast, paused, onDismiss, onShowLogs }: ItemProps): JSX.Element {
   const dismissRef = useRef(onDismiss);
   dismissRef.current = onDismiss;
+  /** An error stays until dismissed, so it says so rather than leaving the user waiting. */
+  const persistent = toast.level === 'error';
 
   useEffect(() => {
     // An error stays until dismissed. Everything else is transient by design.
@@ -99,16 +115,43 @@ function ToastItem({ toast, paused, onDismiss, onShowLogs }: ItemProps): JSX.Ele
         {LEVEL_GLYPH[toast.level]}
       </span>
       <div className="gc-toast__body">
-        {/* The level as a word, so severity does not depend on the border colour. */}
-        <span className="gc-visually-hidden">{LEVEL_LABEL[toast.level]}: </span>
+        {/*
+          The severity word, now visible rather than screen-reader-only.
+
+          It used to be `.gc-visually-hidden`, which left a sighted newcomer with a
+          border colour and a glyph as the only difference between "saved" and
+          "failed" — and the border is 3 px of a hue some themes barely distinguish.
+          The word is the channel that works in every theme, so it is on screen.
+
+          It sits on its own line (the body is a column), so the trailing colon the
+          hidden version carried is gone: a colon dangling at the end of a standalone
+          label reads as a missing value. AT still gets `Kesalahan` before the message
+          because they are separate elements in reading order.
+        */}
+        <span className="gc-toast__level">{LEVEL_LABEL[toast.level]}</span>
         {/* Both can be git stderr — hook output reaches `detail` verbatim. */}
         <span className="gc-toast__message">{sanitizeGitText(toast.message)}</span>
         {toast.detail !== undefined && (
           <span className="gc-toast__detail">{sanitizeGitText(toast.detail)}</span>
         )}
+        {/*
+          Errors do not auto-dismiss, and silence about that is its own problem: the
+          user waits for the toast to disappear, it does not, and they conclude the UI
+          is stuck. Saying it out loud turns a broken expectation into an instruction.
+        */}
+        {persistent && (
+          <span className="gc-toast__persist">
+            Notifikasi ini menunggu tindakan Anda dan tidak hilang sendiri. Tutup setelah dibaca.
+          </span>
+        )}
       </div>
       {toast.showLogs === true && (
-        <button type="button" className="gc-button gc-button--quiet" onClick={onShowLogs}>
+        <button
+          type="button"
+          className="gc-button gc-button--quiet"
+          title="Buka panel Output berisi keluaran lengkap dari git."
+          onClick={onShowLogs}
+        >
           Lihat log
         </button>
       )}
@@ -118,6 +161,7 @@ function ToastItem({ toast, paused, onDismiss, onShowLogs }: ItemProps): JSX.Ele
         // Names which notification is being closed, so a stack of three does not
         // read as three identical `Tutup notifikasi` buttons.
         aria-label={`Tutup notifikasi: ${sanitizeGitText(toast.message)}`}
+        title="Tutup notifikasi ini."
         onClick={onDismiss}
       >
         <span aria-hidden="true">×</span>
