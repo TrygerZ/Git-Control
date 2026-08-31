@@ -278,7 +278,7 @@ function GuardDialogBody({ guard }: { guard: PendingGuard }): JSX.Element {
           </span>
           <code aria-describedby={commandId}>{command}</code>
           <span className="gc-modal__command-note">
-            Ini perintah yang setara dengan tombol di bawah. Belum ada yang dijalankan — baris ini hanya
+            Ini perintah yang setara dengan tombol di bawah. Belum ada yang dijalankan. Baris ini hanya
             untuk dibaca, supaya Anda tahu apa yang sebenarnya terjadi di git.
           </span>
         </div>

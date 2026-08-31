@@ -143,20 +143,20 @@ export function ExplorerApp(): JSX.Element {
           <div className="gc-explorer__aside-head">
             <button
               type="button"
-              className="gc-button gc-button--quiet"
+              className="gc-button gc-button--quiet gc-explorer__aside-toggle"
               aria-expanded={inspectorOpen}
               aria-controls={asideId}
               title={
                 inspectorOpen
-                  ? 'Sembunyikan panel detail agar grafik lebih lebar. Commit yang dipilih tetap sama.'
-                  : 'Tampilkan kembali panel detail commit di sisi kanan.'
+                  ? 'Sembunyikan panel detail agar grafik lebih lebar.'
+                  : 'Tampilkan kembali panel detail commit.'
               }
               onClick={() => setInspectorOpen(!inspectorOpen)}
             >
-              {inspectorOpen ? 'Sembunyikan detail' : 'Tampilkan detail'}
+              {inspectorOpen ? 'Sembunyikan detail' : 'Detail'}
             </button>
           </div>
-          <div id={asideId}>
+          <div id={asideId} className="gc-explorer__aside-content">
             {inspectorOpen && (
               <>
                 <Inspector hash={selectedHash} />
@@ -167,11 +167,6 @@ export function ExplorerApp(): JSX.Element {
                 {progressLog.length > 0 && (
                   <details className="gc-progress">
                     <summary>Log operasi ({progressLog.length} baris)</summary>
-                    {/*
-                      Not a live region: git streams progress lines by the dozen, and
-                      announcing each one would bury everything else a screen reader
-                      has to say. Outcomes arrive as toasts instead.
-                    */}
                     <pre className="gc-progress__log" aria-label="Log operasi git">
                       {progressLog.join('\n')}
                     </pre>

@@ -136,7 +136,7 @@ export function menuItemsFor(
       id: 'checkout-commit',
       label: `Checkout commit ${node.shortHash}`,
       group: 'ubah',
-      hint: 'Isi folder kerja diganti sesuai commit ini, dan Anda masuk mode detached HEAD — commit baru tidak menempel pada branch mana pun.',
+      hint: 'Isi folder kerja diganti sesuai commit ini, dan Anda masuk mode detached HEAD. Commit baru tidak menempel pada branch mana pun.',
       risky: true,
       command: { kind: 'action', request: { action: 'checkout-commit', hash: node.hash } },
     });
@@ -174,7 +174,7 @@ export function menuItemsFor(
       id: 'reset-soft',
       label: 'Reset soft ke sini',
       group: 'ubah',
-      hint: 'Branch pindah ke commit ini, tapi semua perubahan sesudahnya tetap tersimpan di staging area — tidak ada yang hilang.',
+      hint: 'Branch pindah ke commit ini, tapi semua perubahan sesudahnya tetap tersimpan di staging area sehingga tidak ada yang hilang.',
       risky: true,
       command: { kind: 'action', request: { action: 'reset-soft', hash: node.hash } },
     });
@@ -182,7 +182,7 @@ export function menuItemsFor(
       id: 'reset-hard',
       label: 'Reset hard ke sini',
       group: 'ubah',
-      hint: 'Membuang SEMUA perubahan setelah commit ini, termasuk file yang belum di-commit. Permanen — git sendiri tidak bisa mengembalikannya.',
+      hint: 'Membuang SEMUA perubahan setelah commit ini, termasuk file yang belum di-commit. Permanen, git sendiri tidak bisa mengembalikannya.',
       risky: true,
       command: { kind: 'action', request: { action: 'reset-hard', hash: node.hash } },
     });
@@ -194,7 +194,7 @@ export function menuItemsFor(
       id: 'push-up-to',
       label: 'Push sampai commit ini',
       group: 'ubah',
-      hint: 'Mengirim histori sampai commit ini ke remote, sehingga rekan Anda bisa melihatnya. Hanya berjalan bila fast-forward — histori remote tidak akan ditimpa.',
+      hint: 'Mengirim histori sampai commit ini ke remote, sehingga rekan Anda bisa melihatnya. Hanya berjalan bila fast-forward, histori remote tidak akan ditimpa.',
       risky: true,
       command: {
         kind: 'action',
@@ -438,7 +438,7 @@ export function NodeContextMenu({
                 // included, because that is the fact that must not be missed.
                 aria-label={
                   item.risky === true
-                    ? `${item.label} — berisiko. ${item.hint ?? ''}`.trim()
+                    ? `${item.label}: berisiko. ${item.hint ?? ''}`.trim()
                     : undefined
                 }
                 className={

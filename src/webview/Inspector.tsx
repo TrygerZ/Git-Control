@@ -141,11 +141,7 @@ export function Inspector({ hash }: Props): JSX.Element {
     return (
       <EmptyState
         title="Belum ada commit dipilih."
-        hint="Panel ini menampilkan siapa membuat sebuah commit, pesan lengkapnya, dan file apa saja yang berubah."
-        steps={[
-          'Klik satu bulatan atau satu baris pada grafik di sebelah.',
-          'Atau tekan Tab sampai kursor masuk ke grafik, lalu Enter pada baris commit.',
-        ]}
+        hint="Pilih salah satu commit di grafik untuk melihat detail perubahan."
       />
     );
   }
@@ -204,7 +200,7 @@ export function Inspector({ hash }: Props): JSX.Element {
             type="button"
             className="gc-button gc-button--quiet"
             aria-label={`Salin hash pendek ${shortHash(detail.hash)}`}
-            title="Salin 7 karakter pertama — cukup untuk menyebut commit ini di percakapan."
+            title="Salin 7 karakter pertama. Cukup untuk menyebut commit ini di percakapan."
             onClick={() => void copy(shortHash(detail.hash))}
           >
             Salin hash pendek
@@ -213,7 +209,7 @@ export function Inspector({ hash }: Props): JSX.Element {
             type="button"
             className="gc-button gc-button--quiet"
             aria-label="Salin hash lengkap 40 karakter"
-            title="Salin 40 karakter penuh — dipakai di perintah git atau tautan."
+            title="Salin 40 karakter penuh untuk dipakai di perintah git atau tautan."
             onClick={() => void copy(detail.hash)}
           >
             Salin hash lengkap

@@ -5,6 +5,7 @@
  * Every user-facing string lives here or in the component that owns it, and all
  * of them are Indonesian.
  */
+import { parseCommitTimestamp } from '../validation';
 import type {
   ChangeEntry,
   ConflictEntry,
@@ -109,6 +110,34 @@ export function sanitizeGitText(text: string): string {
 }
 
 // ------------------------------------------------------------------- duration
+
+const MONTH_NAMES_ID = [
+  'Jan',
+  'Feb',
+  'Mar',
+  'Apr',
+  'Mei',
+  'Jun',
+  'Jul',
+  'Agu',
+  'Sep',
+  'Okt',
+  'Nov',
+  'Des',
+] as const;
+
+/** Format a date bucket timestamp to natural Indonesian label, e.g. "23 Agu 2026". */
+export function formatDateLabel(timestamp?: number | string | null): string {
+  const num = parseCommitTimestamp(timestamp);
+  if (num <= 0) {
+    return 'Tanggal tidak diketahui';
+  }
+  const d = new Date(num);
+  const day = d.getDate();
+  const month = MONTH_NAMES_ID[d.getMonth()] ?? '';
+  const year = d.getFullYear();
+  return `${day} ${month} ${year}`;
+}
 
 const SECOND_MS = 1000;
 const MINUTE_MS = 60 * SECOND_MS;
@@ -285,7 +314,7 @@ export function syncSummary(status: {
   behind: number;
 }): string {
   if (status.upstream === null) {
-    return 'Belum terhubung ke remote — commit Anda baru ada di komputer ini.';
+    return 'Belum terhubung ke remote. Commit Anda baru ada di komputer ini.';
   }
   const upstream = sanitizeGitText(status.upstream);
   const parts: string[] = [];
@@ -303,7 +332,7 @@ export function syncSummary(status: {
  * `+0 / −0` is a lie for an untracked file: it has every line added, git simply
  * never diffs it. An em dash says "not counted", which is the truth.
  */
-export const UNKNOWN_CHURN = '—';
+export const UNKNOWN_CHURN = '?';
 
 /**
  * Why a row has no line counts, used as the `title` next to {@link UNKNOWN_CHURN}.
@@ -322,7 +351,7 @@ export function churnUnknownReason(entry: ChangeEntry, churnTruncated = false): 
   if (entry.untracked) return 'file baru, belum dilacak git';
   if (entry.binary) return 'file binary, tidak ada jumlah baris';
   if (churnTruncated) {
-    return 'jumlah baris tidak dihitung karena daftar perubahannya terlalu besar — bukan berarti file ini tidak berubah';
+    return 'jumlah baris tidak dihitung karena daftar perubahannya terlalu besar, bukan berarti file ini tidak berubah';
   }
   return 'jumlah baris belum dihitung';
 }
@@ -430,19 +459,19 @@ export function refNamesLabel(refNames: readonly string[]): string | null {
 // ------------------------------------------------------------------ conflicts
 
 const CONFLICT_CODES: Readonly<Record<string, string>> = {
-  DD: 'DD — dihapus di kedua sisi',
-  AU: 'AU — ditambahkan di sini, diubah di sana',
-  UD: 'UD — diubah di sini, dihapus di sana',
-  UA: 'UA — diubah di sini, ditambahkan di sana',
-  DU: 'DU — dihapus di sini, diubah di sana',
-  AA: 'AA — ditambahkan di kedua sisi',
-  UU: 'UU — keduanya mengubah',
+  DD: 'DD: dihapus di kedua sisi',
+  AU: 'AU: ditambahkan di sini, diubah di sana',
+  UD: 'UD: diubah di sini, dihapus di sana',
+  UA: 'UA: diubah di sini, ditambahkan di sana',
+  DU: 'DU: dihapus di sini, diubah di sana',
+  AA: 'AA: ditambahkan di kedua sisi',
+  UU: 'UU: keduanya mengubah',
 };
 
 /** Explain a two-letter conflict code in Indonesian. */
 export function conflictLabel(code: string): string {
   const key = sanitizeGitText(code).trim().toUpperCase();
-  return CONFLICT_CODES[key] ?? `${key} — konflik tidak dikenal`;
+  return CONFLICT_CODES[key] ?? `${key}: konflik tidak dikenal`;
 }
 
 // ----------------------------------------------------------------- operations
@@ -488,7 +517,7 @@ const REMEDY_CONSEQUENCES: Readonly<Record<Remedy, string>> = {
   commit:
     'Menutup dialog ini dan mengarahkan Anda ke panel Pending Changes untuk menyimpan perubahan lebih dulu. Tidak ada perintah git yang dijalankan sekarang.',
   stash:
-    'Menyimpan perubahan Anda ke tumpukan stash lalu membersihkan folder kerja. Perubahan tidak hilang — bisa diambil kembali nanti.',
+    'Menyimpan perubahan Anda ke tumpukan stash lalu membersihkan folder kerja. Perubahan tidak hilang dan bisa diambil kembali nanti.',
   fetch:
     'Mengambil data terbaru dari remote. Isi folder kerja dan commit Anda tidak diubah sama sekali.',
   cancel: 'Menutup dialog tanpa menjalankan perintah apa pun. Tidak ada yang berubah.',
@@ -798,7 +827,7 @@ export function actionTarget(action: GitActionRequest): string {
   if ('name' in action) return sanitizeGitText(action.name);
   if ('hash' in action) return shortHash(action.hash);
   if ('remote' in action && action.remote !== undefined) return sanitizeGitText(action.remote);
-  return '—';
+  return '?';
 }
 
 // ---------------------------------------------------------------------- github

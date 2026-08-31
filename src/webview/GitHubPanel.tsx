@@ -168,7 +168,7 @@ export function PullRequestList({
         // both the chip text and the tooltip.
         const title = sanitizeGitText(pr.title);
         const tooltip =
-          `${title} — ${sanitizeGitText(pr.headRef)} → ${sanitizeGitText(pr.baseRef)},` +
+          `${title} (${sanitizeGitText(pr.headRef)} → ${sanitizeGitText(pr.baseRef)}),` +
           ` oleh ${sanitizeGitText(pr.author)}, diperbarui ${relativeTime(pr.updatedAt)}`;
         return (
           <li key={pr.number}>
