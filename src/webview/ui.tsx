@@ -3,8 +3,16 @@
  * Kept in one file because none of them own state worth isolating.
  */
 import { Component, type ErrorInfo, type JSX, type ReactNode } from 'react';
-import { presentError, remedyLabel, sanitizeGitText } from './format';
-import type { ErrorBody, Remedy } from '../messages';
+import {
+  presentError,
+  remedyConsequence,
+  remedyLabel,
+  repoName,
+  sanitizeGitText,
+  shortHash,
+  syncSummary,
+} from './format';
+import type { ErrorBody, Remedy, RepoStatus } from '../messages';
 
 // ------------------------------------------------------------------ skeleton
 
@@ -75,6 +83,81 @@ export function Spinner({ label }: { label: string }): JSX.Element {
   );
 }
 
+// ------------------------------------------------------------------- context
+
+/**
+ * Context breadcrumb: which repository, which branch, where that branch stands.
+ *
+ * Taken from the Unity reference, which puts the workspace and the current
+ * changeset on one quiet line above every panel. The reason it earns the space is
+ * that both of this extension's surfaces act on "the current branch of the current
+ * repository" without ever naming it — so a user with two windows open has no way
+ * to tell which repository a `Commit` press is about to touch.
+ *
+ * Hierarchy, deliberately three steps: the repository is the loudest crumb, the
+ * branch sits beside it as a chip because it is the thing that changes, and the
+ * sync sentence is the quietest because it is context rather than identity.
+ *
+ * `subject` is optional: the graph knows the newest commit's subject, the pending
+ * panel does not fetch commits at all, and a short hash is still a true answer to
+ * "where am I".
+ *
+ * ponytail: no repository switcher here — the reference has one, but picking a
+ * repository is `gitControl.pickRepository` on the host and wiring a dropdown to
+ * it is flow work, not visual work. Add when the panel needs to manage several
+ * repositories at once.
+ */
+export function ContextBar({
+  status,
+  subject,
+}: {
+  status: RepoStatus | null;
+  subject?: string | undefined;
+}): JSX.Element | null {
+  if (status === null) return null;
+  const branch =
+    status.branch === null
+      ? status.head === null
+        ? 'tanpa branch'
+        : `detached ${shortHash(status.head)}`
+      : sanitizeGitText(status.branch);
+  const head = status.head === null ? null : shortHash(status.head);
+  const line = subject === undefined ? null : sanitizeGitText(subject);
+
+  return (
+    <header className="gc-context">
+      <div className="gc-context__crumbs">
+        <span className="gc-context__repo" title={sanitizeGitText(status.repoRoot)}>
+          {repoName(status.repoRoot)}
+        </span>
+        <span className="gc-context__sep" aria-hidden="true">
+          ›
+        </span>
+        {/*
+          The word "branch" is in the text, not only in the shape: a chip on its own
+          does not say what kind of name it holds, and `detached` is exactly the
+          state a newcomer needs told in words.
+        */}
+        <span className={status.detached ? 'gc-chip gc-chip--detached' : 'gc-chip gc-chip--current'}>
+          <span aria-hidden="true">{status.detached ? '⚑ ' : '◆ '}</span>
+          branch {branch}
+        </span>
+        {head !== null && (
+          <code className="gc-context__hash" aria-label={`HEAD di commit ${head}`}>
+            {head}
+          </code>
+        )}
+      </div>
+      {line !== null && (
+        <p className="gc-context__subject" title={line}>
+          Commit terakhir: {line}
+        </p>
+      )}
+      <p className="gc-context__sync">{syncSummary(status)}</p>
+    </header>
+  );
+}
+
 // -------------------------------------------------------------------- states
 
 /**
@@ -83,20 +166,34 @@ export function Spinner({ label }: { label: string }): JSX.Element {
  * `title` states what is true; `hint` says what to do next. An empty panel that
  * only says "nothing here" makes the user guess, which in a git UI means guessing
  * about their own repository.
+ *
+ * `steps` exists because a hint is one sentence and a first run is a sequence. When
+ * the next move takes more than one action ("open the panel, tick the file, write a
+ * message, press Commit") a prose sentence buries the order; an ordered list keeps
+ * it countable and lets the user stop halfway and come back.
  */
 export function EmptyState({
   title,
   hint,
+  steps,
   action,
 }: {
   title: string;
   hint?: string;
+  steps?: readonly string[];
   action?: ReactNode;
 }): JSX.Element {
   return (
     <div className="gc-empty" role="note">
       <p className="gc-empty__title">{title}</p>
       {hint !== undefined && <p className="gc-empty__hint">{hint}</p>}
+      {steps !== undefined && steps.length > 0 && (
+        <ol className="gc-empty__steps">
+          {steps.map((step) => (
+            <li key={step}>{step}</li>
+          ))}
+        </ol>
+      )}
       {action !== undefined && <div className="gc-empty__actions">{action}</div>}
     </div>
   );
@@ -135,13 +232,22 @@ export function ErrorBanner({
               key={remedy}
               type="button"
               className="gc-button gc-button--quiet"
+              // Same consequence sentences the guard dialog uses. The banner offers
+              // the same words for the same buttons, so `Fetch` here cannot mean
+              // something different from `Fetch` there.
+              title={remedyConsequence(remedy)}
               onClick={() => onRemedy(remedy)}
             >
               {remedyLabel(remedy)}
             </button>
           ))}
         {view.showLogs && onShowLogs !== undefined && (
-          <button type="button" className="gc-button gc-button--quiet" onClick={onShowLogs}>
+          <button
+            type="button"
+            className="gc-button gc-button--quiet"
+            title="Buka panel Output berisi keluaran lengkap dari git."
+            onClick={onShowLogs}
+          >
             Lihat log
           </button>
         )}
@@ -213,7 +319,12 @@ export class ErrorBoundary extends Component<{ children: ReactNode }, BoundarySt
           ID kesalahan: <code>{errorId}</code>. Sebutkan ID ini bila melaporkan masalah.
         </p>
         <div className="gc-crash__actions">
-          <button type="button" className="gc-button gc-button--primary" onClick={this.reload}>
+          <button
+            type="button"
+            className="gc-button gc-button--primary"
+            title="Gambar ulang antarmuka. Tidak ada perintah git yang dijalankan dan tidak ada perubahan yang hilang."
+            onClick={this.reload}
+          >
             Muat ulang
           </button>
         </div>
