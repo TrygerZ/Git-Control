@@ -25,19 +25,27 @@ import * as path from 'node:path';
 import {
   ERROR_CODES,
   PORCELAIN_CODES,
+  authorInitials,
   conflictActionLabel,
   conflictRowLabel,
+  churnUnknownReason,
   entryStatus,
   fileRowLabel,
   folderRowLabel,
+  orderedRemedies,
   presentError,
   refNamesLabel,
+  repoName,
+  remedyConsequence,
   remedyLabel,
   riskLabel,
   rowLabel,
   statusLabel,
+  statusTone,
+  syncSummary,
 } from '../src/webview/format';
-import type { ChangeEntry, ErrorCode, GraphNode } from '../src/messages';
+import { groupedMenuItems, menuItemsFor } from '../src/webview/NodeContextMenu';
+import type { ChangeEntry, ErrorCode, GraphNode, RefInfo, Remedy, RepoStatus } from '../src/messages';
 
 const NOW = Date.parse('2026-06-15T12:00:00.000Z');
 const HASH = 'abc1234def5678'.padEnd(40, '0');
@@ -147,6 +155,27 @@ test('fileRowLabel says "file binary" instead of a churn of zero', () => {
   assert.ok(!label.includes('0 baris'), label);
 });
 
+/**
+ * `null` counts mean git never counted the file, which is the normal case for an
+ * untracked one. Reading "0 baris ditambah" would tell a screen-reader user the new
+ * file is empty, so the label must name the reason instead.
+ */
+test('fileRowLabel reports uncounted churn as unknown, never as zero', () => {
+  const untracked = fileRowLabel(
+    entry({ untracked: true, indexStatus: ' ', worktreeStatus: '?', additions: null, deletions: null }),
+  );
+  assert.ok(!untracked.includes('0 baris'), untracked);
+  assert.match(untracked, /belum dilacak git/, 'says why there is no count');
+
+  const tracked = fileRowLabel(entry({ additions: null, deletions: null }));
+  assert.ok(!tracked.includes('0 baris'), tracked);
+  assert.match(tracked, /belum dihitung/);
+});
+
+test('fileRowLabel still reports a real zero-line change as zero', () => {
+  assert.match(fileRowLabel(entry({ additions: 0, deletions: 0 })), /0 baris ditambah/);
+});
+
 test('fileRowLabel spells out a rename as lama → baru', () => {
   const label = fileRowLabel(entry({ path: 'b.ts', origPath: 'a.ts', indexStatus: 'R' }));
   assert.match(label, /a\.ts → b\.ts/);
@@ -155,6 +184,46 @@ test('fileRowLabel spells out a rename as lama → baru', () => {
 
 test('fileRowLabel reports untracked ahead of the index letter', () => {
   assert.match(fileRowLabel(entry({ untracked: true, indexStatus: ' ' })), /Belum dilacak/);
+});
+
+test('churnUnknownReason distinguishes untracked files from uncounted tracked files', () => {
+  assert.match(churnUnknownReason(entry({ untracked: true, additions: null, deletions: null })), /belum dilacak/);
+  assert.match(churnUnknownReason(entry({ additions: null, deletions: null })), /belum dihitung/);
+});
+
+/**
+ * A dash means three different things, and the difference is what a beginner acts
+ * on: a new file git has not diffed, a binary file with no lines to count, and a
+ * tracked file whose numbers were never computed because the change list was too
+ * big. The last one is the one that reads as "unchanged" if it is not spelled out.
+ */
+test('churnUnknownReason separates untracked, binary, and truncated reasons', () => {
+  const uncounted = { additions: null, deletions: null };
+  const untracked = churnUnknownReason(entry({ ...uncounted, untracked: true }), true);
+  const binary = churnUnknownReason(entry({ ...uncounted, binary: true }), true);
+  const truncated = churnUnknownReason(entry(uncounted), true);
+  const plain = churnUnknownReason(entry(uncounted), false);
+
+  assert.match(untracked, /belum dilacak git/);
+  assert.match(binary, /binary/);
+  assert.match(truncated, /terlalu besar/, 'names the real cause');
+  assert.match(truncated, /bukan berarti file ini tidak berubah/, 'denies the wrong reading');
+  assert.match(plain, /belum dihitung/, 'no truncation, no truncation wording');
+
+  const distinct = new Set([untracked, binary, truncated, plain]);
+  assert.equal(distinct.size, 4, 'all four reasons read differently');
+});
+
+test('fileRowLabel carries the truncation reason into the accessible name', () => {
+  const label = fileRowLabel(entry({ additions: null, deletions: null }), true);
+  assert.match(label, /terlalu besar/);
+  assert.ok(!label.includes('0 baris'), label);
+});
+
+test('repoName keeps the final repository folder across Windows and POSIX paths', () => {
+  assert.equal(repoName('D:/work/Git-Control'), 'Git-Control');
+  assert.equal(repoName('D:\\work\\Git-Control\\'), 'Git-Control');
+  assert.equal(repoName('/work/Git-Control/'), 'Git-Control');
 });
 
 test('folderRowLabel names the folder and how many files it holds', () => {
@@ -223,6 +292,96 @@ test('entryStatus never yields a state without a word', () => {
   }
 });
 
+// ------------------------------------------------------- status tone (colour)
+
+/**
+ * The coloured letter box is the THIRD channel, never a replacement for the first
+ * two. This pins the ordering: a tone is only ever an addition to a letter that is
+ * already unique and a word that is already unique (asserted above), and several
+ * letters deliberately share one tone — so a test that demanded a tone per letter
+ * would be demanding nine indistinguishable hues.
+ */
+test('statusTone names a tone for every porcelain code and never invents a hue per letter', () => {
+  const tones = new Set<string>();
+  for (const code of PORCELAIN_CODES) {
+    const tone = statusTone(code);
+    assert.ok(tone.length > 0, `${code} has a tone`);
+    tones.add(tone);
+  }
+  // Fewer tones than letters is the point: colour groups, letters identify.
+  assert.ok(tones.size < PORCELAIN_CODES.length, `${tones.size} tones for ${PORCELAIN_CODES.length} letters`);
+  assert.equal(statusTone('Z'), 'neutral', 'an unknown letter does not guess a colour');
+});
+
+test('statusTone separates the states a user must not confuse', () => {
+  // Added versus deleted is the one pair where a wrong hue is actively misleading.
+  assert.notEqual(statusTone('A'), statusTone('D'));
+  assert.notEqual(statusTone('M'), statusTone('D'));
+  assert.notEqual(statusTone('?'), statusTone('M'), 'untracked is not just another change');
+});
+
+// ------------------------------------------------------------ author initials
+
+/**
+ * The initial drawn inside a commit node is `aria-hidden`, because `rowLabel` already
+ * carries the author's full name. These assertions cover the part that can still go
+ * wrong: a name that yields no letter at all would render an empty node, and a
+ * multi-character return would overflow the circle.
+ */
+test('authorInitials always returns exactly one visible character', () => {
+  for (const name of ['Siti', 'siti rahayu', '  budi', 'Ökan', '张伟', '9lives', '', '   ']) {
+    const initial = authorInitials(name);
+    assert.equal([...initial].length, 1, `${JSON.stringify(name)} → ${JSON.stringify(initial)}`);
+  }
+});
+
+test('authorInitials uppercases, and falls back to ? rather than to nothing', () => {
+  assert.equal(authorInitials('siti'), 'S');
+  assert.equal(authorInitials('  budi santoso'), 'B');
+  assert.equal(authorInitials(''), '?');
+  assert.equal(authorInitials('...'), '?', 'punctuation is not an initial');
+  // A name made entirely of characters we replace still yields a visible glyph.
+  assert.equal(authorInitials('\u202e'), '?');
+});
+
+test('authorInitials keeps the node label out of sync with nothing it cannot show', () => {
+  // Sanitisation happens inside, so a bidi override can never reach the SVG text.
+  assert.ok(!authorInitials('\u202eSiti').includes('\u202e'));
+});
+
+// -------------------------------------------------------------- sync summary
+
+/**
+ * `ahead` / `behind` are the two numbers newcomers most often read backwards. The
+ * breadcrumb states each as an action rather than as an arrow, and "no upstream" is
+ * stated as a consequence rather than as an absence.
+ */
+test('syncSummary says which direction each pending commit goes', () => {
+  const ahead = syncSummary({ upstream: 'origin/main', ahead: 2, behind: 0 });
+  assert.match(ahead, /2 commit siap dipush/);
+  assert.ok(!ahead.includes('menunggu diambil'), ahead);
+
+  const behind = syncSummary({ upstream: 'origin/main', ahead: 0, behind: 3 });
+  assert.match(behind, /3 commit baru menunggu diambil/);
+
+  const both = syncSummary({ upstream: 'origin/main', ahead: 1, behind: 4 });
+  assert.match(both, /1 commit siap dipush/);
+  assert.match(both, /4 commit baru menunggu diambil/);
+});
+
+test('syncSummary states an in-sync branch and a missing upstream in words', () => {
+  assert.match(syncSummary({ upstream: 'origin/main', ahead: 0, behind: 0 }), /Sama dengan origin\/main/);
+  const none = syncSummary({ upstream: null, ahead: 0, behind: 0 });
+  assert.match(none, /Belum terhubung ke remote/);
+  assert.match(none, /baru ada di komputer ini/, 'says what that means, not just that it is so');
+});
+
+test('syncSummary sanitises the upstream name (SEC-007)', () => {
+  const label = syncSummary({ upstream: 'origin/ma\u202ein', ahead: 1, behind: 0 });
+  assert.ok(!label.includes('\u202e'));
+  assert.match(label, /\ufffd/);
+});
+
 // ------------------------------------------------------------- error surfaces
 
 test('every ErrorCode has an Indonesian title, an explanation, and a way out', () => {
@@ -283,6 +442,159 @@ test('risk is stated in words at every level, never by colour alone', () => {
   }
   assert.notEqual(riskLabel('low'), riskLabel('medium'));
   assert.notEqual(riskLabel('medium'), riskLabel('high'));
+});
+
+// ------------------------------------------------------ remedy button copy
+
+/**
+ * `Stash` and `Fetch` are terms of art. A user avoiding the terminal is exactly the
+ * user who does not know them, so every remedy button carries a `title` naming what
+ * it does to their files. A missing or vague sentence turns the guard dialog's way
+ * out into another guess.
+ */
+test('every remedy names its consequence in a full Indonesian sentence', () => {
+  const remedies: Remedy[] = ['commit', 'stash', 'fetch', 'cancel', 'resolve-conflicts', 'confirm'];
+  const seen = new Set<string>();
+  for (const remedy of remedies) {
+    const text = remedyConsequence(remedy);
+    assert.ok(text.length > 20, `${remedy} says something substantive: ${text}`);
+    assert.match(text, /\.$/, `${remedy} is a sentence, not a fragment`);
+    seen.add(text);
+  }
+  assert.equal(seen.size, remedies.length, 'no two remedies share one explanation');
+});
+
+test('the reversible remedies promise the work is recoverable', () => {
+  // These two are the ones a newcomer refuses out of fear. Saying "not lost" is the
+  // whole reason the sentence exists.
+  assert.match(remedyConsequence('stash'), /bisa diambil kembali/);
+  assert.match(remedyConsequence('fetch'), /tidak diubah/);
+  assert.match(remedyConsequence('cancel'), /[Tt]idak ada yang berubah/);
+});
+
+/**
+ * `.gc-modal__actions` is right-aligned, so the LAST button is the bottom-right
+ * corner — where a hand goes without reading. In a dialog whose only job is stopping
+ * an accidental press, that corner must never hold the irreversible button.
+ */
+test('orderedRemedies puts the confirmation first and Batal last', () => {
+  assert.deepEqual(orderedRemedies(['confirm', 'cancel']), ['confirm', 'cancel']);
+  // Even when the host sends them the other way round.
+  assert.deepEqual(orderedRemedies(['cancel', 'confirm']), ['confirm', 'cancel']);
+  assert.deepEqual(orderedRemedies(['commit', 'stash', 'cancel']), ['commit', 'stash', 'cancel']);
+  assert.deepEqual(orderedRemedies(['cancel', 'fetch']), ['fetch', 'cancel']);
+});
+
+test('orderedRemedies changes order only, never membership', () => {
+  for (const code of ERROR_CODES) {
+    const remedies = presentError({ status: 500, code, message: '' }).remedies;
+    const ordered = orderedRemedies(remedies);
+    assert.deepEqual([...ordered].sort(), [...remedies].sort(), code);
+    if (ordered.includes('cancel')) {
+      assert.equal(ordered[ordered.length - 1], 'cancel', `${code} ends in Batal`);
+    }
+  }
+});
+
+// -------------------------------------------------------- context menu groups
+
+function ref(patch: Partial<RefInfo> = {}): RefInfo {
+  return {
+    refName: 'refs/heads/main',
+    shortName: 'main',
+    kind: 'local',
+    objectName: HASH,
+    upstream: null,
+    ahead: 0,
+    behind: 0,
+    isHead: false,
+    ...patch,
+  };
+}
+
+function status(patch: Partial<RepoStatus> = {}): RepoStatus {
+  return {
+    repoRoot: 'D:/repo',
+    branch: 'main',
+    head: HASH,
+    detached: false,
+    upstream: 'origin/main',
+    ahead: 0,
+    behind: 0,
+    incoming: 0,
+    outgoing: 0,
+    dirty: false,
+    staged: false,
+    operation: 'idle',
+    changes: [],
+    conflicts: [],
+    churnTruncated: false,
+    statusToken: 'token',
+    lastFetchedAt: null,
+    lastFetchAt: null,
+    ...patch,
+  };
+}
+
+/**
+ * The split between "only looks" and "changes the repository" is the menu's whole
+ * safety story, so it is asserted rather than trusted: a new item that forgets its
+ * group cannot compile, but a new item that picks the WRONG group compiles fine and
+ * silently files `reset --hard` under the harmless heading.
+ */
+test('every menu item declares a group, and the read-only ones cannot mutate', () => {
+  const items = menuItemsFor(
+    node({ local: true }),
+    status(),
+    [
+      ref({ shortName: 'fitur', refName: 'refs/heads/fitur' }),
+      ref({ kind: 'remote', shortName: 'origin/main', refName: 'refs/remotes/origin/main' }),
+    ],
+    'https://github.com/a/b',
+  );
+  assert.ok(items.length > 0, 'the menu is not empty');
+  for (const item of items) {
+    assert.ok(item.group === 'jelajah' || item.group === 'ubah', item.id);
+    if (item.group === 'jelajah') {
+      assert.notEqual(item.command.kind, 'action', `${item.id} must not run git`);
+      assert.notEqual(item.command.kind, 'createBranch', `${item.id} must not write a ref`);
+    }
+    if (item.command.kind === 'action') {
+      assert.equal(item.group, 'ubah', `${item.id} runs git and belongs in the mutating half`);
+    }
+  }
+});
+
+test('every menu item explains its consequence, not just its verb', () => {
+  const items = menuItemsFor(node({ local: true }), null, [], 'https://github.com/a/b');
+  for (const item of items) {
+    assert.ok(item.hint !== undefined, `${item.id} has a hint`);
+    assert.ok((item.hint ?? '').length > 20, `${item.id} hint is substantive: ${item.hint ?? ''}`);
+  }
+});
+
+test('the destructive items are the ones marked risky, and they say what is lost', () => {
+  const items = menuItemsFor(node(), status(), [], null);
+  const risky = new Set(items.filter((i) => i.risky === true).map((i) => i.id));
+  for (const id of ['reset-hard', 'reset-soft', 'revert', 'checkout-commit']) {
+    assert.ok(risky.has(id), `${id} is marked risky`);
+  }
+  const hard = items.find((i) => i.id === 'reset-hard');
+  assert.match(hard?.hint ?? '', /[Pp]ermanen/, 'reset hard names the permanence');
+});
+
+test('groupedMenuItems keeps read-only first and drops empty groups', () => {
+  const items = menuItemsFor(node(), null, [], null);
+  const groups = groupedMenuItems(items);
+  assert.equal(groups[0]?.group, 'jelajah', 'the safe half is shown first');
+  for (const group of groups) {
+    assert.ok(group.items.length > 0, `${group.group} is non-empty`);
+  }
+  // The flattened order is what the roving tabindex walks, so it has to hold
+  // every item exactly once.
+  const flat = groups.flatMap((g) => g.items.map((i) => i.id));
+  assert.equal(flat.length, items.length);
+  assert.equal(new Set(flat).size, flat.length, 'no item is rendered twice');
 });
 
 // --------------------------------------------------------- theme discipline
@@ -398,4 +710,126 @@ test('the spacing scale is a 4 px ladder', () => {
     assert.equal(value % 2, 0, `${value}px is off the ladder`);
   }
   assert.deepEqual([...values].sort((a, b) => a - b), values, 'the scale ascends');
+});
+
+/**
+ * Type discipline. Every font size in the file already resolves to a `--gc-fs-*`
+ * token (the colour tests would not catch a raw `11px`), so this pins the scale
+ * itself: relative units, so the whole UI follows the editor font size and survives
+ * a 200 % zoom, and no duplicate steps, which is how a "scale" quietly becomes a
+ * pile of near-identical sizes.
+ */
+test('the type scale is relative and has no duplicate steps', () => {
+  const css = stylesheet();
+  const root = /:root\s*\{([\s\S]*?)\}/.exec(css);
+  assert.ok(root !== null, ':root exists');
+  const steps = [...(root[1] ?? '').matchAll(/--gc-fs-[\w-]+:\s*([^;]+);/g)].map((m) =>
+    (m[1] ?? '').trim(),
+  );
+  assert.ok(steps.length >= 5, 'the scale exists');
+  for (const step of steps) {
+    assert.match(step, /^[\d.]+em$/, `${step} must be relative, not absolute`);
+  }
+  assert.equal(new Set(steps).size, steps.length, `duplicate type steps: ${steps.join(', ')}`);
+});
+
+/** No font size may bypass the scale. A raw `11px` is invisible until someone zooms. */
+test('every font-size in the stylesheet comes from a token', () => {
+  const css = stylesheet();
+  const offenders: string[] = [];
+  for (const match of css.matchAll(/font-size\s*:\s*([^;}]+)/g)) {
+    const value = (match[1] ?? '').trim();
+    if (/var\(--(?:gc-fs|vscode-font-size)/.test(value)) continue;
+    if (value === 'inherit') continue;
+    offenders.push(`line ${css.slice(0, match.index).split('\n').length}: ${value}`);
+  }
+  assert.deepEqual(offenders, [], `untokenised font sizes:\n${offenders.join('\n')}`);
+});
+
+/** Spacing declarations use the same scale; resets and layout keywords are the only exceptions. */
+test('every margin, padding, and gap in the stylesheet uses a spacing token', () => {
+  const css = stylesheet();
+  const offenders: string[] = [];
+  const allowed = /^(?:0|auto|-1px)(?:\s+(?:0|auto|-1px))*$/;
+  for (const match of css.matchAll(/(?:^|[;{])\s*((?:margin|padding)(?:-[a-z]+)?|gap|(?:row|column)-gap)\s*:\s*([^;}]+)/g)) {
+    const property = match[1] ?? '';
+    const value = (match[2] ?? '').trim();
+    if (/var\(--gc-space-/.test(value) || allowed.test(value)) continue;
+    // Tree/row indentation is proportional to depth, not surface rhythm.
+    if (property === 'padding-left' && /^(?:1\.4|1\.2)em$/.test(value)) continue;
+    offenders.push(`${property}: ${value}`);
+  }
+  assert.deepEqual(offenders, [], `untokenised spacing:\n${offenders.join('\n')}`);
+});
+
+/**
+ * The status tones bridge `format.ts` and the stylesheet: `statusTone` returns a key,
+ * and the CSS must have a rule for it. A missing rule is a letter box with no colour
+ * — harmless-looking, and it silently drops the redundancy the badge was added for.
+ *
+ * Each tone also has to resolve through a `--vscode-*` fallback chain, so a theme
+ * without the `charts-*` palette still gets a readable letter rather than an
+ * unstyled one.
+ */
+test('every status tone has a CSS rule and a theme fallback', () => {
+  const css = stylesheet();
+  const tones = new Set(PORCELAIN_CODES.map((code) => statusTone(code)));
+  for (const tone of tones) {
+    assert.match(
+      css,
+      new RegExp(`\\.gc-status__box--${tone}\\s*\\{[^}]*color:\\s*var\\(--gc-(?:tone-${tone}|muted)\\)`),
+      `.gc-status__box--${tone} is styled`,
+    );
+  }
+  for (const match of css.matchAll(/--gc-tone-[\w-]+:\s*([^;]+);/g)) {
+    const value = (match[1] ?? '').trim();
+    assert.match(value, /^var\(--vscode-[\w-]+,\s*var\(--vscode-[\w-]+\)\)$/, `${value} needs a fallback`);
+  }
+});
+
+/**
+ * Toast severity uses the SAME tones as the file-status boxes: error → `removed`,
+ * warning → `pending`, info → `changed`. One colour vocabulary across the extension
+ * is the point — the hue that marks a deleted file is the hue that marks a failed
+ * operation — so a future edit that reaches for `--gc-danger` here (a different red)
+ * has to fail rather than merely look slightly off.
+ */
+test('every toast level takes its tone from the shared status palette', () => {
+  const css = stylesheet();
+  for (const [level, tone] of [
+    ['info', 'changed'],
+    ['warning', 'pending'],
+    ['error', 'removed'],
+  ] as const) {
+    assert.match(
+      css,
+      new RegExp(`\\.gc-toast--${level}\\s*\\{[^}]*border-left-color:\\s*var\\(--gc-tone-${tone}\\)`),
+      `.gc-toast--${level} is bordered in the ${tone} tone`,
+    );
+    assert.match(
+      css,
+      new RegExp(`\\.gc-toast--${level} \\.gc-toast__level\\s*\\{[^}]*color:\\s*var\\(--gc-tone-${tone}\\)`),
+      `.gc-toast--${level} words match its border`,
+    );
+  }
+});
+
+/**
+ * Two classes added in this pass carry meaning through a border colour, and forced
+ * colours discards colour entirely. Both therefore need an entry in the
+ * forced-colours block, or the level-2 guard frame flattens back to a plain dialog
+ * and the risk marker in the context menu disappears — in the one theme where the
+ * user is most likely to be relying on it.
+ */
+test('the severity frame and the menu risk rule survive forced colours', () => {
+  const raw = fs.readFileSync(CSS, 'utf8');
+  // There is more than one forced-colours block (one early for the focus ring), so
+  // every body is collected rather than only the first match.
+  const bodies = [...raw.matchAll(/@media \(forced-colors: active\)\s*\{([\s\S]*?)\n\}/g)].map(
+    (m) => m[1] ?? '',
+  );
+  assert.ok(bodies.length > 0, 'a forced-colors block exists');
+  const body = bodies.join('\n');
+  assert.match(body, /\.gc-modal--severe\s*\{/, 'the level-2 guard frame is restored');
+  assert.match(body, /\.gc-menu__item--risky\s*\{/, 'the risky-item rule is restored');
 });

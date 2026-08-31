@@ -109,11 +109,21 @@ export function GitHubPanel(): JSX.Element {
 
       <div className="gc-github__actions">
         {connected ? (
-          <button type="button" className="gc-button" onClick={() => void disconnect()}>
+          <button
+            type="button"
+            className="gc-button gc-button--quiet"
+            title="Hapus token GitHub dari penyimpanan. Operasi git lewat CLI tetap berjalan."
+            onClick={() => void disconnect()}
+          >
             Putuskan GitHub
           </button>
         ) : (
-          <button type="button" className="gc-button gc-button--primary" onClick={() => void connect()}>
+          <button
+            type="button"
+            className="gc-button gc-button--action"
+            title="Simpan token GitHub agar pull request dan tautan commit bisa ditampilkan."
+            onClick={() => void connect()}
+          >
             Sambungkan GitHub
           </button>
         )}
@@ -121,6 +131,7 @@ export function GitHubPanel(): JSX.Element {
           type="button"
           className="gc-button gc-button--quiet"
           aria-label="Muat ulang metadata GitHub"
+          title="Baca ulang data dari GitHub. Tidak mengubah repository dan tidak menutup editor."
           disabled={loading}
           onClick={() => void load()}
         >

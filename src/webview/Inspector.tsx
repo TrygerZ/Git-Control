@@ -4,10 +4,16 @@
  * Loads `commits/detail` for the selected hash and renders metadata, ref chips,
  * parents, and the per-file stats. Merge commits get a parent selector; changing
  * it re-requests the diff so the file list matches the chosen comparison.
+ *
+ * Structured like the reference's right-hand panel: one large title, one `oleh …
+ * pada …` line under it, then titled sections. The hash buttons that used to crowd
+ * the title now sit in their own quiet row, because "which commit is this" and "copy
+ * its id" are not the same question.
  */
 import { useEffect, useMemo, useState, type JSX } from 'react';
 import {
   absoluteTime,
+  authorInitials,
   baseName,
   formatCount,
   relativeTime,
@@ -135,7 +141,11 @@ export function Inspector({ hash }: Props): JSX.Element {
     return (
       <EmptyState
         title="Belum ada commit dipilih."
-        hint="Klik satu commit pada grafik, atau tekan Enter saat kursor berada di baris commit, untuk melihat penulis, pesan lengkap, dan daftar file yang berubah."
+        hint="Panel ini menampilkan siapa membuat sebuah commit, pesan lengkapnya, dan file apa saja yang berubah."
+        steps={[
+          'Klik satu bulatan atau satu baris pada grafik di sebelah.',
+          'Atau tekan Tab sampai kursor masuk ke grafik, lalu Enter pada baris commit.',
+        ]}
       />
     );
   }
@@ -165,25 +175,45 @@ export function Inspector({ hash }: Props): JSX.Element {
       />
     );
 
+  const author = sanitizeGitText(detail.authorName);
+
   return (
     <section className="gc-inspector" aria-label="Detail commit">
       <header className="gc-inspector__head">
-        <h2 className="gc-inspector__subject">{sanitizeGitText(detail.subject)}</h2>
+        {/*
+          Avatar plus title plus one `oleh … pada …` line, as in the reference
+          inspector. The avatar is `aria-hidden`: the author's full name is in the
+          meta line immediately below, and a lone initial announced before it reads
+          as a stray letter.
+        */}
+        <div className="gc-inspector__identity">
+          <span className="gc-avatar" aria-hidden="true">
+            {authorInitials(detail.authorName)}
+          </span>
+          <div className="gc-inspector__titles">
+            <h2 className="gc-inspector__subject">{sanitizeGitText(detail.subject)}</h2>
+            <p className="gc-inspector__byline">
+              oleh {author} · {relativeTime(detail.authoredAt)}
+            </p>
+          </div>
+        </div>
+
         <div className="gc-inspector__hashes">
-          <code>{detail.shortHash}</code>
+          <code className="gc-inspector__short">{detail.shortHash}</code>
           <button
             type="button"
             className="gc-button gc-button--quiet"
             aria-label={`Salin hash pendek ${shortHash(detail.hash)}`}
+            title="Salin 7 karakter pertama — cukup untuk menyebut commit ini di percakapan."
             onClick={() => void copy(shortHash(detail.hash))}
           >
             Salin hash pendek
           </button>
-          <code className="gc-inspector__full">{detail.hash}</code>
           <button
             type="button"
             className="gc-button gc-button--quiet"
             aria-label="Salin hash lengkap 40 karakter"
+            title="Salin 40 karakter penuh — dipakai di perintah git atau tautan."
             onClick={() => void copy(detail.hash)}
           >
             Salin hash lengkap
@@ -194,6 +224,7 @@ export function Inspector({ hash }: Props): JSX.Element {
               type="button"
               className="gc-button gc-button--quiet"
               aria-label={`Buka commit ${detail.shortHash} di GitHub`}
+              title="Membuka commit ini di browser. Repository lokal Anda tidak disentuh."
               onClick={() => void openCommit(detail.hash)}
             >
               Buka di GitHub
@@ -202,10 +233,11 @@ export function Inspector({ hash }: Props): JSX.Element {
         </div>
       </header>
 
+      <h3 className="gc-inspector__heading">Keterangan</h3>
       <dl className="gc-inspector__meta">
         <dt>Penulis</dt>
         <dd>
-          {sanitizeGitText(detail.authorName)} &lt;{sanitizeGitText(detail.authorEmail)}&gt;
+          {author} &lt;{sanitizeGitText(detail.authorEmail)}&gt;
         </dd>
         <dt>Ditulis</dt>
         <dd>
@@ -234,20 +266,28 @@ export function Inspector({ hash }: Props): JSX.Element {
       </dl>
 
       {detail.refNames.length > 0 && (
-        <ul className="gc-inspector__refs" aria-label="Ref pada commit ini">
-          {detail.refNames.map((ref) => (
-            <li key={ref} className="gc-chip gc-chip--local">
-              {sanitizeGitText(ref)}
-            </li>
-          ))}
-        </ul>
+        <>
+          <h3 className="gc-inspector__heading">Ref</h3>
+          <ul className="gc-inspector__refs" aria-label="Ref pada commit ini">
+            {detail.refNames.map((ref) => (
+              <li key={ref} className="gc-chip gc-chip--local">
+                {sanitizeGitText(ref)}
+              </li>
+            ))}
+          </ul>
+        </>
       )}
 
       {detail.body.trim().length > 0 && (
-        <pre className="gc-inspector__body" aria-label="Isi pesan commit">
-          {sanitizeGitText(detail.body.trim())}
-        </pre>
+        <>
+          <h3 className="gc-inspector__heading">Pesan lengkap</h3>
+          <pre className="gc-inspector__body" aria-label="Isi pesan commit">
+            {sanitizeGitText(detail.body.trim())}
+          </pre>
+        </>
       )}
+
+      <h3 className="gc-inspector__heading">File yang berubah</h3>
 
       {detail.parents.length > 1 && (
         <label className="gc-field">
@@ -270,19 +310,29 @@ export function Inspector({ hash }: Props): JSX.Element {
         </label>
       )}
 
+      {/*
+        Segmented control, styled off `aria-pressed` rather than a conditional class.
+
+        The selected half used to be `--primary`, which is the tier reserved for "the
+        one action on this surface" — so the inspector had two loud buttons for a
+        choice that changes nothing in the repository. `aria-pressed` is already the
+        truth here; letting the stylesheet read it removes the second source.
+      */}
       <div className="gc-inspector__toolbar" role="group" aria-label="Mode diff">
         <button
           type="button"
-          className={diffMode === 'unified' ? 'gc-button gc-button--primary' : 'gc-button'}
+          className="gc-button"
           aria-pressed={diffMode === 'unified'}
+          title="Tampilkan perubahan sebagai satu kolom, baris lama dan baru berurutan."
           onClick={() => setDiffMode('unified')}
         >
           Satu kolom
         </button>
         <button
           type="button"
-          className={diffMode === 'side-by-side' ? 'gc-button gc-button--primary' : 'gc-button'}
+          className="gc-button"
           aria-pressed={diffMode === 'side-by-side'}
+          title="Tampilkan versi lama dan baru berdampingan."
           onClick={() => setDiffMode('side-by-side')}
         >
           Dua kolom
@@ -291,8 +341,9 @@ export function Inspector({ hash }: Props): JSX.Element {
 
       {totals !== null && (
         <p className="gc-inspector__totals">
-          {formatCount(totals.files)} file · +{formatCount(totals.additions)} / −
-          {formatCount(totals.deletions)}
+          {formatCount(totals.files)} file ·{' '}
+          <span className="gc-stat gc-stat--add">+{formatCount(totals.additions)}</span>{' '}
+          <span className="gc-stat gc-stat--del">−{formatCount(totals.deletions)}</span>
           {totals.binary > 0 && ` · ${formatCount(totals.binary)} file binary`}
         </p>
       )}
@@ -355,6 +406,7 @@ export function Inspector({ hash }: Props): JSX.Element {
           <button
             type="button"
             className="gc-button gc-button--quiet"
+            title="Ambil halaman file berikutnya dari commit ini. Hanya menambah isi daftar, tidak mengubah repository."
             disabled={paging}
             onClick={() => void loadMoreFiles()}
           >

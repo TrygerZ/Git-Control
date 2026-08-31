@@ -44,6 +44,7 @@ export function OperationBanner({ status }: { status: RepoStatus | null }): JSX.
           disabled={!resolved}
           // The reason for the disabled state is announced, not only hovered.
           aria-describedby={resolved ? undefined : blockedId}
+          title="Selesaikan operasi ini dan buat commit gabungannya. Hanya bisa setelah semua konflik beres."
           onClick={() => void runAction({ action: 'merge-continue' })}
         >
           Lanjutkan merge
@@ -51,6 +52,7 @@ export function OperationBanner({ status }: { status: RepoStatus | null }): JSX.
         <button
           type="button"
           className="gc-button"
+          title="Kembalikan repository ke keadaan sebelum merge dimulai. Perubahan yang sudah di-commit tidak hilang."
           onClick={() => void runAction({ action: 'merge-abort' })}
         >
           Batalkan merge
@@ -102,6 +104,9 @@ export function ConflictPanel({ conflicts, operation }: Props): JSX.Element {
   return (
     <section className="gc-conflicts" aria-label="File konflik">
       <h3 className="gc-conflicts__title">
+        <span className="gc-conflicts__badge" aria-hidden="true">
+          U
+        </span>
         {formatCount(conflicts.length)} file perlu diselesaikan
       </h3>
       <p className="gc-conflicts__hint">
@@ -120,16 +125,18 @@ export function ConflictPanel({ conflicts, operation }: Props): JSX.Element {
               <span className="gc-conflicts__actions">
                 <button
                   type="button"
-                  className="gc-button gc-button--primary"
+                  className="gc-button gc-button--action"
                   aria-label={conflictActionLabel('Selesaikan konflik di', entry.path)}
+                  title="Buka file ini di editor merge untuk memilih versi yang benar."
                   onClick={() => void openMergeEditor(entry.path)}
                 >
                   Selesaikan
                 </button>
                 <button
                   type="button"
-                  className="gc-button"
+                  className="gc-button gc-button--quiet"
                   aria-label={conflictActionLabel('Tandai selesai', entry.path)}
+                  title="Beri tahu git bahwa file ini sudah benar. Sama dengan git add pada file tersebut."
                   disabled={busy}
                   onClick={() => void stage([entry.path])}
                 >
@@ -141,17 +148,25 @@ export function ConflictPanel({ conflicts, operation }: Props): JSX.Element {
         })}
       </ul>
       <div className="gc-conflicts__footer">
+        {/*
+          Tier deliberately NOT `--primary`: this button is permanently disabled and
+          the live `Lanjutkan merge` lives in `OperationBanner` above. Two loud buttons
+          with the same word, one of which never works, is worse than one — so this one
+          keeps the neutral tier and exists only to state the gate that is blocking it.
+        */}
         <button
           type="button"
-          className="gc-button gc-button--primary"
+          className="gc-button"
           disabled
           aria-describedby={blockedId}
+          title="Selesaikan operasi ini dan buat commit gabungannya. Masih terkunci karena daftar konflik di atas belum kosong."
         >
           Lanjutkan merge
         </button>
         <button
           type="button"
           className="gc-button"
+          title="Kembalikan repository ke keadaan sebelum merge dimulai. Perubahan yang sudah di-commit tidak hilang."
           onClick={() => void runAction({ action: 'merge-abort' })}
         >
           Batalkan merge

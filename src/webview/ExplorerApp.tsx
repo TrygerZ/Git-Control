@@ -18,7 +18,8 @@ import {
   useSettingsStore,
   wireHostEvents,
 } from './store';
-import { ErrorBanner } from './ui';
+import { ContextBar, ErrorBanner } from './ui';
+import { sanitizeGitText } from './format';
 import type { GraphNode } from '../messages';
 
 export function ExplorerApp(): JSX.Element {
@@ -97,8 +98,15 @@ export function ExplorerApp(): JSX.Element {
     [openUrl, pushToast, runAction, selectCommit],
   );
 
+  // Newest commit's subject, for the context breadcrumb. Sanitised here rather than
+  // inside `ContextBar`, so the one git-sourced string it receives is already safe.
+  const newest = graph === null ? undefined : graph.nodes[0];
+  const newestSubject = newest === undefined ? undefined : sanitizeGitText(newest.subject);
+
   return (
     <div className="gc-explorer">
+      <ContextBar status={status} subject={newestSubject} />
+
       <OperationBanner status={status} />
 
       {error !== null && (
@@ -138,6 +146,11 @@ export function ExplorerApp(): JSX.Element {
               className="gc-button gc-button--quiet"
               aria-expanded={inspectorOpen}
               aria-controls={asideId}
+              title={
+                inspectorOpen
+                  ? 'Sembunyikan panel detail agar grafik lebih lebar. Commit yang dipilih tetap sama.'
+                  : 'Tampilkan kembali panel detail commit di sisi kanan.'
+              }
               onClick={() => setInspectorOpen(!inspectorOpen)}
             >
               {inspectorOpen ? 'Sembunyikan detail' : 'Tampilkan detail'}
