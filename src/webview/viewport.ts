@@ -19,6 +19,13 @@ export const DAY_GAP = 48;
 export const RULER_HEIGHT = 32;
 export const GUTTER_X = 32;
 
+/**
+ * Zoom below which small text turns to mush: both the author initial inside a node and the
+ * commit card outside it rest on that same fact, so they share one threshold and disappear
+ * together instead of alternating.
+ */
+export const TEXT_MIN_ZOOM = 0.75;
+
 const ZOOM_STEPS = [0.35, 0.5, 0.75, 1, 1.25, 1.5, 2, 3, 4] as const;
 
 /** Keep zoom inside the 35 %–400 % window. */
@@ -47,6 +54,22 @@ export function shouldRevealOnContainerFocus(input: {
   keyboardModality: boolean;
 }): boolean {
   return input.targetIsContainer && input.keyboardModality;
+}
+
+/**
+ * A commit card is drawn once text is legible ({@link TEXT_MIN_ZOOM}); below that only the
+ * states the user is acting on stay on screen. Zoom goes through `clampZoom` so a nonsense
+ * value cannot reveal or hide everything.
+ */
+export function labelVisible(input: {
+  zoom: number;
+  hovered: boolean;
+  selected: boolean;
+  focused: boolean;
+  isHead: boolean;
+}): boolean {
+  if (input.hovered || input.selected || input.focused || input.isHead) return true;
+  return clampZoom(input.zoom) >= TEXT_MIN_ZOOM;
 }
 
 /** Next/previous stop on the discrete zoom ladder, so `+`/`-` feel predictable. */

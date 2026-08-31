@@ -9,11 +9,13 @@ import {
   MIN_ZOOM,
   NODE_RADIUS,
   RULER_HEIGHT,
+  TEXT_MIN_ZOOM,
   clampZoom,
   columnAt,
   columnX,
   edgeIntersectsBand,
   laneY,
+  labelVisible,
   minimapGeometry,
   minimapScrollFor,
   needsScrollToReveal,
@@ -346,4 +348,36 @@ test('label width derives from COLUMN_WIDTH rather than a constant', () => {
 
   // At zoom 1: exactly COLUMN_WIDTH - 8 (88px)
   assert.equal((COLUMN_WIDTH - 8) * 1, 88);
+});
+
+// ------------------------------------------------------------- label visibility
+
+const RESTING = { hovered: false, selected: false, focused: false, isHead: false };
+
+test('labelVisible hides a resting label below the legible zoom', () => {
+  assert.equal(labelVisible({ zoom: 0.5, ...RESTING }), false);
+  assert.equal(labelVisible({ zoom: MIN_ZOOM, ...RESTING }), false);
+});
+
+test('labelVisible keeps an active label below the legible zoom', () => {
+  assert.equal(labelVisible({ ...RESTING, zoom: MIN_ZOOM, hovered: true }), true);
+  assert.equal(labelVisible({ ...RESTING, zoom: MIN_ZOOM, selected: true }), true);
+  assert.equal(labelVisible({ ...RESTING, zoom: MIN_ZOOM, focused: true }), true);
+  assert.equal(labelVisible({ ...RESTING, zoom: MIN_ZOOM, isHead: true }), true);
+});
+
+test('labelVisible shows every label at or above the legible zoom', () => {
+  assert.equal(labelVisible({ zoom: TEXT_MIN_ZOOM, ...RESTING }), true);
+  assert.equal(labelVisible({ zoom: 1, ...RESTING }), true);
+  assert.equal(labelVisible({ zoom: MAX_ZOOM, ...RESTING }), true);
+});
+
+test('labelVisible clamps nonsense zoom through clampZoom', () => {
+  // Below MIN_ZOOM clamps up to MIN_ZOOM, still under the threshold.
+  assert.equal(labelVisible({ zoom: -5, ...RESTING }), false);
+  // Above MAX_ZOOM clamps down to MAX_ZOOM, still over it.
+  assert.equal(labelVisible({ zoom: 9999, ...RESTING }), true);
+  // NaN falls back to zoom 1.
+  assert.equal(labelVisible({ zoom: Number.NaN, ...RESTING }), true);
+  assert.ok(clampZoom(TEXT_MIN_ZOOM) === TEXT_MIN_ZOOM);
 });

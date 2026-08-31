@@ -58,10 +58,12 @@ import {
   MIN_ZOOM,
   NODE_RADIUS,
   RULER_HEIGHT,
+  TEXT_MIN_ZOOM,
   clampZoom,
   edgeIntersectsBand,
   laneY,
   columnX,
+  labelVisible,
   needsScrollToReveal,
   scrollToCommit,
   shouldRevealOnContainerFocus,
@@ -101,7 +103,7 @@ export function computeStaggerMap(nodes: readonly GraphNode[]): Map<string, 'abo
 const MINIMAP_HEIGHT = 160;
 
 /**
- * Radius of a commit node, and the zoom below which its author initial is dropped.
+ * Radius of a commit node.
  *
  * `NODE_RADIUS + 1` (6 px) is the smallest circle that can hold a legible letter at
  * 100 % zoom; a merge node stays one pixel larger than that, exactly as before, so
@@ -109,15 +111,10 @@ const MINIMAP_HEIGHT = 160;
  * `LANE_HEIGHT` (88 px) apart, so nothing here brings two nodes closer than the merge
  * ring already did.
  *
- * Both constants are presentation-only and stay here rather than in `viewport.ts`,
- * which owns the layout maths the host and the tests agree on.
- *
- * Below 75 % the letter is a smudge rather than a label, so it is not drawn at all —
- * the dot, the rings, and the row text all still say everything they said before.
+ * Presentation-only, so it stays here rather than in `viewport.ts`, which owns the
+ * layout maths the host and the tests agree on.
  */
 const AVATAR_RADIUS = NODE_RADIUS + 1;
-const INITIAL_MIN_ZOOM = 0.75;
-
 
 interface Props {
   graph: RepoGraph | null;
@@ -927,7 +924,7 @@ export function GraphCanvas({
                 const focused = index === focusRow;
                 const hovered = node.hash === hoveredHash;
                 const isHead = node.isHead;
-                const visible = hovered || selected || focused || isHead;
+                const visible = labelVisible({ zoom, hovered, selected, focused, isHead });
                 const placement = staggerMap.get(node.hash) ?? 'below';
 
                 return (
@@ -1133,9 +1130,9 @@ function NodeMark({
   if (node.local) classes.push('gc-node--local');
   if (dim) classes.push('gc-node--dim');
   if (selected) classes.push('gc-node--selected');
-  // The initial is unreadable below ~75 %, and a merge node is the only one wide
-  // enough to hold a glyph without touching its own ring.
-  const showInitial = zoom >= INITIAL_MIN_ZOOM;
+  // The initial is unreadable below `TEXT_MIN_ZOOM`, the same threshold the outside label
+  // uses, so both vanish together.
+  const showInitial = zoom >= TEXT_MIN_ZOOM;
   // Hit circle world radius: ensures rendered pixel radius is max(NODE_RADIUS * zoom, 14) px,
   // clamped so it cannot exceed half of min(COLUMN_WIDTH, LANE_HEIGHT).
   const maxHitRadius = Math.min(COLUMN_WIDTH, LANE_HEIGHT) / 2; // 44 world px (half lane height, targets never overlap in world space)
@@ -1236,6 +1233,7 @@ function Row({
   if (visible) classes.push('gc-row--visible');
   if (hovered) classes.push('gc-row--hovered');
   if (selected) classes.push('gc-row--selected');
+  if (node.isHead) classes.push('gc-row--head');
   if (dim) classes.push('gc-row--dim');
   // Both come from git. Sanitised once here so the `title` attribute and the
   // visible text cannot disagree.

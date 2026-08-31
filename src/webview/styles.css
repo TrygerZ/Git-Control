@@ -1167,7 +1167,8 @@ h3 {
 /*
  * Horizontal timeline: .gc-row is a compact card positioned below or above each commit node.
  * Width is bound via --gc-row-width to (COLUMN_WIDTH - 8) * zoom so labels never escape the column.
- * Labels are hover-only at rest, visible on hover, selection, focus, or HEAD.
+ * Labels are drawn once text is legible (`TEXT_MIN_ZOOM`); below that only hover, selection,
+ * focus, or HEAD keeps one on screen.
  */
 .gc-row {
   --gc-row-width: 88px;
@@ -1192,7 +1193,7 @@ h3 {
   transition-timing-function: ease-out;
 }
 
-/* Visually show row when visible (hovered, selected, focused, or is HEAD) */
+/* Visually show row when `labelVisible` says so (legible zoom, hover, selection, focus, HEAD) */
 .gc-row--visible {
   opacity: 1;
   pointer-events: auto;
@@ -1218,12 +1219,22 @@ h3 {
   box-shadow: 0 2px 8px var(--vscode-widget-shadow, transparent);
 }
 
+.gc-row--hovered .gc-row__subject {
+  -webkit-line-clamp: 2;
+  font-weight: var(--gc-weight-strong);
+}
+
 .gc-row--selected {
   background: var(--vscode-list-activeSelectionBackground);
   color: var(--vscode-list-activeSelectionForeground);
   outline: 1px solid var(--vscode-contrastActiveBorder, transparent);
   outline-offset: -1px;
   z-index: 3;
+}
+
+.gc-row--selected .gc-row__subject,
+.gc-row--head .gc-row__subject {
+  font-weight: var(--gc-weight-strong);
 }
 
 /*
@@ -1243,7 +1254,9 @@ h3 {
 }
 
 /*
- * Short subject below node: wraps to at most 2 lines with ellipsis.
+ * Resting subject is clamped to 1 line: cards on neighbouring lanes are offset from their
+ * node centre and a lane is only 88 px tall, so a second line makes an `above` card and a
+ * `below` card meet. Hover expands to 2 lines because a hovered card is on top of the stack.
  */
 .gc-row__subject {
   width: 100%;
@@ -1251,10 +1264,10 @@ h3 {
   overflow: hidden;
   color: inherit;
   font-size: var(--gc-fs-xs);
-  font-weight: var(--gc-weight-strong);
+  font-weight: normal;
   line-height: 1.25;
   display: -webkit-box;
-  -webkit-line-clamp: 2;
+  -webkit-line-clamp: 1;
   -webkit-box-orient: vertical;
   word-break: break-word;
 }
