@@ -777,7 +777,7 @@ export function wireHostEvents(mode: 'explorer' | 'pending'): () => void {
       if (mode === 'explorer') void useRepoStore.getState().refresh();
       else {
         void useChangesStore.getState().load();
-        void useRepoStore.getState().loadStatus();
+        void useRepoStore.getState().refresh();
       }
     }, REFRESH_DEBOUNCE_MS);
   });
@@ -799,10 +799,21 @@ export function wireHostEvents(mode: 'explorer' | 'pending'): () => void {
     });
   });
 
+  const offSettings = bridge.on('event/settingsChanged', (snapshot) => {
+    const language = snapshot.language === 'id' ? 'id' : 'en';
+    // Always store the fresh snapshot so it does not go stale.
+    useSettingsStore.setState({ snapshot });
+    // setLanguage checks `if (normalized === get().language) return;`, which
+    // makes the self-echo from the initiating webview an immediate no-op and
+    // prevents a persist -> broadcast -> persist loop.
+    useSettingsStore.getState().setLanguage(language);
+  });
+
   return () => {
     offChanged();
     offProgress();
     offToast();
+    offSettings();
     wired = false;
   };
 }

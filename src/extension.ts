@@ -107,6 +107,7 @@ class Controller implements vscode.Disposable {
       }),
       vscode.workspace.onDidChangeConfiguration((event) => {
         if (event.affectsConfiguration('gitControl.gitPath')) void this.rediscoverGit();
+        if (event.affectsConfiguration('gitControl.language')) void this.broadcastSettingsChanged();
       }),
     );
 
@@ -470,6 +471,10 @@ class Controller implements vscode.Disposable {
         retainContextWhenHidden: true,
       },
     );
+    panel.iconPath = {
+      light: vscode.Uri.joinPath(this.context.extensionUri, 'resources', 'graph-light.svg'),
+      dark: vscode.Uri.joinPath(this.context.extensionUri, 'resources', 'graph-dark.svg'),
+    };
     panel.webview.html = this.html(panel.webview, 'explorer');
     this.attachBridge(panel.webview, panel);
     panel.onDidDispose(() => {
@@ -523,6 +528,15 @@ class Controller implements vscode.Disposable {
     for (const bridge of this.bridges) await bridge.notifyRepoChanged(reason);
   }
 
+  /**
+   * HARD RULE: Language and UI preferences must propagate to every live webview
+   * (pending sidebar AND explorer panel) immediately without requiring a reload.
+   */
+  private broadcastSettingsChanged(): void {
+    const snapshot = this.settingsSnapshot();
+    for (const bridge of this.bridges) bridge.emit('event/settingsChanged', snapshot);
+  }
+
   // -------------------------------------------------------------- settings
 
   private settingsSnapshot(): SettingsSnapshot {
@@ -564,6 +578,7 @@ class Controller implements vscode.Disposable {
           .getConfiguration('gitControl')
           .update('language', lang, vscode.ConfigurationTarget.Global);
       }
+      this.broadcastSettingsChanged();
       return this.settingsSnapshot();
     }
     const prefs = this.uiPreferences();

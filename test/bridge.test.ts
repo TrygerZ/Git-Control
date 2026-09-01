@@ -955,6 +955,63 @@ test('persisted language is updated and normalized host-side', async (t) => {
   assert.equal((setUnknown.data as SettingsSnapshot).language, 'en');
 });
 
+test('language change broadcasts event/settingsChanged to all attached bridges', async (t) => {
+  let activeLang: 'en' | 'id' = 'en';
+
+  const hostSnapshot = (): SettingsSnapshot => ({
+    ...SETTINGS,
+    language: activeLang,
+  });
+
+  const bridges = new Set<MessageBridge>();
+  const broadcastSettings = () => {
+    const snapshot = hostSnapshot();
+    for (const b of bridges) b.emit('event/settingsChanged', snapshot);
+  };
+
+  const bridgeHost: BridgeHost = {
+    logger: new Logger(new NullSink()),
+    resolveRepository: () => Promise.resolve(null),
+    settings: hostSnapshot,
+    setUiPreference: async (payload) => {
+      if (payload.key === 'language' && typeof payload.value === 'string') {
+        activeLang = payload.value === 'id' ? 'id' : 'en';
+      }
+      broadcastSettings();
+      return hostSnapshot();
+    },
+    githubAuth: () => Promise.resolve({ connected: false, login: null, scopes: [] }),
+    connectGitHub: () => Promise.resolve({ connected: true, login: null, scopes: [] }),
+    disconnectGitHub: () => Promise.resolve({ connected: false, login: null, scopes: [] }),
+  };
+
+  const webview1 = new FakeWebview();
+  const bridge1 = new MessageBridge(webview1, bridgeHost);
+  bridges.add(bridge1);
+  t.after(() => bridge1.dispose());
+
+  const webview2 = new FakeWebview();
+  const bridge2 = new MessageBridge(webview2, bridgeHost);
+  bridges.add(bridge2);
+  t.after(() => bridge2.dispose());
+
+  // Trigger language change on bridge1 (e.g. Pending Changes panel)
+  const res = await webview1.send(req('settings/set', { key: 'language', value: 'id' }));
+  assert.equal(res.ok, true);
+
+  // Both webviews receive event/settingsChanged with updated snapshot
+  const events1 = webview1.events().filter((e) => e.kind === 'event/settingsChanged');
+  const events2 = webview2.events().filter((e) => e.kind === 'event/settingsChanged');
+
+  assert.equal(events1.length, 1);
+  assert.equal(events2.length, 1);
+  const ev1 = events1[0];
+  const ev2 = events2[0];
+  assert.ok(ev1 !== undefined && ev2 !== undefined);
+  assert.equal((ev1.payload as SettingsSnapshot).language, 'id');
+  assert.equal((ev2.payload as SettingsSnapshot).language, 'id');
+});
+
 test('a GitHubError maps to its own status and code', () => {
   const auth = toErrorBody(
     new GitHubError({ status: 401, code: 'AUTH_ERROR', message: 'Token GitHub tidak valid.' }),
@@ -1313,3 +1370,73 @@ test('the double-click guarantee survives: a successful mutation still replays (
   assert.equal(reverts, 1, 'PRD Kasus 2: one logical operation runs once');
 });
 
+
+// --------------------------------------------------------------- Bug 1 regression
+
+test('unstaging an untracked path is a no-op success, never a pathspec error', async (t) => {
+  const dir = await makeRepo();
+  t.after(() => cleanup(dir));
+  await fs.writeFile(path.join(dir, 'lambada.txt'), 'x\n', 'utf8');
+  const repo = new RepositoryService({ folderPath: dir, gitPath: 'git', store: new MemoryStore() });
+  const h = harness(repo);
+  t.after(() => h.bridge.dispose());
+
+  // The webview filters its own selection, but it is untrusted input: the host
+  // must filter again. `git restore --staged` on an untracked path fails with
+  // `pathspec ... did not match any file(s) known to git`, so git must not run.
+  let unstages = 0;
+  const realUnstage = repo.git.unstage.bind(repo.git);
+  repo.git.unstage = async (paths) => {
+    unstages += 1;
+    return realUnstage(paths);
+  };
+
+  const token = (await repo.status()).statusToken;
+  const response = await h.webview.send(
+    req('actions/stage', {
+      paths: ['lambada.txt'],
+      stage: false,
+      statusToken: token,
+      idempotencyKey: 'u1',
+    }),
+  );
+  assert.equal(response.ok, true);
+  if (!response.ok) return;
+  assert.equal(unstages, 0, 'git was never asked to unstage an untracked path');
+  // The file is untouched and still untracked.
+  assert.ok((await repo.status()).changes.some((c) => c.path === 'lambada.txt' && c.untracked));
+});
+
+test('a mixed unstage batch drops only the untracked paths', async (t) => {
+  const dir = await makeRepo();
+  t.after(() => cleanup(dir));
+  await fs.writeFile(path.join(dir, 'lambada.txt'), 'x\n', 'utf8');
+  await fs.writeFile(path.join(dir, 'a.txt'), 'changed\n', 'utf8');
+  const repo = new RepositoryService({ folderPath: dir, gitPath: 'git', store: new MemoryStore() });
+  await repo.git.stage(['a.txt']);
+  repo.invalidate();
+  const h = harness(repo);
+  t.after(() => h.bridge.dispose());
+
+  const seen: string[][] = [];
+  const realUnstage = repo.git.unstage.bind(repo.git);
+  repo.git.unstage = async (paths) => {
+    seen.push([...paths]);
+    return realUnstage(paths);
+  };
+
+  const token = (await repo.status()).statusToken;
+  const response = await h.webview.send(
+    req('actions/stage', {
+      paths: ['a.txt', 'lambada.txt'],
+      stage: false,
+      statusToken: token,
+      idempotencyKey: 'u2',
+    }),
+  );
+  assert.equal(response.ok, true);
+  assert.deepEqual(seen, [['a.txt']]);
+  const after = await repo.status();
+  assert.equal(after.staged, false);
+  assert.ok(after.changes.some((c) => c.path === 'lambada.txt' && c.untracked));
+});

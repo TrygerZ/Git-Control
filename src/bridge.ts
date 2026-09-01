@@ -585,10 +585,39 @@ export class MessageBridge {
     const status = await this.assertToken(repo, payload.statusToken);
     this.gate({ action: 'stage' }, status, payload);
 
+    /*
+     * Unstage only what is actually in the index.
+     *
+     * The webview filters its selection too, but the webview is untrusted input:
+     * this is the trust boundary, so the decision is re-made here against the
+     * status just read. An untracked path is in neither HEAD nor the index, so
+     * `git restore --staged` fails it with
+     * `pathspec '<file>' did not match any file(s) known to git` and takes the
+     * whole batch down with it.
+     *
+     * A path git does not report at all is left in: `git status` skips clean files,
+     * and refusing them here would turn "already unstaged" into a validation error
+     * for callers that pass a path we simply have no opinion on. Only paths we
+     * KNOW are not staged are dropped. Conflicted paths keep index entries and are
+     * unstageable, so they stay.
+     */
+    const paths = payload.stage
+      ? payload.paths
+      : payload.paths.filter((p) => {
+          if (status.conflicts.some((c) => c.path === p)) return true;
+          const entry = status.changes.find((c) => c.path === p);
+          return entry === undefined || entry.staged;
+        });
+    // Everything filtered out: nothing to do. A no-op success, not an error — the
+    // requested end state (these paths not staged) already holds.
+    if (paths.length === 0) {
+      return { ok: true, operation: status.operation, statusToken: status.statusToken };
+    }
+
     const kind = payload.stage ? 'stage' : 'unstage';
     return this.run(repo, operationId, kind, async () => {
-      if (payload.stage) await repo.git.stage(payload.paths);
-      else await repo.git.unstage(payload.paths);
+      if (payload.stage) await repo.git.stage(paths);
+      else await repo.git.unstage(paths);
     });
   }
 
