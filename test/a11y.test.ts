@@ -46,6 +46,8 @@ import {
   syncSummary,
 } from '../src/webview/format';
 import { groupedMenuItems, menuItemsFor } from '../src/webview/NodeContextMenu';
+import { computeBranchOptions, checkoutActionPayload } from '../src/webview/BranchLegend';
+import { t } from '../src/webview/i18n';
 import type { ChangeEntry, ErrorCode, GraphNode, RefInfo, Remedy, RepoStatus } from '../src/messages';
 
 const NOW = Date.parse('2026-06-15T12:00:00.000Z');
@@ -1016,4 +1018,105 @@ test('source code contains no user-facing em-dash or JSX text em-dash', () => {
   }
 
   assert.deepEqual(violations, [], `User-facing or JSX text em-dash found in:\n${violations.join('\n')}`);
+});
+
+// --------------------------------------------------------------- Bug 2 regression
+
+test('a pseudo-ref such as refs/stash is never a checkout or merge target', () => {
+  const stash = ref({ refName: 'refs/stash', shortName: 'stash', kind: 'other', objectName: HASH });
+  const items = menuItemsFor(node({ hash: HASH }), status({ branch: 'main' }), [stash], null);
+  const ids = items.map((i) => i.id);
+  assert.ok(!ids.includes('checkout-stash'), 'no checkout item for the stash');
+  assert.ok(!ids.includes('merge'), 'no merge item for the stash');
+  for (const item of items) {
+    if (item.command.kind !== 'action') continue;
+    const request = item.command.request as { branch?: string };
+    assert.notEqual(request.branch, 'stash');
+    assert.notEqual(request.branch, 'refs/stash');
+  }
+
+  // A real branch at the same commit still gets both items, so the filter is not
+  // simply suppressing everything.
+  const branch = ref({ refName: 'refs/heads/fitur', shortName: 'fitur', objectName: HASH });
+  const withBranch = menuItemsFor(node({ hash: HASH }), status({ branch: 'main' }), [stash, branch], null);
+  const branchIds = withBranch.map((i) => i.id);
+  assert.ok(branchIds.includes('checkout-fitur'));
+  assert.ok(branchIds.includes('merge'));
+});
+
+// --------------------------------------------------------------- BranchSelector checkout dropdown tests
+
+test('BranchSelector: only local branches are included as options (remote, tag, and other/stash are excluded)', () => {
+  const refs: RefInfo[] = [
+    ref({ refName: 'refs/heads/main', shortName: 'main', kind: 'local', objectName: HASH }),
+    ref({ refName: 'refs/heads/feature', shortName: 'feature', kind: 'local', objectName: HASH }),
+    ref({ refName: 'refs/remotes/origin/main', shortName: 'origin/main', kind: 'remote', objectName: HASH }),
+    ref({ refName: 'refs/tags/v1.0', shortName: 'v1.0', kind: 'tag', objectName: HASH }),
+    ref({ refName: 'refs/stash', shortName: 'stash', kind: 'other', objectName: HASH }),
+  ];
+
+  const state = computeBranchOptions(refs, 'feature', false);
+  assert.equal(state.options.length, 2);
+  assert.deepEqual(state.options.map((o) => o.value), ['main', 'feature']);
+  assert.ok(!state.options.some((o) => o.value === 'origin/main' || o.value === 'v1.0' || o.value === 'stash'));
+});
+
+test('BranchSelector: current active branch (HEAD) is present but disabled to prevent redundant checkout', () => {
+  const refs: RefInfo[] = [
+    ref({ refName: 'refs/heads/main', shortName: 'main', kind: 'local', objectName: HASH }),
+    ref({ refName: 'refs/heads/feature', shortName: 'feature', kind: 'local', objectName: HASH }),
+  ];
+
+  const state = computeBranchOptions(refs, 'main', false, (n) => `${n} (aktif)`);
+  const mainOpt = state.options.find((o) => o.value === 'main');
+  const featureOpt = state.options.find((o) => o.value === 'feature');
+
+  assert.ok(mainOpt, 'main option must exist');
+  assert.equal(mainOpt.disabled, true, 'current HEAD branch must be disabled');
+  assert.equal(mainOpt.label, 'main (aktif)');
+
+  assert.ok(featureOpt, 'feature option must exist');
+  assert.equal(featureOpt.disabled, false, 'non-current branch must NOT be disabled');
+  assert.equal(featureOpt.label, 'feature');
+});
+
+test('BranchSelector: select element is disabled when busy or when no local branches exist', () => {
+  const refs: RefInfo[] = [
+    ref({ refName: 'refs/heads/main', shortName: 'main', kind: 'local', objectName: HASH }),
+  ];
+
+  const idleState = computeBranchOptions(refs, 'main', false);
+  assert.equal(idleState.disabled, false, 'select must be enabled when idle with local branches');
+
+  const busyState = computeBranchOptions(refs, 'main', true);
+  assert.equal(busyState.disabled, true, 'select must be disabled when busy');
+
+  const emptyState = computeBranchOptions([], null, false);
+  assert.equal(emptyState.disabled, true, 'select must be disabled when no local branches exist');
+});
+
+test('BranchSelector: selecting target branch produces checkout-branch action payload with exact branch name', () => {
+  // Valid checkout to a different branch when idle
+  const payload = checkoutActionPayload('feature', 'main', false);
+  assert.deepEqual(payload, { action: 'checkout-branch', branch: 'feature' });
+
+  // Selecting current branch is a no-op (returns null)
+  assert.equal(checkoutActionPayload('main', 'main', false), null);
+
+  // Selecting while busy is a no-op (returns null)
+  assert.equal(checkoutActionPayload('feature', 'main', true), null);
+
+  // Selecting empty string is a no-op (returns null)
+  assert.equal(checkoutActionPayload('', 'main', false), null);
+});
+
+test('BranchSelector: accessibility attributes (aria-label, title) are defined and localized', () => {
+  for (const lang of ['en', 'id'] as const) {
+    const strings = t(lang);
+    assert.ok(strings.graph.checkoutBranchAria, `checkoutBranchAria must be defined for ${lang}`);
+    assert.ok(strings.graph.checkoutBranchTitle, `checkoutBranchTitle must be defined for ${lang}`);
+    assert.ok(strings.graph.checkoutBranchDetached, `checkoutBranchDetached must be defined for ${lang}`);
+    assert.ok(typeof strings.graph.checkoutBranchCurrent === 'function', `checkoutBranchCurrent must be function for ${lang}`);
+    assert.ok(strings.graph.checkoutBranchCurrent('main').includes('main'));
+  }
 });

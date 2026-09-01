@@ -23,7 +23,7 @@ import {
 import { useT } from './useT';
 import { bridge } from './bridge';
 import { toErrorBody, useGitHubStore, useOperationStore, useSettingsStore } from './store';
-import { EmptyState, ErrorBanner, FileListSkeleton, InfoBanner, MetadataSkeleton, Spinner } from './ui';
+import { EmptyState, ErrorBanner, FileListSkeleton, Icon, InfoBanner, MetadataSkeleton, Spinner } from './ui';
 import type { CommitDetail, CommitFileChange, ErrorBody } from '../messages';
 
 interface Props {
@@ -196,74 +196,89 @@ export function Inspector({ hash }: Props): JSX.Element {
         </div>
 
         <div className="gc-inspector__hashes">
-          <code className="gc-inspector__short">{detail.shortHash}</code>
-          <button
-            type="button"
-            className="gc-button gc-button--quiet"
-            aria-label={strings.inspector.copyShortHashAria(shortHash(detail.hash))}
-            title={strings.inspector.copyShortHashTitle}
-            onClick={() => void copy(shortHash(detail.hash))}
-          >
-            {strings.inspector.copyShortHash}
-          </button>
-          <button
-            type="button"
-            className="gc-button gc-button--quiet"
-            aria-label={strings.inspector.copyFullHashAria}
-            title={strings.inspector.copyFullHashTitle}
-            onClick={() => void copy(detail.hash)}
-          >
-            {strings.inspector.copyFullHash}
-          </button>
-          {linkage?.available === true && (
-            // Opening happens host-side: the webview CSP forbids navigation.
+          <code className="gc-inspector__short gc-inspector__hash-value" aria-label={strings.inspector.copyShortHashAria(shortHash(detail.hash))}>
+            {detail.shortHash}
+          </code>
+          {/*
+            Two copy actions differ only in hash length; short hash is already
+            visible as DATA beside them, so visible text "Copy short/full hash"
+            forces parsing a sentence to tell them apart. Icon-only with full
+            aria-label + title keeps the affordance compact (fits 250px) while
+            preserving the accessible name. Same segmented idiom as Select all /
+            Clear so the panel keeps one grouping language.
+          */}
+          <div className="gc-inspector__copy-group" role="group" aria-label={strings.inspector.copyGroupAria}>
             <button
               type="button"
-              className="gc-button gc-button--quiet"
+              className="gc-icon-button"
+              aria-label={strings.inspector.copyShortHashAria(shortHash(detail.hash))}
+              title={strings.inspector.copyShortHashTitle}
+              onClick={() => void copy(shortHash(detail.hash))}
+            >
+              <Icon name="copy" />
+            </button>
+            <button
+              type="button"
+              className="gc-icon-button"
+              aria-label={strings.inspector.copyFullHashAria}
+              title={strings.inspector.copyFullHashTitle}
+              onClick={() => void copy(detail.hash)}
+            >
+              <Icon name="copy" />
+            </button>
+          </div>
+          {linkage?.available === true && (
+            // External leaves the app — not in the clipboard rhythm. Own button
+            // with divider, icon-only for the same width reason as the copy pair.
+            <button
+              type="button"
+              className="gc-icon-button gc-inspector__external"
               aria-label={strings.inspector.openGitHubAria(detail.shortHash)}
               title={strings.inspector.openGitHubTitle}
               onClick={() => void openCommit(detail.hash)}
             >
-              {strings.inspector.openGitHub}
+              <Icon name="external" />
             </button>
           )}
         </div>
       </header>
 
-      <h3 className="gc-inspector__heading">{strings.inspector.sectionDetails}</h3>
-      <dl className="gc-inspector__meta">
-        <dt>{strings.inspector.labelAuthor}</dt>
-        <dd>
-          {author} &lt;{sanitizeGitText(detail.authorEmail)}&gt;
-        </dd>
-        <dt>{strings.inspector.labelAuthored}</dt>
-        <dd>
-          {absoluteTime(detail.authoredAt, language)} · {relativeTime(detail.authoredAt, Date.now(), language)}
-        </dd>
-        <dt>{strings.inspector.labelCommitted}</dt>
-        <dd>
-          {absoluteTime(detail.committedAt, language)} · {relativeTime(detail.committedAt, Date.now(), language)}
-          {detail.committerName !== detail.authorName &&
-            strings.inspector.committedBy(sanitizeGitText(detail.committerName))}
-        </dd>
-        <dt>{strings.inspector.labelParents}</dt>
-        <dd>
-          {detail.parents.length === 0 ? (
-            strings.inspector.noParents
-          ) : (
-            <ul className="gc-inspector__parents">
-              {detail.parents.map((p) => (
-                <li key={p}>
-                  <code>{shortHash(p)}</code>
-                </li>
-              ))}
-            </ul>
-          )}
-        </dd>
-      </dl>
+      <section className="gc-inspector__block">
+        <h3 className="gc-inspector__heading">{strings.inspector.sectionDetails}</h3>
+        <dl className="gc-inspector__meta">
+          <dt>{strings.inspector.labelAuthor}</dt>
+          <dd>
+            {author} &lt;{sanitizeGitText(detail.authorEmail)}&gt;
+          </dd>
+          <dt>{strings.inspector.labelAuthored}</dt>
+          <dd>
+            {absoluteTime(detail.authoredAt, language)} · {relativeTime(detail.authoredAt, Date.now(), language)}
+          </dd>
+          <dt>{strings.inspector.labelCommitted}</dt>
+          <dd>
+            {absoluteTime(detail.committedAt, language)} · {relativeTime(detail.committedAt, Date.now(), language)}
+            {detail.committerName !== detail.authorName &&
+              strings.inspector.committedBy(sanitizeGitText(detail.committerName))}
+          </dd>
+          <dt>{strings.inspector.labelParents}</dt>
+          <dd>
+            {detail.parents.length === 0 ? (
+              strings.inspector.noParents
+            ) : (
+              <ul className="gc-inspector__parents">
+                {detail.parents.map((p) => (
+                  <li key={p}>
+                    <code>{shortHash(p)}</code>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </dd>
+        </dl>
+      </section>
 
       {detail.refNames.length > 0 && (
-        <>
+        <section className="gc-inspector__block">
           <h3 className="gc-inspector__heading">{strings.inspector.sectionRefs}</h3>
           <ul className="gc-inspector__refs" aria-label={strings.inspector.refsAria}>
             {detail.refNames.map((ref) => (
@@ -272,117 +287,119 @@ export function Inspector({ hash }: Props): JSX.Element {
               </li>
             ))}
           </ul>
-        </>
+        </section>
       )}
 
       {detail.body.trim().length > 0 && (
-        <>
+        <section className="gc-inspector__block">
           <h3 className="gc-inspector__heading">{strings.inspector.sectionBody}</h3>
           <pre className="gc-inspector__body" aria-label={strings.inspector.bodyAria}>
             {sanitizeGitText(detail.body.trim())}
           </pre>
-        </>
+        </section>
       )}
 
-      <h3 className="gc-inspector__heading">{strings.inspector.sectionFiles}</h3>
+      <section className="gc-inspector__block gc-inspector__block--files">
+        <h3 className="gc-inspector__heading">{strings.inspector.sectionFiles}</h3>
 
-      {detail.parents.length > 1 && (
-        <label className="gc-field">
-          <span className="gc-field__label">{strings.inspector.compareParentLabel}</span>
-          <select
-            value={parent ?? ''}
-            onChange={(e) => {
-              setParent(e.target.value);
-              // The host diffs against the first parent, so switching parents
-              // only changes what `actions/openDiff` is asked for.
-              setOpening(null);
-            }}
-          >
-            {detail.parents.map((p, i) => (
-              <option key={p} value={p}>
-                {strings.inspector.parentOption(i + 1, shortHash(p))}
-              </option>
-            ))}
-          </select>
-        </label>
-      )}
+        {detail.parents.length > 1 && (
+          <label className="gc-field">
+            <span className="gc-field__label">{strings.inspector.compareParentLabel}</span>
+            <select
+              value={parent ?? ''}
+              onChange={(e) => {
+                setParent(e.target.value);
+                // The host diffs against the first parent, so switching parents
+                // only changes what `actions/openDiff` is asked for.
+                setOpening(null);
+              }}
+            >
+              {detail.parents.map((p, i) => (
+                <option key={p} value={p}>
+                  {strings.inspector.parentOption(i + 1, shortHash(p))}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
 
-      {totals !== null && (
-        <p className="gc-inspector__totals">
-          {strings.inspector.totalsFiles(formatCount(totals.files, language))} ·{' '}
-          <span className="gc-stat gc-stat--add">+{formatCount(totals.additions, language)}</span>{' '}
-          <span className="gc-stat gc-stat--del">−{formatCount(totals.deletions, language)}</span>
-          {totals.binary > 0 && ` · ${strings.inspector.totalsBinary(formatCount(totals.binary, language))}`}
-        </p>
-      )}
+        {totals !== null && (
+          <p className="gc-inspector__totals">
+            {strings.inspector.totalsFiles(formatCount(totals.files, language))} ·{' '}
+            <span className="gc-stat gc-stat--add">+{formatCount(totals.additions, language)}</span>{' '}
+            <span className="gc-stat gc-stat--del">−{formatCount(totals.deletions, language)}</span>
+            {totals.binary > 0 && ` · ${strings.inspector.totalsBinary(formatCount(totals.binary, language))}`}
+          </p>
+        )}
 
-      {detail.files.length === 0 ? (
-        <EmptyState
-          title={strings.inspector.emptyFilesTitle}
-          hint={strings.inspector.emptyFilesHint}
-        />
-      ) : (
-        <ul className="gc-filelist" aria-label={strings.inspector.fileListAria(formatCount(detail.files.length, language))}>
-          {detail.files.map((file) => {
-            // Paths come from git; sanitise once so the title and the two visible
-            // spans cannot disagree. `baseName` sanitises internally too.
-            const safePath = sanitizeGitText(file.path);
-            const churn = file.binary
-              ? strings.inspector.churnBinary
-              : strings.inspector.churnSummary(file.additions ?? 0, file.deletions ?? 0);
-            return (
-              <li key={file.path} className="gc-filelist__item">
-                <button
-                  type="button"
-                  className="gc-filelist__button"
-                  // The visible row splits path and churn across three spans; the
-                  // name puts them back in one sentence so nothing is lost or
-                  // read out of order.
-                  aria-label={strings.inspector.openDiffAria(safePath, churn)}
-                  onClick={() => void openDiff(file)}
-                  disabled={opening === file.path}
-                >
-                  <span className="gc-filelist__name" aria-hidden="true" title={safePath}>
-                    {file.origPath !== undefined
-                      ? `${sanitizeGitText(file.origPath)} → ${baseName(file.path)}`
-                      : baseName(file.path)}
-                  </span>
-                  <span className="gc-filelist__dir" aria-hidden="true">
-                    {safePath}
-                  </span>
-                  {file.binary ? (
-                    <span className="gc-filelist__binary" aria-hidden="true">
-                      {strings.inspector.churnBinary}
+        {detail.files.length === 0 ? (
+          <EmptyState
+            title={strings.inspector.emptyFilesTitle}
+            hint={strings.inspector.emptyFilesHint}
+          />
+        ) : (
+          <ul className="gc-filelist" aria-label={strings.inspector.fileListAria(formatCount(detail.files.length, language))}>
+            {detail.files.map((file) => {
+              // Paths come from git; sanitise once so the title and the two visible
+              // spans cannot disagree. `baseName` sanitises internally too.
+              const safePath = sanitizeGitText(file.path);
+              const churn = file.binary
+                ? strings.inspector.churnBinary
+                : strings.inspector.churnSummary(file.additions ?? 0, file.deletions ?? 0);
+              return (
+                <li key={file.path} className="gc-filelist__item">
+                  <button
+                    type="button"
+                    className="gc-filelist__button"
+                    // The visible row splits path and churn across three spans; the
+                    // name puts them back in one sentence so nothing is lost or
+                    // read out of order.
+                    aria-label={strings.inspector.openDiffAria(safePath, churn)}
+                    onClick={() => void openDiff(file)}
+                    disabled={opening === file.path}
+                  >
+                    <span className="gc-filelist__name" aria-hidden="true" title={safePath}>
+                      {file.origPath !== undefined
+                        ? `${sanitizeGitText(file.origPath)} → ${baseName(file.path)}`
+                        : baseName(file.path)}
                     </span>
-                  ) : (
-                    <span className="gc-filelist__stats" aria-hidden="true">
-                      <span className="gc-stat gc-stat--add">+{file.additions ?? 0}</span>
-                      <span className="gc-stat gc-stat--del">−{file.deletions ?? 0}</span>
+                    <span className="gc-filelist__dir" aria-hidden="true">
+                      {safePath}
                     </span>
-                  )}
-                </button>
-                {opening === file.path && <Spinner label={strings.inspector.openingDiff} />}
-              </li>
-            );
-          })}
-        </ul>
-      )}
+                    {file.binary ? (
+                      <span className="gc-filelist__binary" aria-hidden="true">
+                        {strings.inspector.churnBinary}
+                      </span>
+                    ) : (
+                      <span className="gc-filelist__stats" aria-hidden="true">
+                        <span className="gc-stat gc-stat--add">+{file.additions ?? 0}</span>
+                        <span className="gc-stat gc-stat--del">−{file.deletions ?? 0}</span>
+                      </span>
+                    )}
+                  </button>
+                  {opening === file.path && <Spinner label={strings.inspector.openingDiff} />}
+                </li>
+              );
+            })}
+          </ul>
+        )}
 
-      {detail.truncated && (
-        <InfoBanner tone="info" glyph="ellipsis">
-          <strong>{strings.inspector.diffTruncated}</strong>
-          <button
-            type="button"
-            className="gc-button gc-button--quiet"
-            title={strings.inspector.loadMoreTitle}
-            disabled={paging}
-            onClick={() => void loadMoreFiles()}
-          >
-            {strings.inspector.loadMore}
-          </button>
-          {paging && <Spinner label={strings.inspector.loadingMore} />}
-        </InfoBanner>
-      )}
+        {detail.truncated && (
+          <InfoBanner tone="info" glyph="ellipsis">
+            <strong>{strings.inspector.diffTruncated}</strong>
+            <button
+              type="button"
+              className="gc-button gc-button--quiet"
+              title={strings.inspector.loadMoreTitle}
+              disabled={paging}
+              onClick={() => void loadMoreFiles()}
+            >
+              {strings.inspector.loadMore}
+            </button>
+            {paging && <Spinner label={strings.inspector.loadingMore} />}
+          </InfoBanner>
+        )}
+      </section>
     </section>
   );
 }

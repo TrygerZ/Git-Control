@@ -42,8 +42,6 @@
  * `.gc-section__badge`.
  */
 
-@import '../../node_modules/@vscode/codicons/dist/codicon.css';
-
 :root {
   color-scheme: light dark;
 
@@ -118,13 +116,14 @@
 }
 
 html,
-body,
-#root {
+body {
   height: 100%;
   min-height: 0;
 }
 
 #root {
+  height: 100%;
+  min-height: 0;
   display: flex;
   flex-direction: column;
 }
@@ -415,6 +414,34 @@ h3 {
   cursor: pointer;
 }
 
+/* Floating checkbox in canvas controls stack */
+.gc-checkbox--float {
+  align-items: center;
+  gap: var(--gc-space-1);
+  padding: 0 var(--gc-space-2);
+  min-height: var(--gc-hit);
+  border: 1px solid var(--gc-border);
+  border-radius: var(--gc-radius);
+  background: var(--vscode-editorWidget-background, var(--vscode-editor-background));
+  color: var(--vscode-foreground);
+  box-shadow: 0 1px 4px var(--vscode-widget-shadow, transparent);
+  user-select: none;
+}
+
+.gc-checkbox--float:hover {
+  background: var(--vscode-toolbar-hoverBackground, var(--vscode-list-hoverBackground));
+}
+
+.gc-checkbox--float .gc-checkbox__input {
+  margin: 0;
+}
+
+.gc-checkbox--float .gc-checkbox__text {
+  padding-top: 0;
+  font-size: var(--gc-fs-2xs);
+  font-weight: var(--gc-weight-strong);
+}
+
 /*
  * A checkbox whose label is two lines: the choice, then what it will cause. `align-items:
  * flex-start` on the row and this column keep the box level with the FIRST line rather
@@ -548,8 +575,7 @@ h3 {
 }
 
 .gc-skeleton-graph,
-.gc-skeleton-files,
-.gc-skeleton-meta {
+.gc-skeleton-files {
   display: flex;
   flex-direction: column;
   gap: var(--gc-space-1);
@@ -557,7 +583,10 @@ h3 {
 }
 
 .gc-skeleton-meta {
+  display: flex;
+  flex-direction: column;
   gap: var(--gc-space-2);
+  padding: var(--gc-space-3);
 }
 
 .gc-skeleton-row {
@@ -787,8 +816,8 @@ h3 {
 .gc-pending__bar {
   display: flex;
   flex-wrap: wrap;
-  align-items: flex-end;
-  gap: var(--gc-space-3);
+  align-items: center;
+  gap: var(--gc-space-2) var(--gc-space-3);
 }
 
 /*
@@ -835,9 +864,23 @@ h3 {
 .gc-toolbar__branch-wrap {
   display: flex;
   align-items: center;
+  flex: 1 1 0;
+  min-width: 0;
+  max-width: 100%;
 }
 
 .gc-toolbar__branch-select {
+  /*
+   * Container-relative cap, not just font-relative: 14em alone is ~168 px at
+   * --gc-fs-sm, which already exceeds a 170 px sidebar once padding and the
+   * native dropdown arrow are counted. min(14em, 100%) keeps the 14em intent
+   * in a wide panel while guaranteeing the control never overflows its parent.
+   * Global `* { box-sizing: border-box }` (line 114) ensures padding is
+   * included in that 100%, so no arithmetic overflow.
+   */
+  width: 100%;
+  min-width: 0;
+  max-width: min(14em, 100%);
   min-height: var(--gc-hit);
   padding: var(--gc-space-1) var(--gc-space-3);
   border: 1px solid var(--vscode-input-border, var(--gc-border));
@@ -846,7 +889,9 @@ h3 {
   color: var(--vscode-input-foreground);
   font-family: inherit;
   font-size: var(--gc-fs-sm);
-  max-width: 14em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .gc-toolbar__clear {
@@ -860,8 +905,9 @@ h3 {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: var(--gc-space-3);
-  padding-bottom: var(--gc-space-2);
+  gap: var(--gc-space-2) var(--gc-space-3);
+  padding-bottom: var(--gc-space-3);
+  border-bottom: 1px solid var(--gc-border);
 }
 
 .gc-toolbar__primary-group {
@@ -914,21 +960,163 @@ h3 {
  *
  * `forced-colors` drops the shadow, but the weight survives and the arrows still point
  * in opposite directions, so the pair does not collapse into two identical buttons.
+ *
+ * Resting surface: both buttons carry a real fill from the theme's secondary/background
+ * stack, not transparent, so the control reads as a designed object at rest rather than
+ * only on hover. Commit stays louder by size (--gc-hit-lg vs --gc-hit) and by its
+ * filled primary background, which this pair never uses.
+ *
+ * The pair is framed as one machined control: a single outer border with a single
+ * internal divider, outer corners rounded, inner corners square. Padding rhythm
+ * (4px vertical, 12px horizontal) and a 4px gap between icon and label are
+ * deliberate; icon is 14px optically aligned to the cap height.
  */
+.gc-toolbar__primary-group.gc-segmented {
+  /* One frame around the pair, not two loose boxes. */
+  border: 1px solid var(--vscode-input-border, var(--gc-border));
+  border-radius: var(--gc-radius);
+  overflow: visible;
+}
+
+.gc-toolbar__primary-group.gc-segmented .gc-button {
+  border: none;
+  border-radius: 0;
+  margin-left: 0;
+  /* Deliberate rhythm: icon 14px, label --gc-fs-sm, 4px gap, 4/12 padding. */
+  gap: var(--gc-space-2);
+  padding: var(--gc-space-2) var(--gc-space-4);
+  font-size: var(--gc-fs-sm);
+  letter-spacing: 0.01em;
+}
+
+.gc-toolbar__primary-group.gc-segmented .gc-button:first-child {
+  border-top-left-radius: var(--gc-radius);
+  border-bottom-left-radius: var(--gc-radius);
+}
+
+.gc-toolbar__primary-group.gc-segmented .gc-button:last-child {
+  border-top-right-radius: var(--gc-radius);
+  border-bottom-right-radius: var(--gc-radius);
+}
+
+.gc-toolbar__primary-group.gc-segmented .gc-button + .gc-button {
+  border-left: 1px solid var(--vscode-input-border, var(--gc-border));
+  margin-left: 0;
+}
+
+.gc-toolbar__primary-group.gc-segmented .gc-button .gc-icon {
+  /* 14px optical size for the arrow: width/height are geometry, not type, so
+   * px is legitimate here; font-size stays token-driven via the button. */
+  width: 14px;
+  height: 14px;
+  flex: 0 0 auto;
+}
+
+.gc-button--stage,
+.gc-button--unstage {
+  transition:
+    background var(--gc-dur-fast) var(--gc-ease),
+    border-color var(--gc-dur-fast) var(--gc-ease),
+    box-shadow var(--gc-dur-fast) var(--gc-ease),
+    opacity var(--gc-dur-fast) var(--gc-ease);
+}
+
 .gc-button--stage {
+  /* Real surface: secondaryBackground is the theme's quiet fill for this tier. */
+  background: var(
+    --vscode-button-secondaryBackground,
+    var(--vscode-input-background, var(--vscode-editorWidget-background, var(--vscode-badge-background)))
+  );
+  color: var(--vscode-button-secondaryForeground, var(--vscode-foreground));
   box-shadow: inset 0 0 0 1px var(--vscode-focusBorder);
   font-weight: var(--gc-weight-strong);
+  letter-spacing: 0.012em;
   z-index: 1;
 }
 
+.gc-button--stage:hover:not(:disabled) {
+  background: var(
+    --vscode-button-secondaryHoverBackground,
+    var(--vscode-toolbar-hoverBackground, var(--vscode-list-hoverBackground))
+  );
+  border-color: transparent;
+}
+
+.gc-button--stage:active:not(:disabled) {
+  background: var(--vscode-list-activeSelectionBackground, var(--vscode-list-hoverBackground));
+}
+
 .gc-button--unstage {
-  font-weight: normal;
+  background: var(
+    --vscode-input-background,
+    var(--vscode-editorWidget-background, var(--vscode-badge-background))
+  );
+  color: var(--vscode-foreground);
+  font-weight: 400;
+  letter-spacing: 0.008em;
+  border-color: transparent;
+}
+
+.gc-button--unstage:hover:not(:disabled) {
+  background: var(--vscode-toolbar-hoverBackground, var(--vscode-list-hoverBackground));
+  border-color: transparent;
+}
+
+.gc-button--stage:disabled,
+.gc-button--unstage:disabled {
+  opacity: 0.45;
+  border-color: transparent;
+  box-shadow: none;
+}
+
+/* Quiet segmented pair (Select all / Clear) — same join idiom as Stage/Unstage
+ * but quieter: hairline `--gc-border` frame, no accent inset, so it never competes
+ * with the action tier. The join reads as "one control, two choices". */
+.gc-segmented--quiet {
+  border: 1px solid var(--gc-border);
+  border-radius: var(--gc-radius);
+}
+
+.gc-segmented--quiet .gc-button {
+  border-color: transparent;
+  background: transparent;
+}
+
+.gc-segmented--quiet .gc-button + .gc-button {
+  border-left: 1px solid var(--gc-border);
+  margin-left: 0;
+}
+
+.gc-segmented--quiet .gc-button:hover:not(:disabled) {
+  background: var(--vscode-list-hoverBackground);
+}
+
+.gc-segmented--quiet .gc-button:focus-visible {
+  z-index: 2;
+}
+
+/* Selection count is data, not an action — muted and tabular so it anchors the pair. */
+.gc-selection-group {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--gc-space-2);
+  min-width: 0;
+  flex-wrap: wrap;
+}
+
+.gc-selection-group .gc-pending__count {
+  color: var(--gc-muted);
+  font-size: var(--gc-fs-xs);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
 }
 
 .gc-toolbar__secondary-group {
   display: flex;
   align-items: center;
   gap: var(--gc-space-1);
+  min-width: 0;
+  flex-wrap: wrap;
 }
 
 .gc-toolbar__end {
@@ -936,6 +1124,7 @@ h3 {
   align-items: center;
   gap: var(--gc-space-3);
   margin-left: auto;
+  min-width: 0;
 }
 
 .gc-lang-toggle {
@@ -1369,6 +1558,27 @@ h3 {
 /*
  * Branch pill positioned above lane / node.
  */
+/* ----------------------------------------------------------- branch ribbon */
+
+.gc-branch-ribbon {
+  pointer-events: none;
+  opacity: 1;
+  transition: opacity var(--gc-dur-fast) var(--gc-ease);
+}
+
+.gc-branch-ribbon--hidden {
+  opacity: 0;
+}
+
+.gc-branch-ribbon__track {
+  opacity: 0.28;
+}
+
+.gc-branch-ribbon__border {
+  stroke-width: 1;
+  opacity: 0.85;
+}
+
 .gc-pill {
   position: absolute;
   transform: translate(-50%, -100%);
@@ -1389,6 +1599,14 @@ h3 {
   box-shadow: 0 1px 3px var(--vscode-widget-shadow, transparent);
 }
 
+.gc-pill--above {
+  transform: translate(-50%, -100%);
+}
+
+.gc-pill--below {
+  transform: translateX(-50%);
+}
+
 .gc-pill--current {
   border-color: var(--vscode-focusBorder);
   outline: 1px solid var(--vscode-focusBorder);
@@ -1396,6 +1614,37 @@ h3 {
 
 .gc-pill--remote {
   border-style: dashed;
+}
+
+/* New branch trail pill with path segmentation (parent gray / child accent) */
+.gc-pill--trail {
+  font-size: var(--gc-fs-xs);
+  padding: var(--gc-space-1) var(--gc-space-2);
+  background: var(--vscode-editorWidget-background, var(--vscode-editor-background));
+  border: 1px solid var(--gc-border);
+  box-shadow: 0 2px 6px var(--vscode-widget-shadow, transparent);
+  gap: var(--gc-space-1);
+}
+
+.gc-pill__segment-parent {
+  color: var(--gc-muted);
+}
+
+.gc-pill__segment-slash {
+  color: var(--gc-muted);
+  opacity: 0.7;
+}
+
+.gc-pill__segment-child {
+  color: var(--gc-warning);
+  font-weight: var(--gc-weight-strong);
+}
+
+/* Capsule icon button on the newly created branch node */
+.gc-node__capsule {
+  fill: var(--vscode-editorWidget-background, var(--vscode-editor-background));
+  stroke-width: 2;
+  transition: transform var(--gc-dur-fast) var(--gc-ease);
 }
 
 /* Date ruler sticky at top */
@@ -1670,6 +1919,18 @@ h3 {
   width: 15px;
   height: 15px;
   box-shadow: inset 0 0 0 1.5px var(--vscode-editor-background);
+}
+
+.gc-legend__swatch--ribbon {
+  width: 16px;
+  height: 8px;
+  border-radius: var(--gc-radius-xs);
+  border-top: 1.5px solid var(--vscode-focusBorder);
+  border-bottom: 1.5px solid var(--vscode-focusBorder);
+  border-left: none;
+  border-right: none;
+  background: var(--vscode-focusBorder);
+  opacity: 0.5;
 }
 
 .gc-legend__lanes {
@@ -2022,6 +2283,16 @@ h3 {
 
 /* ----------------------------------------------------------- pending changes */
 
+.gc-pending__notifications {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gc-space-2);
+}
+
+.gc-pending__notifications:empty {
+  display: none;
+}
+
 .gc-pending__sections {
   flex: 1 1 auto;
   min-height: 120px;
@@ -2039,11 +2310,15 @@ h3 {
  * Header of the file list: title, total count, search input.
  */
 .gc-listbar {
+  position: sticky;
+  top: 0;
+  z-index: 1;
   display: flex;
   flex-direction: column;
   gap: var(--gc-space-2);
   padding: var(--gc-space-2) 0;
   border-bottom: 1px solid var(--gc-border);
+  background: var(--vscode-editor-background);
 }
 
 .gc-listbar__header {
@@ -2092,14 +2367,18 @@ h3 {
 }
 
 /*
- * Sections with refined spacing rhythm.
+ * Sections with clear natural dividers and refined spacing rhythm.
  */
 .gc-section {
-  margin-bottom: var(--gc-space-5);
+  padding-bottom: var(--gc-space-4);
+  margin-bottom: var(--gc-space-4);
+  border-bottom: 1px solid var(--gc-border);
 }
 
 .gc-section:last-child {
-  margin-bottom: var(--gc-space-3);
+  padding-bottom: 0;
+  margin-bottom: var(--gc-space-2);
+  border-bottom: none;
 }
 
 .gc-section__title {
@@ -2117,14 +2396,14 @@ h3 {
 }
 
 .gc-section__badge {
+  /* Icon only: 18x18 grid keeps row alignment without a visible frame. */
   display: inline-flex;
   flex: 0 0 auto;
   align-items: center;
   justify-content: center;
   width: 18px;
   height: 18px;
-  border: 1px solid currentColor;
-  border-radius: var(--gc-radius);
+  border: none;
   font-size: var(--gc-fs-2xs);
   font-weight: var(--gc-weight-strong);
   line-height: 1;
@@ -2236,9 +2515,10 @@ h3 {
 }
 
 /*
- * The box holds one codicon and nothing else, so it sits at `--gc-fs-md` rather
+ * The box holds one icon and nothing else, so it sits at `--gc-fs-md` rather
  * than at the metadata step: stacking two fractional em steps was what pushed the
- * glyph off centre.
+ * glyph off centre. No visible frame — the glyph itself carries the distinction
+ * (see header comment: colour is always the last channel).
  */
 .gc-status__box {
   display: grid;
@@ -2246,8 +2526,7 @@ h3 {
   flex: 0 0 auto;
   width: 18px;
   height: 18px;
-  border: 1px solid currentColor;
-  border-radius: var(--gc-radius);
+  border: none;
   font-family: var(--vscode-editor-font-family, monospace);
   font-size: var(--gc-fs-md);
   font-weight: var(--gc-weight-strong);
@@ -2255,20 +2534,15 @@ h3 {
 }
 
 /*
- * Centre the glyph geometrically rather than through font metrics. The global icon
- * rule places a codicon with `inline-block` plus `vertical-align: middle`, which
- * resolves against this box's baseline and half-leading and lands the glyph left of
- * centre. A square em box centred with grid placement has no baseline to drift
- * against. Scoped to the status box on purpose: every other icon in this file takes
- * its size from the control around it.
+ * Centre the glyph geometrically rather than through font metrics. A square em
+ * SVG centred with grid placement has no baseline to drift against. Scoped to
+ * the status box on purpose: every other icon in this file takes its size from
+ * the control around it.
  */
 .gc-status__box .gc-icon {
-  display: grid;
-  place-items: center;
+  display: block;
   width: 1em;
   height: 1em;
-  font-size: inherit;
-  line-height: 1;
   vertical-align: baseline;
 }
 
@@ -2459,13 +2733,31 @@ h3 {
 }
 
 /*
+ * Logical content blocks inside the inspector.
+ * Separated by standard natural bottom borders for consistent hierarchy.
+ */
+.gc-inspector__block {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gc-space-2);
+  padding-bottom: var(--gc-space-4);
+  border-bottom: 1px solid var(--gc-border);
+}
+
+.gc-inspector__block:last-child,
+.gc-inspector__block--files {
+  padding-bottom: 0;
+  border-bottom: none;
+}
+
+/*
  * Section headings inside the inspector (`Keterangan`, `Ref`, `File yang berubah`),
  * the reference's `Comments` / `Attributes` pattern. Quieter than the title and
  * louder than body text: uppercase at small size is legible here because each label
  * is a single short word.
  */
 .gc-inspector__heading {
-  margin: var(--gc-space-2) 0 0;
+  margin: 0;
   color: var(--gc-muted);
   font-size: var(--gc-fs-xs);
   font-weight: var(--gc-weight-strong);
@@ -2474,14 +2766,119 @@ h3 {
 }
 
 .gc-inspector__hashes {
+  /*
+   * One line at 250 px sidebar: hash pill + two 28px icon buttons + external
+   * icon fits in ~210 px (pill ~66 + copy group ~56 + external ~28 + gaps 24).
+   * Text labels would need >360 px. Icon-only keeps the row unbroken; below
+   * 250 px it wraps to hash on first line, controls on second, predictably.
+   */
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   align-items: center;
   gap: var(--gc-space-2);
+  min-width: 0;
+  max-width: 100%;
+}
+
+/* Hash data versus action: code is read, buttons do. The pill makes the distinction tactile. */
+.gc-inspector__hash-value {
+  display: inline-flex;
+  align-items: center;
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 9em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-height: var(--gc-hit);
+  padding: 0 var(--gc-space-2);
+  border: 1px solid var(--gc-border);
+  border-radius: var(--gc-radius);
+  background: var(--vscode-textCodeBlock-background, transparent);
 }
 
 .gc-inspector__short {
-  color: var(--gc-muted);
+  color: var(--vscode-foreground);
+  font-size: var(--gc-fs-sm);
+}
+
+/*
+ * Copy pair is one family (clipboard, same target). Icon-only so the row fits
+ * on one line at 250 px: the short hash is already visible as DATA beside it,
+ * so repeating "Copy short hash" as visible text forces the reader to parse a
+ * sentence to tell two identical-length labels apart. Full accessible names
+ * survive on aria-label + title.
+ * Joined as one segmented control — same idiom as Select all / Clear — so the
+ * eye reads "two lengths, one act" and the panel keeps one grouping language.
+ */
+.gc-inspector__copy-group {
+  display: inline-flex;
+  align-items: stretch;
+  flex: 0 0 auto;
+  border: 1px solid var(--gc-border);
+  border-radius: var(--gc-radius);
+  overflow: visible;
+}
+
+.gc-inspector__copy-group .gc-icon-button {
+  border-radius: 0;
+  position: relative;
+  border-color: transparent;
+  background: transparent;
+  font-size: var(--gc-fs-sm);
+}
+
+.gc-inspector__copy-group .gc-icon-button:first-child {
+  border-top-left-radius: var(--gc-radius);
+  border-bottom-left-radius: var(--gc-radius);
+}
+
+.gc-inspector__copy-group .gc-icon-button:last-child {
+  border-top-right-radius: var(--gc-radius);
+  border-bottom-right-radius: var(--gc-radius);
+}
+
+.gc-inspector__copy-group .gc-icon-button + .gc-icon-button {
+  border-left: 1px solid var(--gc-border);
+}
+
+.gc-inspector__copy-group .gc-icon-button:hover:not(:disabled) {
+  background: var(--vscode-list-hoverBackground);
+}
+
+.gc-inspector__copy-group .gc-icon-button:focus-visible {
+  z-index: 2;
+}
+
+/*
+ * External action leaves the app — different class from clipboard, so not in the
+ * same segmented rhythm. A vertical divider plus a standalone button makes the
+ * boundary explicit; at 250 px the three icons plus pill still fit one line.
+ */
+.gc-inspector__external {
+  flex: 0 0 auto;
+  margin-left: var(--gc-space-1);
+  padding-left: var(--gc-space-2);
+  border-left: 1px solid var(--gc-border);
+  font-size: var(--gc-fs-xs);
+}
+
+.gc-inspector__external.gc-icon-button {
+  padding-left: 0;
+  border-left: none;
+  border: 1px solid var(--gc-border);
+  margin-left: var(--gc-space-2);
+}
+
+/* Wrap predictably below 250 px: hash owns the first line, controls the second. */
+@media (max-width: 280px) {
+  .gc-inspector__hashes {
+    flex-wrap: wrap;
+  }
+  .gc-inspector__hash-value {
+    flex: 1 1 100%;
+    max-width: 100%;
+  }
 }
 
 .gc-inspector__meta {
@@ -2600,9 +2997,10 @@ h3 {
 }
 
 /*
- * `U` — the porcelain code every conflicted file carries. Same box as the section
+ * `U` — the porcelain code every conflicted file carries. Same 18x18 grid as section
  * badges so the panel and the list speak one language; `aria-hidden`, because the
- * sentence beside it already says how many files need work.
+ * sentence beside it already says how many files need work. No visible frame — the
+ * letter itself is the channel, colour only reinforces it.
  */
 .gc-conflicts__badge {
   display: inline-flex;
@@ -2611,8 +3009,7 @@ h3 {
   justify-content: center;
   width: 18px;
   height: 18px;
-  border: 1px solid currentColor;
-  border-radius: var(--gc-radius);
+  border: none;
   color: var(--gc-tone-removed);
   font-family: var(--vscode-editor-font-family, monospace);
   font-size: var(--gc-fs-2xs);
@@ -2657,14 +3054,16 @@ h3 {
   font-size: var(--gc-fs-xs);
 }
 
-.gc-conflicts__actions,
-.gc-conflicts__footer {
+.gc-conflicts__actions {
   display: flex;
   flex-wrap: wrap;
   gap: var(--gc-space-2);
 }
 
 .gc-conflicts__footer {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--gc-space-2);
   margin-top: var(--gc-space-3);
   padding-top: var(--gc-space-3);
   border-top: 1px solid var(--gc-border);
@@ -2937,17 +3336,14 @@ h3 {
 /* ---------------------------------------------------------------- icons */
 
 .gc-icon {
-  font-family: 'codicon';
-  font-size: var(--gc-fs-md);
-  line-height: 1;
+  width: 1em;
+  height: 1em;
   display: inline-block;
-  text-align: center;
-  speak: never;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
-  user-select: none;
   vertical-align: middle;
+  flex: 0 0 auto;
+  user-select: none;
   color: inherit;
+  fill: currentColor;
 }
 
 /* ------------------------------------------------------- reduced motion */
@@ -3002,9 +3398,11 @@ h3 {
   .gc-conflicts,
   .gc-github,
   .gc-canvas,
-  /* The letter boxes and the avatar are borders plus a glyph once the fill is gone. */
+  /* Status glyphs are icon-only; border reappears here so the shape survives without colour. */
   .gc-status__box,
   .gc-section__badge,
+  .gc-conflicts__badge,
+  .gc-inspector__hash-value,
   .gc-avatar {
     border: 1px solid ButtonBorder;
   }
@@ -3014,6 +3412,21 @@ h3 {
   /* Tier two must stay distinguishable from a quiet button with no fill to help. */
   .gc-button--action {
     border: 2px solid ButtonBorder;
+  }
+
+  /* Tier-two segmented frame (Stage/Unstage) plus inspector copy pair and quiet
+   * segmented pair — the single container border and internal divider must remain
+   * visible when colours are discarded, otherwise the "one control" reading is lost. */
+  .gc-toolbar__primary-group.gc-segmented,
+  .gc-inspector__copy-group,
+  .gc-segmented--quiet {
+    border: 1px solid ButtonBorder;
+  }
+
+  .gc-toolbar__primary-group.gc-segmented .gc-button + .gc-button,
+  .gc-inspector__copy-group .gc-icon-button + .gc-icon-button,
+  .gc-segmented--quiet .gc-button + .gc-button {
+    border-left: 1px solid ButtonBorder;
   }
 
   /*
@@ -3050,7 +3463,8 @@ h3 {
    * "these are chrome, not content" boundary the shadow was providing.
    */
   .gc-canvas__controls .gc-button,
-  .gc-canvas__controls .gc-icon-button {
+  .gc-canvas__controls .gc-icon-button,
+  .gc-canvas__controls .gc-checkbox--float {
     background: Canvas;
     box-shadow: none;
   }

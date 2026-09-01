@@ -15,6 +15,7 @@
  */
 import { useEffect, useId, useMemo, useRef, useState, type JSX } from 'react';
 import { ChangeTree } from './ChangeTree';
+import { BranchSelector } from './BranchLegend';
 import { CommitForm } from './CommitForm';
 import { ConflictPanel, OperationBanner } from './ConflictPanel';
 import { GuardDialog } from './GuardDialog';
@@ -78,6 +79,8 @@ export function PendingChangesApp(): JSX.Element {
   const unstage = useChangesStore((s) => s.unstage);
 
   const status = useRepoStore((s) => s.status);
+  const graph = useRepoStore((s) => s.graph);
+  const loadGraph = useRepoStore((s) => s.loadGraph);
   /**
    * Whether the host managed to count every file's lines. A row without numbers is
    * otherwise indistinguishable from an unchanged file, and one panel-level sentence
@@ -117,8 +120,9 @@ export function PendingChangesApp(): JSX.Element {
     void loadSettings();
     void load();
     void loadStatus();
+    void loadGraph();
     return off;
-  }, [load, loadSettings, loadStatus]);
+  }, [load, loadSettings, loadStatus, loadGraph]);
 
   const needle = filter.trim().toLowerCase();
   const visible = useMemo(
@@ -141,6 +145,7 @@ export function PendingChangesApp(): JSX.Element {
   const refresh = (): void => {
     void load();
     void loadStatus();
+    void loadGraph();
   };
 
   const openDiff = async (entry: ChangeEntry): Promise<void> => {
@@ -177,26 +182,40 @@ export function PendingChangesApp(): JSX.Element {
 
   const stageable = stageablePaths();
 
+  /**
+   * Only staged paths can be unstaged. `selectAll` sweeps in untracked entries,
+   * and `git restore --staged` on a path that is in neither HEAD nor the index
+   * fails the whole batch with `pathspec ... did not match any file(s) known to
+   * git`. Conflicted paths DO have index entries, so they stay.
+   */
+  const unstageablePaths = (): string[] =>
+    selected.filter((path) => {
+      const entry = changes.find((c) => c.path === path);
+      if (entry === undefined) return false;
+      return entry.staged || conflicts.some((c) => c.path === path);
+    });
+
+  const unstageable = unstageablePaths();
+
   return (
     <div className="gc-pending">
       <ContextBar status={status} />
 
-      <OperationBanner status={status} />
-
-      {error !== null && <ErrorBanner error={error} onShowLogs={showLogs} />}
-
-      {conflicts.length > 0 && (
-        <ConflictPanel conflicts={conflicts} operation={status?.operation ?? 'idle'} />
-      )}
-
-      {churnTruncated && (
-        <InfoBanner tone="info" glyph="question">
-          <strong>{strings.pending.churnTruncatedTitle}</strong>
-          <span>
-            {strings.pending.churnTruncatedDetail(UNKNOWN_CHURN)}
-          </span>
-        </InfoBanner>
-      )}
+      <div className="gc-pending__notifications">
+        <OperationBanner status={status} />
+        {error !== null && <ErrorBanner error={error} onShowLogs={showLogs} />}
+        {conflicts.length > 0 && (
+          <ConflictPanel conflicts={conflicts} operation={status?.operation ?? 'idle'} />
+        )}
+        {churnTruncated && (
+          <InfoBanner tone="info" glyph="question">
+            <strong>{strings.pending.churnTruncatedTitle}</strong>
+            <span>
+              {strings.pending.churnTruncatedDetail(UNKNOWN_CHURN)}
+            </span>
+          </InfoBanner>
+        )}
+      </div>
 
       {/*
         Primary actions (Stage, Unstage, Refresh) with secondary actions (Select all, Clear)
@@ -222,40 +241,49 @@ export function PendingChangesApp(): JSX.Element {
           <button
             type="button"
             className="gc-button gc-button--action gc-button--unstage"
-            aria-label={strings.pending.unstageAria(formatCount(selected.length, language))}
+            aria-label={strings.pending.unstageAria(formatCount(unstageable.length, language))}
             title={strings.pending.unstageTitle}
-            disabled={busy || selected.length === 0}
-            onClick={() => void unstage(selected)}
+            disabled={busy || unstageable.length === 0}
+            onClick={() => void unstage(unstageablePaths())}
           >
             <Icon name="arrow-up" />{strings.pending.unstageButton}
           </button>
         </div>
 
         <div className="gc-toolbar__secondary-group">
-          <button
-            type="button"
-            className="gc-button gc-button--quiet"
-            title={strings.pending.selectAllTitle}
-            disabled={changes.length === 0}
-            onClick={selectAll}
-          >
-            {strings.pending.selectAll}
-          </button>
-          <button
-            type="button"
-            className="gc-button gc-button--quiet"
-            title={strings.pending.clearSelectionTitle}
-            disabled={selected.length === 0}
-            onClick={clear}
-          >
-            {strings.pending.clearSelection}
-          </button>
+          <BranchSelector
+            currentBranch={status?.branch ?? null}
+            refs={graph?.refs ?? []}
+            busy={busy || (status !== null && status.operation !== 'idle')}
+          />
+          <div className="gc-selection-group" role="group" aria-label={strings.pending.selectionGroupAria}>
+            <div className="gc-segmented gc-segmented--quiet">
+              <button
+                type="button"
+                className="gc-button gc-button--quiet"
+                title={strings.pending.selectAllTitle}
+                disabled={changes.length === 0}
+                onClick={selectAll}
+              >
+                {strings.pending.selectAll}
+              </button>
+              <button
+                type="button"
+                className="gc-button gc-button--quiet"
+                title={strings.pending.clearSelectionTitle}
+                disabled={selected.length === 0}
+                onClick={clear}
+              >
+                {strings.pending.clearSelection}
+              </button>
+            </div>
+            <span className="gc-pending__count" aria-live="off" aria-atomic="true">
+              {strings.pending.selectedCount(formatCount(selected.length, language))}
+            </span>
+          </div>
         </div>
 
         <div className="gc-toolbar__end">
-          <span className="gc-pending__count" aria-live="off">
-            {strings.pending.selectedCount(formatCount(selected.length, language))}
-          </span>
           <button
             type="button"
             className="gc-button gc-button--quiet gc-lang-toggle"

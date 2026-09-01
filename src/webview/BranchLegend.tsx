@@ -16,8 +16,156 @@ import { sanitizeGitText } from './format';
 import { Icon } from './ui';
 import { t, type Lang } from './i18n';
 import { useT } from './useT';
-import { useSettingsStore } from './store';
-import type { GraphLane } from '../messages';
+import { useOperationStore, useSettingsStore } from './store';
+import type { GraphLane, RefInfo } from '../messages';
+
+export interface BranchSelectorProps {
+  currentBranch: string | null;
+  refs: readonly RefInfo[];
+  busy?: boolean;
+}
+
+export interface BranchOption {
+  value: string;
+  label: string;
+  disabled: boolean;
+  /** Full branch name when label is truncated, so the option keeps its tooltip. */
+  hint?: string;
+}
+
+export interface BranchSelectorState {
+  options: BranchOption[];
+  disabled: boolean;
+  selectedValue: string;
+}
+
+/**
+ * Branch labels set the flex item's intrinsic width; a single 60-char name would
+ * force `.gc-toolbar__branch-select` wider than any sidebar. Truncate display only,
+ * never `value` — the ref that checkout acts on.
+ */
+const BRANCH_LABEL_LIMIT = 32;
+
+function truncateBranchLabel(label: string): { display: string; full: string } {
+  if (label.length <= BRANCH_LABEL_LIMIT) return { display: label, full: label };
+  return { display: `${label.slice(0, BRANCH_LABEL_LIMIT - 1)}\u2026`, full: label };
+}
+
+export function computeBranchOptions(
+  refs: readonly RefInfo[],
+  currentBranch: string | null,
+  busy: boolean,
+  formatCurrent: (name: string) => string = (n) => `${n} (current)`,
+  detachedLabel: string = 'Detached HEAD',
+): BranchSelectorState {
+  const localBranches = refs.filter((r) => r.kind === 'local');
+  const options: BranchOption[] = [];
+
+  if (currentBranch === null) {
+    options.push({
+      value: '',
+      label: detachedLabel,
+      disabled: true,
+    });
+  }
+
+  // Suffix length is locale-dependent: " (current)" is 10, " (aktif)" is 8.
+  // Measuring it lets us truncate the NAME so the FINAL rendered label
+  // (name + suffix) stays bounded by BRANCH_LABEL_LIMIT, not name alone.
+  const suffixLen = isSuffixBranch(formatCurrent) ? formatCurrent('').length : 0;
+
+  for (const ref of localBranches) {
+    const isCurrent = ref.shortName === currentBranch;
+    const sanitized = sanitizeGitText(ref.shortName);
+    // Budget for the name shrinks when the suffix will be appended, so a
+    // 32-char name + " (current)" does not become 42 chars on screen.
+    const nameBudget = isCurrent ? Math.max(1, BRANCH_LABEL_LIMIT - suffixLen) : BRANCH_LABEL_LIMIT;
+    const truncated = truncateBranchLabelWithLimit(sanitized, nameBudget);
+    const display = truncated.display;
+    const label = isCurrent ? formatCurrent(display) : display;
+    // Full name stays in title so the OS dropdown (unstyleable) still reveals it.
+    const fullLabel = isCurrent ? formatCurrent(truncated.full) : truncated.full;
+    const needsTitle = truncated.display !== truncated.full;
+    options.push({
+      value: ref.shortName,
+      label,
+      disabled: isCurrent,
+      ...(needsTitle ? { hint: fullLabel } : {}),
+    });
+  }
+
+  return {
+    options,
+    disabled: busy || localBranches.length === 0,
+    selectedValue: currentBranch ?? '',
+  };
+}
+
+function isSuffixBranch(fn: (name: string) => string): boolean {
+  try {
+    const probe = fn('__probe__');
+    return probe.includes('__probe__');
+  } catch {
+    return false;
+  }
+}
+
+function truncateBranchLabelWithLimit(label: string, limit: number): { display: string; full: string } {
+  if (label.length <= limit) return { display: label, full: label };
+  return { display: `${label.slice(0, limit - 1)}\u2026`, full: label };
+}
+
+/** Determines whether a branch checkout action should fire. */
+export function checkoutActionPayload(
+  targetBranch: string,
+  currentBranch: string | null,
+  busy: boolean,
+): { action: 'checkout-branch'; branch: string } | null {
+  if (!targetBranch || targetBranch === currentBranch || busy) return null;
+  return { action: 'checkout-branch', branch: targetBranch };
+}
+
+/**
+ * Interactive branch checkout dropdown.
+ * Offers only local branches (kind === 'local'), disables current HEAD branch and busy state,
+ * triggers `checkout-branch` action on select.
+ */
+export function BranchSelector({ currentBranch, refs, busy = false }: BranchSelectorProps): JSX.Element {
+  const strings = useT();
+  const runAction = useOperationStore((s) => s.runAction);
+  const state = computeBranchOptions(
+    refs,
+    currentBranch,
+    busy,
+    (name) => strings.graph.checkoutBranchCurrent(name),
+    strings.graph.checkoutBranchDetached,
+  );
+
+  const onSelect = (branch: string) => {
+    const payload = checkoutActionPayload(branch, currentBranch, busy);
+    if (!payload) return;
+    void runAction(payload);
+  };
+
+  return (
+    <div className="gc-toolbar__branch-wrap">
+      <select
+        className="gc-toolbar__branch-select"
+        value={state.selectedValue}
+        disabled={state.disabled}
+        aria-label={strings.graph.checkoutBranchAria}
+        title={strings.graph.checkoutBranchTitle}
+        onChange={(e) => onSelect(e.target.value)}
+      >
+        {state.options.map((opt) => (
+          <option key={opt.value || '__detached'} value={opt.value} disabled={opt.disabled} title={opt.hint ?? opt.label}>
+            {opt.label}
+          </option>
+        ))}
+      </select>
+    </div>
+  );
+}
 
 interface Props {
   lanes: readonly GraphLane[];
@@ -124,6 +272,14 @@ export function BranchLegend({ lanes, id, onClose }: Props): JSX.Element {
           </dt>
           <dd>
             {strings.legend.mergeDesc}
+          </dd>
+
+          <dt>
+            <span className="gc-legend__swatch gc-legend__swatch--ribbon" aria-hidden="true" />
+            {strings.legend.ribbonTitle}
+          </dt>
+          <dd>
+            {strings.legend.ribbonDesc}
           </dd>
         </dl>
 
