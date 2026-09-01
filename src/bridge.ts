@@ -15,6 +15,7 @@
 import { GitError } from './git';
 import { GitHubError } from './github';
 import { SafetyGuard, DEFAULT_STALENESS_MS, type GuardAction, type GuardSnapshot, type GuardVerdict } from './guard';
+import { hostText } from './hostText';
 import { redact, type Logger } from './logger';
 import { parseRemoteUrl, stripCredentials } from './remoteUrl';
 import type { RepositoryService } from './repository';
@@ -46,6 +47,7 @@ import type {
   GraphPayload,
   HostEvent,
   HostMessage,
+  Lang,
   MutationMeta,
   OpenDiffPayload,
   OpenDiffResult,
@@ -115,25 +117,6 @@ const IDEMPOTENCY_MAX_ENTRIES = 200;
 /** Cap on stderr lines forwarded per operation so a chatty remote cannot flood. */
 const PROGRESS_LINE_CAP = 40;
 
-export const BRIDGE_MESSAGES = {
-  noRepository: 'Folder ini bukan repository Git.',
-  notFound: 'Data tidak ditemukan.',
-  invalid: 'Permintaan tidak valid.',
-  locked: 'Repository sedang dipakai proses git lain.',
-  hookRejected: 'Commit ditolak oleh git hook.',
-  nonFastForward: 'Push bukan fast-forward.',
-  confirmationRequired: 'Tindakan ini perlu konfirmasi.',
-  staleToken: 'Status berubah, muat ulang sebelum melanjutkan.',
-  commitPushFailed: 'Commit berhasil, push gagal.',
-  unavailable: 'Layanan tidak tersedia.',
-  githubPending: 'Integrasi GitHub belum tersedia.',
-  timeout: 'Operasi git melebihi batas waktu.',
-  diffUnavailable: 'Membuka diff tidak tersedia pada host ini.',
-  diffBinary: 'Diff teks tidak tersedia untuk file binary.',
-  externalBlocked: 'Tautan ini tidak boleh dibuka.',
-  outputTooLarge: 'Keluaran git terlalu besar untuk ditampilkan.',
-} as const;
-
 /** Idempotency record: the outcome only, so it can be re-stamped with a new id. */
 type Outcome = { ok: true; data: unknown } | { ok: false; error: ErrorBody };
 
@@ -174,6 +157,11 @@ export class MessageBridge {
     this.subscription = webview.onDidReceiveMessage((raw) => {
       void this.handleRaw(raw);
     });
+  }
+
+  private text() {
+    const lang = this.host.settings().language ?? 'en';
+    return hostText(lang).bridge;
   }
 
   dispose(): void {
@@ -263,7 +251,7 @@ export class MessageBridge {
         durationMs: Date.now() - started,
       });
     } catch (err) {
-      const body = toErrorBody(err);
+      const body = toErrorBody(err, this.host.settings().language ?? 'en');
       outcome = { ok: false, error: body };
       this.host.logger.log({
         operationId,
@@ -289,7 +277,7 @@ export class MessageBridge {
       case 'repos/graph':
         return this.handleGraph(request.payload as GraphPayload);
       case 'repos/remotes':
-        validateEmptyPayload(request.payload);
+        validateEmptyPayload(request.payload, this.text().invalid);
         return this.handleRemotes();
       case 'commits/detail':
         return this.handleCommitDetail(request.payload as CommitDetailPayload);
@@ -308,13 +296,13 @@ export class MessageBridge {
       case 'actions/openExternal':
         return this.handleOpenExternal(request.payload as OpenExternalPayload);
       case 'github/auth':
-        validateEmptyPayload(request.payload);
+        validateEmptyPayload(request.payload, this.text().invalid);
         return this.host.githubAuth();
       case 'github/connect':
-        validateEmptyPayload(request.payload);
+        validateEmptyPayload(request.payload, this.text().invalid);
         return this.host.connectGitHub();
       case 'github/disconnect':
-        validateEmptyPayload(request.payload);
+        validateEmptyPayload(request.payload, this.text().invalid);
         return this.host.disconnectGitHub();
       case 'github/repo':
         return this.handleGitHubRepo(request.payload as GitHubRepoPayload);
@@ -323,18 +311,18 @@ export class MessageBridge {
       case 'github/commitAuthors':
         return this.handleGitHubCommitAuthors(request.payload as CommitAuthorsPayload);
       case 'github/linkage':
-        validateEmptyPayload(request.payload);
+        validateEmptyPayload(request.payload, this.text().invalid);
         return this.handleGitHubLinkage();
       case 'settings/get':
         { const keys = (request.payload as { keys?: unknown }).keys;
         if (keys !== undefined && (!Array.isArray(keys) || keys.some((key: unknown) => typeof key !== 'string'))) {
-          fail(400, 'VALIDATION_ERROR', BRIDGE_MESSAGES.invalid, { detail: 'keys' });
+          fail(400, 'VALIDATION_ERROR', this.text().invalid, { detail: 'keys' });
         } }
         return this.host.settings();
       case 'settings/set':
         return this.handleSettingsSet(request.payload as SettingsSetPayload);
       default:
-        return fail(400, 'VALIDATION_ERROR', BRIDGE_MESSAGES.invalid, {
+        return fail(400, 'VALIDATION_ERROR', this.text().invalid, {
           detail: `unknown kind: ${String(request.kind)}`,
         });
     }
@@ -344,7 +332,7 @@ export class MessageBridge {
 
   private async handleStatus(payload: StatusPayload): Promise<RepoStatus> {
     if (payload.includeIgnored !== undefined && typeof payload.includeIgnored !== 'boolean') {
-      fail(400, 'VALIDATION_ERROR', BRIDGE_MESSAGES.invalid, { detail: 'includeIgnored' });
+      fail(400, 'VALIDATION_ERROR', this.text().invalid, { detail: 'includeIgnored' });
     }
     const repo = await this.repository();
     return repo.status({ includeIgnored: payload.includeIgnored === true });
@@ -352,12 +340,13 @@ export class MessageBridge {
 
   private async handleGraph(payload: GraphPayload): Promise<RepoGraph> {
     if (payload.limit !== undefined && !isPositiveInt(payload.limit)) {
-      fail(400, 'VALIDATION_ERROR', BRIDGE_MESSAGES.invalid, { detail: 'limit' });
+      fail(400, 'VALIDATION_ERROR', this.text().invalid, { detail: 'limit' });
     }
     if (payload.cursor !== undefined && !isNonNegativeInt(payload.cursor)) {
-      fail(400, 'VALIDATION_ERROR', BRIDGE_MESSAGES.invalid, { detail: 'cursor' });
+      fail(400, 'VALIDATION_ERROR', this.text().invalid, { detail: 'cursor' });
     }
     const repo = await this.repository();
+    const lang = this.host.settings().language ?? 'en';
     return repo.graph({
       ...(payload.limit === undefined ? {} : { limit: payload.limit }),
       ...(payload.cursor === undefined ? {} : { cursor: payload.cursor }),
@@ -365,21 +354,22 @@ export class MessageBridge {
       ...(payload.columnWidth === undefined ? {} : { columnWidth: payload.columnWidth }),
       ...(payload.rowHeight === undefined ? {} : { rowHeight: payload.rowHeight }),
       ...(payload.laneWidth === undefined ? {} : { laneWidth: payload.laneWidth }),
+      lang,
     });
   }
 
   private async handleCommitDetail(payload: CommitDetailPayload): Promise<CommitDetail> {
     if (!validateHash(payload.hash)) {
-      fail(400, 'VALIDATION_ERROR', BRIDGE_MESSAGES.invalid, { detail: 'hash' });
+      fail(400, 'VALIDATION_ERROR', this.text().invalid, { detail: 'hash' });
     }
     if (payload.fileCursor !== undefined && !isNonNegativeInt(payload.fileCursor)) {
-      fail(400, 'VALIDATION_ERROR', BRIDGE_MESSAGES.invalid, { detail: 'fileCursor' });
+      fail(400, 'VALIDATION_ERROR', this.text().invalid, { detail: 'fileCursor' });
     }
     const repo = await this.repository();
     const detail = await repo.commitDetail(payload.hash, {
       ...(payload.fileCursor === undefined ? {} : { fileCursor: payload.fileCursor }),
     });
-    if (detail === null) fail(404, 'NOT_FOUND', BRIDGE_MESSAGES.notFound);
+    if (detail === null) fail(404, 'NOT_FOUND', this.text().notFound);
     return detail;
   }
 
@@ -412,16 +402,16 @@ export class MessageBridge {
    */
   private async handleOpenDiff(payload: OpenDiffPayload): Promise<OpenDiffResult> {
     if (!validateRepoRelativePath(payload.path)) {
-      fail(400, 'VALIDATION_ERROR', BRIDGE_MESSAGES.invalid, { detail: 'path' });
+      fail(400, 'VALIDATION_ERROR', this.text().invalid, { detail: 'path' });
     }
     if (payload.hash !== undefined && !validateHash(payload.hash)) {
-      fail(400, 'VALIDATION_ERROR', BRIDGE_MESSAGES.invalid, { detail: 'hash' });
+      fail(400, 'VALIDATION_ERROR', this.text().invalid, { detail: 'hash' });
     }
     if (payload.parent !== undefined && !validateHash(payload.parent)) {
-      fail(400, 'VALIDATION_ERROR', BRIDGE_MESSAGES.invalid, { detail: 'parent' });
+      fail(400, 'VALIDATION_ERROR', this.text().invalid, { detail: 'parent' });
     }
     const open = this.host.openDiff;
-    if (open === undefined) fail(503, 'UNAVAILABLE', BRIDGE_MESSAGES.diffUnavailable);
+    if (open === undefined) fail(503, 'UNAVAILABLE', this.text().diffUnavailable);
     // Resolving the repository first turns "no repo" into 404 rather than a
     // confusing editor error.
     await this.repository();
@@ -441,9 +431,9 @@ export class MessageBridge {
   }
 
   /**
-   * Open the Git Control explorer webview panel. Deliberately parameterless: there is
-   * no way to express "run command X" through this kind, so it cannot become an
-   * arbitrary command-execution channel for the webview.
+   * Open the explorer panel. Deliberately parameterless: there is no way to
+   * express "run command X" through this kind, so it cannot become an arbitrary
+   * command-execution channel for the webview.
    */
   private handleOpenExplorer(): { opened: boolean } {
     const open = this.host.openExplorer;
@@ -469,7 +459,7 @@ export class MessageBridge {
    */
   private async handleOpenExternal(payload: OpenExternalPayload): Promise<{ opened: boolean }> {
     if (typeof payload.url !== 'string' || payload.url.length === 0) {
-      fail(400, 'VALIDATION_ERROR', BRIDGE_MESSAGES.externalBlocked, { detail: 'url' });
+      fail(400, 'VALIDATION_ERROR', this.text().externalBlocked, { detail: 'url' });
     }
     // A backslash is a path separator to the WHATWG parser and an ordinary
     // character to several others, so `https:/\/\github.com/x` means different
@@ -478,26 +468,26 @@ export class MessageBridge {
     // of validating one parser's answer and acting on another's. No legitimate
     // link this extension builds contains one.
     if (payload.url.includes('\\')) {
-      fail(400, 'VALIDATION_ERROR', BRIDGE_MESSAGES.externalBlocked, { detail: 'url' });
+      fail(400, 'VALIDATION_ERROR', this.text().externalBlocked, { detail: 'url' });
     }
     let parsed: URL;
     try {
       parsed = new URL(payload.url);
     } catch {
-      return fail(400, 'VALIDATION_ERROR', BRIDGE_MESSAGES.externalBlocked, { detail: 'url' });
+      return fail(400, 'VALIDATION_ERROR', this.text().externalBlocked, { detail: 'url' });
     }
     if (parsed.protocol !== 'https:') {
-      fail(400, 'VALIDATION_ERROR', BRIDGE_MESSAGES.externalBlocked, { detail: 'scheme' });
+      fail(400, 'VALIDATION_ERROR', this.text().externalBlocked, { detail: 'scheme' });
     }
     if (parsed.username.length > 0 || parsed.password.length > 0) {
-      fail(400, 'VALIDATION_ERROR', BRIDGE_MESSAGES.externalBlocked, { detail: 'userinfo' });
+      fail(400, 'VALIDATION_ERROR', this.text().externalBlocked, { detail: 'userinfo' });
     }
     const allowed = await this.allowedExternalHosts();
     if (!allowed.includes(parsed.hostname.toLowerCase())) {
-      fail(400, 'VALIDATION_ERROR', BRIDGE_MESSAGES.externalBlocked, { detail: 'host' });
+      fail(400, 'VALIDATION_ERROR', this.text().externalBlocked, { detail: 'host' });
     }
     const open = this.host.openExternal;
-    if (open === undefined) fail(503, 'UNAVAILABLE', BRIDGE_MESSAGES.unavailable);
+    if (open === undefined) fail(503, 'UNAVAILABLE', this.text().unavailable);
     return { opened: await open(payload.url) };
   }
 
@@ -536,59 +526,59 @@ export class MessageBridge {
 
   private async handleGitHubRepo(payload: GitHubRepoPayload): Promise<GitHubRepoInfo> {
     if (!isSlug(payload.owner) || !isSlug(payload.repo)) {
-      fail(400, 'VALIDATION_ERROR', BRIDGE_MESSAGES.invalid, { detail: 'owner/repo' });
+      fail(400, 'VALIDATION_ERROR', this.text().invalid, { detail: 'owner/repo' });
     }
     const fetchRepo = this.host.githubRepo;
-    if (fetchRepo === undefined) fail(503, 'UNAVAILABLE', BRIDGE_MESSAGES.githubPending);
+    if (fetchRepo === undefined) fail(503, 'UNAVAILABLE', this.text().githubPending);
     return fetchRepo(payload);
   }
 
   private async handleGitHubPullRequests(payload: PullRequestsPayload): Promise<PullRequestsResult> {
     if (!isSlug(payload.owner) || !isSlug(payload.repo)) {
-      fail(400, 'VALIDATION_ERROR', BRIDGE_MESSAGES.invalid, { detail: 'owner/repo' });
+      fail(400, 'VALIDATION_ERROR', this.text().invalid, { detail: 'owner/repo' });
     }
     if (payload.state !== undefined && !['open', 'closed', 'all'].includes(payload.state)) {
-      fail(400, 'VALIDATION_ERROR', BRIDGE_MESSAGES.invalid, { detail: 'state' });
+      fail(400, 'VALIDATION_ERROR', this.text().invalid, { detail: 'state' });
     }
     const list = this.host.githubPullRequests;
-    if (list === undefined) fail(503, 'UNAVAILABLE', BRIDGE_MESSAGES.githubPending);
+    if (list === undefined) fail(503, 'UNAVAILABLE', this.text().githubPending);
     return list(payload);
   }
 
   private async handleGitHubCommitAuthors(payload: CommitAuthorsPayload): Promise<CommitAuthorsResult> {
     if (!isSlug(payload.owner) || !isSlug(payload.repo)) {
-      fail(400, 'VALIDATION_ERROR', BRIDGE_MESSAGES.invalid, { detail: 'owner/repo' });
+      fail(400, 'VALIDATION_ERROR', this.text().invalid, { detail: 'owner/repo' });
     }
     if (!Array.isArray(payload.hashes) || payload.hashes.length > 50) {
-      fail(400, 'VALIDATION_ERROR', BRIDGE_MESSAGES.invalid, { detail: 'hashes' });
+      fail(400, 'VALIDATION_ERROR', this.text().invalid, { detail: 'hashes' });
     }
     for (const h of payload.hashes) {
       if (!validateHash(h)) {
-        fail(400, 'VALIDATION_ERROR', BRIDGE_MESSAGES.invalid, { detail: 'hashes' });
+        fail(400, 'VALIDATION_ERROR', this.text().invalid, { detail: 'hashes' });
       }
     }
     const authors = this.host.githubCommitAuthors;
-    if (authors === undefined) fail(503, 'UNAVAILABLE', BRIDGE_MESSAGES.githubPending);
+    if (authors === undefined) fail(503, 'UNAVAILABLE', this.text().githubPending);
     return authors(payload);
   }
 
   private async handleGitHubLinkage(): Promise<GitHubLinkage> {
     const linkage = this.host.githubLinkage;
-    if (linkage === undefined) fail(503, 'UNAVAILABLE', BRIDGE_MESSAGES.githubPending);
+    if (linkage === undefined) fail(503, 'UNAVAILABLE', this.text().githubPending);
     return linkage();
   }
 
   private async handleStage(payload: StagePayload, operationId: string): Promise<ActionResult> {
     if (!Array.isArray(payload.paths) || payload.paths.length === 0) {
-      fail(400, 'VALIDATION_ERROR', BRIDGE_MESSAGES.invalid, { detail: 'paths' });
+      fail(400, 'VALIDATION_ERROR', this.text().invalid, { detail: 'paths' });
     }
     for (const p of payload.paths) {
       if (!validateRepoRelativePath(p)) {
-        fail(400, 'VALIDATION_ERROR', BRIDGE_MESSAGES.invalid, { detail: 'paths' });
+        fail(400, 'VALIDATION_ERROR', this.text().invalid, { detail: 'paths' });
       }
     }
     if (typeof payload.stage !== 'boolean') {
-      fail(400, 'VALIDATION_ERROR', BRIDGE_MESSAGES.invalid, { detail: 'stage' });
+      fail(400, 'VALIDATION_ERROR', this.text().invalid, { detail: 'stage' });
     }
 
     const repo = await this.repository();
@@ -609,7 +599,7 @@ export class MessageBridge {
    */
   private async handleCommit(payload: CommitPayload, operationId: string): Promise<CommitResult> {
     if (typeof payload.message !== 'string') {
-      fail(400, 'VALIDATION_ERROR', BRIDGE_MESSAGES.invalid, { detail: 'message' });
+      fail(400, 'VALIDATION_ERROR', this.text().invalid, { detail: 'message' });
     }
     const repo = await this.repository();
     const status = await this.assertToken(repo, payload.statusToken);
@@ -663,7 +653,7 @@ export class MessageBridge {
    * see {@link narrowedResetHard}.
    */
   private async handleGitAction(payload: GitActionPayload, operationId: string): Promise<ActionResult> {
-    validateAction(payload);
+    validateAction(payload, this.text().invalid);
     const repo = await this.repository();
     const status = await this.assertToken(repo, payload.statusToken);
     this.gate(payload as GuardAction, status, payload);
@@ -684,7 +674,7 @@ export class MessageBridge {
       const remoteRef = `refs/remotes/${payload.remote}/${payload.branch}`;
       const ff = await repo.git.isAncestor(remoteRef, payload.hash).catch(() => true);
       if (!ff) {
-        fail(409, 'NON_FAST_FORWARD', BRIDGE_MESSAGES.nonFastForward, { remedies: ['fetch'] });
+        fail(409, 'NON_FAST_FORWARD', this.text().nonFastForward, { remedies: ['fetch'] });
       }
     }
 
@@ -693,11 +683,11 @@ export class MessageBridge {
 
   private async handleSettingsSet(payload: SettingsSetPayload): Promise<SettingsSnapshot> {
     if (typeof payload.key !== 'string' || payload.key.length === 0) {
-      fail(400, 'VALIDATION_ERROR', BRIDGE_MESSAGES.invalid, { detail: 'key' });
+      fail(400, 'VALIDATION_ERROR', this.text().invalid, { detail: 'key' });
     }
     const type = typeof payload.value;
     if (type !== 'string' && type !== 'number' && type !== 'boolean') {
-      fail(400, 'VALIDATION_ERROR', BRIDGE_MESSAGES.invalid, { detail: 'value' });
+      fail(400, 'VALIDATION_ERROR', this.text().invalid, { detail: 'value' });
     }
     return this.host.setUiPreference(payload);
   }
@@ -761,7 +751,7 @@ export class MessageBridge {
       case 'merge-abort':
         return git.mergeAbort();
       default:
-        return fail(400, 'VALIDATION_ERROR', BRIDGE_MESSAGES.invalid);
+        return fail(400, 'VALIDATION_ERROR', this.text().invalid);
     }
   }
 
@@ -828,10 +818,11 @@ export class MessageBridge {
   ): Promise<{ pushed: boolean; error?: string }> {
     const status = await repo.status();
     if (status.branch === null) {
-      return { pushed: false, error: BRIDGE_MESSAGES.commitPushFailed };
+      return { pushed: false, error: this.text().commitPushFailed };
     }
     const snapshot = this.snapshotOf(status);
-    const verdict = SafetyGuard.evaluate({ action: 'push', remote: 'origin', branch: status.branch }, snapshot);
+    const lang = this.host.settings().language ?? 'en';
+    const verdict = SafetyGuard.evaluate({ action: 'push', remote: 'origin', branch: status.branch }, snapshot, lang);
     if (!verdict.allow) {
       return { pushed: false, error: verdict.message };
     }
@@ -855,7 +846,8 @@ export class MessageBridge {
    * be a bypass.
    */
   private gate(action: GuardAction, status: RepoStatus, meta: MutationMeta): void {
-    const verdict = SafetyGuard.evaluate(action, this.snapshotOf(status));
+    const lang = this.host.settings().language ?? 'en';
+    const verdict = SafetyGuard.evaluate(action, this.snapshotOf(status), lang);
     if (verdict.allow) return;
     if (verdict.requiresConfirmation === true && this.confirmed(verdict, meta)) return;
     fail(verdictStatus(verdict), verdict.code, verdict.message, {
@@ -893,7 +885,7 @@ export class MessageBridge {
 
   private async repository(): Promise<RepositoryService> {
     const repo = await this.host.resolveRepository();
-    if (repo === null) fail(404, 'NOT_FOUND', BRIDGE_MESSAGES.noRepository);
+    if (repo === null) fail(404, 'NOT_FOUND', this.text().noRepository);
     return repo;
   }
 
@@ -908,7 +900,7 @@ export class MessageBridge {
   private async assertToken(repo: RepositoryService, token: string | undefined): Promise<RepoStatus> {
     const status = await repo.status();
     if (typeof token === 'string' && token.length > 0 && token !== status.statusToken) {
-      fail(409, 'CONFLICT', BRIDGE_MESSAGES.staleToken, { remedies: ['cancel'] });
+      fail(409, 'CONFLICT', this.text().staleToken, { remedies: ['cancel'] });
     }
     return status;
   }
@@ -982,8 +974,8 @@ function parseRequest(raw: unknown): Request | null {
   };
 }
 
-function validateEmptyPayload(payload: object): void {
-  if (Object.keys(payload).length > 0) fail(400, 'VALIDATION_ERROR', BRIDGE_MESSAGES.invalid, { detail: 'payload' });
+function validateEmptyPayload(payload: object, msg: string = 'Invalid request.'): void {
+  if (Object.keys(payload).length > 0) fail(400, 'VALIDATION_ERROR', msg, { detail: 'payload' });
 }
 
 const MUTATION_KINDS = new Set<string>(['actions/stage', 'actions/commit', 'actions/git']);
@@ -1026,9 +1018,9 @@ function idempotencyKeyOf(request: Request): string | null {
 }
 
 /** Per-action argument validation before anything reaches git. */
-function validateAction(action: GitActionPayload): void {
+function validateAction(action: GitActionPayload, msg: string = 'Invalid request.'): void {
   const bad = (detail: string): never =>
-    fail(400, 'VALIDATION_ERROR', BRIDGE_MESSAGES.invalid, { detail });
+    fail(400, 'VALIDATION_ERROR', msg, { detail });
 
   switch (action.action) {
     case 'checkout-branch':
@@ -1086,9 +1078,9 @@ function verdictStatus(verdict: Extract<GuardVerdict, { allow: false }>): number
 }
 
 /** Map any thrown value onto the PRD's status/code table. */
-export function toErrorBody(err: unknown): ErrorBody {
+export function toErrorBody(err: unknown, lang: Lang = 'en'): ErrorBody {
   if (err instanceof BridgeError) return err.body;
-  if (err instanceof GitError) return fromGitError(err);
+  if (err instanceof GitError) return fromGitError(err, lang);
   if (err instanceof GitHubError) return fromGitHubError(err);
   return { status: 500, code: 'SERVER_ERROR', message: messageOf(err) };
 }
@@ -1108,23 +1100,24 @@ function fromGitHubError(err: GitHubError): ErrorBody {
   };
 }
 
-function fromGitError(err: GitError): ErrorBody {
+function fromGitError(err: GitError, lang: Lang = 'en'): ErrorBody {
+  const text = hostText(lang).bridge;
   switch (err.code) {
     case 'VALIDATION_ERROR':
-      return { status: 400, code: 'VALIDATION_ERROR', message: BRIDGE_MESSAGES.invalid, detail: redact(err.message) };
+      return { status: 400, code: 'VALIDATION_ERROR', message: text.invalid, detail: redact(err.message) };
     case 'REPOSITORY_LOCKED':
-      return { status: 409, code: 'REPOSITORY_LOCKED', message: BRIDGE_MESSAGES.locked };
+      return { status: 409, code: 'REPOSITORY_LOCKED', message: text.locked };
     case 'GIT_TIMEOUT':
-      return { status: 504, code: 'UNAVAILABLE', message: BRIDGE_MESSAGES.timeout, detail: redact(err.message) };
+      return { status: 504, code: 'UNAVAILABLE', message: text.timeout, detail: redact(err.message) };
     case 'GIT_SPAWN_FAILED':
-      return { status: 503, code: 'UNAVAILABLE', message: BRIDGE_MESSAGES.unavailable, detail: redact(err.message) };
+      return { status: 503, code: 'UNAVAILABLE', message: text.unavailable, detail: redact(err.message) };
     case 'GIT_OUTPUT_TOO_LARGE':
       // 413: the request was valid, the response is too big to hand over. The UI
       // renders it through the SERVER_ERROR arm, which already offers Show Logs.
-      return { status: 413, code: 'SERVER_ERROR', message: BRIDGE_MESSAGES.outputTooLarge, detail: redact(err.message) };
+      return { status: 413, code: 'SERVER_ERROR', message: text.outputTooLarge, detail: redact(err.message) };
     case 'GIT_FAILED':
     default:
-      return fromGitFailure(err);
+      return fromGitFailure(err, lang);
   }
 }
 
@@ -1140,13 +1133,14 @@ const NON_FF_MARKERS = [/non-fast-forward/i, /fetch first/i, /\[rejected\]/i, /b
  * clean while the webview DTO was not — and `detail` is what users screenshot
  * into bug reports. Git's own credential helpers do echo URLs on failure.
  */
-function fromGitFailure(err: GitError): ErrorBody {
+function fromGitFailure(err: GitError, lang: Lang = 'en'): ErrorBody {
+  const text = hostText(lang).bridge;
   const stderr = redact(err.stderr.length > 0 ? err.stderr : err.message);
   if (HOOK_MARKERS.some((m) => m.test(stderr))) {
     return {
       status: 409,
       code: 'HOOK_REJECTED',
-      message: BRIDGE_MESSAGES.hookRejected,
+      message: text.hookRejected,
       detail: stderr.trim(),
     };
   }
@@ -1154,7 +1148,7 @@ function fromGitFailure(err: GitError): ErrorBody {
     return {
       status: 409,
       code: 'NON_FAST_FORWARD',
-      message: BRIDGE_MESSAGES.nonFastForward,
+      message: text.nonFastForward,
       detail: stderr.trim(),
       remedies: ['fetch'],
     };

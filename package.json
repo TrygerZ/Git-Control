@@ -114,6 +114,19 @@
           "type": "number",
           "default": 300000,
           "description": "Age in milliseconds after which remote data is considered stale."
+        },
+        "gitControl.language": {
+          "type": "string",
+          "enum": [
+            "en",
+            "id"
+          ],
+          "enumDescriptions": [
+            "English",
+            "Bahasa Indonesia"
+          ],
+          "default": "en",
+          "description": "Display language for the Git Control webview interface."
         }
       }
     },

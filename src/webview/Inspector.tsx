@@ -20,6 +20,7 @@ import {
   sanitizeGitText,
   shortHash,
 } from './format';
+import { useT } from './useT';
 import { bridge } from './bridge';
 import { toErrorBody, useGitHubStore, useOperationStore, useSettingsStore } from './store';
 import { EmptyState, ErrorBanner, FileListSkeleton, InfoBanner, MetadataSkeleton, Spinner } from './ui';
@@ -30,16 +31,18 @@ interface Props {
 }
 
 export function Inspector({ hash }: Props): JSX.Element {
+  const strings = useT();
+  const language = useSettingsStore((x) => x.language);
   const [detail, setDetail] = useState<CommitDetail | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<ErrorBody | null>(null);
   const [parent, setParent] = useState<string | null>(null);
   const [opening, setOpening] = useState<string | null>(null);
   const [paging, setPaging] = useState(false);
-  const pushToast = useOperationStore((s) => s.pushToast);
-  const showLogs = useOperationStore((s) => s.showLogs);
-  const linkage = useGitHubStore((s) => s.linkage);
-  const openCommit = useGitHubStore((s) => s.openCommit);
+  const pushToast = useOperationStore((st) => st.pushToast);
+  const showLogs = useOperationStore((st) => st.showLogs);
+  const linkage = useGitHubStore((st) => st.linkage);
+  const openCommit = useGitHubStore((st) => st.openCommit);
 
   useEffect(() => {
     if (hash === null) {
@@ -71,9 +74,9 @@ export function Inspector({ hash }: Props): JSX.Element {
   const copy = async (text: string): Promise<void> => {
     try {
       await navigator.clipboard.writeText(text);
-      pushToast({ level: 'info', message: 'Hash disalin.' });
+      pushToast({ level: 'info', message: strings.inspector.toastHashCopied });
     } catch {
-      pushToast({ level: 'warning', message: 'Tidak bisa menyalin ke clipboard.' });
+      pushToast({ level: 'warning', message: strings.inspector.toastCopyFailed });
     }
   };
 
@@ -117,7 +120,7 @@ export function Inspector({ hash }: Props): JSX.Element {
       if (added.length === 0) {
         pushToast({
           level: 'warning',
-          message: 'Tidak ada file tambahan yang bisa dimuat.',
+          message: strings.inspector.toastNoMoreFiles,
         });
         setDetail({ ...detail, truncated: false, nextFileCursor: null });
       } else {
@@ -138,8 +141,8 @@ export function Inspector({ hash }: Props): JSX.Element {
   if (hash === null) {
     return (
       <EmptyState
-        title="Belum ada commit dipilih."
-        hint="Pilih salah satu commit di grafik untuk melihat detail perubahan."
+        title={strings.inspector.emptyNoSelectionTitle}
+        hint={strings.inspector.emptyNoSelectionHint}
       />
     );
   }
@@ -164,15 +167,15 @@ export function Inspector({ hash }: Props): JSX.Element {
   if (detail === null)
     return (
       <EmptyState
-        title="Detail commit tidak tersedia."
-        hint="Commit ini mungkin sudah hilang dari repository, misalnya setelah rebase. Muat ulang grafik lalu pilih commit lain."
+        title={strings.inspector.emptyDetailUnavailableTitle}
+        hint={strings.inspector.emptyDetailUnavailableHint}
       />
     );
 
   const author = sanitizeGitText(detail.authorName);
 
   return (
-    <section className="gc-inspector" aria-label="Detail commit">
+    <section className="gc-inspector" aria-label={strings.inspector.panelAria}>
       <header className="gc-inspector__head">
         {/*
           Avatar plus title plus one `oleh … pada …` line, as in the reference
@@ -187,7 +190,7 @@ export function Inspector({ hash }: Props): JSX.Element {
           <div className="gc-inspector__titles">
             <h2 className="gc-inspector__subject">{sanitizeGitText(detail.subject)}</h2>
             <p className="gc-inspector__byline">
-              oleh {author} · {relativeTime(detail.authoredAt)}
+              {strings.inspector.byAuthor(author, relativeTime(detail.authoredAt, Date.now(), language))}
             </p>
           </div>
         </div>
@@ -197,56 +200,56 @@ export function Inspector({ hash }: Props): JSX.Element {
           <button
             type="button"
             className="gc-button gc-button--quiet"
-            aria-label={`Salin hash pendek ${shortHash(detail.hash)}`}
-            title="Salin 7 karakter pertama. Cukup untuk menyebut commit ini di percakapan."
+            aria-label={strings.inspector.copyShortHashAria(shortHash(detail.hash))}
+            title={strings.inspector.copyShortHashTitle}
             onClick={() => void copy(shortHash(detail.hash))}
           >
-            Salin hash pendek
+            {strings.inspector.copyShortHash}
           </button>
           <button
             type="button"
             className="gc-button gc-button--quiet"
-            aria-label="Salin hash lengkap 40 karakter"
-            title="Salin 40 karakter penuh untuk dipakai di perintah git atau tautan."
+            aria-label={strings.inspector.copyFullHashAria}
+            title={strings.inspector.copyFullHashTitle}
             onClick={() => void copy(detail.hash)}
           >
-            Salin hash lengkap
+            {strings.inspector.copyFullHash}
           </button>
           {linkage?.available === true && (
             // Opening happens host-side: the webview CSP forbids navigation.
             <button
               type="button"
               className="gc-button gc-button--quiet"
-              aria-label={`Buka commit ${detail.shortHash} di GitHub`}
-              title="Membuka commit ini di browser. Repository lokal Anda tidak disentuh."
+              aria-label={strings.inspector.openGitHubAria(detail.shortHash)}
+              title={strings.inspector.openGitHubTitle}
               onClick={() => void openCommit(detail.hash)}
             >
-              Buka di GitHub
+              {strings.inspector.openGitHub}
             </button>
           )}
         </div>
       </header>
 
-      <h3 className="gc-inspector__heading">Keterangan</h3>
+      <h3 className="gc-inspector__heading">{strings.inspector.sectionDetails}</h3>
       <dl className="gc-inspector__meta">
-        <dt>Penulis</dt>
+        <dt>{strings.inspector.labelAuthor}</dt>
         <dd>
           {author} &lt;{sanitizeGitText(detail.authorEmail)}&gt;
         </dd>
-        <dt>Ditulis</dt>
+        <dt>{strings.inspector.labelAuthored}</dt>
         <dd>
-          {absoluteTime(detail.authoredAt)} · {relativeTime(detail.authoredAt)}
+          {absoluteTime(detail.authoredAt, language)} · {relativeTime(detail.authoredAt, Date.now(), language)}
         </dd>
-        <dt>Di-commit</dt>
+        <dt>{strings.inspector.labelCommitted}</dt>
         <dd>
-          {absoluteTime(detail.committedAt)} · {relativeTime(detail.committedAt)}
+          {absoluteTime(detail.committedAt, language)} · {relativeTime(detail.committedAt, Date.now(), language)}
           {detail.committerName !== detail.authorName &&
-            ` oleh ${sanitizeGitText(detail.committerName)}`}
+            strings.inspector.committedBy(sanitizeGitText(detail.committerName))}
         </dd>
-        <dt>Induk</dt>
+        <dt>{strings.inspector.labelParents}</dt>
         <dd>
           {detail.parents.length === 0 ? (
-            'Tidak ada (commit pertama)'
+            strings.inspector.noParents
           ) : (
             <ul className="gc-inspector__parents">
               {detail.parents.map((p) => (
@@ -261,8 +264,8 @@ export function Inspector({ hash }: Props): JSX.Element {
 
       {detail.refNames.length > 0 && (
         <>
-          <h3 className="gc-inspector__heading">Ref</h3>
-          <ul className="gc-inspector__refs" aria-label="Ref pada commit ini">
+          <h3 className="gc-inspector__heading">{strings.inspector.sectionRefs}</h3>
+          <ul className="gc-inspector__refs" aria-label={strings.inspector.refsAria}>
             {detail.refNames.map((ref) => (
               <li key={ref} className="gc-chip gc-chip--local">
                 {sanitizeGitText(ref)}
@@ -274,18 +277,18 @@ export function Inspector({ hash }: Props): JSX.Element {
 
       {detail.body.trim().length > 0 && (
         <>
-          <h3 className="gc-inspector__heading">Pesan lengkap</h3>
-          <pre className="gc-inspector__body" aria-label="Isi pesan commit">
+          <h3 className="gc-inspector__heading">{strings.inspector.sectionBody}</h3>
+          <pre className="gc-inspector__body" aria-label={strings.inspector.bodyAria}>
             {sanitizeGitText(detail.body.trim())}
           </pre>
         </>
       )}
 
-      <h3 className="gc-inspector__heading">File yang berubah</h3>
+      <h3 className="gc-inspector__heading">{strings.inspector.sectionFiles}</h3>
 
       {detail.parents.length > 1 && (
         <label className="gc-field">
-          <span className="gc-field__label">Bandingkan dengan induk</span>
+          <span className="gc-field__label">{strings.inspector.compareParentLabel}</span>
           <select
             value={parent ?? ''}
             onChange={(e) => {
@@ -297,7 +300,7 @@ export function Inspector({ hash }: Props): JSX.Element {
           >
             {detail.parents.map((p, i) => (
               <option key={p} value={p}>
-                Induk {i + 1} · {shortHash(p)}
+                {strings.inspector.parentOption(i + 1, shortHash(p))}
               </option>
             ))}
           </select>
@@ -306,27 +309,27 @@ export function Inspector({ hash }: Props): JSX.Element {
 
       {totals !== null && (
         <p className="gc-inspector__totals">
-          {formatCount(totals.files)} file ·{' '}
-          <span className="gc-stat gc-stat--add">+{formatCount(totals.additions)}</span>{' '}
-          <span className="gc-stat gc-stat--del">−{formatCount(totals.deletions)}</span>
-          {totals.binary > 0 && ` · ${formatCount(totals.binary)} file binary`}
+          {strings.inspector.totalsFiles(formatCount(totals.files, language))} ·{' '}
+          <span className="gc-stat gc-stat--add">+{formatCount(totals.additions, language)}</span>{' '}
+          <span className="gc-stat gc-stat--del">−{formatCount(totals.deletions, language)}</span>
+          {totals.binary > 0 && ` · ${strings.inspector.totalsBinary(formatCount(totals.binary, language))}`}
         </p>
       )}
 
       {detail.files.length === 0 ? (
         <EmptyState
-          title="Commit ini tidak mengubah file."
-          hint="Biasanya ini commit merge tanpa konflik, atau commit kosong yang dibuat dengan --allow-empty."
+          title={strings.inspector.emptyFilesTitle}
+          hint={strings.inspector.emptyFilesHint}
         />
       ) : (
-        <ul className="gc-filelist" aria-label={`${formatCount(detail.files.length)} file yang berubah`}>
+        <ul className="gc-filelist" aria-label={strings.inspector.fileListAria(formatCount(detail.files.length, language))}>
           {detail.files.map((file) => {
             // Paths come from git; sanitise once so the title and the two visible
             // spans cannot disagree. `baseName` sanitises internally too.
             const safePath = sanitizeGitText(file.path);
             const churn = file.binary
-              ? 'file binary, diff teks tidak tersedia'
-              : `${file.additions ?? 0} baris ditambah, ${file.deletions ?? 0} baris dihapus`;
+              ? strings.inspector.churnBinary
+              : strings.inspector.churnSummary(file.additions ?? 0, file.deletions ?? 0);
             return (
               <li key={file.path} className="gc-filelist__item">
                 <button
@@ -335,7 +338,7 @@ export function Inspector({ hash }: Props): JSX.Element {
                   // The visible row splits path and churn across three spans; the
                   // name puts them back in one sentence so nothing is lost or
                   // read out of order.
-                  aria-label={`Buka diff ${safePath}, ${churn}`}
+                  aria-label={strings.inspector.openDiffAria(safePath, churn)}
                   onClick={() => void openDiff(file)}
                   disabled={opening === file.path}
                 >
@@ -349,7 +352,7 @@ export function Inspector({ hash }: Props): JSX.Element {
                   </span>
                   {file.binary ? (
                     <span className="gc-filelist__binary" aria-hidden="true">
-                      binary
+                      {strings.inspector.churnBinary}
                     </span>
                   ) : (
                     <span className="gc-filelist__stats" aria-hidden="true">
@@ -358,7 +361,7 @@ export function Inspector({ hash }: Props): JSX.Element {
                     </span>
                   )}
                 </button>
-                {opening === file.path && <Spinner label="Membuka diff…" />}
+                {opening === file.path && <Spinner label={strings.inspector.openingDiff} />}
               </li>
             );
           })}
@@ -367,17 +370,17 @@ export function Inspector({ hash }: Props): JSX.Element {
 
       {detail.truncated && (
         <InfoBanner tone="info" glyph="ellipsis">
-          <strong>Diff dipangkas demi performa.</strong>
+          <strong>{strings.inspector.diffTruncated}</strong>
           <button
             type="button"
             className="gc-button gc-button--quiet"
-            title="Ambil halaman file berikutnya dari commit ini. Hanya menambah isi daftar, tidak mengubah repository."
+            title={strings.inspector.loadMoreTitle}
             disabled={paging}
             onClick={() => void loadMoreFiles()}
           >
-            Muat lebih banyak
+            {strings.inspector.loadMore}
           </button>
-          {paging && <Spinner label="Memuat file berikutnya…" />}
+          {paging && <Spinner label={strings.inspector.loadingMore} />}
         </InfoBanner>
       )}
     </section>

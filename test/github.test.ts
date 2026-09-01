@@ -2,7 +2,6 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   CACHE_MAX_ENTRIES,
-  GITHUB_MESSAGES,
   GitHubClient,
   GitHubError,
   hasPrivateScope,
@@ -10,6 +9,8 @@ import {
   type FetchLike,
   type FetchResponseLike,
 } from '../src/github';
+import { hostText } from '../src/hostText';
+import type { Lang } from '../src/messages';
 
 /** Header bag with case-insensitive lookup, like a real `Headers`. */
 function headers(map: Record<string, string>): { get(name: string): string | null } {
@@ -54,7 +55,7 @@ function recorder(queue: Array<FetchResponseLike | Error>): Recorder {
 /** Client wired to fake time and instant sleeps. */
 function client(
   queue: Array<FetchResponseLike | Error>,
-  opts: { token?: string | null; apiUrl?: string } = {},
+  opts: { token?: string | null; apiUrl?: string; lang?: () => Lang } = {},
 ): { gh: GitHubClient; calls: Recorder['calls']; sleeps: number[]; advance(ms: number): void } {
   const rec = recorder(queue);
   const sleeps: number[] = [];
@@ -68,6 +69,7 @@ function client(
       sleeps.push(ms);
       return Promise.resolve();
     },
+    lang: opts.lang,
   });
   return {
     gh,
@@ -162,32 +164,57 @@ test('403 with quota left maps to FORBIDDEN, not RATE_LIMITED', async () => {
 // ------------------------------------------------------------- error mapping
 
 test('401 maps to AUTH_ERROR with the PRD wording', async () => {
-  const h = client([response(401, { message: 'Bad credentials' })]);
-  await assert.rejects(() => h.gh.viewer(), (err: unknown) => {
+  const hId = client([response(401, { message: 'Bad credentials' })], { lang: () => 'id' });
+  await assert.rejects(() => hId.gh.viewer(), (err: unknown) => {
     assert.ok(err instanceof GitHubError);
     assert.equal(err.status, 401);
     assert.equal(err.code, 'AUTH_ERROR');
-    assert.equal(err.message, GITHUB_MESSAGES.invalidToken);
+    assert.equal(err.message, hostText('id').github.invalidToken);
+    return true;
+  });
+
+  const hEn = client([response(401, { message: 'Bad credentials' })], { lang: () => 'en' });
+  await assert.rejects(() => hEn.gh.viewer(), (err: unknown) => {
+    assert.ok(err instanceof GitHubError);
+    assert.equal(err.status, 401);
+    assert.equal(err.code, 'AUTH_ERROR');
+    assert.equal(err.message, hostText('en').github.invalidToken);
     return true;
   });
 });
 
 test('404 maps to NOT_FOUND with the PRD wording', async () => {
-  const h = client([response(404, { message: 'Not Found' })]);
-  await assert.rejects(() => h.gh.repo('o', 'r'), (err: unknown) => {
+  const hId = client([response(404, { message: 'Not Found' })], { lang: () => 'id' });
+  await assert.rejects(() => hId.gh.repo('o', 'r'), (err: unknown) => {
     assert.ok(err instanceof GitHubError);
     assert.equal(err.code, 'NOT_FOUND');
-    assert.equal(err.message, GITHUB_MESSAGES.notFound);
+    assert.equal(err.message, hostText('id').github.notFound);
+    return true;
+  });
+
+  const hEn = client([response(404, { message: 'Not Found' })], { lang: () => 'en' });
+  await assert.rejects(() => hEn.gh.repo('o', 'r'), (err: unknown) => {
+    assert.ok(err instanceof GitHubError);
+    assert.equal(err.code, 'NOT_FOUND');
+    assert.equal(err.message, hostText('en').github.notFound);
     return true;
   });
 });
 
 test('a network failure maps to UNAVAILABLE with the PRD wording', async () => {
-  const h = client([new Error('getaddrinfo ENOTFOUND api.github.com')]);
-  await assert.rejects(() => h.gh.repo('o', 'r'), (err: unknown) => {
+  const hId = client([new Error('getaddrinfo ENOTFOUND api.github.com')], { lang: () => 'id' });
+  await assert.rejects(() => hId.gh.repo('o', 'r'), (err: unknown) => {
     assert.ok(err instanceof GitHubError);
     assert.equal(err.code, 'UNAVAILABLE');
-    assert.equal(err.message, GITHUB_MESSAGES.unavailable);
+    assert.equal(err.message, hostText('id').github.unavailable);
+    return true;
+  });
+
+  const hEn = client([new Error('getaddrinfo ENOTFOUND api.github.com')], { lang: () => 'en' });
+  await assert.rejects(() => hEn.gh.repo('o', 'r'), (err: unknown) => {
+    assert.ok(err instanceof GitHubError);
+    assert.equal(err.code, 'UNAVAILABLE');
+    assert.equal(err.message, hostText('en').github.unavailable);
     return true;
   });
 });

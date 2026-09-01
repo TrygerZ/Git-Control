@@ -4,6 +4,8 @@
  * `bridge.request('repos/graph', payload)` infers the response shape. No `any`.
  */
 
+export type Lang = 'en' | 'id';
+
 // ------------------------------------------------------------------ errors
 
 export type ErrorCode =
@@ -376,6 +378,7 @@ export interface SettingsSnapshot {
   showIgnoredFiles: boolean;
   githubApiUrl: string;
   fetchStalenessMs: number;
+  language: 'en' | 'id';
   ui: UiPreferences;
 }
 

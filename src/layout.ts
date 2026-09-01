@@ -4,6 +4,8 @@
  */
 
 import { parseCommitTimestamp } from './validation';
+import { hostText } from './hostText';
+import type { Lang } from './messages';
 
 export interface LayoutCommit {
   hash: string;
@@ -24,6 +26,7 @@ export interface LayoutOptions {
   dayGap?: number;
   gutterX?: number;
   rulerHeight?: number;
+  lang?: Lang;
 }
 
 export interface LayoutInput {
@@ -110,8 +113,8 @@ const RANK_LOCAL = 2;
 const RANK_DETACHED_HEAD = 3;
 const RANK_TAG = 4;
 
-function formatDateLabel(timestamp: number): string {
-  if (timestamp <= 0) return 'Tanggal tidak diketahui';
+function formatDateLabel(timestamp: number, lang: Lang = 'en'): string {
+  if (timestamp <= 0) return hostText(lang).layout.unknownDate;
   const d = new Date(timestamp);
   const pad = (n: number): string => String(n).padStart(2, '0');
   return `${pad(d.getDate())}/${pad(d.getMonth() + 1)}/${d.getFullYear()}`;
@@ -247,7 +250,7 @@ export function layoutGraph(input: LayoutInput, options: LayoutOptions = {}): La
 
     const bucketWidth = count * columnWidth;
     rawBuckets.push({
-      label: formatDateLabel(bucket.timestamp),
+      label: formatDateLabel(bucket.timestamp, options.lang ?? 'en'),
       timestamp: bucket.timestamp,
       startX,
       width: bucketWidth,

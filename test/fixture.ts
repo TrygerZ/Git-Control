@@ -103,6 +103,7 @@ const DEFAULT_SETTINGS: SettingsSnapshot = {
   showIgnoredFiles: false,
   githubApiUrl: 'https://api.github.com',
   fetchStalenessMs: 300_000,
+  language: 'en',
   ui: { zoom: 1, branchFilter: '' },
 };
 

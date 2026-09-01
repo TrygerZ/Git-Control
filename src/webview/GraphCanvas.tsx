@@ -47,6 +47,7 @@ import {
   shortHash,
   truncate,
 } from './format';
+import { useT } from './useT';
 import { useGitHubStore, useRepoStore, useSettingsStore } from './store';
 import {
   COLUMN_WIDTH,
@@ -236,6 +237,8 @@ export function GraphCanvas({
   onMenuCommand,
   onOpenInspector,
 }: Props): JSX.Element {
+  const strings = useT();
+  const language = useSettingsStore((s) => s.language);
   const zoom = useSettingsStore((s) => s.zoom);
   const setZoom = useSettingsStore((s) => s.setZoom);
   const search = useSettingsStore((s) => s.search);
@@ -699,14 +702,9 @@ export function GraphCanvas({
   if (graph !== null && graph.nodes.length === 0) {
     return (
       <EmptyState
-        title="Belum ada commit di repository ini."
-        hint="Grafik menggambar riwayat commit, jadi ia baru punya isi setelah commit pertama."
-        steps={[
-          'Buka panel Pending Changes.',
-          'Centang file yang ingin Anda simpan, lalu tekan Stage.',
-          'Tulis pesan singkat tentang apa yang Anda ubah.',
-          'Tekan Commit. Commit pertama itu akan langsung muncul di grafik ini.',
-        ]}
+        title={strings.graph.emptyTitle}
+        hint={strings.graph.emptyHint}
+        steps={strings.graph.emptySteps}
       />
     );
   }
@@ -736,37 +734,35 @@ export function GraphCanvas({
       */}
       <p className="gc-help-text" id={countId} role="status" aria-live="polite">
         {search.length === 0 && branchFilter.length === 0
-          ? `${formatCount(rows.length)} commit ditampilkan.`
-          : `${formatCount(matchCount)} dari ${formatCount(rows.length)} commit cocok dengan filter.`}
+          ? strings.graph.countAll(formatCount(rows.length, language))
+          : strings.graph.countMatched(formatCount(matchCount, language), formatCount(rows.length, language))}
       </p>
 
       {graph?.stale === true && (
         <InfoBanner tone="warning" glyph="watch">
-          <strong>Data lama</strong>
-          <span>Data ini snapshot lama karena git gagal dibaca. Muat ulang untuk mencoba lagi.</span>
+          <strong>{strings.graph.staleTitle}</strong>
+          <span>{strings.graph.staleDetail}</span>
         </InfoBanner>
       )}
 
       {graph?.truncated === true && (
         <InfoBanner tone="info" glyph="ellipsis">
-          <strong>Histori dipangkas ke 10.000 commit.</strong>
+          <strong>{strings.graph.truncatedTitle}</strong>
           <button
             type="button"
             className="gc-button gc-button--quiet"
-            title="Ambil 10.000 commit berikutnya dari histori. Hanya menambah isi grafik, tidak mengubah repository."
+            title={strings.graph.loadMoreTitle}
             disabled={paging || graph.nextCursor === null}
             onClick={() => void loadMore()}
           >
-            Muat lebih banyak
+            {strings.graph.loadMoreButton}
           </button>
-          {paging && <Spinner label="Memuat halaman berikutnya…" />}
+          {paging && <Spinner label={strings.graph.loadingMoreSpinner} />}
         </InfoBanner>
       )}
 
       <p className="gc-visually-hidden" id={helpId}>
-        Gunakan panah kiri dan kanan untuk berpindah commit, panah atas dan bawah untuk berpindah antar jalur,
-        Enter untuk membuka detail, Shift F10 untuk menu tindakan, tanda plus dan minus untuk
-        perbesaran, dan angka nol untuk mengembalikan perbesaran ke 100 persen.
+        {strings.graph.helpText}
       </p>
 
       <div className="gc-graph__main">
@@ -789,7 +785,7 @@ export function GraphCanvas({
             className="gc-canvas"
             ref={scrollRef}
             role="grid"
-            aria-label="Grafik commit"
+            aria-label={strings.graph.canvasAria}
             aria-rowcount={rows.length}
             aria-colcount={1}
             aria-orientation="horizontal"
@@ -952,7 +948,7 @@ export function GraphCanvas({
                 const placement = staggerMap.get(node.hash) ?? 'below';
 
                 return (
-                  <Row
+                    <Row
                     key={node.hash}
                     node={node}
                     index={index}
@@ -966,6 +962,7 @@ export function GraphCanvas({
                     hovered={hovered}
                     visible={visible}
                     placement={placement}
+                    lang={language}
                     onSelect={() => {
                       setFocusRow(index);
                       selectCommit(node.hash);
@@ -1005,13 +1002,12 @@ export function GraphCanvas({
             Floating canvas controls, bottom right, as in the Unity reference:
             Panduan simbol popover launcher, go to HEAD, then zoom.
           */}
-          <div className="gc-canvas__controls" role="group" aria-label="Kontrol tampilan kanvas">
+          <div className="gc-canvas__controls" role="group" aria-label={strings.graph.controlsAria}>
             <button
               ref={legendButtonRef}
               type="button"
               className="gc-icon-button gc-icon-button--float"
-              aria-label="Panduan simbol grafik"
-              title="Panduan simbol grafik"
+              aria-label={strings.graph.legendButtonAria}
               aria-expanded={showLegend}
               aria-controls={showLegend ? legendId : undefined}
               onClick={() => setShowLegend(!showLegend)}
@@ -1021,8 +1017,7 @@ export function GraphCanvas({
             <button
               type="button"
               className="gc-icon-button gc-icon-button--float"
-              aria-label="Lompat ke commit HEAD"
-              title="Kembali ke posisi Anda sekarang (HEAD)."
+              aria-label={strings.graph.jumpHeadAria}
               disabled={headRow === undefined}
               onClick={() => {
                 if (headRow !== undefined) goToRow(headRow);
@@ -1033,8 +1028,8 @@ export function GraphCanvas({
             <button
               type="button"
               className="gc-icon-button gc-icon-button--float"
-              aria-label="Perbesar grafik"
-              title="Perbesar (juga: tombol +)"
+              aria-label={strings.graph.zoomInAria}
+              title={strings.graph.zoomInTitle}
               disabled={zoom >= MAX_ZOOM}
               onClick={() => setZoom(stepZoom(zoom, 1))}
             >
@@ -1043,8 +1038,8 @@ export function GraphCanvas({
             <button
               type="button"
               className="gc-icon-button gc-icon-button--float"
-              aria-label="Perkecil grafik"
-              title="Perkecil (juga: tombol −)"
+              aria-label={strings.graph.zoomOutAria}
+              title={strings.graph.zoomOutTitle}
               disabled={zoom <= MIN_ZOOM}
               onClick={() => setZoom(stepZoom(zoom, -1))}
             >
@@ -1053,8 +1048,8 @@ export function GraphCanvas({
             <button
               type="button"
               className="gc-button gc-button--float"
-              aria-label="Kembalikan perbesaran ke 100 persen"
-              title="Kembali ke 100% (juga: tombol 0)"
+              aria-label={strings.graph.zoomResetAria}
+              title={strings.graph.zoomResetTitle}
               onClick={() => setZoom(1)}
             >
               {/*
@@ -1088,13 +1083,13 @@ export function GraphCanvas({
           <button
             type="button"
             className="gc-button"
-            title="Ambil halaman commit berikutnya dari histori. Hanya menambah isi grafik, tidak mengubah repository."
+            title={strings.graph.moreButtonTitle}
             disabled={paging}
             onClick={() => void loadMore()}
           >
-            Muat lebih banyak
+            {strings.graph.moreButton}
           </button>
-          {paging && <Spinner label="Memuat halaman berikutnya…" />}
+          {paging && <Spinner label={strings.graph.moreLoadingSpinner} />}
         </div>
       )}
 
@@ -1266,6 +1261,7 @@ interface RowProps {
   hovered: boolean;
   visible: boolean;
   placement: 'above' | 'below';
+  lang: import('./i18n').Lang;
   onSelect(): void;
   onOpen(): void;
   onHoverChange(hovered: boolean): void;
@@ -1284,6 +1280,7 @@ function Row({
   hovered,
   visible,
   placement,
+  lang,
   onSelect,
   onOpen,
   onHoverChange,
@@ -1299,7 +1296,7 @@ function Row({
   // visible text cannot disagree.
   const subject = sanitizeGitText(node.subject);
   const author = sanitizeGitText(node.authorName);
-  const time = relativeTime(node.authoredAt, now);
+  const time = relativeTime(node.authoredAt, now, lang);
 
   // Position row below or above node center depending on stagger placement
   const nodeCenterY = laneY(node.lane, LANE_HEIGHT, RULER_HEIGHT);
@@ -1332,7 +1329,7 @@ function Row({
         className="gc-row__cell-group"
         role="gridcell"
         aria-colindex={1}
-        aria-label={rowLabel(node, now)}
+        aria-label={rowLabel(node, now, lang)}
       >
         <span className="gc-row__subject" title={subject} aria-hidden="true">
           <Highlight text={subject} needle={search} />
@@ -1386,12 +1383,13 @@ function Toolbar({
   onSearch(value: string): void;
   onBranchFilter(value: string): void;
 }): JSX.Element {
+  const strings = useT();
   const branches = refs.filter((r) => r.kind === 'local' || r.kind === 'remote');
   return (
     <div
       className="gc-toolbar gc-toolbar--filters"
       role="toolbar"
-      aria-label="Saringan grafik"
+      aria-label={strings.graph.toolbarAria}
       aria-orientation="horizontal"
     >
       <div className="gc-toolbar__search-wrap">
@@ -1403,8 +1401,8 @@ function Toolbar({
           className="gc-toolbar__search-input"
           value={search}
           maxLength={100}
-          placeholder="Cari commit (hash, pesan, penulis)..."
-          aria-label="Cari commit"
+          placeholder={strings.graph.searchPlaceholder}
+          aria-label={strings.graph.searchAria}
           aria-describedby={countId}
           onChange={(e) => onSearch(e.target.value)}
         />
@@ -1414,16 +1412,16 @@ function Toolbar({
         <select
           className="gc-toolbar__branch-select"
           value={branchFilter}
-          aria-label="Filter branch"
+          aria-label={strings.graph.branchFilterAria}
           onChange={(e) => onBranchFilter(e.target.value)}
         >
-          <option value="">Semua branch</option>
+          <option value="">{strings.graph.branchFilterAll}</option>
           {branches.map((ref) => (
             // `value` stays raw: it is compared against lane refs host-side.
             // Only the label is sanitised.
             <option key={ref.refName} value={ref.shortName}>
               {ref.kind === 'remote'
-                ? `remote ${sanitizeGitText(ref.shortName)}`
+                ? strings.graph.branchFilterRemotePrefix(sanitizeGitText(ref.shortName))
                 : sanitizeGitText(ref.shortName)}
             </option>
           ))}
@@ -1434,13 +1432,12 @@ function Toolbar({
         <button
           type="button"
           className="gc-button gc-button--quiet gc-toolbar__clear"
-          title="Tampilkan kembali semua commit."
           onClick={() => {
             onSearch('');
             onBranchFilter('');
           }}
         >
-          Reset
+          {strings.graph.resetFilter}
         </button>
       )}
     </div>

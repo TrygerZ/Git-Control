@@ -96,6 +96,7 @@ test('rowLabel carries every fact the commit row shows visually', () => {
   const label = rowLabel(
     node({ isHead: true, isMerge: true, local: true, refNames: ['refs/heads/main', 'tag: v1.0'] }),
     NOW,
+    'id',
   );
   assert.match(label, /abc1234/, 'short hash');
   assert.match(label, /Perbaiki panel/, 'subject');
@@ -106,17 +107,28 @@ test('rowLabel carries every fact the commit row shows visually', () => {
   assert.match(label, /lokal belum dipush/, 'local badge');
   assert.match(label, /ref main/, 'ref chips');
   assert.match(label, /tag v1\.0/, 'tag chip');
+
+  // Verify English label format too
+  const enLabel = rowLabel(
+    node({ isHead: true, isMerge: true, local: true, refNames: ['refs/heads/main', 'tag: v1.0'] }),
+    NOW,
+    'en',
+  );
+  assert.match(enLabel, /by Siti/);
+  assert.match(enLabel, /local not pushed/);
 });
 
 test('rowLabel states the push state either way, not only when local', () => {
   // "no badge" is a fact a sighted user reads from the filled dot. Silence is not
   // the same signal, so the remote case says so in words.
-  assert.match(rowLabel(node({ local: true }), NOW), /lokal belum dipush/);
-  assert.match(rowLabel(node({ local: false }), NOW), /sudah ada di remote/);
+  assert.match(rowLabel(node({ local: true }), NOW, 'id'), /lokal belum dipush/);
+  assert.match(rowLabel(node({ local: false }), NOW, 'id'), /sudah ada di remote/);
+  assert.match(rowLabel(node({ local: true }), NOW, 'en'), /local not pushed/);
+  assert.match(rowLabel(node({ local: false }), NOW, 'en'), /on remote/);
 });
 
 test('rowLabel omits absent state instead of saying "bukan HEAD"', () => {
-  const label = rowLabel(node(), NOW);
+  const label = rowLabel(node(), NOW, 'id');
   assert.ok(!label.includes('HEAD'), label);
   assert.ok(!label.includes('merge'), label);
 });
@@ -125,6 +137,7 @@ test('rowLabel sanitises every git-sourced part (SEC-007)', () => {
   const label = rowLabel(
     node({ subject: 'a\u202eb', authorName: 'c\u200bd', refNames: ['e\u202ef'] }),
     NOW,
+    'id',
   );
   assert.ok(!label.includes('\u202e'), 'no bidi override survives');
   assert.ok(!label.includes('\u200b'), 'no zero-width survives');
@@ -132,27 +145,37 @@ test('rowLabel sanitises every git-sourced part (SEC-007)', () => {
 });
 
 test('refNamesLabel distinguishes local, remote, and tag refs in words', () => {
-  assert.equal(refNamesLabel([]), null);
-  assert.equal(refNamesLabel(['HEAD']), null, 'HEAD is already a separate fact');
-  assert.equal(refNamesLabel(['refs/heads/main']), 'ref main');
-  assert.equal(refNamesLabel(['origin/main']), 'ref remote origin/main');
-  assert.equal(refNamesLabel(['tag: v2']), 'ref tag v2');
-  assert.equal(refNamesLabel(['refs/heads/a', 'tag: b']), 'ref a, tag b');
+  assert.equal(refNamesLabel([], 'id'), null);
+  assert.equal(refNamesLabel(['HEAD'], 'id'), null, 'HEAD is already a separate fact');
+  assert.equal(refNamesLabel(['refs/heads/main'], 'id'), 'ref main');
+  assert.equal(refNamesLabel(['origin/main'], 'id'), 'ref remote origin/main');
+  assert.equal(refNamesLabel(['tag: v2'], 'id'), 'ref tag v2');
+  assert.equal(refNamesLabel(['refs/heads/a', 'tag: b'], 'id'), 'ref a, tag b');
+
+  assert.equal(refNamesLabel(['origin/main'], 'en'), 'ref remote origin/main');
+  assert.equal(refNamesLabel(['tag: v2'], 'en'), 'ref tag v2');
 });
 
 // ------------------------------------------------- file and conflict row names
 
 test('fileRowLabel carries path and churn', () => {
-  const label = fileRowLabel(entry());
+  const label = fileRowLabel(entry(), false, 'id');
   assert.match(label, /src\/webview\/ui\.tsx/, 'path');
   assert.match(label, /12 baris ditambah/, 'additions');
   assert.match(label, /3 baris dihapus/, 'deletions');
+
+  const enLabel = fileRowLabel(entry(), false, 'en');
+  assert.match(enLabel, /12 lines added/);
+  assert.match(enLabel, /3 lines deleted/);
 });
 
 test('fileRowLabel says "file binary" instead of a churn of zero', () => {
-  const label = fileRowLabel(entry({ binary: true, additions: null, deletions: null }));
+  const label = fileRowLabel(entry({ binary: true, additions: null, deletions: null }), false, 'id');
   assert.match(label, /file binary/);
   assert.ok(!label.includes('0 baris'), label);
+
+  const enLabel = fileRowLabel(entry({ binary: true, additions: null, deletions: null }), false, 'en');
+  assert.match(enLabel, /binary file/);
 });
 
 /**
@@ -163,31 +186,35 @@ test('fileRowLabel says "file binary" instead of a churn of zero', () => {
 test('fileRowLabel reports uncounted churn as unknown, never as zero', () => {
   const untracked = fileRowLabel(
     entry({ untracked: true, indexStatus: ' ', worktreeStatus: '?', additions: null, deletions: null }),
+    false,
+    'id',
   );
   assert.ok(!untracked.includes('0 baris'), untracked);
   assert.match(untracked, /belum dilacak git/, 'says why there is no count');
 
-  const tracked = fileRowLabel(entry({ additions: null, deletions: null }));
+  const tracked = fileRowLabel(entry({ additions: null, deletions: null }), false, 'id');
   assert.ok(!tracked.includes('0 baris'), tracked);
   assert.match(tracked, /belum dihitung/);
 });
 
 test('fileRowLabel still reports a real zero-line change as zero', () => {
-  assert.match(fileRowLabel(entry({ additions: 0, deletions: 0 })), /0 baris ditambah/);
+  assert.match(fileRowLabel(entry({ additions: 0, deletions: 0 }), false, 'id'), /0 baris ditambah/);
+  assert.match(fileRowLabel(entry({ additions: 0, deletions: 0 }), false, 'en'), /0 lines added/);
 });
 
 test('fileRowLabel reports renames with arrow', () => {
-  const label = fileRowLabel(entry({ path: 'b.ts', origPath: 'a.ts', indexStatus: 'R' }));
+  const label = fileRowLabel(entry({ path: 'b.ts', origPath: 'a.ts', indexStatus: 'R' }), false, 'id');
   assert.match(label, /a\.ts → b\.ts/);
 });
 
 test('entryStatus reports untracked ahead of the index letter', () => {
-  assert.equal(entryStatus(entry({ untracked: true, indexStatus: ' ' })).label, 'Belum dilacak');
+  assert.equal(entryStatus(entry({ untracked: true, indexStatus: ' ' }), 'id').label, 'Belum dilacak');
+  assert.equal(entryStatus(entry({ untracked: true, indexStatus: ' ' }), 'en').label, 'Untracked');
 });
 
 test('churnUnknownReason distinguishes untracked files from uncounted tracked files', () => {
-  assert.match(churnUnknownReason(entry({ untracked: true, additions: null, deletions: null })), /belum dilacak/);
-  assert.match(churnUnknownReason(entry({ additions: null, deletions: null })), /belum dihitung/);
+  assert.match(churnUnknownReason(entry({ untracked: true, additions: null, deletions: null }), false, 'id'), /belum dilacak/);
+  assert.match(churnUnknownReason(entry({ additions: null, deletions: null }), false, 'id'), /belum dihitung/);
 });
 
 /**
@@ -198,10 +225,10 @@ test('churnUnknownReason distinguishes untracked files from uncounted tracked fi
  */
 test('churnUnknownReason separates untracked, binary, and truncated reasons', () => {
   const uncounted = { additions: null, deletions: null };
-  const untracked = churnUnknownReason(entry({ ...uncounted, untracked: true }), true);
-  const binary = churnUnknownReason(entry({ ...uncounted, binary: true }), true);
-  const truncated = churnUnknownReason(entry(uncounted), true);
-  const plain = churnUnknownReason(entry(uncounted), false);
+  const untracked = churnUnknownReason(entry({ ...uncounted, untracked: true }), true, 'id');
+  const binary = churnUnknownReason(entry({ ...uncounted, binary: true }), true, 'id');
+  const truncated = churnUnknownReason(entry(uncounted), true, 'id');
+  const plain = churnUnknownReason(entry(uncounted), false, 'id');
 
   assert.match(untracked, /belum dilacak git/);
   assert.match(binary, /binary/);
@@ -214,7 +241,7 @@ test('churnUnknownReason separates untracked, binary, and truncated reasons', ()
 });
 
 test('fileRowLabel carries the truncation reason into the accessible name', () => {
-  const label = fileRowLabel(entry({ additions: null, deletions: null }), true);
+  const label = fileRowLabel(entry({ additions: null, deletions: null }), true, 'id');
   assert.match(label, /terlalu besar/);
   assert.ok(!label.includes('0 baris'), label);
 });
@@ -226,19 +253,23 @@ test('repoName keeps the final repository folder across Windows and POSIX paths'
 });
 
 test('folderRowLabel names the folder and how many files it holds', () => {
-  assert.equal(folderRowLabel('webview', 12), 'Folder webview, 12 file');
-  assert.match(folderRowLabel('a\u202eb', 1), /\ufffd/, 'sanitised');
+  assert.equal(folderRowLabel('webview', 12, 'id'), 'Folder webview, 12 file');
+  assert.match(folderRowLabel('a\u202eb', 1, 'id'), /\ufffd/, 'sanitised');
+  assert.equal(folderRowLabel('webview', 12, 'en'), 'Folder webview, 12 files');
 });
 
 test('conflict row and action names include the path, so buttons are distinguishable', () => {
   assert.equal(
-    conflictActionLabel('Tandai selesai', 'src/a.ts'),
+    conflictActionLabel('Tandai selesai', 'src/a.ts', 'id'),
     'Tandai selesai src/a.ts',
   );
-  assert.match(conflictActionLabel('Selesaikan', 'a\u202eb'), /\ufffd/);
-  const row = conflictRowLabel({ path: 'src/a.ts', code: 'UU' });
+  assert.match(conflictActionLabel('Selesaikan', 'a\u202eb', 'id'), /\ufffd/);
+  const row = conflictRowLabel({ path: 'src/a.ts', code: 'UU' }, 'id');
   assert.match(row, /src\/a\.ts/);
   assert.match(row, /keduanya mengubah/, 'the code is explained, not just quoted');
+
+  const enRow = conflictRowLabel({ path: 'src/a.ts', code: 'UU' }, 'en');
+  assert.match(enRow, /both modified/);
 });
 
 // ------------------------------------------------------------ status labels
@@ -250,7 +281,7 @@ test('conflict row and action names include the path, so buttons are distinguish
  */
 test('every porcelain code maps to a label, an icon, and no fallback', () => {
   for (const code of PORCELAIN_CODES) {
-    const label = statusLabel(code);
+    const label = statusLabel(code, 'id');
     assert.ok(label.label.length > 0, `${code} has a word`);
     assert.ok(label.icon.length > 0, `${code} has an icon`);
     assert.notEqual(label.label, 'Tidak diketahui', `${code} must not fall through`);
@@ -261,7 +292,7 @@ test('status labels and icons are defined, so two states never read alike', () =
   const labels = new Set<string>();
   const icons = new Set<string>();
   for (const code of PORCELAIN_CODES) {
-    const label = statusLabel(code);
+    const label = statusLabel(code, 'id');
     labels.add(label.label);
     icons.add(label.icon);
   }
@@ -270,8 +301,10 @@ test('status labels and icons are defined, so two states never read alike', () =
 });
 
 test('statusLabel accepts lower case and only reports unknown for a real unknown', () => {
-  assert.equal(statusLabel('m').label, 'Dimodifikasi');
-  assert.equal(statusLabel('Z').label, 'Tidak diketahui');
+  assert.equal(statusLabel('m', 'id').label, 'Dimodifikasi');
+  assert.equal(statusLabel('Z', 'id').label, 'Tidak diketahui');
+  assert.equal(statusLabel('m', 'en').label, 'Modified');
+  assert.equal(statusLabel('Z', 'en').label, 'Unknown');
 });
 
 test('entryStatus never yields a state without a word', () => {
@@ -285,7 +318,7 @@ test('entryStatus never yields a state without a word', () => {
     entry({ indexStatus: 'T', worktreeStatus: ' ' }),
   ];
   for (const value of cases) {
-    const status = entryStatus(value);
+    const status = entryStatus(value, 'id');
     assert.notEqual(status.label, 'Tidak diketahui', JSON.stringify(value));
     assert.ok(status.icon.length > 0);
   }
@@ -356,27 +389,34 @@ test('authorInitials keeps the node label out of sync with nothing it cannot sho
  * stated as a consequence rather than as an absence.
  */
 test('syncSummary says which direction each pending commit goes', () => {
-  const ahead = syncSummary({ upstream: 'origin/main', ahead: 2, behind: 0 });
+  const ahead = syncSummary({ upstream: 'origin/main', ahead: 2, behind: 0 }, 'id');
   assert.match(ahead, /2 commit siap dipush/);
   assert.ok(!ahead.includes('menunggu diambil'), ahead);
 
-  const behind = syncSummary({ upstream: 'origin/main', ahead: 0, behind: 3 });
+  const behind = syncSummary({ upstream: 'origin/main', ahead: 0, behind: 3 }, 'id');
   assert.match(behind, /3 commit baru menunggu diambil/);
 
-  const both = syncSummary({ upstream: 'origin/main', ahead: 1, behind: 4 });
+  const both = syncSummary({ upstream: 'origin/main', ahead: 1, behind: 4 }, 'id');
   assert.match(both, /1 commit siap dipush/);
   assert.match(both, /4 commit baru menunggu diambil/);
+
+  const enAhead = syncSummary({ upstream: 'origin/main', ahead: 2, behind: 0 }, 'en');
+  assert.match(enAhead, /2 commits to push/);
 });
 
 test('syncSummary states an in-sync branch and a missing upstream in words', () => {
-  assert.match(syncSummary({ upstream: 'origin/main', ahead: 0, behind: 0 }), /Sama dengan origin\/main/);
-  const none = syncSummary({ upstream: null, ahead: 0, behind: 0 });
+  assert.match(syncSummary({ upstream: 'origin/main', ahead: 0, behind: 0 }, 'id'), /Sama dengan origin\/main/);
+  const none = syncSummary({ upstream: null, ahead: 0, behind: 0 }, 'id');
   assert.match(none, /Belum terhubung ke remote/);
   assert.match(none, /baru ada di komputer ini/, 'says what that means, not just that it is so');
+
+  assert.match(syncSummary({ upstream: 'origin/main', ahead: 0, behind: 0 }, 'en'), /Up to date with origin\/main/);
+  const enNone = syncSummary({ upstream: null, ahead: 0, behind: 0 }, 'en');
+  assert.match(enNone, /Not connected to remote/);
 });
 
 test('syncSummary sanitises the upstream name (SEC-007)', () => {
-  const label = syncSummary({ upstream: 'origin/ma\u202ein', ahead: 1, behind: 0 });
+  const label = syncSummary({ upstream: 'origin/ma\u202ein', ahead: 1, behind: 0 }, 'id');
   assert.ok(!label.includes('\u202e'));
   assert.match(label, /\ufffd/);
 });
@@ -385,14 +425,19 @@ test('syncSummary sanitises the upstream name (SEC-007)', () => {
 
 test('every ErrorCode has an Indonesian title, an explanation, and a way out', () => {
   for (const code of ERROR_CODES) {
-    const view = presentError({ status: 500, code, message: '' });
+    const view = presentError({ status: 500, code, message: '' }, 'id');
     assert.ok(view.title.length > 0, `${code} title`);
     assert.ok(view.explanation.length > 10, `${code} explanation`);
     assert.ok(view.remedies.length > 0, `${code} remedies`);
     // Every offered remedy must be nameable, or the button renders blank.
     for (const remedy of view.remedies) {
-      assert.ok(remedyLabel(remedy).length > 0, `${code} → ${remedy}`);
+      assert.ok(remedyLabel(remedy, 'id').length > 0, `${code} → ${remedy}`);
+      assert.ok(remedyLabel(remedy, 'en').length > 0, `${code} → ${remedy}`);
     }
+
+    const enView = presentError({ status: 500, code, message: '' }, 'en');
+    assert.ok(enView.title.length > 0);
+    assert.ok(enView.explanation.length > 10);
   }
 });
 
@@ -437,10 +482,11 @@ test('a host-supplied remedy list always wins over the default', () => {
 
 test('risk is stated in words at every level, never by colour alone', () => {
   for (const risk of ['low', 'medium', 'high'] as const) {
-    assert.ok(riskLabel(risk).length > 0, risk);
+    assert.ok(riskLabel(risk, 'id').length > 0, risk);
+    assert.ok(riskLabel(risk, 'en').length > 0, risk);
   }
-  assert.notEqual(riskLabel('low'), riskLabel('medium'));
-  assert.notEqual(riskLabel('medium'), riskLabel('high'));
+  assert.notEqual(riskLabel('low', 'id'), riskLabel('medium', 'id'));
+  assert.notEqual(riskLabel('medium', 'id'), riskLabel('high', 'id'));
 });
 
 // ------------------------------------------------------ remedy button copy
@@ -455,7 +501,7 @@ test('every remedy names its consequence in a full Indonesian sentence', () => {
   const remedies: Remedy[] = ['commit', 'stash', 'fetch', 'cancel', 'resolve-conflicts', 'confirm'];
   const seen = new Set<string>();
   for (const remedy of remedies) {
-    const text = remedyConsequence(remedy);
+    const text = remedyConsequence(remedy, 'id');
     assert.ok(text.length > 20, `${remedy} says something substantive: ${text}`);
     assert.match(text, /\.$/, `${remedy} is a sentence, not a fragment`);
     seen.add(text);
@@ -466,9 +512,13 @@ test('every remedy names its consequence in a full Indonesian sentence', () => {
 test('the reversible remedies promise the work is recoverable', () => {
   // These two are the ones a newcomer refuses out of fear. Saying "not lost" is the
   // whole reason the sentence exists.
-  assert.match(remedyConsequence('stash'), /bisa diambil kembali/);
-  assert.match(remedyConsequence('fetch'), /tidak diubah/);
-  assert.match(remedyConsequence('cancel'), /[Tt]idak ada yang berubah/);
+  assert.match(remedyConsequence('stash', 'id'), /bisa diambil kembali/);
+  assert.match(remedyConsequence('fetch', 'id'), /tidak diubah/);
+  assert.match(remedyConsequence('cancel', 'id'), /[Tt]idak ada yang berubah/);
+
+  assert.match(remedyConsequence('stash', 'en'), /restored later/);
+  assert.match(remedyConsequence('fetch', 'en'), /unchanged/);
+  assert.match(remedyConsequence('cancel', 'en'), /Nothing is changed/);
 });
 
 /**
@@ -564,22 +614,40 @@ test('every menu item declares a group, and the read-only ones cannot mutate', (
   }
 });
 
-test('every menu item explains its consequence, not just its verb', () => {
-  const items = menuItemsFor(node({ local: true }), null, [], 'https://github.com/a/b');
+test('only non-obvious or destructive menu items carry a hint', () => {
+  const items = menuItemsFor(
+    node({ local: true }),
+    status(),
+    [
+      ref({ shortName: 'fitur', refName: 'refs/heads/fitur' }),
+      ref({ kind: 'remote', shortName: 'origin/main', refName: 'refs/remotes/origin/main' }),
+    ],
+    'https://github.com/a/b',
+  );
+  const withHint = items.filter((i) => i.hint !== undefined).map((i) => i.id);
+  assert.deepEqual(
+    withHint.sort(),
+    ['checkout-commit', 'push-up-to', 'reset-hard', 'reset-soft', 'revert'].sort(),
+  );
   for (const item of items) {
-    assert.ok(item.hint !== undefined, `${item.id} has a hint`);
-    assert.ok((item.hint ?? '').length > 20, `${item.id} hint is substantive: ${item.hint ?? ''}`);
+    if (item.hint !== undefined) {
+      assert.ok(item.hint.length > 0 && !item.hint.includes('\n'), `${item.id} hint is single line`);
+    }
   }
 });
 
 test('the destructive items are the ones marked risky, and they say what is lost', () => {
-  const items = menuItemsFor(node(), status(), [], null);
+  const items = menuItemsFor(node(), status(), [], null, 'id');
   const risky = new Set(items.filter((i) => i.risky === true).map((i) => i.id));
   for (const id of ['reset-hard', 'reset-soft', 'revert', 'checkout-commit']) {
     assert.ok(risky.has(id), `${id} is marked risky`);
   }
   const hard = items.find((i) => i.id === 'reset-hard');
   assert.match(hard?.hint ?? '', /[Pp]ermanen/, 'reset hard names the permanence');
+
+  const enItems = menuItemsFor(node(), status(), [], null, 'en');
+  const enHard = enItems.find((i) => i.id === 'reset-hard');
+  assert.match(enHard?.hint ?? '', /[Pp]ermanently/, 'en reset hard names the permanence');
 });
 
 test('groupedMenuItems keeps read-only first and drops empty groups', () => {
@@ -871,7 +939,7 @@ test('resting commit rows retain accessible tree presence without visibility:hid
 
   // Check gridcell mounting
   assert.match(canvasSrc, /role="gridcell"/, 'GraphCanvas mounts gridcell');
-  assert.match(canvasSrc, /aria-label=\{rowLabel\(node,\s*now\)\}/, 'accessible name on gridcell is always mounted');
+  assert.match(canvasSrc, /aria-label=\{rowLabel\(node,\s*now,\s*lang\)\}/, 'accessible name on gridcell is always mounted');
   assert.match(canvasSrc, /className="gc-row__cell-group"/, 'gc-row__cell-group is unconditionally rendered');
 });
 

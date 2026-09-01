@@ -16,18 +16,9 @@
  * or any returned value. {@link redact} is applied to everything logged.
  */
 import { redact } from './logger';
-import type { CommitAuthorInfo, ErrorCode, GitHubRateLimit, PullRequestInfo } from './messages';
+import type { CommitAuthorInfo, ErrorCode, GitHubRateLimit, Lang, PullRequestInfo } from './messages';
+import { hostText } from './hostText';
 import { validateHash } from './validation';
-
-export const GITHUB_MESSAGES = {
-  invalidToken: 'Token GitHub tidak valid.',
-  notFound: 'Repository GitHub tidak tersedia.',
-  unavailable: 'GitHub tidak dapat dijangkau.',
-  rateLimited: 'Batas permintaan GitHub tercapai.',
-  forbidden: 'Akses GitHub ditolak.',
-  scopeMissing: 'Token tidak punya scope repo:status untuk repository privat.',
-  invalidHash: 'Hash commit tidak valid.',
-} as const;
 
 /** Minimum scope for private repositories, per the PRD. */
 export const REQUIRED_PRIVATE_SCOPE = 'repo:status';
@@ -95,6 +86,7 @@ export interface GitHubClientOptions {
   logger?: (line: string) => void;
   /** Overridable so tests do not sleep for real. */
   sleep?: (ms: number) => Promise<void>;
+  lang?: () => Lang;
 }
 
 /** Result envelope: the payload plus whether it came from cache. */
@@ -133,6 +125,7 @@ export class GitHubClient {
   private readonly now: () => number;
   private readonly logger: (line: string) => void;
   private readonly sleep: (ms: number) => Promise<void>;
+  private readonly lang: () => Lang;
 
   private readonly cache = new Map<string, CacheEntry>();
   private readonly authorCache = new Map<string, CacheEntry>();
@@ -154,6 +147,11 @@ export class GitHubClient {
     this.now = options.now ?? ((): number => Date.now());
     this.logger = options.logger ?? ((): void => undefined);
     this.sleep = options.sleep ?? ((ms) => new Promise((r) => setTimeout(r, ms)));
+    this.lang = options.lang ?? (() => 'en');
+  }
+
+  private text() {
+    return hostText(this.lang()).github;
   }
 
   get hasToken(): boolean {
@@ -201,7 +199,7 @@ export class GitHubClient {
    */
   async viewer(): Promise<Fetched<ViewerInfo>> {
     if (this.token === null) {
-      throw new GitHubError({ status: 401, code: 'AUTH_ERROR', message: GITHUB_MESSAGES.invalidToken });
+      throw new GitHubError({ status: 401, code: 'AUTH_ERROR', message: this.text().invalidToken });
     }
     return this.get<ViewerInfo>('/user', 'viewer', VIEWER_TTL_MS, (body, headers) => {
       const json = body as { login?: unknown };
@@ -276,7 +274,7 @@ export class GitHubClient {
       throw new GitHubError({
         status: 400,
         code: 'VALIDATION_ERROR',
-        message: GITHUB_MESSAGES.invalidHash,
+        message: this.text().invalidHash,
         detail: 'hashes batch size exceeds 50',
       });
     }
@@ -286,7 +284,7 @@ export class GitHubClient {
         throw new GitHubError({
           status: 400,
           code: 'VALIDATION_ERROR',
-          message: GITHUB_MESSAGES.invalidHash,
+          message: this.text().invalidHash,
           detail: `invalid hash: ${hash}`,
         });
       }
@@ -395,7 +393,7 @@ export class GitHubClient {
       throw new GitHubError({
         status: 503,
         code: 'UNAVAILABLE',
-        message: GITHUB_MESSAGES.unavailable,
+        message: this.text().unavailable,
         detail: 'circuit open',
       });
     }
@@ -475,7 +473,7 @@ export class GitHubClient {
         throw new GitHubError({
           status: 503,
           code: 'UNAVAILABLE',
-          message: GITHUB_MESSAGES.unavailable,
+          message: this.text().unavailable,
           detail: messageOf(err),
         });
       }
@@ -503,36 +501,37 @@ export class GitHubClient {
   private async toError(response: FetchResponseLike): Promise<GitHubError> {
     const remaining = numberOf(response.headers.get('x-ratelimit-remaining'));
     const resetAt = resetAtOf(response.headers.get('x-ratelimit-reset'));
+    const text = this.text();
 
     if (response.status === 401) {
-      return new GitHubError({ status: 401, code: 'AUTH_ERROR', message: GITHUB_MESSAGES.invalidToken });
+      return new GitHubError({ status: 401, code: 'AUTH_ERROR', message: text.invalidToken });
     }
     if (response.status === 404) {
-      return new GitHubError({ status: 404, code: 'NOT_FOUND', message: GITHUB_MESSAGES.notFound });
+      return new GitHubError({ status: 404, code: 'NOT_FOUND', message: text.notFound });
     }
     if ((response.status === 403 || response.status === 429) && remaining === 0) {
       return new GitHubError({
         status: 429,
         code: 'RATE_LIMITED',
-        message: GITHUB_MESSAGES.rateLimited,
+        message: text.rateLimited,
         ...(resetAt === null ? {} : { resetAt }),
       });
     }
     if (response.status === 403) {
-      return new GitHubError({ status: 403, code: 'FORBIDDEN', message: GITHUB_MESSAGES.forbidden });
+      return new GitHubError({ status: 403, code: 'FORBIDDEN', message: text.forbidden });
     }
     if (response.status === 429) {
       return new GitHubError({
         status: 429,
         code: 'RATE_LIMITED',
-        message: GITHUB_MESSAGES.rateLimited,
+        message: text.rateLimited,
         ...(resetAt === null ? {} : { resetAt }),
       });
     }
     return new GitHubError({
       status: response.status >= 500 ? 503 : response.status,
       code: 'UNAVAILABLE',
-      message: GITHUB_MESSAGES.unavailable,
+      message: text.unavailable,
       detail: `status ${response.status}`,
     });
   }

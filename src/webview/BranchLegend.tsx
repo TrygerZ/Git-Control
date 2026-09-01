@@ -14,6 +14,9 @@
 import { useEffect, useId, useRef, type JSX, type KeyboardEvent } from 'react';
 import { sanitizeGitText } from './format';
 import { Icon } from './ui';
+import { t, type Lang } from './i18n';
+import { useT } from './useT';
+import { useSettingsStore } from './store';
 import type { GraphLane } from '../messages';
 
 interface Props {
@@ -23,15 +26,18 @@ interface Props {
 }
 
 /** Short display name for a lane's seed ref. Sanitised: refs come from git. */
-function laneLabel(lane: GraphLane): string {
-  if (lane.ref === undefined) return `Jalur ${lane.index + 1}`;
-  return sanitizeGitText(lane.ref)
-    .replace('refs/heads/', '')
-    .replace('refs/remotes/', 'remote ')
-    .replace('refs/tags/', 'tag ');
+export function laneLabel(lane: GraphLane, lang: Lang = 'en'): string {
+  if (lane.ref === undefined) return t(lang).legend.laneDefault(lane.index + 1);
+  const name = sanitizeGitText(lane.ref);
+  if (name.startsWith('refs/tags/')) return t(lang).legend.laneTagPrefix(name.slice(10));
+  if (name.startsWith('refs/remotes/')) return t(lang).legend.laneRemotePrefix(name.slice(13));
+  if (name.startsWith('refs/heads/')) return name.slice(11);
+  return name;
 }
 
 export function BranchLegend({ lanes, id, onClose }: Props): JSX.Element {
+  const strings = useT();
+  const language = useSettingsStore((s) => s.language);
   const panelRef = useRef<HTMLElement>(null);
   const titleId = useId();
 
@@ -58,13 +64,12 @@ export function BranchLegend({ lanes, id, onClose }: Props): JSX.Element {
       onKeyDown={onKeyDown}
     >
       <div className="gc-legend__header">
-        <h2 id={titleId} className="gc-legend__title">Panduan simbol grafik</h2>
+        <h2 id={titleId} className="gc-legend__title">{strings.legend.title}</h2>
         {onClose !== undefined && (
           <button
             type="button"
             className="gc-icon-button gc-legend__close"
-            aria-label="Tutup panduan simbol"
-            title="Tutup (Escape)"
+            aria-label={strings.legend.closeAria}
             onClick={onClose}
           >
             <Icon name="close" />
@@ -74,85 +79,85 @@ export function BranchLegend({ lanes, id, onClose }: Props): JSX.Element {
 
       <div className="gc-legend__body">
         <p className="gc-legend__intro">
-          Grafik membaca dari kiri ke kanan (lama ke baru). Setiap bulatan adalah commit dan garis adalah hubungan induk-anak.
+          {strings.legend.intro}
         </p>
 
-        <h3 className="gc-legend__heading">Bentuk commit</h3>
+        <h3 className="gc-legend__heading">{strings.legend.sectionCommitShapes}</h3>
         <dl className="gc-legend__list">
           <dt>
             <span className="gc-legend__swatch gc-legend__swatch--head" aria-hidden="true" />
-            HEAD: posisi aktif
+            {strings.legend.headTitle}
           </dt>
           <dd>
-            Cincin ganda. Commit yang sedang Anda buka saat ini.
+            {strings.legend.headDesc}
           </dd>
 
           <dt>
             <span className="gc-avatar gc-legend__avatar" aria-hidden="true">
               S
             </span>
-            Huruf inisial: penulis
+            {strings.legend.initialTitle}
           </dt>
           <dd>
-            Inisial nama pembuat commit untuk memudahkan pemindaian visual cepat.
+            {strings.legend.initialDesc}
           </dd>
 
           <dt>
             <span className="gc-legend__swatch gc-legend__swatch--remote" aria-hidden="true" />
-            Bulatan penuh: di remote
+            {strings.legend.remoteTitle}
           </dt>
           <dd>
-            Commit sudah terunggah ke remote server.
+            {strings.legend.remoteDesc}
           </dd>
 
           <dt>
             <span className="gc-legend__swatch gc-legend__swatch--local" aria-hidden="true" />
-            Garis putus-putus: lokal
+            {strings.legend.localTitle}
           </dt>
           <dd>
-            Commit baru ada di komputer ini, belum di-push ke remote.
+            {strings.legend.localDesc}
           </dd>
 
           <dt>
             <span className="gc-legend__swatch gc-legend__swatch--merge" aria-hidden="true" />
-            Bulatan besar: merge
+            {strings.legend.mergeTitle}
           </dt>
           <dd>
-            Titik temu penggabungan dua branch.
+            {strings.legend.mergeDesc}
           </dd>
         </dl>
 
-        <h3 className="gc-legend__heading">Label ref</h3>
+        <h3 className="gc-legend__heading">{strings.legend.sectionRefLabels}</h3>
         <dl className="gc-legend__list">
           <dt>
             <span className="gc-chip gc-chip--current"><Icon name="git-branch" /> main</span>
           </dt>
           <dd>
-            Branch aktif saat ini.
+            {strings.legend.currentBranchDesc}
           </dd>
           <dt>
             <span className="gc-chip gc-chip--local"><Icon name="circle-filled" /> fitur</span>
           </dt>
           <dd>
-            Branch lokal lainnya.
+            {strings.legend.localBranchDesc}
           </dd>
           <dt>
             <span className="gc-chip gc-chip--remote"><Icon name="cloud" /> origin/main</span>
           </dt>
           <dd>
-            Branch tracking di server remote.
+            {strings.legend.remoteBranchDesc}
           </dd>
           <dt>
             <span className="gc-chip gc-chip--tag"><Icon name="tag" /> v1.0</span>
           </dt>
           <dd>
-            Tag penanda rilis.
+            {strings.legend.tagDesc}
           </dd>
         </dl>
 
         {lanes.length > 0 && (
           <>
-            <h3 className="gc-legend__heading">Jalur aktif</h3>
+            <h3 className="gc-legend__heading">{strings.legend.sectionActiveLanes}</h3>
             <ul className="gc-legend__lanes">
               {lanes.map((lane) => (
                 <li key={lane.index}>
@@ -161,19 +166,19 @@ export function BranchLegend({ lanes, id, onClose }: Props): JSX.Element {
                     style={{ background: lane.color }}
                     aria-hidden="true"
                   />
-                  <span>{laneLabel(lane)}</span>
+                  <span>{laneLabel(lane, language)}</span>
                 </li>
               ))}
             </ul>
           </>
         )}
 
-        <h3 className="gc-legend__heading">Pintasan keyboard</h3>
+        <h3 className="gc-legend__heading">{strings.legend.sectionShortcuts}</h3>
         <ul className="gc-legend__keys">
-          <li><kbd>←</kbd> <kbd>→</kbd> Pindah commit</li>
-          <li><kbd>↑</kbd> <kbd>↓</kbd> Pindah jalur</li>
-          <li><kbd>Enter</kbd> Buka detail</li>
-          <li><kbd>+</kbd> <kbd>-</kbd> Zoom</li>
+          <li><kbd>←</kbd> <kbd>→</kbd> {strings.legend.keyMoveCommit}</li>
+          <li><kbd>↑</kbd> <kbd>↓</kbd> {strings.legend.keyMoveLane}</li>
+          <li><kbd>Enter</kbd> {strings.legend.keyOpenDetail}</li>
+          <li><kbd>+</kbd> <kbd>-</kbd> {strings.legend.keyZoom}</li>
         </ul>
       </div>
     </section>

@@ -16,6 +16,7 @@ import type {
   CommitFileChange,
   ConflictEntry,
   GraphNode,
+  Lang,
   RefInfo,
   RepoGraph,
   RepoStatus,
@@ -50,6 +51,7 @@ export interface GraphRequest {
   columnWidth?: number;
   rowHeight?: number;
   laneWidth?: number;
+  lang?: Lang;
 }
 
 export const MAX_COMMIT_LIMIT = 10_000;
@@ -174,6 +176,7 @@ export class RepositoryService {
             : request.laneWidth !== undefined
               ? { columnWidth: request.laneWidth }
               : {}),
+          ...(request.lang !== undefined ? { lang: request.lang } : {}),
         },
       );
 

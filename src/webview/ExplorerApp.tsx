@@ -11,6 +11,7 @@ import { Inspector } from './Inspector';
 import { ToastRegion } from './Toast';
 import { bridge, loadState } from './bridge';
 import { githubBaseUrl, type MenuItem } from './NodeContextMenu';
+import { useT } from './useT';
 import {
   useGitHubStore,
   useOperationStore,
@@ -23,6 +24,7 @@ import { sanitizeGitText } from './format';
 import type { GraphNode } from '../messages';
 
 export function ExplorerApp(): JSX.Element {
+  const strings = useT();
   const graph = useRepoStore((s) => s.graph);
   const status = useRepoStore((s) => s.status);
   const loading = useRepoStore((s) => s.loading);
@@ -70,7 +72,7 @@ export function ExplorerApp(): JSX.Element {
             .writeText(command.text)
             .then(() => pushToast({ level: 'info', message: command.toast }))
             .catch(() =>
-              pushToast({ level: 'warning', message: 'Tidak bisa menyalin ke clipboard.' }),
+              pushToast({ level: 'warning', message: strings.explorer.toastCopyFailed }),
             );
           return;
         case 'viewDiff':
@@ -78,7 +80,7 @@ export function ExplorerApp(): JSX.Element {
           setInspectorOpen(true);
           return;
         case 'createBranch': {
-          const name = window.prompt('Nama branch baru', `fitur/${node.shortHash}`);
+          const name = window.prompt(strings.explorer.newBranchPrompt, `${strings.explorer.defaultBranchPrefix}/${node.shortHash}`);
           if (name === null || name.trim().length === 0) return;
           void runAction({
             action: 'create-branch',
@@ -95,7 +97,7 @@ export function ExplorerApp(): JSX.Element {
         default:
       }
     },
-    [openUrl, pushToast, runAction, selectCommit],
+    [openUrl, pushToast, runAction, selectCommit, strings.explorer.defaultBranchPrefix, strings.explorer.newBranchPrompt, strings.explorer.toastCopyFailed],
   );
 
   // Newest commit's subject, for the context breadcrumb. Sanitised here rather than
@@ -138,7 +140,7 @@ export function ExplorerApp(): JSX.Element {
 
         <aside
           className={inspectorOpen ? 'gc-explorer__aside' : 'gc-explorer__aside gc-explorer__aside--closed'}
-          aria-label="Panel detail"
+          aria-label={strings.explorer.asideAria}
         >
           <div className="gc-explorer__aside-head">
             <button
@@ -146,14 +148,9 @@ export function ExplorerApp(): JSX.Element {
               className="gc-button gc-button--quiet gc-explorer__aside-toggle"
               aria-expanded={inspectorOpen}
               aria-controls={asideId}
-              title={
-                inspectorOpen
-                  ? 'Sembunyikan panel detail agar grafik lebih lebar.'
-                  : 'Tampilkan kembali panel detail commit.'
-              }
               onClick={() => setInspectorOpen(!inspectorOpen)}
             >
-              {inspectorOpen ? 'Sembunyikan detail' : 'Detail'}
+              {inspectorOpen ? strings.explorer.hideDetails : strings.explorer.showDetails}
             </button>
           </div>
           <div id={asideId} className="gc-explorer__aside-content">
@@ -166,8 +163,8 @@ export function ExplorerApp(): JSX.Element {
                 )}
                 {progressLog.length > 0 && (
                   <details className="gc-progress">
-                    <summary>Log operasi ({progressLog.length} baris)</summary>
-                    <pre className="gc-progress__log" aria-label="Log operasi git">
+                    <summary>{strings.explorer.operationLogSummary(progressLog.length)}</summary>
+                    <pre className="gc-progress__log" aria-label={strings.explorer.operationLogAria}>
                       {progressLog.join('\n')}
                     </pre>
                   </details>

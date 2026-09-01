@@ -11,11 +11,11 @@ import * as vscode from 'vscode';
 import { MessageBridge, type BridgeHost, type WebviewLike } from './bridge';
 import { GitRunner } from './git';
 import {
-  GITHUB_MESSAGES,
   GitHubClient,
   GitHubError,
   hasPrivateScope,
 } from './github';
+import { hostText } from './hostText';
 import { Logger } from './logger';
 import { parseRemoteUrl, resolveGitHubApiBase, webUrlOf, type GitHubApiBase, type ParsedRemoteUrl } from './remoteUrl';
 import { clampZoom } from './webview/viewport';
@@ -28,6 +28,7 @@ import type {
   GitHubLinkage,
   GitHubRepoInfo,
   GitHubRepoPayload,
+  Lang,
   OpenDiffPayload,
   OpenDiffResult,
   PullRequestsPayload,
@@ -37,23 +38,15 @@ import type {
   UiPreferences,
 } from './messages';
 
-const MESSAGES = {
-  gitMissing: 'Git tidak ditemukan pada PATH.',
-  gitMissingAction: 'Petunjuk instalasi',
-  notARepo: 'Folder ini bukan repository Git.',
-  pickFolder: 'Pilih folder',
-  pickRepo: 'Pilih repository',
-  noFolder: 'Buka folder terlebih dahulu.',
-  githubConnected: 'GitHub tersambung.',
-  githubDisconnected: 'GitHub diputus.',
-  githubPrompt: 'Tempel Personal Access Token GitHub',
-  refreshed: 'Git Control dimuat ulang.',
-  diffTrimmed: 'Diff dipangkas demi performa.',
-  diffBinary: 'Diff teks tidak tersedia untuk file binary.',
-  githubUntrustedBase:
-    'Token tidak dikirim: alamat API berasal dari URL remote, bukan dari setelan Anda. ' +
-    'Setel gitControl.githubApiUrl bila host ini memang GitHub Enterprise Anda.',
-} as const;
+export function activeLanguage(): Lang {
+  const config = vscode.workspace.getConfiguration('gitControl');
+  const rawLang = config.get<string>('language', 'en');
+  return rawLang === 'id' ? 'id' : 'en';
+}
+
+function extText() {
+  return hostText(activeLanguage());
+}
 
 const GIT_INSTALL_URL = 'https://git-scm.com/downloads';
 const TOKEN_SECRET_KEY = 'gitControl.githubToken';
@@ -160,11 +153,12 @@ class Controller implements vscode.Disposable {
   }
 
   private reportGitMissing(): void {
-    this.logger.info('git/missing', MESSAGES.gitMissing);
+    const text = extText().extension;
+    this.logger.info('git/missing', text.gitMissing);
     void vscode.window
-      .showErrorMessage(MESSAGES.gitMissing, MESSAGES.gitMissingAction)
+      .showErrorMessage(text.gitMissing, text.gitMissingAction)
       .then((choice) => {
-        if (choice === MESSAGES.gitMissingAction) {
+        if (choice === text.gitMissingAction) {
           void vscode.env.openExternal(vscode.Uri.parse(GIT_INSTALL_URL));
         }
       });
@@ -234,8 +228,9 @@ class Controller implements vscode.Disposable {
   }
 
   private reportNotARepository(): void {
-    void vscode.window.showWarningMessage(MESSAGES.notARepo, MESSAGES.pickFolder).then((choice) => {
-      if (choice === MESSAGES.pickFolder) {
+    const text = extText().extension;
+    void vscode.window.showWarningMessage(text.notARepo, text.pickFolder).then((choice) => {
+      if (choice === text.pickFolder) {
         void vscode.commands.executeCommand('vscode.openFolder');
       }
     });
@@ -260,9 +255,10 @@ class Controller implements vscode.Disposable {
   /** Repo picker, shown only when several repositories exist. */
   private async pickRepository(): Promise<void> {
     if (this.repositories.size < 2) return;
+    const text = extText().extension;
     const picked = await vscode.window.showQuickPick(
       [...this.repositories.keys()].map((p) => ({ label: vscode.Uri.file(p).path.split('/').pop() ?? p, description: p })),
-      { placeHolder: MESSAGES.pickRepo },
+      { placeHolder: text.pickRepo },
     );
     if (picked === undefined) return;
     this.activeRepoPath = picked.description;
@@ -284,7 +280,8 @@ class Controller implements vscode.Disposable {
     register('gitControl.refresh', async () => {
       for (const repo of this.repositories.values()) repo.invalidate();
       await this.broadcastRepoChanged('manual');
-      this.logger.info('command/refresh', MESSAGES.refreshed);
+      const text = extText().extension;
+      this.logger.info('command/refresh', text.refreshed);
     });
     register('gitControl.connectGitHub', () => this.connectGitHub());
     register('gitControl.disconnectGitHub', () => this.disconnectGitHub());
@@ -313,18 +310,19 @@ class Controller implements vscode.Disposable {
     const rev = params.get('rev') ?? '';
     const filePath = params.get('path') ?? '';
     const folder = params.get('folder') ?? '';
+    const text = extText().extension;
     const repo = folder.length > 0 ? this.repositories.get(folder) : await this.resolveRepository();
-    if (repo === undefined || repo === null) return MESSAGES.notARepo;
+    if (repo === undefined || repo === null) return text.notARepo;
 
     try {
       const content = rev === ':' ? await repo.git.showIndexFile(filePath) : await repo.git.showFile(rev, filePath);
       // NUL bytes mean binary: a text diff would be noise, so say so instead.
-      if (content.includes('\u0000')) return MESSAGES.diffBinary;
-      if (Buffer.byteLength(content, 'utf8') > MAX_DIFF_BYTES) return MESSAGES.diffTrimmed;
+      if (content.includes('\u0000')) return text.diffBinary;
+      if (Buffer.byteLength(content, 'utf8') > MAX_DIFF_BYTES) return text.diffTrimmed;
       return content;
     } catch (err) {
       this.logger.info('diff/provider', err instanceof Error ? err.message : String(err));
-      return MESSAGES.diffBinary;
+      return text.diffBinary;
     }
   }
 
@@ -536,6 +534,7 @@ class Controller implements vscode.Disposable {
       showIgnoredFiles: config.get<boolean>('showIgnoredFiles', false),
       githubApiUrl: config.get<string>('githubApiUrl', 'https://api.github.com'),
       fetchStalenessMs: config.get<number>('fetchStalenessMs', 300_000),
+      language: activeLanguage(),
       ui: this.uiPreferences(),
     };
   }
@@ -556,8 +555,17 @@ class Controller implements vscode.Disposable {
     };
   }
 
-  /** UI prefs live in `workspaceState`. Tokens never do — they go to SecretStorage. */
+  /** UI prefs live in `workspaceState`. Language lives in global config. Tokens go to SecretStorage. */
   private async setUiPreference(payload: SettingsSetPayload): Promise<SettingsSnapshot> {
+    if (payload.key === 'language' && typeof payload.value === 'string') {
+      const lang = payload.value === 'id' ? 'id' : payload.value === 'en' ? 'en' : null;
+      if (lang !== null) {
+        await vscode.workspace
+          .getConfiguration('gitControl')
+          .update('language', lang, vscode.ConfigurationTarget.Global);
+      }
+      return this.settingsSnapshot();
+    }
     const prefs = this.uiPreferences();
     if (payload.key === 'zoom' && typeof payload.value === 'number') prefs.zoom = clampZoom(payload.value);
     if (payload.key === 'branchFilter' && typeof payload.value === 'string') prefs.branchFilter = payload.value;
@@ -604,6 +612,7 @@ class Controller implements vscode.Disposable {
       apiUrl,
       token,
       logger: (line) => this.logger.info('github/client', line),
+      lang: activeLanguage,
     });
     this.github = { client, apiUrl, token };
     return { client, apiUrl };
@@ -658,7 +667,7 @@ class Controller implements vscode.Disposable {
         login: null,
         scopes: [],
         apiUrl,
-        scopeWarning: `${MESSAGES.githubUntrustedBase} (${apiUrl})`,
+        scopeWarning: `${extText().extension.githubUntrustedBase} (${apiUrl})`,
       };
     }
     try {
@@ -698,7 +707,7 @@ class Controller implements vscode.Disposable {
     try {
       const { client } = await this.githubClient();
       const repo = await client.repo(remote.owner, remote.repo);
-      return repo.data.private ? GITHUB_MESSAGES.scopeMissing : null;
+      return repo.data.private ? extText().github.scopeMissing : null;
     } catch {
       // Cannot tell whether it is private; do not cry wolf.
       return null;
@@ -706,8 +715,9 @@ class Controller implements vscode.Disposable {
   }
 
   private async connectGitHub(): Promise<GitHubAuthState> {
+    const text = extText();
     const token = await vscode.window.showInputBox({
-      prompt: MESSAGES.githubPrompt,
+      prompt: text.extension.githubPrompt,
       password: true,
       ignoreFocusOut: true,
     });
@@ -717,8 +727,8 @@ class Controller implements vscode.Disposable {
     this.github = undefined;
     this.logger.info('github/connect', 'token stored');
     const state = await this.githubAuth();
-    if (state.connected) void vscode.window.showInformationMessage(MESSAGES.githubConnected);
-    else void vscode.window.showWarningMessage(GITHUB_MESSAGES.invalidToken);
+    if (state.connected) void vscode.window.showInformationMessage(text.extension.githubConnected);
+    else void vscode.window.showWarningMessage(text.github.invalidToken);
     return state;
   }
 
@@ -726,7 +736,7 @@ class Controller implements vscode.Disposable {
     await this.context.secrets.delete(TOKEN_SECRET_KEY);
     this.github = undefined;
     this.logger.info('github/disconnect', 'token cleared');
-    void vscode.window.showInformationMessage(MESSAGES.githubDisconnected);
+    void vscode.window.showInformationMessage(extText().extension.githubDisconnected);
     return this.githubAuth();
   }
 
@@ -749,7 +759,7 @@ class Controller implements vscode.Disposable {
     try {
       const { client } = await this.githubClient();
       const viewer = await client.viewer();
-      return hasPrivateScope(viewer.data.scopes) ? null : GITHUB_MESSAGES.scopeMissing;
+      return hasPrivateScope(viewer.data.scopes) ? null : extText().github.scopeMissing;
     } catch {
       return null;
     }

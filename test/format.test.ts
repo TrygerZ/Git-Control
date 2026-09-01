@@ -56,19 +56,26 @@ test('shortHash takes seven characters by default', () => {
 
 test('formatDateLabel formats timestamp into Indonesian date without em-dash', () => {
   const ts = new Date('2026-08-23T10:00:00.000Z').getTime();
-  const label = formatDateLabel(ts);
-  assert.match(label, /23 Agu 2026|24 Agu 2026/); // handles timezone
-  assert.ok(!label.includes('—'));
+  const labelId = formatDateLabel(ts, 'id');
+  assert.match(labelId, /23 Agu 2026|24 Agu 2026/); // handles timezone
+  assert.ok(!labelId.includes('—'));
+
+  const labelEn = formatDateLabel(ts, 'en');
+  assert.match(labelEn, /23 Aug 2026|24 Aug 2026/);
+  assert.ok(!labelEn.includes('—'));
 });
 
 test('formatDateLabel handles boundary values consistently (NaN, 0, negative, undefined, empty string)', () => {
-  assert.equal(formatDateLabel(0), 'Tanggal tidak diketahui');
-  assert.equal(formatDateLabel(-1000), 'Tanggal tidak diketahui');
-  assert.equal(formatDateLabel(Number.NaN), 'Tanggal tidak diketahui');
-  assert.equal(formatDateLabel(Number.POSITIVE_INFINITY), 'Tanggal tidak diketahui');
-  assert.equal(formatDateLabel(undefined), 'Tanggal tidak diketahui');
-  assert.equal(formatDateLabel(''), 'Tanggal tidak diketahui');
-  assert.equal(formatDateLabel('invalid-date'), 'Tanggal tidak diketahui');
+  assert.equal(formatDateLabel(0, 'id'), 'Tanggal tidak diketahui');
+  assert.equal(formatDateLabel(-1000, 'id'), 'Tanggal tidak diketahui');
+  assert.equal(formatDateLabel(Number.NaN, 'id'), 'Tanggal tidak diketahui');
+  assert.equal(formatDateLabel(Number.POSITIVE_INFINITY, 'id'), 'Tanggal tidak diketahui');
+  assert.equal(formatDateLabel(undefined, 'id'), 'Tanggal tidak diketahui');
+  assert.equal(formatDateLabel('', 'id'), 'Tanggal tidak diketahui');
+  assert.equal(formatDateLabel('invalid-date', 'id'), 'Tanggal tidak diketahui');
+
+  assert.equal(formatDateLabel(0, 'en'), 'Unknown date');
+  assert.equal(formatDateLabel(undefined, 'en'), 'Unknown date');
 });
 
 // ------------------------------------------------------- SEC-007 sanitisation
@@ -222,8 +229,12 @@ test('sanitizeGitText protects paths, conflict codes, and error details (SEC-007
 
 test('sanitizeGitText protects the GitHub login line (SEC-007)', () => {
   assert.equal(
-    githubConnectionLabel({ connected: true, login: 'octo\u202ecat' }),
+    githubConnectionLabel({ connected: true, login: 'octo\u202ecat' }, 'id'),
     `Tersambung sebagai octo${M}cat.`,
+  );
+  assert.equal(
+    githubConnectionLabel({ connected: true, login: 'octo\u202ecat' }, 'en'),
+    `Connected as octo${M}cat.`,
   );
 });
 
@@ -247,9 +258,9 @@ test('sanitizeGitText protects the GitHub login line (SEC-007)', () => {
  *    not display. A React `key` is never rendered, and an `<option value>` is
  *    compared against lane refs, so it must stay byte-identical to what git said.
  *  - objects that are locally computed rather than host-supplied — `badge` from
- *    `rateLimitBadge` and `view` from `presentError` build their strings from the
- *    fixed Indonesian tables in this file, and `presentError` already sanitises
- *    the one host value it interpolates.
+ *    `rateLimitBadge`, `view` from `presentError`, and `strings` from the `useT()`
+ *    i18n catalog build their strings from the fixed tables in the repository,
+ *    and `presentError` already sanitises the one host value it interpolates.
  */
 test('every git-sourced field is sanitised at its render site (SEC-007)', () => {
   const dir = path.join(__dirname, '..', '..', 'src', 'webview');
@@ -273,7 +284,7 @@ test('every git-sourced field is sanitised at its render site (SEC-007)', () => 
     'message',
   ].join('|');
   /** Objects built in this module from fixed tables, not from host data. */
-  const localObjects = /^(?:badge|view|text|status|state)$/;
+  const localObjects = /^(?:badge|view|text|status|state|strings)$/;
   const risky_ = new RegExp(
     String.raw`\{\s*([A-Za-z_$][\w$]*)[\w$?.]*\.(?:${risky})\b[^}]*\}`,
     'g',
@@ -308,48 +319,65 @@ test('every git-sourced field is sanitised at its render site (SEC-007)', () => 
 // ------------------------------------------------------------- relative time
 
 test('relativeTime collapses the freshest window to "baru saja"', () => {
-  assert.equal(relativeTime(ago(0), NOW), 'baru saja');
-  assert.equal(relativeTime(ago(9_999), NOW), 'baru saja');
+  assert.equal(relativeTime(ago(0), NOW, 'id'), 'baru saja');
+  assert.equal(relativeTime(ago(9_999), NOW, 'id'), 'baru saja');
+  assert.equal(relativeTime(ago(0), NOW, 'en'), 'just now');
+  assert.equal(relativeTime(ago(9_999), NOW, 'en'), 'just now');
 });
 
 test('relativeTime crosses into seconds at ten seconds', () => {
-  assert.equal(relativeTime(ago(10_000), NOW), '10 detik lalu');
-  assert.equal(relativeTime(ago(59_999), NOW), '59 detik lalu');
+  assert.equal(relativeTime(ago(10_000), NOW, 'id'), '10 detik lalu');
+  assert.equal(relativeTime(ago(59_999), NOW, 'id'), '59 detik lalu');
+  assert.equal(relativeTime(ago(10_000), NOW, 'en'), '10s ago');
+  assert.equal(relativeTime(ago(59_999), NOW, 'en'), '59s ago');
 });
 
 test('relativeTime crosses into minutes at exactly one minute', () => {
-  assert.equal(relativeTime(ago(60_000), NOW), '1 menit lalu');
-  assert.equal(relativeTime(ago(59 * 60_000 + 59_000), NOW), '59 menit lalu');
+  assert.equal(relativeTime(ago(60_000), NOW, 'id'), '1 menit lalu');
+  assert.equal(relativeTime(ago(59 * 60_000 + 59_000), NOW, 'id'), '59 menit lalu');
+  assert.equal(relativeTime(ago(60_000), NOW, 'en'), '1m ago');
+  assert.equal(relativeTime(ago(59 * 60_000 + 59_000), NOW, 'en'), '59m ago');
 });
 
 test('relativeTime crosses into hours at exactly one hour', () => {
-  assert.equal(relativeTime(ago(3_600_000), NOW), '1 jam lalu');
-  assert.equal(relativeTime(ago(23 * 3_600_000), NOW), '23 jam lalu');
+  assert.equal(relativeTime(ago(3_600_000), NOW, 'id'), '1 jam lalu');
+  assert.equal(relativeTime(ago(23 * 3_600_000), NOW, 'id'), '23 jam lalu');
+  assert.equal(relativeTime(ago(3_600_000), NOW, 'en'), '1h ago');
+  assert.equal(relativeTime(ago(23 * 3_600_000), NOW, 'en'), '23h ago');
 });
 
 test('relativeTime crosses into days at exactly 24 hours', () => {
-  assert.equal(relativeTime(ago(86_400_000), NOW), '1 hari lalu');
-  assert.equal(relativeTime(ago(2 * 86_400_000), NOW), '2 hari lalu');
-  assert.equal(relativeTime(ago(29 * 86_400_000), NOW), '29 hari lalu');
+  assert.equal(relativeTime(ago(86_400_000), NOW, 'id'), '1 hari lalu');
+  assert.equal(relativeTime(ago(2 * 86_400_000), NOW, 'id'), '2 hari lalu');
+  assert.equal(relativeTime(ago(29 * 86_400_000), NOW, 'id'), '29 hari lalu');
+  assert.equal(relativeTime(ago(86_400_000), NOW, 'en'), '1d ago');
+  assert.equal(relativeTime(ago(2 * 86_400_000), NOW, 'en'), '2d ago');
 });
 
 test('relativeTime crosses into months at thirty days', () => {
-  assert.equal(relativeTime(ago(30 * 86_400_000), NOW), '1 bulan lalu');
-  assert.equal(relativeTime(ago(364 * 86_400_000), NOW), '12 bulan lalu');
+  assert.equal(relativeTime(ago(30 * 86_400_000), NOW, 'id'), '1 bulan lalu');
+  assert.equal(relativeTime(ago(364 * 86_400_000), NOW, 'id'), '12 bulan lalu');
+  assert.equal(relativeTime(ago(30 * 86_400_000), NOW, 'en'), '1 mo ago');
+  assert.equal(relativeTime(ago(364 * 86_400_000), NOW, 'en'), '12 mo ago');
 });
 
 test('relativeTime crosses into years at 365 days', () => {
-  assert.equal(relativeTime(ago(365 * 86_400_000), NOW), '1 tahun lalu');
-  assert.equal(relativeTime(ago(3 * 365 * 86_400_000), NOW), '3 tahun lalu');
+  assert.equal(relativeTime(ago(365 * 86_400_000), NOW, 'id'), '1 tahun lalu');
+  assert.equal(relativeTime(ago(3 * 365 * 86_400_000), NOW, 'id'), '3 tahun lalu');
+  assert.equal(relativeTime(ago(365 * 86_400_000), NOW, 'en'), '1y ago');
+  assert.equal(relativeTime(ago(3 * 365 * 86_400_000), NOW, 'en'), '3y ago');
 });
 
 test('relativeTime clamps a future timestamp instead of going negative', () => {
-  assert.equal(relativeTime(new Date(NOW + 60_000).toISOString(), NOW), 'baru saja');
+  assert.equal(relativeTime(new Date(NOW + 60_000).toISOString(), NOW, 'id'), 'baru saja');
+  assert.equal(relativeTime(new Date(NOW + 60_000).toISOString(), NOW, 'en'), 'just now');
 });
 
 test('relativeTime reports unknown for an unparsable value', () => {
-  assert.equal(relativeTime('not a date', NOW), 'waktu tidak diketahui');
-  assert.equal(absoluteTime('not a date'), 'waktu tidak diketahui');
+  assert.equal(relativeTime('not a date', NOW, 'id'), 'waktu tidak diketahui');
+  assert.equal(absoluteTime('not a date', 'id'), 'waktu tidak diketahui');
+  assert.equal(relativeTime('not a date', NOW, 'en'), 'unknown time');
+  assert.equal(absoluteTime('not a date', 'en'), 'unknown time');
 });
 
 test('absoluteTime renders a zero-padded local timestamp', () => {
@@ -360,20 +388,25 @@ test('absoluteTime renders a zero-padded local timestamp', () => {
 // ----------------------------------------------------------------- statuses
 
 test('statusLabel maps every porcelain letter to Indonesian', () => {
-  assert.deepEqual(statusLabel('M'), { code: 'M', label: 'Dimodifikasi', icon: 'diff-modified' });
-  assert.deepEqual(statusLabel('A'), { code: 'A', label: 'Ditambahkan', icon: 'diff-added' });
-  assert.deepEqual(statusLabel('D'), { code: 'D', label: 'Dihapus', icon: 'diff-removed' });
-  assert.deepEqual(statusLabel('R'), { code: 'R', label: 'Diganti nama', icon: 'diff-renamed' });
-  assert.deepEqual(statusLabel('C'), { code: 'C', label: 'Disalin', icon: 'copy' });
-  assert.deepEqual(statusLabel('T'), { code: 'T', label: 'Tipe berubah', icon: 'file-symlink-file' });
-  assert.deepEqual(statusLabel('U'), { code: 'U', label: 'Konflik', icon: 'warning' });
-  assert.deepEqual(statusLabel('?'), { code: '?', label: 'Belum dilacak', icon: 'question' });
-  assert.deepEqual(statusLabel('!'), { code: '!', label: 'Diabaikan', icon: 'diff-ignored' });
+  assert.deepEqual(statusLabel('M', 'id'), { code: 'M', label: 'Dimodifikasi', icon: 'diff-modified' });
+  assert.deepEqual(statusLabel('A', 'id'), { code: 'A', label: 'Ditambahkan', icon: 'diff-added' });
+  assert.deepEqual(statusLabel('D', 'id'), { code: 'D', label: 'Dihapus', icon: 'diff-removed' });
+  assert.deepEqual(statusLabel('R', 'id'), { code: 'R', label: 'Diganti nama', icon: 'diff-renamed' });
+  assert.deepEqual(statusLabel('C', 'id'), { code: 'C', label: 'Disalin', icon: 'copy' });
+  assert.deepEqual(statusLabel('T', 'id'), { code: 'T', label: 'Tipe berubah', icon: 'file-symlink-file' });
+  assert.deepEqual(statusLabel('U', 'id'), { code: 'U', label: 'Konflik', icon: 'warning' });
+  assert.deepEqual(statusLabel('?', 'id'), { code: '?', label: 'Belum dilacak', icon: 'question' });
+  assert.deepEqual(statusLabel('!', 'id'), { code: '!', label: 'Diabaikan', icon: 'diff-ignored' });
+
+  assert.deepEqual(statusLabel('M', 'en'), { code: 'M', label: 'Modified', icon: 'diff-modified' });
+  assert.deepEqual(statusLabel('U', 'en'), { code: 'U', label: 'Conflict', icon: 'warning' });
 });
 
 test('statusLabel treats blank as unchanged and unknown letters as unknown', () => {
-  assert.deepEqual(statusLabel(' '), { code: ' ', label: 'Tidak berubah', icon: 'dash' });
-  assert.deepEqual(statusLabel('Z'), { code: '·', label: 'Tidak diketahui', icon: 'question' });
+  assert.deepEqual(statusLabel(' ', 'id'), { code: ' ', label: 'Tidak berubah', icon: 'dash' });
+  assert.deepEqual(statusLabel('Z', 'id'), { code: '·', label: 'Tidak diketahui', icon: 'question' });
+  assert.deepEqual(statusLabel(' ', 'en'), { code: ' ', label: 'Unchanged', icon: 'dash' });
+  assert.deepEqual(statusLabel('Z', 'en'), { code: '·', label: 'Unknown', icon: 'question' });
 });
 
 test('every STATUS_LABELS entry and statusLabel result has an icon existing in vendored codicon.css', () => {
@@ -408,9 +441,9 @@ test('entryStatus prefers the index letter but reports untracked first', () => {
     deletions: 0,
     binary: false,
   };
-  assert.equal(entryStatus(base).code, 'M');
-  assert.equal(entryStatus({ ...base, indexStatus: 'A' }).code, 'A');
-  assert.equal(entryStatus({ ...base, untracked: true }).code, '?');
+  assert.equal(entryStatus(base, 'id').code, 'M');
+  assert.equal(entryStatus({ ...base, indexStatus: 'A' }, 'id').code, 'A');
+  assert.equal(entryStatus({ ...base, untracked: true }, 'id').code, '?');
 });
 
 test('displayPath renders renames as lama → baru', () => {
@@ -438,22 +471,27 @@ test('baseName returns the trailing segment', () => {
 // ---------------------------------------------------------------- conflicts
 
 test('conflictLabel explains every git conflict code', () => {
-  assert.equal(conflictLabel('UU'), 'UU: keduanya mengubah');
-  assert.equal(conflictLabel('DU'), 'DU: dihapus di sini, diubah di sana');
-  assert.equal(conflictLabel('UD'), 'UD: diubah di sini, dihapus di sana');
-  assert.equal(conflictLabel('AA'), 'AA: ditambahkan di kedua sisi');
-  assert.equal(conflictLabel('DD'), 'DD: dihapus di kedua sisi');
-  assert.equal(conflictLabel('AU'), 'AU: ditambahkan di sini, diubah di sana');
-  assert.equal(conflictLabel('UA'), 'UA: diubah di sini, ditambahkan di sana');
-  assert.equal(conflictLabel('xx'), 'XX: konflik tidak dikenal');
+  assert.equal(conflictLabel('UU', 'id'), 'UU: keduanya mengubah');
+  assert.equal(conflictLabel('DU', 'id'), 'DU: dihapus di sini, diubah di sana');
+  assert.equal(conflictLabel('UD', 'id'), 'UD: diubah di sini, dihapus di sana');
+  assert.equal(conflictLabel('AA', 'id'), 'AA: ditambahkan di kedua sisi');
+  assert.equal(conflictLabel('DD', 'id'), 'DD: dihapus di kedua sisi');
+  assert.equal(conflictLabel('AU', 'id'), 'AU: ditambahkan di sini, diubah di sana');
+  assert.equal(conflictLabel('UA', 'id'), 'UA: diubah di sini, ditambahkan di sana');
+  assert.equal(conflictLabel('xx', 'id'), 'XX: konflik tidak dikenal');
+
+  assert.equal(conflictLabel('UU', 'en'), 'UU: both modified');
+  assert.equal(conflictLabel('xx', 'en'), 'XX: unknown conflict');
 });
 
 test('operationLabel names every operation state in Indonesian', () => {
   const states: OperationState[] = ['idle', 'merge', 'rebase', 'cherry-pick', 'revert', 'bisect'];
   for (const state of states) {
-    assert.ok(operationLabel(state).length > 0, state);
+    assert.ok(operationLabel(state, 'id').length > 0, state);
+    assert.ok(operationLabel(state, 'en').length > 0, state);
   }
-  assert.equal(operationLabel('merge'), 'Merge sedang berjalan');
+  assert.equal(operationLabel('merge', 'id'), 'Merge sedang berjalan');
+  assert.equal(operationLabel('merge', 'en'), 'Merge in progress');
 });
 
 // ------------------------------------------------------------------- errors
@@ -479,7 +517,7 @@ const ALL_CODES: ErrorCode[] = [
 test('presentError covers every ErrorCode with a distinct title', () => {
   const titles = new Set<string>();
   for (const code of ALL_CODES) {
-    const view = presentError({ status: 500, code, message: '' });
+    const view = presentError({ status: 500, code, message: '' }, 'id');
     assert.ok(view.title.length > 0, code);
     assert.ok(view.explanation.length > 0, code);
     titles.add(view.title);
@@ -500,7 +538,7 @@ test('presentError keeps host remedies when supplied', () => {
     code: 'DIRTY_TREE',
     message: 'Commit atau stash perubahan sebelum checkout.',
     remedies: ['commit', 'stash', 'cancel'],
-  });
+  }, 'id');
   assert.deepEqual(view.remedies, ['commit', 'stash', 'cancel']);
   assert.match(view.explanation, /Commit atau stash/);
 });
@@ -517,7 +555,7 @@ test('presentError never suggests force push for REMOTE_AHEAD', () => {
     code: 'REMOTE_AHEAD',
     message: 'Remote memiliki histori berbeda.',
     remedies: ['fetch'],
-  });
+  }, 'id');
   assert.deepEqual(view.remedies, ['fetch']);
   assert.match(view.explanation, /Fetch dulu/);
 });
@@ -525,15 +563,23 @@ test('presentError never suggests force push for REMOTE_AHEAD', () => {
 test('remedyLabel names every remedy', () => {
   const remedies: Remedy[] = ['commit', 'stash', 'fetch', 'cancel', 'resolve-conflicts', 'confirm'];
   assert.deepEqual(
-    remedies.map(remedyLabel),
+    remedies.map((r) => remedyLabel(r, 'id')),
     ['Commit', 'Stash', 'Fetch', 'Batal', 'Selesaikan konflik', 'Konfirmasi'],
+  );
+  assert.deepEqual(
+    remedies.map((r) => remedyLabel(r, 'en')),
+    ['Commit', 'Stash', 'Fetch', 'Cancel', 'Resolve conflicts', 'Confirm'],
   );
 });
 
 test('riskLabel spells risk in words, not colour', () => {
-  assert.equal(riskLabel('low'), 'risiko rendah');
-  assert.equal(riskLabel('medium'), 'berisiko');
-  assert.equal(riskLabel('high'), 'sangat berisiko');
+  assert.equal(riskLabel('low', 'id'), 'risiko rendah');
+  assert.equal(riskLabel('medium', 'id'), 'berisiko');
+  assert.equal(riskLabel('high', 'id'), 'sangat berisiko');
+
+  assert.equal(riskLabel('low', 'en'), 'low risk');
+  assert.equal(riskLabel('medium', 'en'), 'risky');
+  assert.equal(riskLabel('high', 'en'), 'high risk');
 });
 
 // -------------------------------------------------------------- git actions
@@ -576,10 +622,13 @@ test('gitCommandOf never emits a force flag', () => {
 
 test('consequenceOf and actionTitle describe every action in Indonesian', () => {
   for (const action of ACTIONS) {
-    assert.ok(consequenceOf(action).length > 10, action.action);
-    assert.ok(actionTitle(action).length > 0, action.action);
+    assert.ok(consequenceOf(action, 'id').length > 10, action.action);
+    assert.ok(actionTitle(action, 'id').length > 0, action.action);
+    assert.ok(consequenceOf(action, 'en').length > 10, action.action);
+    assert.ok(actionTitle(action, 'en').length > 0, action.action);
   }
-  assert.match(consequenceOf({ action: 'reset-hard', hash: HASH }), /Tidak bisa dibatalkan/);
+  assert.match(consequenceOf({ action: 'reset-hard', hash: HASH }, 'id'), /Tidak bisa dibatalkan/);
+  assert.match(consequenceOf({ action: 'reset-hard', hash: HASH }, 'en'), /Cannot be undone/);
 });
 
 test('actionTarget picks the branch, name, hash, or remote', () => {
@@ -593,8 +642,9 @@ test('actionTarget picks the branch, name, hash, or remote', () => {
 // ------------------------------------------------------------------ numbers
 
 test('formatCount groups thousands the Indonesian way', () => {
-  assert.equal(formatCount(10_000), '10.000');
-  assert.equal(formatCount(7), '7');
+  assert.equal(formatCount(10_000, 'id'), '10.000');
+  assert.equal(formatCount(7, 'id'), '7');
+  assert.equal(formatCount(10_000, 'en'), '10,000');
 });
 
 test('truncate appends an ellipsis only when needed', () => {
@@ -609,40 +659,52 @@ function rate(patch: Partial<GitHubRateLimit> = {}): GitHubRateLimit {
 }
 
 test('rateLimitBadge reports the remaining quota in Indonesian', () => {
-  const badge = rateLimitBadge(rate());
+  const badge = rateLimitBadge(rate(), undefined, 'id');
   assert.equal(badge.label, 'Sisa 4.987 permintaan');
   assert.equal(badge.tone, 'info');
   assert.match(badge.title, /dari 5\.000/);
+
+  const enBadge = rateLimitBadge(rate(), undefined, 'en');
+  assert.equal(enBadge.label, '4,987 requests remaining');
+  assert.match(enBadge.title, /of 5,000/);
 });
 
 test('rateLimitBadge shows a countdown once the quota is spent', () => {
   const now = 1_700_000_000_000;
-  const badge = rateLimitBadge(rate({ remaining: 0, resetAt: now + 125_000 }), now);
+  const badge = rateLimitBadge(rate({ remaining: 0, resetAt: now + 125_000 }), now, 'id');
   assert.equal(badge.tone, 'warning');
   assert.match(badge.label, /^Habis · 2 menit 5 detik/);
+
+  const enBadge = rateLimitBadge(rate({ remaining: 0, resetAt: now + 125_000 }), now, 'en');
+  assert.match(enBadge.label, /^Exhausted · 2 minutes 5 seconds/);
 });
 
 test('rateLimitBadge marks cached and offline states with words, not colour', () => {
-  assert.match(rateLimitBadge(rate({ cached: true })).label, /cached$/);
-  const offline = rateLimitBadge(rate({ offline: true, cached: true }));
+  assert.match(rateLimitBadge(rate({ cached: true }), undefined, 'id').label, /cached$/);
+  const offline = rateLimitBadge(rate({ offline: true, cached: true }), undefined, 'id');
   assert.equal(offline.label, 'offline · cached');
   assert.equal(offline.tone, 'warning');
   // Offline wins over exhaustion, because no request is being made at all.
-  assert.equal(rateLimitBadge(rate({ offline: true, remaining: 0 })).label, 'offline');
+  assert.equal(rateLimitBadge(rate({ offline: true, remaining: 0 }), undefined, 'id').label, 'offline');
 });
 
 test('rateLimitBadge degrades when nothing is known yet', () => {
-  assert.equal(rateLimitBadge(null).label, 'Tidak diketahui');
-  assert.equal(rateLimitBadge(rate({ remaining: null })).label, 'Tidak diketahui');
+  assert.equal(rateLimitBadge(null, undefined, 'id').label, 'Tidak diketahui');
+  assert.equal(rateLimitBadge(rate({ remaining: null }), undefined, 'id').label, 'Tidak diketahui');
+  assert.equal(rateLimitBadge(null, undefined, 'en').label, 'Unknown');
 });
 
 test('countdown clamps, rounds, and falls back', () => {
   const now = 1_700_000_000_000;
-  assert.equal(countdown(null, now), 'beberapa saat');
-  assert.equal(countdown(now - 5000, now), 'sekarang');
-  assert.equal(countdown(now + 30_000, now), '30 detik');
-  assert.equal(countdown(now + 120_000, now), '2 menit');
-  assert.equal(countdown(now + 90_000, now), '1 menit 30 detik');
+  assert.equal(countdown(null, now, 'id'), 'beberapa saat');
+  assert.equal(countdown(now - 5000, now, 'id'), 'sekarang');
+  assert.equal(countdown(now + 30_000, now, 'id'), '30 detik');
+  assert.equal(countdown(now + 120_000, now, 'id'), '2 menit');
+  assert.equal(countdown(now + 90_000, now, 'id'), '1 menit 30 detik');
+
+  assert.equal(countdown(null, now, 'en'), 'a few moments');
+  assert.equal(countdown(now - 5000, now, 'en'), 'now');
+  assert.equal(countdown(now + 30_000, now, 'en'), '30 seconds');
 });
 
 test('pullRequestLabel states the number, state word, and draft marker', () => {
@@ -657,20 +719,26 @@ test('pullRequestLabel states the number, state word, and draft marker', () => {
     author: 'octocat',
     updatedAt: '2026-06-15T10:00:00.000Z',
   };
-  assert.equal(pullRequestLabel(base), '#12 Terbuka');
-  assert.equal(pullRequestLabel({ ...base, draft: true }), '#12 Terbuka · draft');
-  assert.equal(pullRequestLabel({ ...base, state: 'merged' }), '#12 Digabung');
-  assert.equal(pullRequestLabel({ ...base, state: 'closed' }), '#12 Ditutup');
+  assert.equal(pullRequestLabel(base, 'id'), '#12 Terbuka');
+  assert.equal(pullRequestLabel({ ...base, draft: true }, 'id'), '#12 Terbuka · draft');
+  assert.equal(pullRequestLabel({ ...base, state: 'merged' }, 'id'), '#12 Digabung');
+  assert.equal(pullRequestLabel({ ...base, state: 'closed' }, 'id'), '#12 Ditutup');
+
+  assert.equal(pullRequestLabel(base, 'en'), '#12 Open');
+  assert.equal(pullRequestLabel({ ...base, state: 'merged' }, 'en'), '#12 Merged');
 });
 
 test('githubConnectionLabel covers connected, anonymous, and invalid-token', () => {
-  assert.equal(githubConnectionLabel({ connected: false, login: null }), 'Belum tersambung.');
-  assert.equal(githubConnectionLabel({ connected: true, login: 'octocat' }), 'Tersambung sebagai octocat.');
-  assert.equal(githubConnectionLabel({ connected: true, login: null }), 'Tersambung.');
+  assert.equal(githubConnectionLabel({ connected: false, login: null }, 'id'), 'Belum tersambung.');
+  assert.equal(githubConnectionLabel({ connected: true, login: 'octocat' }, 'id'), 'Tersambung sebagai octocat.');
+  assert.equal(githubConnectionLabel({ connected: true, login: null }, 'id'), 'Tersambung.');
   assert.equal(
-    githubConnectionLabel({ connected: false, login: null, invalidToken: true }),
+    githubConnectionLabel({ connected: false, login: null, invalidToken: true }, 'id'),
     'Token GitHub tidak valid.',
   );
+
+  assert.equal(githubConnectionLabel({ connected: false, login: null }, 'en'), 'Not connected.');
+  assert.equal(githubConnectionLabel({ connected: true, login: 'octocat' }, 'en'), 'Connected as octocat.');
 });
 
 // -------------------------------------------------------- ChangeTree ARIA grid invariants

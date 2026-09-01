@@ -26,6 +26,8 @@ import {
   sanitizeGitText,
   statusTone,
 } from './format';
+import { useT } from './useT';
+import { useSettingsStore } from './store';
 import { Icon } from './ui';
 import { buildTree, collectPaths, flattenTree, triState, type FolderNode, type TreeNode } from './tree';
 import type { ChangeEntry } from '../messages';
@@ -63,6 +65,8 @@ export function ChangeTree({
   onOpenDiff,
   fileAction,
 }: Props): JSX.Element {
+  const strings = useT();
+  const language = useSettingsStore((x) => x.language);
   // ponytail: memoize tree hierarchy and row flattening to prevent re-computation on unrelated re-renders.
   const root: FolderNode = useMemo(() => buildTree(entries), [entries]);
   const rows = useMemo(() => flattenTree(root, collapsed), [root, collapsed]);
@@ -180,8 +184,8 @@ export function ChangeTree({
                 disabled={busy}
                 label={
                   node.kind === 'folder'
-                    ? `Pilih semua file di folder ${safeName}`
-                    : `Pilih ${safePath}`
+                    ? strings.changeTree.selectFolderAria(safeName)
+                    : strings.changeTree.selectFileAria(safePath)
                 }
                 onChange={() =>
                   node.kind === 'folder' ? onToggleFolder(node) : onToggleFile(node.path)
@@ -194,10 +198,14 @@ export function ChangeTree({
                 <button
                   type="button"
                   className="gc-tree__folder"
-                  aria-label={`${isCollapsed ? 'Buka' : 'Tutup'} ${folderRowLabel(
-                    node.name,
-                    collectPaths(node).length,
-                  )}`}
+                  aria-label={strings.changeTree.folderToggleAria(
+                    isCollapsed ? strings.changeTree.expandFolder : strings.changeTree.collapseFolder,
+                    folderRowLabel(
+                      node.name,
+                      collectPaths(node).length,
+                      language,
+                    ),
+                  )}
                   onClick={() => onToggleCollapsed(node.path)}
                 >
                   <span className="gc-tree__twisty" aria-hidden="true">
@@ -235,7 +243,9 @@ function FileRow({
   busy: boolean;
   churnTruncated: boolean;
 }): JSX.Element {
-  const status = entryStatus(entry);
+  const strings = useT();
+  const language = useSettingsStore((x) => x.language);
+  const status = entryStatus(entry, language);
   const tone = statusTone(status.code);
   const path = displayPath(entry);
   // Visible text is the basename: the row already sits under its folder, and the
@@ -259,9 +269,9 @@ function FileRow({
         className="gc-tree__status"
         role="gridcell"
         aria-colindex={2}
-        aria-label={`Status: ${status.label}`}
+        aria-label={strings.changeTree.statusAria(status.label)}
       >
-        <span className={`gc-status__box gc-status__box--${tone}`} title={status.label} aria-hidden="true">
+        <span className={`gc-status__box gc-status__box--${tone}`} aria-hidden="true">
           <Icon name={status.icon} />
         </span>
       </span>
@@ -269,8 +279,8 @@ function FileRow({
         <button
           type="button"
           className="gc-tree__file"
-          title={`${path}: klik untuk membuka diff`}
-          aria-label={`Buka diff ${fileRowLabel(entry, churnTruncated)}`}
+          title={path}
+          aria-label={strings.changeTree.openDiffAria(fileRowLabel(entry, churnTruncated, language))}
           onClick={() => onOpenDiff(entry)}
         >
           <span className="gc-tree__name">{name}</span>
@@ -281,17 +291,16 @@ function FileRow({
           className="gc-tree__binary"
           role="gridcell"
           aria-colindex={4}
-          aria-label="File binary"
+          aria-label={strings.changeTree.binaryAria}
         >
-          binary
+          {strings.changeTree.binaryLabel}
         </span>
       ) : churnUnknown ? (
         <span
           className="gc-tree__stats"
           role="gridcell"
           aria-colindex={4}
-          title={churnUnknownReason(entry, churnTruncated)}
-          aria-label={churnUnknownReason(entry, churnTruncated)}
+          aria-label={churnUnknownReason(entry, churnTruncated, language)}
         >
           <span className="gc-stat gc-stat--unknown">{UNKNOWN_CHURN}</span>
         </span>
@@ -300,7 +309,7 @@ function FileRow({
           className="gc-tree__stats"
           role="gridcell"
           aria-colindex={4}
-          aria-label={`${entry.additions ?? 0} baris ditambah, ${entry.deletions ?? 0} baris dihapus`}
+          aria-label={strings.changeTree.churnSummary(entry.additions ?? 0, entry.deletions ?? 0)}
         >
           <span className="gc-stat gc-stat--add">+{entry.additions ?? 0}</span>
           <span className="gc-stat gc-stat--del">−{entry.deletions ?? 0}</span>
@@ -312,11 +321,6 @@ function FileRow({
             type="button"
             className="gc-button gc-button--quiet gc-tree__action"
             aria-label={`${fileAction.label} ${sanitizeGitText(entry.path)}`}
-            title={
-              fileAction.label === 'Stage'
-                ? 'Masukkan file ini ke staging area.'
-                : 'Keluarkan file ini dari staging area.'
-            }
             disabled={busy}
             onClick={() => fileAction.run(entry)}
           >

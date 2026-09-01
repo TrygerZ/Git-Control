@@ -1,0 +1,1218 @@
+/**
+ * Webview internationalization module (FEAT-i18n).
+ *
+ * English is the source language: Catalog type is derived from `en`, and `id`
+ * is typed as `Catalog` to force complete translation coverage at compile time.
+ * Parameterized messages use plain type-safe functions instead of template engines.
+ */
+import type { Lang } from '../messages';
+export type { Lang };
+
+const en = {
+  // Pending changes panel
+  pending: {
+    sectionConflicted: 'Conflicts',
+    sectionStaged: 'Staged Changes',
+    sectionUnstaged: 'Changes',
+    sectionUntracked: 'Untracked Files',
+    hintConflicted: 'Git cannot merge automatically.',
+    hintStaged: 'Only these changes will be included in the next commit.',
+    hintUnstaged: 'Modified, not staged yet.',
+    hintUntracked: 'New files, not tracked by git.',
+    churnTruncatedTitle: 'Line counts are incomplete.',
+    churnTruncatedDetail: (unknownSymbol: string) =>
+      `Some files show ${unknownSymbol}. The files are still changed.`,
+    toolbarLabel: 'Change actions',
+    stageButton: 'Stage',
+    unstageButton: 'Unstage',
+    stageAria: (count: string) => `Stage ${count} selected files`,
+    unstageAria: (count: string) => `Unstage ${count} selected files`,
+    stageTitle: 'Add to staging area.',
+    unstageTitle: 'Remove from staging area. File contents are kept.',
+    selectAll: 'Select all',
+    selectAllTitle: 'Check all files.',
+    clearSelection: 'Clear',
+    clearSelectionTitle: 'Uncheck all files.',
+    selectedCount: (count: string) => `${count} selected`,
+    openGraphAria: 'Open commit graph',
+    reloadAria: 'Reload change list',
+    switchLanguageAria: (nextLang: string) => `Switch to ${nextLang}`,
+    emptyTitle: 'No changes.',
+    emptyHint: 'Working tree is clean.',
+    changesHeader: 'Changes',
+    changesTotal: (count: string) => `${count} files`,
+    searchPlaceholder: 'Search files...',
+    searchAria: 'Filter by file name',
+    searchMatched: (shown: string, total: string) => `${shown} of ${total} files matched`,
+    searchEmptyTitle: 'No matching files.',
+    clearSearch: 'Clear search',
+    sectionAria: (title: string, count: string) => `${title}: ${count} files`,
+  },
+
+  // Shared UI primitives
+  ui: {
+    graphSkeletonAria: 'Loading commit graph',
+    fileListSkeletonAria: 'Loading file list',
+    metadataSkeletonAria: 'Loading commit metadata',
+    noBranch: 'no branch',
+    detachedAt: (hash: string) => `detached ${hash}`,
+    branchLabel: (branch: string) => `branch ${branch}`,
+    headAtCommit: (hash: string) => `HEAD at commit ${hash}`,
+    lastCommit: (subject: string) => `Last commit: ${subject}`,
+    errorSeverity: 'Error: ',
+    viewLogs: 'View logs',
+    viewLogsTitle: 'Open git output.',
+    showLogsFailed: 'Could not open Git Control logs.',
+    warningSeverity: 'Warning: ',
+    crashTitle: 'Failed to load UI',
+    crashErrorId: (id: string) => `Error ID: ${id}`,
+    crashReload: 'Reload',
+    crashReloadTitle: 'Redraw the interface. Does not run git.',
+  },
+
+  // Format and presentation helpers
+  format: {
+    unknownDate: 'Unknown date',
+    unknownTime: 'unknown time',
+    justNow: 'just now',
+    secondsAgo: (count: number) => `${count}s ago`,
+    minutesAgo: (count: number) => `${count}m ago`,
+    hoursAgo: (count: number) => `${count}h ago`,
+    daysAgo: (count: number) => `${count}d ago`,
+    monthsAgo: (count: number) => `${count} mo ago`,
+    yearsAgo: (count: number) => `${count}y ago`,
+    months: ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'] as readonly string[],
+    locale: 'en-US',
+
+    statusLetters: {
+      M: 'Modified',
+      A: 'Added',
+      D: 'Deleted',
+      R: 'Renamed',
+      C: 'Copied',
+      T: 'Type changed',
+      U: 'Conflict',
+      '?': 'Untracked',
+      '!': 'Ignored',
+      ' ': 'Unchanged',
+      unknown: 'Unknown',
+    },
+
+    syncSummaryNoRemote: 'Not connected to remote. Your commits only exist on this machine.',
+    syncSummaryAhead: (count: string) => `${count} commits to push`,
+    syncSummaryBehind: (count: string) => `${count} new commits waiting to pull`,
+    syncSummaryInSync: (upstream: string) => `Up to date with ${upstream}.`,
+
+    churnUntracked: 'new file, not tracked by git',
+    churnBinary: 'binary file, line count unavailable',
+    churnTruncated: 'line count skipped because change list is too large, file is still changed',
+    churnUncounted: 'line count not calculated yet',
+    churnSummary: (add: number, del: number) => `${add} lines added, ${del} lines deleted`,
+    folderRowAria: (name: string, count: string) => `Folder ${name}, ${count} files`,
+
+    conflictActionAria: (action: string, path: string) => `${action} ${path}`,
+    conflictRowAria: (path: string, explained: string) => `${path}, ${explained}`,
+    conflictCodes: {
+      DD: 'DD: deleted by both',
+      AU: 'AU: added by us, modified by them',
+      UD: 'UD: modified by us, deleted by them',
+      UA: 'UA: modified by us, added by them',
+      DU: 'DU: deleted by us, modified by them',
+      AA: 'AA: added by both',
+      UU: 'UU: both modified',
+      unknown: (code: string) => `${code}: unknown conflict`,
+    },
+
+    rowCommitPrefix: (hash: string) => `commit ${hash}`,
+    rowAuthorPrefix: (author: string) => `by ${author}`,
+    rowHeadBadge: 'HEAD',
+    rowMergeBadge: 'merge commit',
+    rowLocalBadge: 'local not pushed',
+    rowRemoteBadge: 'on remote',
+    refTagPrefix: (tag: string) => `tag ${tag}`,
+    refRemotePrefix: (remote: string) => `remote ${remote}`,
+    refGroupPrefix: (refs: string) => `ref ${refs}`,
+
+    operations: {
+      idle: 'No operation in progress',
+      merge: 'Merge in progress',
+      rebase: 'Rebase in progress',
+      'cherry-pick': 'Cherry-pick in progress',
+      revert: 'Revert in progress',
+      bisect: 'Bisect in progress',
+    },
+
+    remedyLabels: {
+      commit: 'Commit',
+      stash: 'Stash',
+      fetch: 'Fetch',
+      cancel: 'Cancel',
+      'resolve-conflicts': 'Resolve conflicts',
+      confirm: 'Confirm',
+    },
+
+    remedyConsequences: {
+      commit:
+        'Closes this dialog and navigates to Pending Changes to save your work first. No git command runs now.',
+      stash:
+        'Saves changes to the stash stack and cleans working directory. Work is safe and can be restored later.',
+      fetch:
+        'Fetches latest data from remote. Working directory and commits are completely unchanged.',
+      cancel: 'Closes dialog without running any command. Nothing is changed.',
+      'resolve-conflicts':
+        'Closes dialog and navigates to conflicted files list to resolve first.',
+      confirm: 'Runs the git command shown in this dialog.',
+    },
+
+    errors: {
+      VALIDATION_ERROR: {
+        title: 'Invalid request',
+        explanation: 'The submitted data is invalid. Reload and try again.',
+      },
+      AUTH_ERROR: {
+        title: 'Authentication failed',
+        explanation: 'Credentials were not accepted. Reconnect your GitHub account.',
+      },
+      FORBIDDEN: {
+        title: 'Access denied',
+        explanation: 'You do not have permission for this action on this repository.',
+      },
+      NOT_FOUND: {
+        title: 'Not found',
+        explanation: 'The requested repository, commit, or branch does not exist.',
+      },
+      CONFLICT: {
+        title: 'Status conflict',
+        explanation: 'Repository changed or another operation is still in progress. Reload first.',
+      },
+      RATE_LIMITED: {
+        title: 'Too many requests',
+        explanation: 'Request limit reached. Please wait a moment and try again.',
+      },
+      SERVER_ERROR: {
+        title: 'An error occurred',
+        explanation: 'Git execution failed. Check logs for full output.',
+      },
+      UNAVAILABLE: {
+        title: 'Service unavailable',
+        explanation: 'This feature is not available or git is not responding.',
+      },
+      REPOSITORY_LOCKED: {
+        title: 'Repository locked',
+        explanation: 'Another git process is currently running. Wait until it finishes.',
+      },
+      DIRTY_TREE: {
+        title: 'Unsaved changes present',
+        explanation: 'Commit or stash your changes first so nothing is lost.',
+      },
+      REMOTE_AHEAD: {
+        title: 'Remote is ahead',
+        explanation: 'Remote has commits you do not have locally. Fetch first, do not force push.',
+      },
+      STALE_STATUS: {
+        title: 'Remote status outdated',
+        explanation: 'Remote data is stale. Fetch first so decisions are based on latest data.',
+      },
+      NON_FAST_FORWARD: {
+        title: 'Push is not fast-forward',
+        explanation: 'Push would overwrite remote history. Fetch and integrate changes first.',
+      },
+      HOOK_REJECTED: {
+        title: 'Rejected by git hook',
+        explanation: 'A git hook rejected this operation. Hook message is in details.',
+      },
+      CONFIRMATION_REQUIRED: {
+        title: 'Confirmation required',
+        explanation: 'This action risks altering history or discarding changes.',
+      },
+    },
+
+    riskLabels: {
+      low: 'low risk',
+      medium: 'risky',
+      high: 'high risk',
+    },
+
+    actionConsequences: {
+      checkoutBranch: (branch: string) => `Switch to branch ${branch}. Working directory files will follow that branch.`,
+      checkoutCommit: 'Enter detached HEAD mode. New commits will not belong to any branch.',
+      createBranch: (name: string, hash: string) => `Create branch ${name} at commit ${hash} without switching.`,
+      merge: (branch: string) => `Merge ${branch} into current branch. Conflicts may arise.`,
+      revert: 'Create a new commit undoing changes from that commit. History remains intact.',
+      resetSoft: 'Move branch pointer to that commit. Changes remain in staging area.',
+      resetHard: 'Move branch pointer AND discard all changes after that commit. Cannot be undone.',
+      push: (branch: string, remote: string) => `Send branch ${branch} to ${remote}.`,
+      pushUpTo: (hash: string, remote: string, branch: string) => `Send history up to ${hash} to ${remote}/${branch}.`,
+      fetch: 'Fetch latest data from remote. Working directory is not modified.',
+      stash: 'Save changes to stash and clean working directory.',
+      stashPop: 'Restore changes from newest stash.',
+      mergeContinue: 'Continue merge after all conflicts are resolved.',
+      mergeAbort: 'Abort merge and return to state before merge.',
+      defaultAction: 'Run git command.',
+    },
+
+    actionTitles: {
+      checkoutBranch: (branch: string) => `Checkout branch ${branch}`,
+      checkoutCommit: (hash: string) => `Checkout commit ${hash}`,
+      createBranch: (name: string) => `Create branch ${name}`,
+      merge: (branch: string) => `Merge ${branch} into current branch`,
+      revert: (hash: string) => `Revert ${hash}`,
+      resetSoft: (hash: string) => `Reset soft to ${hash}`,
+      resetHard: (hash: string) => `Reset hard to ${hash}`,
+      push: (branch: string) => `Push ${branch}`,
+      pushUpTo: (hash: string) => `Push up to ${hash}`,
+      fetch: 'Fetch',
+      stash: 'Stash changes',
+      stashPop: 'Stash pop',
+      mergeContinue: 'Continue merge',
+      mergeAbort: 'Abort merge',
+      defaultAction: 'Git action',
+    },
+
+    rateLimit: {
+      unknown: 'Unknown',
+      unknownTitle: 'Rate limit status not known yet.',
+      offline: 'offline',
+      offlineTitle: 'GitHub is unreachable. Serving from cache if available.',
+      exhausted: (countdown: string) => `Exhausted · ${countdown}`,
+      exhaustedTitle: (countdown: string) => `Rate limit reached. Try again in ${countdown}.`,
+      remainingUnknown: 'Unknown',
+      remainingUnknownTitle: 'Remaining requests not known yet.',
+      remaining: (count: string) => `${count} requests remaining`,
+      remainingTitle: (count: string, limitSuffix: string) => `Remaining ${count}${limitSuffix} requests in current window.`,
+      limitSuffix: (limit: string) => ` of ${limit}`,
+      cachedSuffix: ' · cached',
+    },
+
+    countdown: {
+      aFewMoments: 'a few moments',
+      now: 'now',
+      seconds: (sec: number) => `${sec} seconds`,
+      minutes: (min: number) => `${min} minutes`,
+      minutesSeconds: (min: number, sec: number) => `${min} minutes ${sec} seconds`,
+    },
+
+    prStates: {
+      open: 'Open',
+      closed: 'Closed',
+      merged: 'Merged',
+      draftSuffix: ' · draft',
+    },
+
+    githubConnection: {
+      invalidToken: 'Invalid GitHub token.',
+      disconnected: 'Not connected.',
+      connected: 'Connected.',
+      connectedAs: (login: string) => `Connected as ${login}.`,
+    },
+  },
+
+  // Inspector panel
+  inspector: {
+    toastHashCopied: 'Hash copied.',
+    toastCopyFailed: 'Could not copy to clipboard.',
+    toastNoMoreFiles: 'No additional files.',
+    emptyNoSelectionTitle: 'No commit selected.',
+    emptyNoSelectionHint: 'Select a commit in the graph.',
+    emptyDetailUnavailableTitle: 'Commit details unavailable.',
+    emptyDetailUnavailableHint: 'Commit may have been lost after a rebase. Reload the graph.',
+    panelAria: 'Commit details',
+    byAuthor: (author: string, time: string) => `by ${author} · ${time}`,
+    copyShortHashAria: (hash: string) => `Copy short hash ${hash}`,
+    copyShortHashTitle: 'Copy first 7 characters.',
+    copyShortHash: 'Copy short hash',
+    copyFullHashAria: 'Copy full 40-character hash',
+    copyFullHashTitle: 'Copy full 40 characters.',
+    copyFullHash: 'Copy full hash',
+    openGitHubAria: (hash: string) => `Open commit ${hash} on GitHub`,
+    openGitHubTitle: 'Open in browser.',
+    openGitHub: 'Open on GitHub',
+    sectionDetails: 'Details',
+    labelAuthor: 'Author',
+    labelAuthored: 'Authored',
+    labelCommitted: 'Committed',
+    committedBy: (committer: string) => ` by ${committer}`,
+    labelParents: 'Parents',
+    noParents: 'None (root commit)',
+    sectionRefs: 'Refs',
+    refsAria: 'Refs on this commit',
+    sectionBody: 'Full message',
+    bodyAria: 'Commit message body',
+    sectionFiles: 'Changed files',
+    compareParentLabel: 'Compare with parent',
+    parentOption: (index: number, hash: string) => `Parent ${index} · ${hash}`,
+    totalsFiles: (count: string) => `${count} files`,
+    totalsBinary: (count: string) => `${count} binary files`,
+    emptyFilesTitle: 'This commit has no file changes.',
+    emptyFilesHint: 'Typically a clean merge or empty commit.',
+    fileListAria: (count: string) => `${count} changed files`,
+    churnBinary: 'binary file',
+    churnSummary: (add: number, del: number) => `${add} lines added, ${del} lines deleted`,
+    openDiffAria: (path: string, churn: string) => `Open diff ${path}, ${churn}`,
+    openingDiff: 'Opening diff...',
+    diffTruncated: 'Diff truncated.',
+    loadMoreTitle: 'Load next page of files.',
+    loadMore: 'Load more',
+    loadingMore: 'Loading next files...',
+  },
+
+  // Change tree component
+  changeTree: {
+    selectFolderAria: (name: string) => `Select all files in folder ${name}`,
+    selectFileAria: (path: string) => `Select ${path}`,
+    expandFolder: 'Expand',
+    collapseFolder: 'Collapse',
+    folderToggleAria: (action: string, label: string) => `${action} ${label}`,
+    statusAria: (status: string) => `Status: ${status}`,
+    openDiffAria: (label: string) => `Open diff ${label}`,
+    binaryLabel: 'binary',
+    binaryAria: 'Binary file',
+    churnSummary: (add: number, del: number) => `${add} lines added, ${del} lines deleted`,
+  },
+
+  // Commit form component
+  commitForm: {
+    formAria: 'Create commit',
+    title: 'Commit',
+    messageAria: 'Commit message',
+    messageRequired: 'Commit message is required.',
+    placeholder: 'Commit message (min. 3 characters)',
+    advancedOptions: 'Advanced options',
+    pushAfter: 'Push to remote after commit',
+    includeUntracked: 'Include untracked files when staging',
+    noStagedFiles: 'No files in staging area.',
+    stagedFilesReady: (count: string) => `${count} files ready to commit.`,
+    commitTitle: 'Save staging area as a commit.',
+    commitButton: 'Commit',
+    savingCommit: 'Saving commit...',
+    commitSuccess: 'Commit succeeded.',
+    commitPushFailed: 'Commit succeeded, push failed.',
+    retryPushTitle: 'Retry sending to remote.',
+    retryPush: 'Retry push',
+  },
+
+  // Conflict panel and operation banner
+  conflict: {
+    allConflictsResolved: 'All conflicts resolved.',
+    remainingConflicts: (count: string) => `${count} conflicted files remaining.`,
+    continueMergeTitle: 'Create merge commit to complete operation.',
+    continueMerge: 'Continue merge',
+    abortMergeTitle:
+      'Restore repository to the state before merge started. Already committed changes will not be lost.',
+    abortMerge: 'Abort merge',
+    resolveAllFirst: 'Resolve all conflicted files first.',
+    emptyTitle: 'No conflicts.',
+    emptyHintIdle: 'All changes can be merged automatically.',
+    emptyHintActive: 'Operation still in progress, use the buttons in the banner above.',
+    panelAria: 'Conflicted files',
+    unresolvedCount: (count: string) => `${count} files need resolution`,
+    hint: 'Open each file, choose the correct version, then mark resolved.',
+    actionResolveIn: 'Resolve conflict in',
+    resolveTitle: 'Open in merge editor.',
+    resolveButton: 'Resolve',
+    actionMarkResolved: 'Mark resolved',
+    markResolvedTitle: 'Mark resolved (git add).',
+    markResolvedButton: 'Mark resolved',
+    continueLockedTitle: 'Locked until conflict list is empty.',
+  },
+
+  // Toast notifications
+  toast: {
+    urgentAria: 'Warnings and errors',
+    politeAria: 'Notifications',
+    levelLabels: {
+      info: 'Info',
+      warning: 'Warning',
+      error: 'Error',
+    },
+    persistentHint: 'Will not auto-dismiss. Close after reading.',
+    viewLogsTitle: 'Open git output.',
+    viewLogs: 'View logs',
+    dismissAria: (message: string) => `Close notification: ${message}`,
+  },
+
+  // Graph canvas component
+  graph: {
+    emptyTitle: 'No commits in this repository yet.',
+    emptyHint: 'Graph will populate after the first commit.',
+    emptySteps: [
+      'Open Pending Changes panel.',
+      'Check files, press Stage.',
+      'Write a commit message.',
+      'Press Commit.',
+    ] as readonly string[],
+    countAll: (shown: string) => `${shown} commits shown.`,
+    countMatched: (matched: string, total: string) => `${matched} of ${total} commits matched.`,
+    staleTitle: 'Stale data',
+    staleDetail: 'Stale snapshot: failed to read from git.',
+    truncatedTitle: 'History truncated to 10,000 commits.',
+    loadMoreTitle: 'Load next 10,000 commits.',
+    loadMoreButton: 'Load more',
+    loadingMoreSpinner: 'Loading next page...',
+    helpText: 'Arrows: move commit and lane. Enter: details. Shift+F10: menu. Plus, minus, zero: zoom.',
+    canvasAria: 'Commit graph',
+    controlsAria: 'Canvas view controls',
+    legendButtonAria: 'Graph symbol legend',
+    jumpHeadAria: 'Jump to HEAD commit',
+    zoomInAria: 'Zoom in graph',
+    zoomInTitle: 'Zoom in (+)',
+    zoomOutAria: 'Zoom out graph',
+    zoomOutTitle: 'Zoom out (-)',
+    zoomResetAria: 'Reset zoom to 100 percent',
+    zoomResetTitle: '100% (0)',
+    moreButtonTitle: 'Load next page.',
+    moreButton: 'Load more',
+    moreLoadingSpinner: 'Loading next page...',
+    toolbarAria: 'Graph filters',
+    searchPlaceholder: 'Search hash, message, author...',
+    searchAria: 'Search commits',
+    branchFilterAria: 'Filter branch',
+    branchFilterAll: 'All branches',
+    branchFilterRemotePrefix: (name: string) => `remote ${name}`,
+    resetFilter: 'Reset',
+  },
+
+  // Node context menu
+  menu: {
+    groupLabels: {
+      jelajah: 'View and copy',
+      ubah: 'Modify repository',
+    },
+    checkoutBranch: (name: string) => `Checkout branch ${name}`,
+    checkoutCommit: (hash: string) => `Checkout commit ${hash}`,
+    checkoutCommitHint: 'Enter detached HEAD; new commits will not belong to any branch.',
+    createBranch: 'Create branch here',
+    merge: (branch: string, current: string) => `Merge ${branch} into ${current}`,
+    revert: 'Revert this commit',
+    revertHint: 'Revert changes with a new commit; history remains intact.',
+    resetSoft: 'Reset soft to here',
+    resetSoftHint: 'Move commit; subsequent changes remain in staging.',
+    resetHard: 'Reset hard to here',
+    resetHardHint: 'Permanently discard all changes including uncommitted files.',
+    pushUpTo: 'Push up to this commit',
+    pushUpToHint: 'Only works if fast-forward.',
+    viewDiff: 'View commit diff',
+    copyFull: 'Copy full hash',
+    copyShort: (short: string) => `Copy short hash (${short})`,
+    toastHashCopied: 'Hash copied.',
+    openGitHub: 'Open on GitHub',
+    menuAria: (short: string) => `Actions for commit ${short}`,
+    riskyWord: 'risky',
+    riskyAria: (label: string, hint: string) => `${label}: risky. ${hint}`.trim(),
+  },
+
+  // Guard dialog
+  guard: {
+    permanentBadge: 'Permanent',
+    targetLabel: 'Target',
+    problemLabel: 'Problem',
+    riskLevelLabel: 'Risk level',
+    confirmationLabel: 'Confirmation',
+    stageCount: (current: number, total: number) => `Stage ${current} of ${total}`,
+    stage2Warning: 'Second confirmation required. Discarded changes cannot be recovered, not even by Git.',
+    gitCommandLabel: 'Git command to be executed',
+    gitCommandNote: 'Not executed yet. For review only.',
+    repoMessageLabel: 'Message from your repository',
+    ackCheckboxLabel: 'I understand these changes are permanently lost.',
+    ackCheckboxHint: 'Uncommitted changes are permanently lost; there is no undo.',
+    continueButton: 'Continue',
+    cancelButton: 'Cancel',
+    stage1Title: 'Final confirmation stage. Not executed yet.',
+    confirmTitle: (command: string, consequence: string) => `Running ${command} now. ${consequence}`,
+    ackRequiredHint: 'Check the statement above first.',
+    commitToast: 'Commit in Pending Changes panel.',
+    resolveToast: 'Resolve conflicts in Conflicts panel.',
+    autoStashMessage: 'Git Control auto stash',
+  },
+
+  // Branch legend
+  legend: {
+    laneDefault: (index: number) => `Lane ${index}`,
+    laneRemotePrefix: (name: string) => `remote ${name}`,
+    laneTagPrefix: (name: string) => `tag ${name}`,
+    title: 'Graph symbol legend',
+    closeAria: 'Close symbol legend',
+    intro: 'Left to right: oldest to newest. Circle = commit, line = parent-child.',
+    sectionCommitShapes: 'Commit shapes',
+    headTitle: 'HEAD: active position',
+    headDesc: 'Double ring: active commit.',
+    initialTitle: 'Author initial: author',
+    initialDesc: 'Initial of commit author.',
+    remoteTitle: 'Filled circle: on remote',
+    remoteDesc: 'Already on remote.',
+    localTitle: 'Dashed outline: local',
+    localDesc: 'Commit only exists on this machine, not pushed to remote yet.',
+    mergeTitle: 'Large circle: merge',
+    mergeDesc: 'Point where two branches merge.',
+    sectionRefLabels: 'Ref labels',
+    currentBranchDesc: 'Active branch.',
+    localBranchDesc: 'Other local branches.',
+    remoteBranchDesc: 'Branch on remote.',
+    tagDesc: 'Release tag.',
+    sectionActiveLanes: 'Active lanes',
+    sectionShortcuts: 'Keyboard shortcuts',
+    keyMoveCommit: 'Move commit',
+    keyMoveLane: 'Move lane',
+    keyOpenDetail: 'Open details',
+    keyZoom: 'Zoom',
+  },
+
+  // GitHub panel
+  github: {
+    panelAria: 'GitHub status',
+    scopeWarningTitle: 'Insufficient token scopes.',
+    metadataIncompleteTitle: 'GitHub metadata incomplete.',
+    noRemoteNote: 'No GitHub remote. PRs and commit links unavailable.',
+    disconnectButtonTitle: 'Remove GitHub token.',
+    disconnectButton: 'Disconnect GitHub',
+    connectButtonTitle: 'Save token for PRs and commit links.',
+    connectButton: 'Connect GitHub',
+    reloadAria: 'Reload GitHub metadata',
+    reloadButton: 'Reload',
+    noOpenPRsNote: 'No open pull requests.',
+    openPRsListAria: 'Open pull requests',
+    openPRAria: (label: string) => `Open pull request ${label}`,
+    prTooltip: (title: string, head: string, base: string, author: string, updated: string) =>
+      `${title} (${head} → ${base}), by ${author}, updated ${updated}`,
+  },
+
+  // Explorer root app
+  explorer: {
+    toastCopyFailed: 'Could not copy to clipboard.',
+    newBranchPrompt: 'New branch name',
+    defaultBranchPrefix: 'feature',
+    asideAria: 'Details panel',
+    hideDetails: 'Hide details',
+    showDetails: 'Details',
+    operationLogSummary: (count: number) => `Operation log (${count} lines)`,
+    operationLogAria: 'Git operation log',
+  },
+
+  // Minimap component
+  minimap: {
+    ariaLabel: 'Graph overview',
+    valueText: (percent: number) => `Graph position ${percent}%`,
+  },
+
+  // Bridge transport fallbacks
+  bridge: {
+    timeout: 'Request timed out.',
+  },
+};
+
+export type Catalog = typeof en;
+
+const id: Catalog = {
+  // Pending changes panel
+  pending: {
+    sectionConflicted: 'Konflik',
+    sectionStaged: 'Siap di-commit',
+    sectionUnstaged: 'Belum disiapkan',
+    sectionUntracked: 'Belum dilacak',
+    hintConflicted: 'Git tidak bisa menggabungkan otomatis.',
+    hintStaged: 'Hanya bagian ini yang ikut di commit berikutnya.',
+    hintUnstaged: 'Sudah diubah, belum di-stage.',
+    hintUntracked: 'File baru, belum dilacak git.',
+    churnTruncatedTitle: 'Jumlah baris tidak lengkap.',
+    churnTruncatedDetail: (unknownSymbol: string) =>
+      `Sebagian file menampilkan ${unknownSymbol}; file tetap berubah.`,
+    toolbarLabel: 'Tindakan perubahan',
+    stageButton: 'Stage',
+    unstageButton: 'Unstage',
+    stageAria: (count: string) => `Stage ${count} file terpilih`,
+    unstageAria: (count: string) => `Unstage ${count} file terpilih`,
+    stageTitle: 'Masukkan ke staging area.',
+    unstageTitle: 'Keluarkan dari staging area; isi file tidak diubah.',
+    selectAll: 'Pilih semua',
+    selectAllTitle: 'Centang semua file.',
+    clearSelection: 'Kosongkan',
+    clearSelectionTitle: 'Hapus semua centang.',
+    selectedCount: (count: string) => `${count} dipilih`,
+    openGraphAria: 'Buka grafik commit',
+    reloadAria: 'Muat ulang daftar perubahan',
+    switchLanguageAria: (nextLang: string) => `Ganti ke ${nextLang}`,
+    emptyTitle: 'Tidak ada perubahan.',
+    emptyHint: 'Folder kerja bersih.',
+    changesHeader: 'Perubahan',
+    changesTotal: (count: string) => `${count} file`,
+    searchPlaceholder: 'Cari file...',
+    searchAria: 'Saring berdasarkan nama file',
+    searchMatched: (shown: string, total: string) => `${shown} dari ${total} file cocok`,
+    searchEmptyTitle: 'Tidak ada file yang cocok.',
+    clearSearch: 'Kosongkan pencarian',
+    sectionAria: (title: string, count: string) => `${title}: ${count} file`,
+  },
+
+  // Shared UI primitives
+  ui: {
+    graphSkeletonAria: 'Memuat grafik commit',
+    fileListSkeletonAria: 'Memuat daftar file',
+    metadataSkeletonAria: 'Memuat metadata commit',
+    noBranch: 'tanpa branch',
+    detachedAt: (hash: string) => `detached ${hash}`,
+    branchLabel: (branch: string) => `branch ${branch}`,
+    headAtCommit: (hash: string) => `HEAD di commit ${hash}`,
+    lastCommit: (subject: string) => `Commit terakhir: ${subject}`,
+    errorSeverity: 'Kesalahan: ',
+    viewLogs: 'Lihat log',
+    viewLogsTitle: 'Buka keluaran git.',
+    showLogsFailed: 'Tidak bisa membuka log Git Control.',
+    warningSeverity: 'Peringatan: ',
+    crashTitle: 'UI gagal dimuat',
+    crashErrorId: (id: string) => `ID kesalahan: ${id}`,
+    crashReload: 'Muat ulang',
+    crashReloadTitle: 'Gambar ulang antarmuka; tidak menjalankan git.',
+  },
+
+  // Format and presentation helpers
+  format: {
+    unknownDate: 'Tanggal tidak diketahui',
+    unknownTime: 'waktu tidak diketahui',
+    justNow: 'baru saja',
+    secondsAgo: (count: number) => `${count} detik lalu`,
+    minutesAgo: (count: number) => `${count} menit lalu`,
+    hoursAgo: (count: number) => `${count} jam lalu`,
+    daysAgo: (count: number) => `${count} hari lalu`,
+    monthsAgo: (count: number) => `${count} bulan lalu`,
+    yearsAgo: (count: number) => `${count} tahun lalu`,
+    months: ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des'] as const,
+    locale: 'id-ID',
+
+    statusLetters: {
+      M: 'Dimodifikasi',
+      A: 'Ditambahkan',
+      D: 'Dihapus',
+      R: 'Diganti nama',
+      C: 'Disalin',
+      T: 'Tipe berubah',
+      U: 'Konflik',
+      '?': 'Belum dilacak',
+      '!': 'Diabaikan',
+      ' ': 'Tidak berubah',
+      unknown: 'Tidak diketahui',
+    },
+
+    syncSummaryNoRemote: 'Belum terhubung ke remote. Commit Anda baru ada di komputer ini.',
+    syncSummaryAhead: (count: string) => `${count} commit siap dipush`,
+    syncSummaryBehind: (count: string) => `${count} commit baru menunggu diambil`,
+    syncSummaryInSync: (upstream: string) => `Sama dengan ${upstream}.`,
+
+    churnUntracked: 'file baru, belum dilacak git',
+    churnBinary: 'file binary, tidak ada jumlah baris',
+    churnTruncated: 'jumlah baris tidak dihitung karena daftar perubahannya terlalu besar, bukan berarti file ini tidak berubah',
+    churnUncounted: 'jumlah baris belum dihitung',
+    churnSummary: (add: number, del: number) => `${add} baris ditambah, ${del} baris dihapus`,
+    folderRowAria: (name: string, count: string) => `Folder ${name}, ${count} file`,
+
+    conflictActionAria: (action: string, path: string) => `${action} ${path}`,
+    conflictRowAria: (path: string, explained: string) => `${path}, ${explained}`,
+    conflictCodes: {
+      DD: 'DD: dihapus di kedua sisi',
+      AU: 'AU: ditambahkan di sini, diubah di sana',
+      UD: 'UD: diubah di sini, dihapus di sana',
+      UA: 'UA: diubah di sini, ditambahkan di sana',
+      DU: 'DU: dihapus di sini, diubah di sana',
+      AA: 'AA: ditambahkan di kedua sisi',
+      UU: 'UU: keduanya mengubah',
+      unknown: (code: string) => `${code}: konflik tidak dikenal`,
+    },
+
+    rowCommitPrefix: (hash: string) => `commit ${hash}`,
+    rowAuthorPrefix: (author: string) => `oleh ${author}`,
+    rowHeadBadge: 'HEAD',
+    rowMergeBadge: 'commit merge',
+    rowLocalBadge: 'lokal belum dipush',
+    rowRemoteBadge: 'sudah ada di remote',
+    refTagPrefix: (tag: string) => `tag ${tag}`,
+    refRemotePrefix: (remote: string) => `remote ${remote}`,
+    refGroupPrefix: (refs: string) => `ref ${refs}`,
+
+    operations: {
+      idle: 'Tidak ada operasi',
+      merge: 'Merge sedang berjalan',
+      rebase: 'Rebase sedang berjalan',
+      'cherry-pick': 'Cherry-pick sedang berjalan',
+      revert: 'Revert sedang berjalan',
+      bisect: 'Bisect sedang berjalan',
+    },
+
+    remedyLabels: {
+      commit: 'Commit',
+      stash: 'Stash',
+      fetch: 'Fetch',
+      cancel: 'Batal',
+      'resolve-conflicts': 'Selesaikan konflik',
+      confirm: 'Konfirmasi',
+    },
+
+    remedyConsequences: {
+      commit:
+        'Menutup dialog ini dan mengarahkan Anda ke panel Pending Changes untuk menyimpan perubahan lebih dulu. Tidak ada perintah git yang dijalankan sekarang.',
+      stash:
+        'Menyimpan perubahan Anda ke tumpukan stash lalu membersihkan folder kerja. Perubahan tidak hilang dan bisa diambil kembali nanti.',
+      fetch:
+        'Mengambil data terbaru dari remote. Isi folder kerja dan commit Anda tidak diubah sama sekali.',
+      cancel: 'Menutup dialog tanpa menjalankan perintah apa pun. Tidak ada yang berubah.',
+      'resolve-conflicts':
+        'Menutup dialog dan mengarahkan Anda ke daftar file konflik yang harus diselesaikan lebih dulu.',
+      confirm: 'Menjalankan perintah git yang tertulis di dialog ini.',
+    },
+
+    errors: {
+      VALIDATION_ERROR: {
+        title: 'Permintaan tidak valid',
+        explanation: 'Data yang dikirim tidak sesuai aturan. Muat ulang lalu coba lagi.',
+      },
+      AUTH_ERROR: {
+        title: 'Autentikasi gagal',
+        explanation: 'Kredensial tidak diterima. Sambungkan ulang akun GitHub Anda.',
+      },
+      FORBIDDEN: {
+        title: 'Akses ditolak',
+        explanation: 'Anda tidak punya izin untuk tindakan ini pada repository tersebut.',
+      },
+      NOT_FOUND: {
+        title: 'Tidak ditemukan',
+        explanation: 'Repository, commit, atau branch yang diminta tidak ada.',
+      },
+      CONFLICT: {
+        title: 'Bentrok status',
+        explanation: 'Repository berubah atau ada operasi lain yang belum selesai. Muat ulang dulu.',
+      },
+      RATE_LIMITED: {
+        title: 'Terlalu banyak permintaan',
+        explanation: 'Batas permintaan tercapai. Tunggu sebentar lalu coba lagi.',
+      },
+      SERVER_ERROR: {
+        title: 'Terjadi kesalahan',
+        explanation: 'Git gagal dijalankan. Lihat log untuk keluaran lengkapnya.',
+      },
+      UNAVAILABLE: {
+        title: 'Layanan tidak tersedia',
+        explanation: 'Fitur ini belum tersedia atau git tidak merespons.',
+      },
+      REPOSITORY_LOCKED: {
+        title: 'Repository terkunci',
+        explanation: 'Ada proses git lain yang sedang berjalan. Tunggu hingga selesai.',
+      },
+      DIRTY_TREE: {
+        title: 'Ada perubahan belum disimpan',
+        explanation: 'Commit atau stash perubahan Anda dulu supaya tidak ada yang hilang.',
+      },
+      REMOTE_AHEAD: {
+        title: 'Remote lebih baru',
+        explanation: 'Remote punya commit yang belum Anda miliki. Fetch dulu, jangan force push.',
+      },
+      STALE_STATUS: {
+        title: 'Status remote kedaluwarsa',
+        explanation: 'Data remote sudah lama. Fetch dulu agar keputusan dibuat atas data terbaru.',
+      },
+      NON_FAST_FORWARD: {
+        title: 'Push bukan fast-forward',
+        explanation: 'Push akan menimpa histori remote. Fetch dan integrasikan dulu.',
+      },
+      HOOK_REJECTED: {
+        title: 'Ditolak git hook',
+        explanation: 'Sebuah git hook menolak operasi ini. Pesan hook ada di detail.',
+      },
+      CONFIRMATION_REQUIRED: {
+        title: 'Perlu konfirmasi',
+        explanation: 'Tindakan ini berisiko mengubah histori atau membuang perubahan.',
+      },
+    },
+
+    riskLabels: {
+      low: 'risiko rendah',
+      medium: 'berisiko',
+      high: 'sangat berisiko',
+    },
+
+    actionConsequences: {
+      checkoutBranch: (branch: string) => `Pindah ke branch ${branch}. File di folder kerja akan mengikuti branch itu.`,
+      checkoutCommit: 'Masuk ke mode detached HEAD. Commit baru tidak menempel pada branch mana pun.',
+      createBranch: (name: string, hash: string) => `Membuat branch ${name} pada commit ${hash} tanpa berpindah.`,
+      merge: (branch: string) => `Menggabungkan ${branch} ke branch aktif. Bisa memunculkan konflik.`,
+      revert: 'Membuat commit baru yang membatalkan perubahan commit tersebut. Histori tetap utuh.',
+      resetSoft: 'Memindahkan branch ke commit tersebut. Perubahan tetap ada di staging area.',
+      resetHard: 'Memindahkan branch DAN membuang semua perubahan setelah commit tersebut. Tidak bisa dibatalkan.',
+      push: (branch: string, remote: string) => `Mengirim branch ${branch} ke ${remote}.`,
+      pushUpTo: (hash: string, remote: string, branch: string) => `Mengirim histori sampai ${hash} ke ${remote}/${branch}.`,
+      fetch: 'Mengambil data terbaru dari remote. Folder kerja tidak diubah.',
+      stash: 'Menyimpan perubahan ke stash dan membersihkan folder kerja.',
+      stashPop: 'Mengembalikan perubahan dari stash terakhir.',
+      mergeContinue: 'Melanjutkan merge setelah semua konflik selesai.',
+      mergeAbort: 'Membatalkan merge dan kembali ke keadaan sebelum merge.',
+      defaultAction: 'Menjalankan perintah git.',
+    },
+
+    actionTitles: {
+      checkoutBranch: (branch: string) => `Checkout branch ${branch}`,
+      checkoutCommit: (hash: string) => `Checkout commit ${hash}`,
+      createBranch: (name: string) => `Buat branch ${name}`,
+      merge: (branch: string) => `Merge ${branch} ke branch aktif`,
+      revert: (hash: string) => `Revert ${hash}`,
+      resetSoft: (hash: string) => `Reset soft ke ${hash}`,
+      resetHard: (hash: string) => `Reset hard ke ${hash}`,
+      push: (branch: string) => `Push ${branch}`,
+      pushUpTo: (hash: string) => `Push sampai ${hash}`,
+      fetch: 'Fetch',
+      stash: 'Stash perubahan',
+      stashPop: 'Stash pop',
+      mergeContinue: 'Lanjutkan merge',
+      mergeAbort: 'Batalkan merge',
+      defaultAction: 'Tindakan git',
+    },
+
+    rateLimit: {
+      unknown: 'Tidak diketahui',
+      unknownTitle: 'Status batas permintaan belum diketahui.',
+      offline: 'offline',
+      offlineTitle: 'GitHub tidak dapat dijangkau. Data dari cache bila tersedia.',
+      exhausted: (countdown: string) => `Habis · ${countdown}`,
+      exhaustedTitle: (countdown: string) => `Batas permintaan tercapai. Coba lagi dalam ${countdown}.`,
+      remainingUnknown: 'Tidak diketahui',
+      remainingUnknownTitle: 'Sisa permintaan belum diketahui.',
+      remaining: (count: string) => `Sisa ${count} permintaan`,
+      remainingTitle: (count: string, limitSuffix: string) => `Sisa ${count}${limitSuffix} permintaan pada jendela saat ini.`,
+      limitSuffix: (limit: string) => ` dari ${limit}`,
+      cachedSuffix: ' · cached',
+    },
+
+    countdown: {
+      aFewMoments: 'beberapa saat',
+      now: 'sekarang',
+      seconds: (sec: number) => `${sec} detik`,
+      minutes: (min: number) => `${min} menit`,
+      minutesSeconds: (min: number, sec: number) => `${min} menit ${sec} detik`,
+    },
+
+    prStates: {
+      open: 'Terbuka',
+      closed: 'Ditutup',
+      merged: 'Digabung',
+      draftSuffix: ' · draft',
+    },
+
+    githubConnection: {
+      invalidToken: 'Token GitHub tidak valid.',
+      disconnected: 'Belum tersambung.',
+      connected: 'Tersambung.',
+      connectedAs: (login: string) => `Tersambung sebagai ${login}.`,
+    },
+  },
+
+  // Inspector panel
+  inspector: {
+    toastHashCopied: 'Hash disalin.',
+    toastCopyFailed: 'Tidak bisa menyalin ke clipboard.',
+    toastNoMoreFiles: 'Tidak ada file tambahan.',
+    emptyNoSelectionTitle: 'Belum ada commit dipilih.',
+    emptyNoSelectionHint: 'Pilih commit di grafik.',
+    emptyDetailUnavailableTitle: 'Detail commit tidak tersedia.',
+    emptyDetailUnavailableHint: 'Commit mungkin hilang setelah rebase. Muat ulang grafik.',
+    panelAria: 'Detail commit',
+    byAuthor: (author: string, time: string) => `oleh ${author} · ${time}`,
+    copyShortHashAria: (hash: string) => `Salin hash pendek ${hash}`,
+    copyShortHashTitle: 'Salin 7 karakter pertama.',
+    copyShortHash: 'Salin hash pendek',
+    copyFullHashAria: 'Salin hash lengkap 40 karakter',
+    copyFullHashTitle: 'Salin 40 karakter penuh.',
+    copyFullHash: 'Salin hash lengkap',
+    openGitHubAria: (hash: string) => `Buka commit ${hash} di GitHub`,
+    openGitHubTitle: 'Buka di browser.',
+    openGitHub: 'Buka di GitHub',
+    sectionDetails: 'Keterangan',
+    labelAuthor: 'Penulis',
+    labelAuthored: 'Ditulis',
+    labelCommitted: 'Di-commit',
+    committedBy: (committer: string) => ` oleh ${committer}`,
+    labelParents: 'Induk',
+    noParents: 'Tidak ada (commit pertama)',
+    sectionRefs: 'Ref',
+    refsAria: 'Ref pada commit ini',
+    sectionBody: 'Pesan lengkap',
+    bodyAria: 'Isi pesan commit',
+    sectionFiles: 'File yang berubah',
+    compareParentLabel: 'Bandingkan dengan induk',
+    parentOption: (index: number, hash: string) => `Induk ${index} · ${hash}`,
+    totalsFiles: (count: string) => `${count} file`,
+    totalsBinary: (count: string) => `${count} file binary`,
+    emptyFilesTitle: 'Commit ini tidak mengubah file.',
+    emptyFilesHint: 'Biasanya merge tanpa konflik atau commit kosong.',
+    fileListAria: (count: string) => `${count} file yang berubah`,
+    churnBinary: 'file binary',
+    churnSummary: (add: number, del: number) => `${add} baris ditambah, ${del} baris dihapus`,
+    openDiffAria: (path: string, churn: string) => `Buka diff ${path}, ${churn}`,
+    openingDiff: 'Membuka diff…',
+    diffTruncated: 'Diff dipangkas.',
+    loadMoreTitle: 'Ambil halaman file berikutnya.',
+    loadMore: 'Muat lebih banyak',
+    loadingMore: 'Memuat file berikutnya…',
+  },
+
+  // Change tree component
+  changeTree: {
+    selectFolderAria: (name: string) => `Pilih semua file di folder ${name}`,
+    selectFileAria: (path: string) => `Pilih ${path}`,
+    expandFolder: 'Buka',
+    collapseFolder: 'Tutup',
+    folderToggleAria: (action: string, label: string) => `${action} ${label}`,
+    statusAria: (status: string) => `Status: ${status}`,
+    openDiffAria: (label: string) => `Buka diff ${label}`,
+    binaryLabel: 'binary',
+    binaryAria: 'File binary',
+    churnSummary: (add: number, del: number) => `${add} baris ditambah, ${del} baris dihapus`,
+  },
+
+  // Commit form component
+  commitForm: {
+    formAria: 'Buat commit',
+    title: 'Commit',
+    messageAria: 'Pesan commit',
+    messageRequired: 'Pesan commit wajib diisi.',
+    placeholder: 'Pesan commit (min. 3 karakter)',
+    advancedOptions: 'Opsi lanjutan',
+    pushAfter: 'Push ke remote setelah commit',
+    includeUntracked: 'Sertakan file belum dilacak saat stage',
+    noStagedFiles: 'Belum ada file di staging area.',
+    stagedFilesReady: (count: string) => `${count} file siap di-commit.`,
+    commitTitle: 'Simpan staging area jadi satu commit.',
+    commitButton: 'Commit',
+    savingCommit: 'Menyimpan commit…',
+    commitSuccess: 'Commit berhasil.',
+    commitPushFailed: 'Commit berhasil, push gagal.',
+    retryPushTitle: 'Kirim ulang ke remote.',
+    retryPush: 'Coba push lagi',
+  },
+
+  // Conflict panel and operation banner
+  conflict: {
+    allConflictsResolved: 'Semua konflik selesai.',
+    remainingConflicts: (count: string) => `Masih ada ${count} file konflik.`,
+    continueMergeTitle: 'Buat commit gabungan penutup operasi.',
+    continueMerge: 'Lanjutkan merge',
+    abortMergeTitle:
+      'Kembalikan repository ke keadaan sebelum merge dimulai. Perubahan yang sudah di-commit tidak hilang.',
+    abortMerge: 'Batalkan merge',
+    resolveAllFirst: 'Selesaikan semua file konflik terlebih dahulu.',
+    emptyTitle: 'Tidak ada konflik.',
+    emptyHintIdle: 'Semua perubahan bisa digabung otomatis.',
+    emptyHintActive: 'Operasi masih berjalan, pakai tombol di banner atas.',
+    panelAria: 'File konflik',
+    unresolvedCount: (count: string) => `${count} file perlu diselesaikan`,
+    hint: 'Buka tiap file, pilih versi yang benar, lalu tandai selesai.',
+    actionResolveIn: 'Selesaikan konflik di',
+    resolveTitle: 'Buka di editor merge.',
+    resolveButton: 'Selesaikan',
+    actionMarkResolved: 'Tandai selesai',
+    markResolvedTitle: 'Tandai resolved (git add).',
+    markResolvedButton: 'Tandai selesai',
+    continueLockedTitle: 'Terkunci sampai daftar konflik kosong.',
+  },
+
+  // Toast notifications
+  toast: {
+    urgentAria: 'Peringatan dan kesalahan',
+    politeAria: 'Notifikasi',
+    levelLabels: {
+      info: 'Info',
+      warning: 'Peringatan',
+      error: 'Kesalahan',
+    },
+    persistentHint: 'Tidak hilang sendiri. Tutup setelah dibaca.',
+    viewLogsTitle: 'Buka keluaran git.',
+    viewLogs: 'Lihat log',
+    dismissAria: (message: string) => `Tutup notifikasi: ${message}`,
+  },
+
+  // Graph canvas component
+  graph: {
+    emptyTitle: 'Belum ada commit di repository ini.',
+    emptyHint: 'Grafik terisi setelah commit pertama.',
+    emptySteps: [
+      'Buka panel Pending Changes.',
+      'Centang file, tekan Stage.',
+      'Tulis pesan commit.',
+      'Tekan Commit.',
+    ] as readonly string[],
+    countAll: (shown: string) => `${shown} commit ditampilkan.`,
+    countMatched: (matched: string, total: string) => `${matched} dari ${total} commit cocok.`,
+    staleTitle: 'Data lama',
+    staleDetail: 'Snapshot lama: git gagal dibaca.',
+    truncatedTitle: 'Histori dipangkas ke 10.000 commit.',
+    loadMoreTitle: 'Ambil 10.000 commit berikutnya.',
+    loadMoreButton: 'Muat lebih banyak',
+    loadingMoreSpinner: 'Memuat halaman berikutnya...',
+    helpText: 'Panah: pindah commit dan jalur. Enter: detail. Shift+F10: menu. Plus, minus, nol: perbesaran.',
+    canvasAria: 'Grafik commit',
+    controlsAria: 'Kontrol tampilan kanvas',
+    legendButtonAria: 'Panduan simbol grafik',
+    jumpHeadAria: 'Lompat ke commit HEAD',
+    zoomInAria: 'Perbesar grafik',
+    zoomInTitle: 'Perbesar (+)',
+    zoomOutAria: 'Perkecil grafik',
+    zoomOutTitle: 'Perkecil (-)',
+    zoomResetAria: 'Kembalikan perbesaran ke 100 persen',
+    zoomResetTitle: '100% (0)',
+    moreButtonTitle: 'Ambil halaman berikutnya.',
+    moreButton: 'Muat lebih banyak',
+    moreLoadingSpinner: 'Memuat halaman berikutnya...',
+    toolbarAria: 'Saringan grafik',
+    searchPlaceholder: 'Cari hash, pesan, penulis...',
+    searchAria: 'Cari commit',
+    branchFilterAria: 'Filter branch',
+    branchFilterAll: 'Semua branch',
+    branchFilterRemotePrefix: (name: string) => `remote ${name}`,
+    resetFilter: 'Reset',
+  },
+
+  // Node context menu
+  menu: {
+    groupLabels: {
+      jelajah: 'Lihat dan salin',
+      ubah: 'Ubah repository',
+    },
+    checkoutBranch: (name: string) => `Checkout branch ${name}`,
+    checkoutCommit: (hash: string) => `Checkout commit ${hash}`,
+    checkoutCommitHint: 'Masuk detached HEAD; commit baru tidak menempel pada branch.',
+    createBranch: 'Buat branch di sini',
+    merge: (branch: string, current: string) => `Merge ${branch} ke ${current}`,
+    revert: 'Revert commit ini',
+    revertHint: 'Membatalkan perubahan dengan commit baru; histori tetap utuh.',
+    resetSoft: 'Reset soft ke sini',
+    resetSoftHint: 'Pindah commit; perubahan sesudahnya tetap ada di staging.',
+    resetHard: 'Reset hard ke sini',
+    resetHardHint: 'Permanen membuang semua perubahan termasuk file yang belum di-commit.',
+    pushUpTo: 'Push sampai commit ini',
+    pushUpToHint: 'Hanya berjalan bila fast-forward.',
+    viewDiff: 'Lihat diff commit',
+    copyFull: 'Salin hash lengkap',
+    copyShort: (short: string) => `Salin hash pendek (${short})`,
+    toastHashCopied: 'Hash disalin.',
+    openGitHub: 'Buka di GitHub',
+    menuAria: (short: string) => `Tindakan untuk commit ${short}`,
+    riskyWord: 'berisiko',
+    riskyAria: (label: string, hint: string) => `${label}: berisiko. ${hint}`.trim(),
+  },
+
+  // Guard dialog
+  guard: {
+    permanentBadge: 'Permanen',
+    targetLabel: 'Target',
+    problemLabel: 'Masalah',
+    riskLevelLabel: 'Tingkat risiko',
+    confirmationLabel: 'Konfirmasi',
+    stageCount: (current: number, total: number) => `Tahap ${current} dari ${total}`,
+    stage2Warning:
+      'Konfirmasi kedua diperlukan. Perubahan yang dibuang tidak dapat dikembalikan, termasuk oleh Git sendiri.',
+    gitCommandLabel: 'Perintah git yang akan dijalankan',
+    gitCommandNote: 'Belum dijalankan. Hanya untuk dibaca.',
+    repoMessageLabel: 'Pesan dari repository Anda',
+    ackCheckboxLabel: 'Saya mengerti perubahan ini hilang permanen.',
+    ackCheckboxHint: 'Perubahan yang belum di-commit hilang permanen; tidak ada undo.',
+    continueButton: 'Lanjutkan',
+    cancelButton: 'Batal',
+    stage1Title: 'Tahap konfirmasi terakhir. Belum dijalankan.',
+    confirmTitle: (command: string, consequence: string) => `Menjalankan ${command} sekarang. ${consequence}`,
+    ackRequiredHint: 'Centang pernyataan di atas dulu.',
+    commitToast: 'Commit di panel Pending Changes.',
+    resolveToast: 'Selesaikan konflik di panel Konflik.',
+    autoStashMessage: 'Git Control auto stash',
+  },
+
+  // Branch legend
+  legend: {
+    laneDefault: (index: number) => `Jalur ${index}`,
+    laneRemotePrefix: (name: string) => `remote ${name}`,
+    laneTagPrefix: (name: string) => `tag ${name}`,
+    title: 'Panduan simbol grafik',
+    closeAria: 'Tutup panduan simbol',
+    intro: 'Kiri ke kanan: lama ke baru. Bulatan = commit, garis = induk-anak.',
+    sectionCommitShapes: 'Bentuk commit',
+    headTitle: 'HEAD: posisi aktif',
+    headDesc: 'Cincin ganda: commit aktif.',
+    initialTitle: 'Huruf inisial: penulis',
+    initialDesc: 'Inisial nama pembuat commit.',
+    remoteTitle: 'Bulatan penuh: di remote',
+    remoteDesc: 'Sudah ada di remote.',
+    localTitle: 'Garis putus-putus: lokal',
+    localDesc: 'Commit baru ada di komputer ini, belum di-push ke remote.',
+    mergeTitle: 'Bulatan besar: merge',
+    mergeDesc: 'Titik temu penggabungan dua branch.',
+    sectionRefLabels: 'Label ref',
+    currentBranchDesc: 'Branch aktif.',
+    localBranchDesc: 'Branch lokal lainnya.',
+    remoteBranchDesc: 'Branch di remote.',
+    tagDesc: 'Tag penanda rilis.',
+    sectionActiveLanes: 'Jalur aktif',
+    sectionShortcuts: 'Pintasan keyboard',
+    keyMoveCommit: 'Pindah commit',
+    keyMoveLane: 'Pindah jalur',
+    keyOpenDetail: 'Buka detail',
+    keyZoom: 'Zoom',
+  },
+
+  // GitHub panel
+  github: {
+    panelAria: 'Status GitHub',
+    scopeWarningTitle: 'Scope token kurang.',
+    metadataIncompleteTitle: 'Metadata GitHub tidak lengkap.',
+    noRemoteNote: 'Tidak ada remote GitHub. PR dan tautan commit tidak tersedia.',
+    disconnectButtonTitle: 'Hapus token GitHub.',
+    disconnectButton: 'Putuskan GitHub',
+    connectButtonTitle: 'Simpan token untuk PR dan tautan commit.',
+    connectButton: 'Sambungkan GitHub',
+    reloadAria: 'Muat ulang metadata GitHub',
+    reloadButton: 'Muat ulang',
+    noOpenPRsNote: 'Tidak ada pull request terbuka.',
+    openPRsListAria: 'Pull request terbuka',
+    openPRAria: (label: string) => `Buka pull request ${label}`,
+    prTooltip: (title: string, head: string, base: string, author: string, updated: string) =>
+      `${title} (${head} → ${base}), oleh ${author}, diperbarui ${updated}`,
+  },
+
+  // Explorer root app
+  explorer: {
+    toastCopyFailed: 'Tidak bisa menyalin ke clipboard.',
+    newBranchPrompt: 'Nama branch baru',
+    defaultBranchPrefix: 'fitur',
+    asideAria: 'Panel detail',
+    hideDetails: 'Sembunyikan detail',
+    showDetails: 'Detail',
+    operationLogSummary: (count: number) => `Log operasi (${count} baris)`,
+    operationLogAria: 'Log operasi git',
+  },
+
+  // Minimap component
+  minimap: {
+    ariaLabel: 'Ikhtisar grafik',
+    valueText: (percent: number) => `Posisi grafik ${percent}%`,
+  },
+
+  // Bridge transport fallbacks
+  bridge: {
+    timeout: 'Permintaan melebihi batas waktu.',
+  },
+};
+
+export const catalogs: Record<Lang, Catalog> = { en, id };
+
+/**
+ * Module-level active language container.
+ * Invariant: activeLang() must always mirror useSettingsStore.language.
+ * The only module that mutates setActiveLang is store.ts (or test harness with teardown).
+ */
+let active: Lang = 'en';
+
+export function setActiveLang(lang: Lang): void {
+  active = lang === 'id' ? 'id' : 'en';
+}
+
+export function activeLang(): Lang {
+  return active;
+}
+
+/** Non-reactive catalog lookup by language. */
+export function t(lang: Lang): Catalog {
+  return catalogs[lang] ?? catalogs.en;
+}

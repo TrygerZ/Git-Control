@@ -24,6 +24,7 @@ import type {
   ResponseData,
 } from '../messages';
 import { isHostEvent } from '../messages';
+import { activeLang, t } from './i18n';
 
 /** Shape of the object the host injects. Not covered by `@types/vscode`. */
 interface VsCodeApi {
@@ -84,7 +85,7 @@ function timeoutBody(kind: string): ErrorBody {
   return {
     status: 504,
     code: 'UNAVAILABLE',
-    message: 'Permintaan melebihi batas waktu.',
+    message: t(activeLang()).bridge.timeout,
     detail: kind,
   };
 }

@@ -12,6 +12,8 @@ import {
   shortHash,
   syncSummary,
 } from './format';
+import { useT } from './useT';
+import { useSettingsStore } from './store';
 import type { ErrorBody, Remedy, RepoStatus } from '../messages';
 import type { IconName } from './icons';
 
@@ -54,8 +56,9 @@ export function Skeleton({ width, height }: { width: string; height: number }): 
  * layout. `aria-busy` marks the region as loading rather than as content.
  */
 export function GraphSkeleton(): JSX.Element {
+  const strings = useT();
   return (
-    <div className="gc-skeleton-graph" role="status" aria-busy="true" aria-label="Memuat grafik commit">
+    <div className="gc-skeleton-graph" role="status" aria-busy="true" aria-label={strings.ui.graphSkeletonAria}>
       {Array.from({ length: 12 }, (_, i) => (
         <div className="gc-skeleton-row" key={i}>
           <Skeleton width="12px" height={12} />
@@ -69,8 +72,9 @@ export function GraphSkeleton(): JSX.Element {
 
 /** File skeleton for the pending panel and the inspector file list. */
 export function FileListSkeleton({ rows = 6 }: { rows?: number }): JSX.Element {
+  const strings = useT();
   return (
-    <div className="gc-skeleton-files" role="status" aria-busy="true" aria-label="Memuat daftar file">
+    <div className="gc-skeleton-files" role="status" aria-busy="true" aria-label={strings.ui.fileListSkeletonAria}>
       {Array.from({ length: rows }, (_, i) => (
         <div className="gc-skeleton-row" key={i}>
           <Skeleton width="14px" height={14} />
@@ -83,8 +87,9 @@ export function FileListSkeleton({ rows = 6 }: { rows?: number }): JSX.Element {
 
 /** Metadata skeleton for the inspector header. */
 export function MetadataSkeleton(): JSX.Element {
+  const strings = useT();
   return (
-    <div className="gc-skeleton-meta" role="status" aria-busy="true" aria-label="Memuat metadata commit">
+    <div className="gc-skeleton-meta" role="status" aria-busy="true" aria-label={strings.ui.metadataSkeletonAria}>
       <Skeleton width="55%" height={14} />
       <Skeleton width="35%" height={10} />
       <Skeleton width="45%" height={10} />
@@ -139,12 +144,14 @@ export function ContextBar({
   status: RepoStatus | null;
   subject?: string | undefined;
 }): JSX.Element | null {
+  const strings = useT();
+  const language = useSettingsStore((x) => x.language);
   if (status === null) return null;
   const branch =
     status.branch === null
       ? status.head === null
-        ? 'tanpa branch'
-        : `detached ${shortHash(status.head)}`
+        ? strings.ui.noBranch
+        : strings.ui.detachedAt(shortHash(status.head))
       : sanitizeGitText(status.branch);
   const head = status.head === null ? null : shortHash(status.head);
   const line = subject === undefined ? null : sanitizeGitText(subject);
@@ -165,20 +172,20 @@ export function ContextBar({
         */}
         <span className={status.detached ? 'gc-chip gc-chip--detached' : 'gc-chip gc-chip--current'}>
           {status.detached ? <Icon name="tag" /> : <Icon name="git-branch" />}
-          {' '}branch {branch}
+          {' '}{strings.ui.branchLabel(branch)}
         </span>
         {head !== null && (
-          <code className="gc-context__hash" aria-label={`HEAD di commit ${head}`}>
+          <code className="gc-context__hash" aria-label={strings.ui.headAtCommit(head)}>
             {head}
           </code>
         )}
       </div>
       {line !== null && (
         <p className="gc-context__subject" title={line}>
-          Commit terakhir: {line}
+          {strings.ui.lastCommit(line)}
         </p>
       )}
-      <p className="gc-context__sync">{syncSummary(status)}</p>
+      <p className="gc-context__sync">{syncSummary(status, language)}</p>
     </header>
   );
 }
@@ -234,15 +241,17 @@ export function ErrorBanner({
   onRemedy?(remedy: Remedy): void;
   onShowLogs?(): void;
 }): JSX.Element {
-  const view = presentError(error);
+  const strings = useT();
+  const language = useSettingsStore((x) => x.language);
+  const view = presentError(error, language);
   return (
     <div className="gc-banner gc-banner--error" role="alert">
       <span className="gc-banner__glyph" aria-hidden="true">
         <Icon name="error" />
       </span>
       <div className="gc-banner__body">
-        {/* "Kesalahan" spells the severity out; the border colour is only backup. */}
-        <span className="gc-visually-hidden">Kesalahan: </span>
+        {/* "Error" / "Kesalahan" spells the severity out; the border colour is only backup. */}
+        <span className="gc-visually-hidden">{strings.ui.errorSeverity}</span>
         <strong>{view.title}</strong>
         <span>{view.explanation}</span>
         {/* `detail` carries git stderr, including hook output. */}
@@ -260,20 +269,20 @@ export function ErrorBanner({
               // Same consequence sentences the guard dialog uses. The banner offers
               // the same words for the same buttons, so `Fetch` here cannot mean
               // something different from `Fetch` there.
-              title={remedyConsequence(remedy)}
+              title={remedyConsequence(remedy, language)}
               onClick={() => onRemedy(remedy)}
             >
-              {remedyLabel(remedy)}
+              {remedyLabel(remedy, language)}
             </button>
           ))}
         {view.showLogs && onShowLogs !== undefined && (
           <button
             type="button"
             className="gc-button gc-button--quiet"
-            title="Buka panel Output berisi keluaran lengkap dari git."
+            title={strings.ui.viewLogsTitle}
             onClick={onShowLogs}
           >
-            Lihat log
+            {strings.ui.viewLogs}
           </button>
         )}
       </div>
@@ -291,6 +300,7 @@ export function InfoBanner({
   glyph: IconName;
   children: ReactNode;
 }): JSX.Element {
+  const strings = useT();
   return (
     <div className={`gc-banner gc-banner--${tone}`} role="status">
       <span className="gc-banner__glyph" aria-hidden="true">
@@ -298,7 +308,7 @@ export function InfoBanner({
       </span>
       <div className="gc-banner__body">
         {/* Warnings say so in words; `role="status"` alone conveys no severity. */}
-        {tone === 'warning' && <span className="gc-visually-hidden">Peringatan: </span>}
+        {tone === 'warning' && <span className="gc-visually-hidden">{strings.ui.warningSeverity}</span>}
         {children}
       </div>
     </div>
@@ -336,21 +346,22 @@ export class ErrorBoundary extends Component<{ children: ReactNode }, BoundarySt
   override render(): ReactNode {
     const { error, errorId } = this.state;
     if (error === null) return this.props.children;
+    const strings = useT();
     return (
       <div className="gc-crash" role="alert">
-        <p className="gc-crash__title">UI gagal dimuat</p>
+        <p className="gc-crash__title">{strings.ui.crashTitle}</p>
         <p className="gc-crash__detail">{sanitizeGitText(error.message)}</p>
         <p className="gc-crash__id">
-          ID kesalahan: <code>{errorId}</code>. Sebutkan ID ini bila melaporkan masalah.
+          {strings.ui.crashErrorId(errorId)}
         </p>
         <div className="gc-crash__actions">
           <button
             type="button"
             className="gc-button gc-button--primary"
-            title="Gambar ulang antarmuka. Tidak ada perintah git yang dijalankan dan tidak ada perubahan yang hilang."
+            title={strings.ui.crashReloadTitle}
             onClick={this.reload}
           >
-            Muat ulang
+            {strings.ui.crashReload}
           </button>
         </div>
       </div>

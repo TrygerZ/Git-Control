@@ -17,7 +17,8 @@ import {
   relativeTime,
   sanitizeGitText,
 } from './format';
-import { useGitHubStore } from './store';
+import { useT } from './useT';
+import { useGitHubStore, useSettingsStore } from './store';
 import { InfoBanner } from './ui';
 import type { PullRequestInfo } from '../messages';
 
@@ -25,6 +26,8 @@ import type { PullRequestInfo } from '../messages';
 const TICK_MS = 1000;
 
 export function GitHubPanel(): JSX.Element {
+  const strings = useT();
+  const language = useSettingsStore((s) => s.language);
   const auth = useGitHubStore((s) => s.auth);
   const linkage = useGitHubStore((s) => s.linkage);
   const pullRequests = useGitHubStore((s) => s.pullRequests);
@@ -50,10 +53,10 @@ export function GitHubPanel(): JSX.Element {
   }, [needsTick]);
 
   const connected = auth?.connected === true;
-  const badge = rateLimitBadge(rateLimit, now);
+  const badge = rateLimitBadge(rateLimit, now, language);
 
   return (
-    <section className="gc-github" aria-label="Status GitHub">
+    <section className="gc-github" aria-label={strings.github.panelAria}>
       <header className="gc-github__head">
         <h3 className="gc-github__title">GitHub</h3>
         {/*
@@ -63,7 +66,6 @@ export function GitHubPanel(): JSX.Element {
         */}
         <span
           className={`gc-github__badge gc-github__badge--${badge.tone}`}
-          title={badge.title}
           aria-label={badge.title}
         >
           {badge.label}
@@ -75,7 +77,7 @@ export function GitHubPanel(): JSX.Element {
           connected,
           login: auth?.login ?? null,
           ...(auth?.invalidToken === undefined ? {} : { invalidToken: auth.invalidToken }),
-        })}
+        }, language)}
         {linkage?.available === true && linkage.owner !== null && (
           <>
             {' '}
@@ -88,22 +90,21 @@ export function GitHubPanel(): JSX.Element {
 
       {auth?.scopeWarning !== undefined && (
         <InfoBanner tone="warning" glyph="warning">
-          <strong>Scope token kurang.</strong>
+          <strong>{strings.github.scopeWarningTitle}</strong>
           <span>{sanitizeGitText(auth.scopeWarning)}</span>
         </InfoBanner>
       )}
 
       {error !== null && (
         <InfoBanner tone="warning" glyph="warning">
-          <strong>Metadata GitHub tidak lengkap.</strong>
-          <span>{sanitizeGitText(error.message)} Operasi git tetap berjalan lewat Git CLI.</span>
+          <strong>{strings.github.metadataIncompleteTitle}</strong>
+          <span>{sanitizeGitText(error.message)}</span>
         </InfoBanner>
       )}
 
       {linkage?.available === false && (
         <p className="gc-github__note">
-          Repository ini tidak punya remote GitHub, jadi tidak ada pull request atau tautan commit yang
-          bisa ditampilkan. Semua operasi git tetap berjalan seperti biasa.
+          {strings.github.noRemoteNote}
         </p>
       )}
 
@@ -112,30 +113,29 @@ export function GitHubPanel(): JSX.Element {
           <button
             type="button"
             className="gc-button gc-button--quiet"
-            title="Hapus token GitHub dari penyimpanan. Operasi git lewat CLI tetap berjalan."
+            title={strings.github.disconnectButtonTitle}
             onClick={() => void disconnect()}
           >
-            Putuskan GitHub
+            {strings.github.disconnectButton}
           </button>
         ) : (
           <button
             type="button"
             className="gc-button gc-button--action"
-            title="Simpan token GitHub agar pull request dan tautan commit bisa ditampilkan."
+            title={strings.github.connectButtonTitle}
             onClick={() => void connect()}
           >
-            Sambungkan GitHub
+            {strings.github.connectButton}
           </button>
         )}
         <button
           type="button"
           className="gc-button gc-button--quiet"
-          aria-label="Muat ulang metadata GitHub"
-          title="Baca ulang data dari GitHub. Tidak mengubah repository dan tidak menutup editor."
+          aria-label={strings.github.reloadAria}
           disabled={loading}
           onClick={() => void load()}
         >
-          Muat ulang
+          {strings.github.reloadButton}
         </button>
       </div>
 
@@ -152,24 +152,29 @@ export function PullRequestList({
   pullRequests: readonly PullRequestInfo[];
   connected: boolean;
 }): JSX.Element | null {
+  const strings = useT();
+  const language = useSettingsStore((s) => s.language);
   const openUrl = useGitHubStore((s) => s.openUrl);
   if (pullRequests.length === 0) {
     return connected ? (
       <p className="gc-github__note">
-        Tidak ada pull request terbuka. Setelah Anda push sebuah branch, pull request-nya akan muncul di
-        sini.
+        {strings.github.noOpenPRsNote}
       </p>
     ) : null;
   }
   return (
-    <ul className="gc-github__prs" aria-label="Pull request terbuka">
+    <ul className="gc-github__prs" aria-label={strings.github.openPRsListAria}>
       {pullRequests.map((pr) => {
         // Title, refs, and author are whatever the PR opener typed. Sanitised for
         // both the chip text and the tooltip.
         const title = sanitizeGitText(pr.title);
-        const tooltip =
-          `${title} (${sanitizeGitText(pr.headRef)} → ${sanitizeGitText(pr.baseRef)}),` +
-          ` oleh ${sanitizeGitText(pr.author)}, diperbarui ${relativeTime(pr.updatedAt)}`;
+        const tooltip = strings.github.prTooltip(
+          title,
+          sanitizeGitText(pr.headRef),
+          sanitizeGitText(pr.baseRef),
+          sanitizeGitText(pr.author),
+          relativeTime(pr.updatedAt, Date.now(), language),
+        );
         return (
           <li key={pr.number}>
             <button
@@ -179,11 +184,11 @@ export function PullRequestList({
               // The state word is in `pullRequestLabel`, so the name carries the
               // number, the state, the branches, the author, and the age — the
               // border style is redundancy for sighted users, not the signal.
-              aria-label={`Buka pull request ${pullRequestLabel(pr)}: ${tooltip}`}
+              aria-label={strings.github.openPRAria(pullRequestLabel(pr, language))}
               onClick={() => void openUrl(pr.url)}
             >
               <span className="gc-github__pr-number" aria-hidden="true">
-                {pullRequestLabel(pr)}
+                {pullRequestLabel(pr, language)}
               </span>
               <span className="gc-github__pr-title" aria-hidden="true">
                 {title}

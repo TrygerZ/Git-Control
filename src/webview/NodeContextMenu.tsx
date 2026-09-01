@@ -17,13 +17,16 @@
  * own `role="group"` with a heading. A user who only wants to read a commit never has
  * to hover over `Reset hard` to find out what it does.
  *
- * Every item also carries a `hint` naming the CONSEQUENCE rather than restating the
- * verb — `Salin hash lengkap` is obvious, "40 karakter, dipakai di perintah git atau
- * tautan" is the part worth knowing.
+ * Items with non-obvious or destructive consequences carry a short single-line
+ * `hint` (e.g. detached HEAD, permanence, fast-forward requirement). Self-explanatory
+ * items omit hints to keep the menu compact.
  */
 import { useEffect, useLayoutEffect, useRef, useState, type JSX, type KeyboardEvent } from 'react';
 import { sanitizeGitText, shortHash } from './format';
 import { Icon } from './ui';
+import { t, type Lang } from './i18n';
+import { useT } from './useT';
+import { useSettingsStore } from './store';
 import type { GitActionRequest, GraphNode, RefInfo, RemoteInfo, RepoStatus } from '../messages';
 
 export interface MenuAnchor {
@@ -48,16 +51,9 @@ export type MenuCommand =
  */
 export type MenuGroup = 'jelajah' | 'ubah';
 
-export const MENU_GROUP_LABEL: Readonly<Record<MenuGroup, string>> = {
-  jelajah: 'Lihat dan salin',
-  ubah: 'Ubah repository',
-};
-
-/** One sentence per group, so the heading is a promise rather than a category name. */
-export const MENU_GROUP_HINT: Readonly<Record<MenuGroup, string>> = {
-  jelajah: 'Tidak mengubah apa pun di repository Anda.',
-  ubah: 'Menjalankan perintah git. Sebagian akan meminta konfirmasi dulu.',
-};
+export function menuGroupLabel(group: MenuGroup, lang: Lang = 'en'): string {
+  return t(lang).menu.groupLabels[group];
+}
 
 /** Groups in display order: read-only first, because it is the safe half. */
 const MENU_GROUP_ORDER: readonly MenuGroup[] = ['jelajah', 'ubah'] as const;
@@ -104,17 +100,18 @@ export function githubRemoteName(refs: readonly RefInfo[]): string | null {
  * override in a branch name must not be able to make one menu item read as
  * another.
  *
- * Every `hint` states what the item DOES to the user's folder or repository, in the
- * same voice as the button titles elsewhere. The order here is the order the items
- * appear within their group, so the cheap and common entries come before the ones a
- * newcomer should think about.
+ * Short single-line `hint`s are provided only for items with non-obvious or
+ * destructive consequences. The order here is the order the items appear within
+ * their group.
  */
 export function menuItemsFor(
   node: GraphNode,
   status: RepoStatus | null,
   refs: readonly RefInfo[],
   githubUrl: string | null,
+  lang: Lang = 'en',
 ): MenuItem[] {
+  const strings = t(lang).menu;
   const items: MenuItem[] = [];
   const branchesHere = refs.filter((r) => r.kind === 'local' && r.objectName === node.hash);
   const currentBranch = status?.branch ?? null;
@@ -125,9 +122,8 @@ export function menuItemsFor(
     if (ref.shortName === currentBranch) continue;
     items.push({
       id: `checkout-${ref.shortName}`,
-      label: `Checkout branch ${sanitizeGitText(ref.shortName)}`,
+      label: strings.checkoutBranch(sanitizeGitText(ref.shortName)),
       group: 'ubah',
-      hint: 'Pindah ke branch ini; isi folder kerja diganti sesuai branch tersebut.',
       command: { kind: 'action', request: { action: 'checkout-branch', branch: ref.shortName } },
     });
   }
@@ -135,9 +131,9 @@ export function menuItemsFor(
   if (!isHead) {
     items.push({
       id: 'checkout-commit',
-      label: `Checkout commit ${node.shortHash}`,
+      label: strings.checkoutCommit(node.shortHash),
       group: 'ubah',
-      hint: 'Isi folder kerja diganti sesuai commit ini, dan Anda masuk mode detached HEAD. Commit baru tidak menempel pada branch mana pun.',
+      hint: strings.checkoutCommitHint,
       risky: true,
       command: { kind: 'action', request: { action: 'checkout-commit', hash: node.hash } },
     });
@@ -145,9 +141,8 @@ export function menuItemsFor(
 
   items.push({
     id: 'create-branch',
-    label: 'Buat branch di sini',
+    label: strings.createBranch,
     group: 'ubah',
-    hint: 'Menambah nama branch baru pada commit ini. Anda tetap di branch sekarang dan tidak ada file yang berubah.',
     command: { kind: 'createBranch', startPoint: node.hash },
   });
 
@@ -155,9 +150,8 @@ export function menuItemsFor(
   if (mergeable !== undefined && currentBranch !== null && !busy) {
     items.push({
       id: 'merge',
-      label: `Merge ${sanitizeGitText(mergeable.shortName)} ke ${sanitizeGitText(currentBranch)}`,
+      label: strings.merge(sanitizeGitText(mergeable.shortName), sanitizeGitText(currentBranch)),
       group: 'ubah',
-      hint: 'Menggabungkan isi branch itu ke branch aktif. Bila keduanya mengubah baris yang sama, akan muncul konflik yang harus Anda selesaikan.',
       command: { kind: 'action', request: { action: 'merge', branch: mergeable.shortName } },
     });
   }
@@ -165,25 +159,25 @@ export function menuItemsFor(
   if (!busy) {
     items.push({
       id: 'revert',
-      label: 'Revert commit ini',
+      label: strings.revert,
       group: 'ubah',
-      hint: 'Membuat commit baru yang membatalkan perubahan commit ini. Histori tetap utuh, jadi ini cara paling aman untuk mundur.',
+      hint: strings.revertHint,
       risky: true,
       command: { kind: 'action', request: { action: 'revert', hash: node.hash } },
     });
     items.push({
       id: 'reset-soft',
-      label: 'Reset soft ke sini',
+      label: strings.resetSoft,
       group: 'ubah',
-      hint: 'Branch pindah ke commit ini, tapi semua perubahan sesudahnya tetap tersimpan di staging area sehingga tidak ada yang hilang.',
+      hint: strings.resetSoftHint,
       risky: true,
       command: { kind: 'action', request: { action: 'reset-soft', hash: node.hash } },
     });
     items.push({
       id: 'reset-hard',
-      label: 'Reset hard ke sini',
+      label: strings.resetHard,
       group: 'ubah',
-      hint: 'Membuang SEMUA perubahan setelah commit ini, termasuk file yang belum di-commit. Permanen, git sendiri tidak bisa mengembalikannya.',
+      hint: strings.resetHardHint,
       risky: true,
       command: { kind: 'action', request: { action: 'reset-hard', hash: node.hash } },
     });
@@ -193,9 +187,9 @@ export function menuItemsFor(
   if (node.local && currentBranch !== null && remote !== null && !busy) {
     items.push({
       id: 'push-up-to',
-      label: 'Push sampai commit ini',
+      label: strings.pushUpTo,
       group: 'ubah',
-      hint: 'Mengirim histori sampai commit ini ke remote, sehingga rekan Anda bisa melihatnya. Hanya berjalan bila fast-forward, histori remote tidak akan ditimpa.',
+      hint: strings.pushUpToHint,
       risky: true,
       command: {
         kind: 'action',
@@ -206,32 +200,28 @@ export function menuItemsFor(
 
   items.push({
     id: 'view-diff',
-    label: 'Lihat diff commit',
+    label: strings.viewDiff,
     group: 'jelajah',
-    hint: 'Membuka panel detail: siapa penulisnya, pesan lengkapnya, dan file apa saja yang berubah.',
     command: { kind: 'viewDiff', hash: node.hash },
   });
   items.push({
     id: 'copy-full',
-    label: 'Salin hash lengkap',
+    label: strings.copyFull,
     group: 'jelajah',
-    hint: '40 karakter penuh, untuk dipakai di perintah git atau tautan.',
-    command: { kind: 'copy', text: node.hash, toast: 'Hash disalin.' },
+    command: { kind: 'copy', text: node.hash, toast: strings.toastHashCopied },
   });
   items.push({
     id: 'copy-short',
-    label: `Salin hash pendek (${shortHash(node.hash)})`,
+    label: strings.copyShort(shortHash(node.hash)),
     group: 'jelajah',
-    hint: 'Cukup untuk menyebut commit ini di percakapan atau catatan.',
-    command: { kind: 'copy', text: shortHash(node.hash), toast: 'Hash disalin.' },
+    command: { kind: 'copy', text: shortHash(node.hash), toast: strings.toastHashCopied },
   });
 
   if (githubUrl !== null) {
     items.push({
       id: 'open-github',
-      label: 'Buka di GitHub',
+      label: strings.openGitHub,
       group: 'jelajah',
-      hint: 'Membuka commit ini di browser. Repository lokal Anda tidak disentuh.',
       command: { kind: 'openGitHub', url: `${githubUrl}/commit/${node.hash}` },
     });
   }
@@ -281,7 +271,9 @@ export function NodeContextMenu({
   onSelect,
   onClose,
 }: Props): JSX.Element {
-  const items = menuItemsFor(node, status, refs, githubUrl);
+  const strings = useT();
+  const language = useSettingsStore((x) => x.language);
+  const items = menuItemsFor(node, status, refs, githubUrl, language);
   const listRef = useRef<HTMLDivElement>(null);
   const returnFocus = useRef<Element | null>(null);
   // Roving tabindex: exactly one item is tabbable, and the arrow keys move it.
@@ -397,7 +389,7 @@ export function NodeContextMenu({
       className="gc-menu"
       role="menu"
       aria-orientation="vertical"
-      aria-label={`Tindakan untuk commit ${node.shortHash}`}
+      aria-label={strings.menu.menuAria(node.shortHash)}
       ref={listRef}
       onKeyDown={onKeyDown}
       style={{ left: `${placed.x}px`, top: `${placed.y}px` }}
@@ -413,16 +405,15 @@ export function NodeContextMenu({
            * `aria-labelledby` pointing at the heading would work, but a `menu` may
            * only own `menuitem`, `group`, and `separator`, so a visible heading node
            * inside it is already outside the pattern — hiding it from AT and naming
-           * the group directly keeps the tree legal and stops the heading and its
-           * hint being announced a second time as stray text.
+           * the group directly keeps the tree legal and stops the heading
+           * being announced a second time as stray text.
            */
-          aria-label={`${MENU_GROUP_LABEL[group]}. ${MENU_GROUP_HINT[group]}`}
+          aria-label={menuGroupLabel(group, language)}
         >
           {/* Rule between the halves only, so the first group has no stray line. */}
           {groupIndex > 0 && <span className="gc-menu__separator" aria-hidden="true" />}
           <span className="gc-menu__group-title" aria-hidden="true">
-            {MENU_GROUP_LABEL[group]}
-            <span className="gc-menu__group-hint">{MENU_GROUP_HINT[group]}</span>
+            {menuGroupLabel(group, language)}
           </span>
           {members.map((item) => {
             flatIndex += 1;
@@ -439,7 +430,7 @@ export function NodeContextMenu({
                 // included, because that is the fact that must not be missed.
                 aria-label={
                   item.risky === true
-                    ? `${item.label}: berisiko. ${item.hint ?? ''}`.trim()
+                    ? strings.menu.riskyAria(item.label, item.hint ?? '')
                     : undefined
                 }
                 className={
@@ -458,7 +449,7 @@ export function NodeContextMenu({
                     </span>
                   )}
                   <span>{item.label}</span>
-                  {item.risky === true && <span className="gc-menu__risk-word">berisiko</span>}
+                  {item.risky === true && <span className="gc-menu__risk-word">{strings.menu.riskyWord}</span>}
                 </span>
                 {item.hint !== undefined && <span className="gc-menu__hint">{item.hint}</span>}
               </button>

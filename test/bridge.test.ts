@@ -4,7 +4,8 @@ import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import { GitError, GitRunner } from '../src/git';
 import { GitHubError } from '../src/github';
-import { BRIDGE_MESSAGES, MessageBridge, toErrorBody, type BridgeHost, type WebviewLike } from '../src/bridge';
+import { MessageBridge, toErrorBody, type BridgeHost, type WebviewLike } from '../src/bridge';
+import { hostText } from '../src/hostText';
 import { Logger, type LogSink } from '../src/logger';
 import { RepositoryService, type PersistentStore } from '../src/repository';
 import { cleanup, makeFixture } from './repoFixture';
@@ -19,31 +20,51 @@ import type {
 } from '../src/messages';
 
 test('GitError REPOSITORY_LOCKED maps to 409', () => {
-  const body = toErrorBody(new GitError({ code: 'REPOSITORY_LOCKED', message: 'locked' }));
-  assert.equal(body.status, 409);
-  assert.equal(body.code, 'REPOSITORY_LOCKED');
-  assert.equal(body.message, BRIDGE_MESSAGES.locked);
+  const bodyId = toErrorBody(new GitError({ code: 'REPOSITORY_LOCKED', message: 'locked' }), 'id');
+  assert.equal(bodyId.status, 409);
+  assert.equal(bodyId.code, 'REPOSITORY_LOCKED');
+  assert.equal(bodyId.message, hostText('id').bridge.locked);
+
+  const bodyEn = toErrorBody(new GitError({ code: 'REPOSITORY_LOCKED', message: 'locked' }), 'en');
+  assert.equal(bodyEn.status, 409);
+  assert.equal(bodyEn.code, 'REPOSITORY_LOCKED');
+  assert.equal(bodyEn.message, hostText('en').bridge.locked);
 });
 
 test('hook rejection maps to 409 HOOK_REJECTED with hook output in detail', () => {
   const stderr = 'pre-commit hook failed\nlint: 3 errors';
-  const body = toErrorBody(
+  const bodyId = toErrorBody(
     new GitError({ code: 'GIT_FAILED', message: 'failed', exitCode: 1, stderr }),
+    'id',
   );
-  assert.equal(body.status, 409);
-  assert.equal(body.code, 'HOOK_REJECTED');
-  assert.equal(body.message, BRIDGE_MESSAGES.hookRejected);
-  assert.equal(body.detail, stderr);
+  assert.equal(bodyId.status, 409);
+  assert.equal(bodyId.code, 'HOOK_REJECTED');
+  assert.equal(bodyId.message, hostText('id').bridge.hookRejected);
+  assert.equal(bodyId.detail, stderr);
+
+  const bodyEn = toErrorBody(
+    new GitError({ code: 'GIT_FAILED', message: 'failed', exitCode: 1, stderr }),
+    'en',
+  );
+  assert.equal(bodyEn.message, hostText('en').bridge.hookRejected);
 });
 
 test('non-fast-forward push maps to 409 NON_FAST_FORWARD with a fetch remedy only', () => {
   const stderr = '! [rejected] main -> main (non-fast-forward)';
-  const body = toErrorBody(
+  const bodyId = toErrorBody(
     new GitError({ code: 'GIT_FAILED', message: 'failed', exitCode: 1, stderr }),
+    'id',
   );
-  assert.equal(body.status, 409);
-  assert.equal(body.code, 'NON_FAST_FORWARD');
-  assert.deepEqual(body.remedies, ['fetch']);
+  assert.equal(bodyId.status, 409);
+  assert.equal(bodyId.code, 'NON_FAST_FORWARD');
+  assert.equal(bodyId.message, hostText('id').bridge.nonFastForward);
+  assert.deepEqual(bodyId.remedies, ['fetch']);
+
+  const bodyEn = toErrorBody(
+    new GitError({ code: 'GIT_FAILED', message: 'failed', exitCode: 1, stderr }),
+    'en',
+  );
+  assert.equal(bodyEn.message, hostText('en').bridge.nonFastForward);
 });
 
 test('validation failures from git map to 400', () => {
@@ -142,6 +163,7 @@ const SETTINGS: SettingsSnapshot = {
   showIgnoredFiles: false,
   githubApiUrl: 'https://api.github.com',
   fetchStalenessMs: 300_000,
+  language: 'en',
   ui: { zoom: 1, branchFilter: '' },
 };
 
@@ -195,14 +217,21 @@ function req(kind: string, payload: object): Request {
 }
 
 test('missing repository yields 404 with the PRD wording', async (t) => {
-  const h = harness(null);
+  const h = harness(null, { settings: () => ({ ...SETTINGS, language: 'id' }) });
   t.after(() => h.bridge.dispose());
   const response = await h.webview.send(req('repos/status', {}));
   assert.equal(response.ok, false);
   if (response.ok) return;
   assert.equal(response.error.status, 404);
   assert.equal(response.error.code, 'NOT_FOUND');
-  assert.equal(response.error.message, BRIDGE_MESSAGES.noRepository);
+  assert.equal(response.error.message, hostText('id').bridge.noRepository);
+
+  const hEn = harness(null, { settings: () => ({ ...SETTINGS, language: 'en' }) });
+  t.after(() => hEn.bridge.dispose());
+  const responseEn = await hEn.webview.send(req('repos/status', {}));
+  assert.equal(responseEn.ok, false);
+  if (responseEn.ok) return;
+  assert.equal(responseEn.error.message, hostText('en').bridge.noRepository);
 });
 
 test('malformed payloads are rejected with 400 before touching git', async (t) => {
@@ -234,17 +263,27 @@ test('a dirty tree blocks checkout and returns the guard remedies', async (t) =>
   t.after(() => cleanup(dir));
   await fs.writeFile(path.join(dir, 'dirty.txt'), 'x\n', 'utf8');
   const repo = new RepositoryService({ folderPath: dir, gitPath: 'git', store: new MemoryStore() });
-  const h = harness(repo);
-  t.after(() => h.bridge.dispose());
+  const hId = harness(repo, { settings: () => ({ ...SETTINGS, language: 'id' }) });
+  t.after(() => hId.bridge.dispose());
 
-  const response = await h.webview.send(
+  const responseId = await hId.webview.send(
     req('actions/git', { action: 'checkout-branch', branch: 'main', idempotencyKey: 'co1' }),
   );
-  assert.equal(response.ok, false);
-  if (response.ok) return;
-  assert.equal(response.error.code, 'DIRTY_TREE');
-  assert.equal(response.error.message, 'Commit atau stash perubahan sebelum checkout.');
-  assert.deepEqual(response.error.remedies, ['commit', 'stash', 'cancel']);
+  assert.equal(responseId.ok, false);
+  if (responseId.ok) return;
+  assert.equal(responseId.error.code, 'DIRTY_TREE');
+  assert.equal(responseId.error.message, 'Commit atau stash perubahan sebelum checkout.');
+  assert.deepEqual(responseId.error.remedies, ['commit', 'stash', 'cancel']);
+
+  const hEn = harness(repo, { settings: () => ({ ...SETTINGS, language: 'en' }) });
+  t.after(() => hEn.bridge.dispose());
+
+  const responseEn = await hEn.webview.send(
+    req('actions/git', { action: 'checkout-branch', branch: 'main', idempotencyKey: 'co1-en' }),
+  );
+  assert.equal(responseEn.ok, false);
+  if (responseEn.ok) return;
+  assert.equal(responseEn.error.message, 'Commit or stash changes before checkout.');
 });
 
 test('reset-hard needs confirm plus forceAcknowledgement, enforced host-side', async (t) => {
@@ -252,28 +291,37 @@ test('reset-hard needs confirm plus forceAcknowledgement, enforced host-side', a
   t.after(() => cleanup(dir));
   const repo = new RepositoryService({ folderPath: dir, gitPath: 'git', store: new MemoryStore() });
   const head = (await repo.status()).head as string;
-  const h = harness(repo);
-  t.after(() => h.bridge.dispose());
+  const hId = harness(repo, { settings: () => ({ ...SETTINGS, language: 'id' }) });
+  t.after(() => hId.bridge.dispose());
 
   // No flags: blocked, level 2, high risk.
-  const bare = await h.webview.send(
+  const bareId = await hId.webview.send(
     req('actions/git', { action: 'reset-hard', hash: head, idempotencyKey: 'rh1' }),
   );
-  assert.equal(bare.ok, false);
-  if (bare.ok) return;
-  assert.equal(bare.error.code, 'CONFIRMATION_REQUIRED');
-  assert.equal(bare.error.confirmationLevel, 2);
-  assert.equal(bare.error.risk, 'high');
-  assert.equal(bare.error.message, 'Hard reset membuang perubahan permanen.');
+  assert.equal(bareId.ok, false);
+  if (bareId.ok) return;
+  assert.equal(bareId.error.code, 'CONFIRMATION_REQUIRED');
+  assert.equal(bareId.error.confirmationLevel, 2);
+  assert.equal(bareId.error.risk, 'high');
+  assert.equal(bareId.error.message, 'Hard reset membuang perubahan permanen.');
+
+  const hEn = harness(repo, { settings: () => ({ ...SETTINGS, language: 'en' }) });
+  t.after(() => hEn.bridge.dispose());
+  const bareEn = await hEn.webview.send(
+    req('actions/git', { action: 'reset-hard', hash: head, idempotencyKey: 'rh1-en' }),
+  );
+  assert.equal(bareEn.ok, false);
+  if (bareEn.ok) return;
+  assert.equal(bareEn.error.message, 'Hard reset discards changes permanently.');
 
   // confirm alone is not enough at level 2.
-  const half = await h.webview.send(
+  const half = await hId.webview.send(
     req('actions/git', { action: 'reset-hard', hash: head, confirm: true, idempotencyKey: 'rh2' }),
   );
   assert.equal(half.ok, false);
 
   // Both flags: allowed through to git.
-  const full = await h.webview.send(
+  const full = await hId.webview.send(
     req('actions/git', {
       action: 'reset-hard',
       hash: head,
@@ -310,17 +358,27 @@ test('push without a recent fetch is blocked as stale', async (t) => {
   const dir = await makeRepo();
   t.after(() => cleanup(dir));
   const repo = new RepositoryService({ folderPath: dir, gitPath: 'git', store: new MemoryStore() });
-  const h = harness(repo);
-  t.after(() => h.bridge.dispose());
+  const hId = harness(repo, { settings: () => ({ ...SETTINGS, language: 'id' }) });
+  t.after(() => hId.bridge.dispose());
 
-  const response = await h.webview.send(
+  const responseId = await hId.webview.send(
     req('actions/git', { action: 'push', remote: 'origin', branch: 'main', idempotencyKey: 'p1' }),
   );
-  assert.equal(response.ok, false);
-  if (response.ok) return;
-  assert.equal(response.error.code, 'STALE_STATUS');
-  assert.equal(response.error.message, 'Status remote kedaluwarsa.');
-  assert.deepEqual(response.error.remedies, ['fetch']);
+  assert.equal(responseId.ok, false);
+  if (responseId.ok) return;
+  assert.equal(responseId.error.code, 'STALE_STATUS');
+  assert.equal(responseId.error.message, 'Status remote kedaluwarsa.');
+  assert.deepEqual(responseId.error.remedies, ['fetch']);
+
+  const hEn = harness(repo, { settings: () => ({ ...SETTINGS, language: 'en' }) });
+  t.after(() => hEn.bridge.dispose());
+
+  const responseEn = await hEn.webview.send(
+    req('actions/git', { action: 'push', remote: 'origin', branch: 'main', idempotencyKey: 'p1-en' }),
+  );
+  assert.equal(responseEn.ok, false);
+  if (responseEn.ok) return;
+  assert.equal(responseEn.error.message, 'Remote status is stale.');
 });
 
 test('staging succeeds, invalidates status, and emits repoChanged', async (t) => {
@@ -347,10 +405,10 @@ test('a stale statusToken is rejected with 409', async (t) => {
   t.after(() => cleanup(dir));
   await fs.writeFile(path.join(dir, 'new.txt'), 'x\n', 'utf8');
   const repo = new RepositoryService({ folderPath: dir, gitPath: 'git', store: new MemoryStore() });
-  const h = harness(repo);
-  t.after(() => h.bridge.dispose());
+  const hId = harness(repo, { settings: () => ({ ...SETTINGS, language: 'id' }) });
+  t.after(() => hId.bridge.dispose());
 
-  const response = await h.webview.send(
+  const responseId = await hId.webview.send(
     req('actions/stage', {
       paths: ['new.txt'],
       stage: true,
@@ -358,10 +416,24 @@ test('a stale statusToken is rejected with 409', async (t) => {
       idempotencyKey: 's2',
     }),
   );
-  assert.equal(response.ok, false);
-  if (response.ok) return;
-  assert.equal(response.error.status, 409);
-  assert.equal(response.error.message, BRIDGE_MESSAGES.staleToken);
+  assert.equal(responseId.ok, false);
+  if (responseId.ok) return;
+  assert.equal(responseId.error.status, 409);
+  assert.equal(responseId.error.message, hostText('id').bridge.staleToken);
+
+  const hEn = harness(repo, { settings: () => ({ ...SETTINGS, language: 'en' }) });
+  t.after(() => hEn.bridge.dispose());
+  const responseEn = await hEn.webview.send(
+    req('actions/stage', {
+      paths: ['new.txt'],
+      stage: true,
+      statusToken: 'deadbeefdeadbeef',
+      idempotencyKey: 's2_en',
+    }),
+  );
+  assert.equal(responseEn.ok, false);
+  if (responseEn.ok) return;
+  assert.equal(responseEn.error.message, hostText('en').bridge.staleToken);
 });
 
 test('a repeated idempotencyKey replays the prior result without re-running git', async (t) => {
@@ -443,21 +515,26 @@ test('commit is blocked while conflicts are unresolved', async (t) => {
   await assert.rejects(() => git.merge('side'));
 
   const repo = new RepositoryService({ folderPath: dir, gitPath: 'git', store: new MemoryStore() });
-  const h = harness(repo);
-  t.after(() => h.bridge.dispose());
+  const hId = harness(repo, { settings: () => ({ ...SETTINGS, language: 'id' }) });
+  t.after(() => hId.bridge.dispose());
 
-  const response = await h.webview.send(
+  const responseId = await hId.webview.send(
     req('actions/commit', { message: 'resolve merge', statusToken: '', idempotencyKey: 'mc1' }),
   );
-  assert.equal(response.ok, false);
-  if (response.ok) return;
-  assert.equal(response.error.code, 'CONFLICT');
-  assert.equal(response.error.message, 'Selesaikan semua file konflik.');
+  assert.equal(responseId.ok, false);
+  if (responseId.ok) return;
+  assert.equal(responseId.error.code, 'CONFLICT');
+  assert.equal(responseId.error.message, 'Selesaikan semua file konflik.');
 
-  // merge-abort is a resolution action and is allowed during the merge.
-  const abort = await h.webview.send(req('actions/git', { action: 'merge-abort', idempotencyKey: 'ma1' }));
-  assert.equal(abort.ok, true);
-  assert.equal(await repo.git.operationState(), 'idle');
+  const hEn = harness(repo, { settings: () => ({ ...SETTINGS, language: 'en' }) });
+  t.after(() => hEn.bridge.dispose());
+
+  const responseEn = await hEn.webview.send(
+    req('actions/commit', { message: 'resolve merge', statusToken: '', idempotencyKey: 'mc1-en' }),
+  );
+  assert.equal(responseEn.ok, false);
+  if (responseEn.ok) return;
+  assert.equal(responseEn.error.message, 'Resolve all conflicted files.');
 });
 
 test('fetch records the fetch clock, unblocking a later push guard check', async (t) => {
@@ -840,6 +917,44 @@ test('persisted zoom is normalized to valid range host-side', async (t) => {
   assert.equal(persistedAfterSet.zoom, 4);
 });
 
+test('persisted language is updated and normalized host-side', async (t) => {
+  let activeLang: 'en' | 'id' = 'en';
+
+  const hostSnapshot = (): SettingsSnapshot => ({
+    ...SETTINGS,
+    language: activeLang,
+  });
+
+  const withHost = harness(null, {
+    settings: hostSnapshot,
+    setUiPreference: async (payload) => {
+      if (payload.key === 'language' && typeof payload.value === 'string') {
+        activeLang = payload.value === 'id' ? 'id' : 'en';
+      }
+      return hostSnapshot();
+    },
+  });
+  t.after(() => withHost.bridge.dispose());
+
+  // 1. Initial settings/get returns default 'en'
+  const getRes = await withHost.webview.send(req('settings/get', {}));
+  assert.equal(getRes.ok, true);
+  if (!getRes.ok) return;
+  assert.equal((getRes.data as SettingsSnapshot).language, 'en');
+
+  // 2. Setting valid 'id' updates snapshot
+  const setRes = await withHost.webview.send(req('settings/set', { key: 'language', value: 'id' }));
+  assert.equal(setRes.ok, true);
+  if (!setRes.ok) return;
+  assert.equal((setRes.data as SettingsSnapshot).language, 'id');
+
+  // 3. Setting unknown language normalizes back to 'en'
+  const setUnknown = await withHost.webview.send(req('settings/set', { key: 'language', value: 'fr' }));
+  assert.equal(setUnknown.ok, true);
+  if (!setUnknown.ok) return;
+  assert.equal((setUnknown.data as SettingsSnapshot).language, 'en');
+});
+
 test('a GitHubError maps to its own status and code', () => {
   const auth = toErrorBody(
     new GitHubError({ status: 401, code: 'AUTH_ERROR', message: 'Token GitHub tidak valid.' }),
@@ -867,10 +982,10 @@ test('actions/git rejects a stale statusToken with 409, like stage and commit (S
   t.after(() => cleanup(dir));
   const repo = new RepositoryService({ folderPath: dir, gitPath: 'git', store: new MemoryStore() });
   const head = (await repo.status()).head as string;
-  const h = harness(repo);
-  t.after(() => h.bridge.dispose());
+  const hId = harness(repo, { settings: () => ({ ...SETTINGS, language: 'id' }) });
+  t.after(() => hId.bridge.dispose());
 
-  const stale = await h.webview.send(
+  const staleId = await hId.webview.send(
     req('actions/git', {
       action: 'reset-soft',
       hash: head,
@@ -879,11 +994,27 @@ test('actions/git rejects a stale statusToken with 409, like stage and commit (S
       idempotencyKey: 'st-1',
     }),
   );
-  assert.equal(stale.ok, false);
-  if (stale.ok) return;
-  assert.equal(stale.error.status, 409);
-  assert.equal(stale.error.code, 'CONFLICT');
-  assert.equal(stale.error.message, BRIDGE_MESSAGES.staleToken);
+  assert.equal(staleId.ok, false);
+  if (staleId.ok) return;
+  assert.equal(staleId.error.status, 409);
+  assert.equal(staleId.error.code, 'CONFLICT');
+  assert.equal(staleId.error.message, hostText('id').bridge.staleToken);
+
+  const hEn = harness(repo, { settings: () => ({ ...SETTINGS, language: 'en' }) });
+  t.after(() => hEn.bridge.dispose());
+
+  const staleEn = await hEn.webview.send(
+    req('actions/git', {
+      action: 'reset-soft',
+      hash: head,
+      confirm: true,
+      statusToken: 'deadbeefdeadbeef',
+      idempotencyKey: 'st-1-en',
+    }),
+  );
+  assert.equal(staleEn.ok, false);
+  if (staleEn.ok) return;
+  assert.equal(staleEn.error.message, hostText('en').bridge.staleToken);
 
   // The mutation did not run: HEAD is unchanged.
   assert.equal((await repo.status()).head, head);
@@ -891,7 +1022,7 @@ test('actions/git rejects a stale statusToken with 409, like stage and commit (S
   // The matching token is accepted.
   repo.invalidate();
   const fresh = (await repo.status()).statusToken;
-  const ok = await h.webview.send(
+  const ok = await hId.webview.send(
     req('actions/git', {
       action: 'reset-soft',
       hash: head,

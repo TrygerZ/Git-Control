@@ -9,8 +9,8 @@
  * a pointer even though the visual affordance is a drag.
  */
 import { useCallback, useRef, type JSX, type PointerEvent } from 'react';
-import { formatCount } from './format';
 import { minimapGeometry, minimapScrollFor, COLUMN_WIDTH } from './viewport';
+import { useT } from './useT';
 import type { GraphNode } from '../messages';
 
 interface Props {
@@ -38,6 +38,7 @@ export function GraphMinimap({
   width,
   onScroll,
 }: Props): JSX.Element | null {
+  const strings = useT();
   const ref = useRef<SVGSVGElement>(null);
   const dragging = useRef(false);
 
@@ -110,12 +111,12 @@ export function GraphMinimap({
       height={HEIGHT}
       role="slider"
       tabIndex={0}
-      aria-label="Ikhtisar grafik"
+      aria-label={strings.minimap.ariaLabel}
       aria-orientation="horizontal"
       aria-valuemin={0}
       aria-valuemax={Math.round(maxScroll)}
       aria-valuenow={currentScroll}
-      aria-valuetext={`Posisi grafik ${progressPercent}%`}
+      aria-valuetext={strings.minimap.valueText(progressPercent)}
       onPointerDown={onPointerDown}
       onPointerMove={onPointerMove}
       onPointerUp={onPointerUp}

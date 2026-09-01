@@ -15,21 +15,24 @@
  */
 import { useEffect, useRef, type JSX } from 'react';
 import { formatCount } from './format';
-import { COMMIT_MESSAGE_MIN, useChangesStore } from './store';
+import { useT } from './useT';
+import { COMMIT_MESSAGE_MIN, useChangesStore, useSettingsStore } from './store';
 import { Spinner } from './ui';
 
 export function CommitForm(): JSX.Element {
-  const message = useChangesStore((s) => s.commitMessage);
-  const setMessage = useChangesStore((s) => s.setCommitMessage);
-  const pushAfter = useChangesStore((s) => s.pushAfterCommit);
-  const setPushAfter = useChangesStore((s) => s.setPushAfterCommit);
-  const includeUntracked = useChangesStore((s) => s.includeUntracked);
-  const setIncludeUntracked = useChangesStore((s) => s.setIncludeUntracked);
-  const busy = useChangesStore((s) => s.busy);
-  const messageError = useChangesStore((s) => s.messageError);
-  const commit = useChangesStore((s) => s.commit);
-  const retryPush = useChangesStore((s) => s.retryPush);
-  const changes = useChangesStore((s) => s.changes);
+  const strings = useT();
+  const language = useSettingsStore((x) => x.language);
+  const message = useChangesStore((st) => st.commitMessage);
+  const setMessage = useChangesStore((st) => st.setCommitMessage);
+  const pushAfter = useChangesStore((st) => st.pushAfterCommit);
+  const setPushAfter = useChangesStore((st) => st.setPushAfterCommit);
+  const includeUntracked = useChangesStore((st) => st.includeUntracked);
+  const setIncludeUntracked = useChangesStore((st) => st.setIncludeUntracked);
+  const busy = useChangesStore((st) => st.busy);
+  const messageError = useChangesStore((st) => st.messageError);
+  const commit = useChangesStore((st) => st.commit);
+  const retryPush = useChangesStore((st) => st.retryPush);
+  const changes = useChangesStore((st) => st.changes);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   // Pull focus back to the field the moment validation fails.
@@ -49,8 +52,8 @@ export function CommitForm(): JSX.Element {
   const scopeId = 'gc-commit-scope';
 
   return (
-    <form className="gc-commit" onSubmit={submit} aria-label="Buat commit">
-      <h2 className="gc-commit__title">Simpan perubahan (commit)</h2>
+    <form className="gc-commit" onSubmit={submit} aria-label={strings.commitForm.formAria}>
+      <h2 className="gc-commit__title">{strings.commitForm.title}</h2>
 
       <div className="gc-commit__field-wrap">
         <textarea
@@ -61,9 +64,9 @@ export function CommitForm(): JSX.Element {
           required
           minLength={COMMIT_MESSAGE_MIN}
           aria-invalid={messageError !== null}
-          aria-label="Pesan commit"
+          aria-label={strings.commitForm.messageAria}
           aria-describedby={messageError !== null ? `${errorId} ${hintId}` : hintId}
-          placeholder="Pesan commit (minimal 3 karakter)..."
+          placeholder={strings.commitForm.placeholder}
           onChange={(e) => setMessage(e.target.value)}
         />
       </div>
@@ -77,10 +80,10 @@ export function CommitForm(): JSX.Element {
 
       <details className="gc-commit__advanced">
         <summary className="gc-commit__advanced-toggle">
-          Opsi lanjutan
+          {strings.commitForm.advancedOptions}
         </summary>
         <div className="gc-commit__options">
-          <label className="gc-checkbox" title="Commit langsung dikirim ke remote setelah berhasil dibuat.">
+          <label className="gc-checkbox">
             <input
               type="checkbox"
               checked={pushAfter}
@@ -88,11 +91,11 @@ export function CommitForm(): JSX.Element {
               onChange={(e) => setPushAfter(e.target.checked)}
             />
             <span className="gc-checkbox__text">
-              <span>Push ke remote setelah commit</span>
+              <span>{strings.commitForm.pushAfter}</span>
             </span>
           </label>
 
-          <label className="gc-checkbox" title="File baru (untracked) akan otomatis diikutsertakan saat stage.">
+          <label className="gc-checkbox">
             <input
               type="checkbox"
               checked={includeUntracked}
@@ -100,7 +103,7 @@ export function CommitForm(): JSX.Element {
               onChange={(e) => setIncludeUntracked(e.target.checked)}
             />
             <span className="gc-checkbox__text">
-              <span>Sertakan file belum dilacak saat stage</span>
+              <span>{strings.commitForm.includeUntracked}</span>
             </span>
           </label>
         </div>
@@ -108,30 +111,30 @@ export function CommitForm(): JSX.Element {
 
       <p className="gc-commit__scope" id={scopeId}>
         {stagedCount === 0
-          ? 'Belum ada file di staging area.'
-          : `${formatCount(stagedCount)} file siap di-commit.`}
+          ? strings.commitForm.noStagedFiles
+          : strings.commitForm.stagedFilesReady(formatCount(stagedCount, language))}
       </p>
 
       <div className="gc-commit__actions">
         <button
           type="submit"
           className="gc-button gc-button--primary gc-button--lg"
-          title="Simpan isi staging area sebagai satu commit di komputer ini."
+          title={strings.commitForm.commitTitle}
           disabled={busy || stagedCount === 0}
           aria-describedby={tooShort ? `${hintId} ${scopeId}` : scopeId}
         >
-          Commit
+          {strings.commitForm.commitButton}
         </button>
-        {busy && <Spinner label="Menyimpan commit…" />}
+        {busy && <Spinner label={strings.commitForm.savingCommit} />}
         {retryPush !== null && (
           <button
             type="button"
             className="gc-button"
-            title="Kirim ulang commit yang sudah tersimpan ke remote."
+            title={strings.commitForm.retryPushTitle}
             disabled={busy}
             onClick={() => void retryPush()}
           >
-            Coba push lagi
+            {strings.commitForm.retryPush}
           </button>
         )}
       </div>

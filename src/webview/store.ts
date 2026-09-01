@@ -13,6 +13,7 @@ import { create } from 'zustand';
 import { BridgeRequestError, bridge, isBridgeError, mutation, saveState } from './bridge';
 import { linkageChangedRepo, sanitizeGitText } from './format';
 import { pruneSelection, toggleNode, togglePath, type TreeNode } from './tree';
+import { activeLang, setActiveLang, t } from './i18n';
 import type {
   ChangeEntry,
   CommitResult,
@@ -181,7 +182,6 @@ export interface ChangesState {
 }
 
 export const COMMIT_MESSAGE_MIN = 3;
-export const MESSAGE_REQUIRED = 'Pesan commit wajib diisi.';
 
 export const useChangesStore = create<ChangesState>((set, get) => ({
   changes: [],
@@ -285,8 +285,9 @@ export const useChangesStore = create<ChangesState>((set, get) => ({
    */
   async commit() {
     const message = get().commitMessage;
+    const strings = t(activeLang());
     if (message.trim().length < COMMIT_MESSAGE_MIN) {
-      set({ messageError: MESSAGE_REQUIRED });
+      set({ messageError: strings.commitForm.messageRequired });
       return false;
     }
     set({ busy: true, messageError: null });
@@ -305,7 +306,7 @@ export const useChangesStore = create<ChangesState>((set, get) => ({
       if (get().pushAfterCommit && !result.pushed) {
         ops.pushToast({
           level: 'warning',
-          message: 'Commit berhasil, push gagal.',
+          message: strings.commitForm.commitPushFailed,
           ...(result.pushError === undefined ? {} : { detail: result.pushError }),
         });
         set({
@@ -318,7 +319,7 @@ export const useChangesStore = create<ChangesState>((set, get) => ({
         });
       } else {
         set({ retryPush: null });
-        ops.pushToast({ level: 'info', message: 'Commit berhasil.' });
+        ops.pushToast({ level: 'info', message: strings.commitForm.commitSuccess });
       }
       await get().load();
       await useRepoStore.getState().refresh();
@@ -499,7 +500,7 @@ export const useOperationStore = create<OperationState_>((set, get) => ({
     void bridge.request('actions/showLogs', {}).catch(() => {
       get().pushToast({
         level: 'warning',
-        message: 'Tidak bisa membuka log Git Control.',
+        message: t(activeLang()).ui.showLogsFailed,
       });
     });
   },
@@ -513,24 +514,29 @@ export interface SettingsState {
   zoom: number;
   branchFilter: string;
   search: string;
+  language: 'en' | 'id';
   snapshot: SettingsSnapshot | null;
   load(): Promise<void>;
   setZoom(zoom: number): void;
   setBranchFilter(filter: string): void;
   setSearch(search: string): void;
+  setLanguage(language: 'en' | 'id'): void;
 }
 
 export const useSettingsStore = create<SettingsState>((set, get) => ({
   zoom: 1,
   branchFilter: '',
   search: '',
+  language: 'en',
   snapshot: null,
 
   async load() {
     try {
       const snapshot = await bridge.request('settings/get', {});
+      const language = snapshot.language === 'id' ? 'id' : 'en';
       set({
         snapshot,
+        language,
         zoom: clampZoom(snapshot.ui.zoom),
         branchFilter: snapshot.ui.branchFilter,
       });
@@ -555,7 +561,24 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   setSearch(search) {
     set({ search: search.slice(0, SEARCH_MAX) });
   },
+
+  setLanguage(language) {
+    const normalized = language === 'id' ? 'id' : 'en';
+    if (normalized === get().language) return;
+    set({ language: normalized });
+    void persist('language', normalized);
+  },
 }));
+
+/**
+ * Invariant: activeLang() mirrors useSettingsStore.language via this single module subscription.
+ * It must not be written to directly from other call sites.
+ */
+useSettingsStore.subscribe((state, prev) => {
+  if (state.language !== prev.language) {
+    setActiveLang(state.language);
+  }
+});
 
 async function persist(key: string, value: string | number | boolean): Promise<void> {
   try {
@@ -693,7 +716,10 @@ export const useGitHubStore = create<GitHubState>((set, get) => ({
       const auth = await bridge.request('github/connect', {});
       set({ auth, error: null });
       if (auth.invalidToken === true) {
-        useOperationStore.getState().pushToast({ level: 'warning', message: 'Token GitHub tidak valid.' });
+        useOperationStore.getState().pushToast({
+          level: 'warning',
+          message: t(activeLang()).format.githubConnection.invalidToken,
+        });
       }
       await get().load();
     } catch (err) {

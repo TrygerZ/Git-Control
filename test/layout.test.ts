@@ -291,7 +291,7 @@ test('boundary test: single commit per day, multiple commits per day, multi-day 
   assert.equal(res.nodes.length, 4);
   assert.equal(res.dateBuckets.length, 3); // unknown-date, day 1, day 5
 
-  const bucketUnknown = res.dateBuckets.find((b) => b.label === 'Tanggal tidak diketahui')!;
+  const bucketUnknown = res.dateBuckets.find((b) => b.label === 'Unknown date')!;
   assert.ok(bucketUnknown, 'bucket for invalid timestamp exists with proper label');
   assert.equal(bucketUnknown.commitCount, 1);
   assert.equal(bucketUnknown.startX, GUTTER_X);
@@ -322,14 +322,29 @@ test('boundary test: single commit per day, multiple commits per day, multi-day 
 test('layoutGraph and formatDateLabel agree on invalid dates (undefined, empty string, invalid-date, 0, negative, Infinity, NaN)', () => {
   const invalidValues = [undefined, '', 'invalid-date', 0, -1000, Infinity, -Infinity, NaN];
   for (const inv of invalidValues) {
-    const layout = layoutGraph({
-      commits: [{ hash: '1111111', parents: [], committedAt: inv as unknown as string }],
-      refs: [{ refName: 'refs/heads/main', objectName: '1111111' }],
-      head: '1111111',
-      currentBranch: 'main',
-    });
-    assert.equal(layout.dateBuckets[0]!.label, 'Tanggal tidak diketahui');
-    assert.equal(layout.dateBuckets[0]!.timestamp, 0);
+    const layoutEn = layoutGraph(
+      {
+        commits: [{ hash: '1111111', parents: [], committedAt: inv as unknown as string }],
+        refs: [{ refName: 'refs/heads/main', objectName: '1111111' }],
+        head: '1111111',
+        currentBranch: 'main',
+      },
+      { lang: 'en' },
+    );
+    assert.equal(layoutEn.dateBuckets[0]!.label, 'Unknown date');
+    assert.equal(layoutEn.dateBuckets[0]!.timestamp, 0);
+
+    const layoutId = layoutGraph(
+      {
+        commits: [{ hash: '1111111', parents: [], committedAt: inv as unknown as string }],
+        refs: [{ refName: 'refs/heads/main', objectName: '1111111' }],
+        head: '1111111',
+        currentBranch: 'main',
+      },
+      { lang: 'id' },
+    );
+    assert.equal(layoutId.dateBuckets[0]!.label, 'Tanggal tidak diketahui');
+    assert.equal(layoutId.dateBuckets[0]!.timestamp, 0);
   }
 });
 

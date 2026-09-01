@@ -21,6 +21,7 @@ import { GuardDialog } from './GuardDialog';
 import { ToastRegion } from './Toast';
 import { bridge, loadState, saveState } from './bridge';
 import { formatCount, sanitizeGitText, UNKNOWN_CHURN } from './format';
+import { useT } from './useT';
 import { groupBySection, type ChangeSection } from './tree';
 import {
   toErrorBody,
@@ -33,35 +34,12 @@ import {
 import { ContextBar, EmptyState, ErrorBanner, FileListSkeleton, Icon, InfoBanner } from './ui';
 import type { ChangeEntry } from '../messages';
 
-const SECTION_TITLES: Record<ChangeSection, string> = {
-  conflicted: 'Konflik',
-  staged: 'Siap di-commit',
-  unstaged: 'Belum disiapkan',
-  untracked: 'Belum dilacak',
-};
-
-/**
- * One line explaining what each section means, shown under its heading.
- *
- * The panel's whole job is making git legible, and "staged" versus "unstaged" is
- * the single concept newcomers get wrong most often. A sentence per section costs
- * one line and removes the guesswork.
- */
-const SECTION_HINTS: Record<ChangeSection, string> = {
-  conflicted: 'Git tidak bisa menggabungkan otomatis. Selesaikan dulu sebelum melanjutkan.',
-  staged: 'Sudah masuk staging area. Hanya bagian ini yang akan ikut pada commit berikutnya.',
-  unstaged: 'Sudah diubah tapi belum masuk staging area. Tekan Stage agar ikut di-commit.',
-  untracked: 'File baru yang belum pernah dicatat git. Stage dulu agar mulai dilacak.',
-};
-
 /**
  * Letter badge per section, mirroring the Unity reference's `C` / `D` / `A` boxes.
  *
  * The letters are not decoration and they are not invented: `U` and `?` are the
  * porcelain codes those sections actually contain, and `S`/`M` stand for the two
- * halves of the staging split. They are a scan anchor only — the Indonesian title
- * next to each one carries the meaning, so a reader who does not know the letters
- * loses nothing.
+ * halves of the staging split. They are a scan anchor only.
  *
  * `tone` names a `--gc-tone-*` token, never a colour.
  */
@@ -80,6 +58,7 @@ const SECTION_ORDER: readonly ChangeSection[] = [
 ] as const;
 
 export function PendingChangesApp(): JSX.Element {
+  const strings = useT();
   const changes = useChangesStore((s) => s.changes);
   const conflicts = useChangesStore((s) => s.conflicts);
   const selection = useChangesStore((s) => s.selection);
@@ -107,6 +86,8 @@ export function PendingChangesApp(): JSX.Element {
   const churnTruncated = status?.churnTruncated === true;
   const loadStatus = useRepoStore((s) => s.loadStatus);
   const loadSettings = useSettingsStore((s) => s.load);
+  const language = useSettingsStore((s) => s.language);
+  const setLanguage = useSettingsStore((s) => s.setLanguage);
   const pushToast = useOperationStore((s) => s.pushToast);
   const showLogs = useOperationStore((s) => s.showLogs);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -150,14 +131,21 @@ export function PendingChangesApp(): JSX.Element {
   const groups = useMemo(() => groupBySection(visible), [visible]);
   const selected = [...selection];
 
+  const sectionTitles: Record<ChangeSection, string> = {
+    conflicted: strings.pending.sectionConflicted,
+    staged: strings.pending.sectionStaged,
+    unstaged: strings.pending.sectionUnstaged,
+    untracked: strings.pending.sectionUntracked,
+  };
+
   const refresh = (): void => {
     void load();
     void loadStatus();
   };
 
-  const openExplorer = async (): Promise<void> => {
+  const openDiff = async (entry: ChangeEntry): Promise<void> => {
     try {
-      await bridge.request('actions/openExplorer', {});
+      await bridge.request('actions/openDiff', { path: entry.path });
     } catch (err) {
       const body = toErrorBody(err);
       pushToast({
@@ -167,9 +155,9 @@ export function PendingChangesApp(): JSX.Element {
     }
   };
 
-  const openDiff = async (entry: ChangeEntry): Promise<void> => {
+  const openExplorer = async (): Promise<void> => {
     try {
-      await bridge.request('actions/openDiff', { path: entry.path });
+      await bridge.request('actions/openExplorer', {});
     } catch (err) {
       const body = toErrorBody(err);
       pushToast({
@@ -203,45 +191,43 @@ export function PendingChangesApp(): JSX.Element {
 
       {churnTruncated && (
         <InfoBanner tone="info" glyph="question">
-          <strong>Jumlah baris tidak lengkap.</strong>
+          <strong>{strings.pending.churnTruncatedTitle}</strong>
           <span>
-            Perubahannya terlalu banyak untuk dihitung semua, jadi sebagian file menampilkan{' '}
-            {UNKNOWN_CHURN} pada kolom + dan −. Itu bukan berarti file tersebut tidak berubah,
-            hanya jumlah barisnya yang tidak dihitung.
+            {strings.pending.churnTruncatedDetail(UNKNOWN_CHURN)}
           </span>
         </InfoBanner>
       )}
 
       {/*
-        Primary actions (Stage, Unstage, Refresh) with secondary actions (Pilih semua, Kosongkan)
+        Primary actions (Stage, Unstage, Refresh) with secondary actions (Select all, Clear)
         grouped cleanly. Filter disclosure toggle keeps toolbar clean and uncluttered.
       */}
       <div
         className="gc-pending__bar gc-toolbar--actions"
         role="toolbar"
-        aria-label="Tindakan perubahan"
+        aria-label={strings.pending.toolbarLabel}
         aria-orientation="horizontal"
       >
         <div className="gc-toolbar__primary-group gc-segmented">
           <button
             type="button"
             className="gc-button gc-button--action gc-button--stage"
-            aria-label={`Stage ${formatCount(stageable.length)} file terpilih`}
-            title="Masukkan file terpilih ke staging area, supaya ikut pada commit berikutnya."
+            aria-label={strings.pending.stageAria(formatCount(stageable.length, language))}
+            title={strings.pending.stageTitle}
             disabled={busy || stageable.length === 0}
             onClick={() => void stage(stageablePaths())}
           >
-            <Icon name="arrow-down" />Stage
+            <Icon name="arrow-down" />{strings.pending.stageButton}
           </button>
           <button
             type="button"
             className="gc-button gc-button--action gc-button--unstage"
-            aria-label={`Unstage ${formatCount(selected.length)} file terpilih`}
-            title="Keluarkan file terpilih dari staging area. Isi file tidak diubah, hanya tidak ikut di-commit."
+            aria-label={strings.pending.unstageAria(formatCount(selected.length, language))}
+            title={strings.pending.unstageTitle}
             disabled={busy || selected.length === 0}
             onClick={() => void unstage(selected)}
           >
-            <Icon name="arrow-up" />Unstage
+            <Icon name="arrow-up" />{strings.pending.unstageButton}
           </button>
         </div>
 
@@ -249,31 +235,39 @@ export function PendingChangesApp(): JSX.Element {
           <button
             type="button"
             className="gc-button gc-button--quiet"
-            title="Centang semua file di daftar. Belum ada yang di-stage sampai Anda menekan Stage."
+            title={strings.pending.selectAllTitle}
             disabled={changes.length === 0}
             onClick={selectAll}
           >
-            Pilih semua
+            {strings.pending.selectAll}
           </button>
           <button
             type="button"
             className="gc-button gc-button--quiet"
-            title="Hapus semua centang. Isi file dan staging area tidak berubah."
+            title={strings.pending.clearSelectionTitle}
             disabled={selected.length === 0}
             onClick={clear}
           >
-            Kosongkan
+            {strings.pending.clearSelection}
           </button>
         </div>
 
         <div className="gc-toolbar__end">
           <span className="gc-pending__count" aria-live="off">
-            {formatCount(selected.length)} dipilih
+            {strings.pending.selectedCount(formatCount(selected.length, language))}
           </span>
           <button
             type="button"
+            className="gc-button gc-button--quiet gc-lang-toggle"
+            aria-label={strings.pending.switchLanguageAria(language === 'en' ? 'Bahasa Indonesia' : 'English')}
+            onClick={() => setLanguage(language === 'en' ? 'id' : 'en')}
+          >
+            {language.toUpperCase()}
+          </button>
+          <button
+            type="button"
             className="gc-icon-button"
-            aria-label="Buka grafik commit"
+            aria-label={strings.pending.openGraphAria}
             onClick={() => void openExplorer()}
           >
             <Icon name="graph" />
@@ -281,8 +275,7 @@ export function PendingChangesApp(): JSX.Element {
           <button
             type="button"
             className="gc-icon-button"
-            aria-label="Muat ulang daftar perubahan"
-            title="Baca ulang status repository dari git."
+            aria-label={strings.pending.reloadAria}
             aria-busy={loading}
             onClick={refresh}
           >
@@ -295,8 +288,8 @@ export function PendingChangesApp(): JSX.Element {
         <FileListSkeleton rows={8} />
       ) : changes.length === 0 ? (
         <EmptyState
-          title="Tidak ada perubahan."
-          hint="Folder kerja bersih dan sinkron dengan commit terakhir."
+          title={strings.pending.emptyTitle}
+          hint={strings.pending.emptyHint}
         />
       ) : (
         <>
@@ -306,8 +299,8 @@ export function PendingChangesApp(): JSX.Element {
           <div className="gc-listbar">
             <div className="gc-listbar__header">
               <h2 className="gc-listbar__title">
-                Perubahan
-                <span className="gc-listbar__total">{formatCount(changes.length)} file</span>
+                {strings.pending.changesHeader}
+                <span className="gc-listbar__total">{strings.pending.changesTotal(formatCount(changes.length, language))}</span>
               </h2>
             </div>
             <div className="gc-listbar__search-wrap">
@@ -316,31 +309,29 @@ export function PendingChangesApp(): JSX.Element {
                 className="gc-listbar__input"
                 value={filter}
                 maxLength={100}
-                placeholder="Cari file..."
-                aria-label="Saring berdasarkan nama file"
+                placeholder={strings.pending.searchPlaceholder}
+                aria-label={strings.pending.searchAria}
                 aria-describedby={filterCountId}
                 onChange={(event) => setFilter(event.target.value)}
               />
             </div>
             {needle.length > 0 && (
               <p className="gc-help-text gc-listbar__count" id={filterCountId} role="status" aria-live="polite">
-                {formatCount(visible.length)} dari {formatCount(changes.length)} file cocok
+                {strings.pending.searchMatched(formatCount(visible.length, language), formatCount(changes.length, language))}
               </p>
             )}
           </div>
 
           {visible.length === 0 ? (
             <EmptyState
-              title="Tidak ada file yang cocok."
-              hint={`Tidak ada file yang memuat “${sanitizeGitText(filter.trim())}”.`}
+              title={strings.pending.searchEmptyTitle}
               action={
                 <button
                   type="button"
                   className="gc-button gc-button--quiet"
-                  title="Tampilkan kembali semua file."
                   onClick={() => setFilter('')}
                 >
-                  Kosongkan pencarian
+                  {strings.pending.clearSearch}
                 </button>
               }
             />
@@ -355,8 +346,9 @@ export function PendingChangesApp(): JSX.Element {
                 const entries = groups[section];
                 if (entries.length === 0) return null;
                 const badge = SECTION_BADGES[section];
+                const title = sectionTitles[section];
                 return (
-                  <section className="gc-section" key={section} aria-label={SECTION_TITLES[section]}>
+                  <section className="gc-section" key={section} aria-label={title}>
                     <h3 className="gc-section__title">
                       <span
                         className={`gc-section__badge gc-section__badge--${badge.tone}`}
@@ -364,15 +356,15 @@ export function PendingChangesApp(): JSX.Element {
                       >
                         {badge.letter}
                       </span>
-                      <span className="gc-section__name">{SECTION_TITLES[section]}</span>
-                      <span className="gc-section__count">{formatCount(entries.length)}</span>
+                      <span className="gc-section__name">{title}</span>
+                      <span className="gc-section__count">{formatCount(entries.length, language)}</span>
                     </h3>
                     <ChangeTree
                       entries={entries}
                       selection={selection}
                       collapsed={collapsed}
                       busy={busy}
-                      label={`${SECTION_TITLES[section]}: ${formatCount(entries.length)} file`}
+                      label={strings.pending.sectionAria(title, formatCount(entries.length, language))}
                       churnTruncated={churnTruncated}
                       onToggleFile={toggle}
                       onToggleFolder={toggleFolder}

@@ -11,7 +11,8 @@
  * `confirm: true` (plus `forceAcknowledgement: true` at level 2), so a webview
  * cannot bypass a gate by omitting a flag.
  */
-import type { ErrorCode, GitActionRequest, OperationState, Remedy } from './messages';
+import type { ErrorCode, GitActionRequest, Lang, OperationState, Remedy } from './messages';
+import { hostText } from './hostText';
 
 /** Index/commit actions are not part of {@link GitActionRequest} but are guarded too. */
 export type GuardAction = GitActionRequest | { action: 'stage' } | { action: 'commit' };
@@ -68,17 +69,6 @@ const DIRTY_BLOCKED = new Set<GuardAction['action']>([
 /** Actions needing a single confirmation click. */
 const CONFIRM_LEVEL_1 = new Set<GuardAction['action']>(['push-up-to', 'revert', 'reset-soft']);
 
-export const MESSAGES = {
-  dirty: 'Commit atau stash perubahan sebelum checkout.',
-  conflictInProgress: 'Selesaikan operasi git yang sedang berjalan.',
-  conflictFiles: 'Selesaikan semua file konflik.',
-  stale: 'Status remote kedaluwarsa.',
-  remoteAhead: 'Remote memiliki histori berbeda.',
-  nonFastForward: 'Push bukan fast-forward.',
-  resetHard: 'Hard reset membuang perubahan permanen.',
-  confirm: 'Tindakan ini perlu konfirmasi.',
-} as const;
-
 /**
  * Decide whether `action` may run against `snapshot`.
  *
@@ -86,15 +76,16 @@ export const MESSAGES = {
  * conflicts, then dirty tree, then remote freshness, then confirmation. The
  * first blocking rule wins so the user is shown the most fundamental problem.
  */
-export function evaluate(action: GuardAction, snapshot: GuardSnapshot): GuardVerdict {
+export function evaluate(action: GuardAction, snapshot: GuardSnapshot, lang: Lang = 'en'): GuardVerdict {
   const inProgress = snapshot.operation !== 'idle';
+  const text = hostText(lang).guard;
 
   // An in-progress operation blocks everything except the ways out of it.
   if (inProgress && !RESOLUTION_ACTIONS.has(action.action)) {
     return {
       allow: false,
       code: 'CONFLICT',
-      message: MESSAGES.conflictInProgress,
+      message: text.conflictInProgress,
       remedies: ['resolve-conflicts', 'cancel'],
     };
   }
@@ -104,7 +95,7 @@ export function evaluate(action: GuardAction, snapshot: GuardSnapshot): GuardVer
     return {
       allow: false,
       code: 'CONFLICT',
-      message: MESSAGES.conflictFiles,
+      message: text.conflictFiles,
       remedies: ['resolve-conflicts', 'cancel'],
     };
   }
@@ -113,7 +104,7 @@ export function evaluate(action: GuardAction, snapshot: GuardSnapshot): GuardVer
     return {
       allow: false,
       code: 'DIRTY_TREE',
-      message: MESSAGES.dirty,
+      message: text.dirty,
       remedies: ['commit', 'stash', 'cancel'],
     };
   }
@@ -123,7 +114,7 @@ export function evaluate(action: GuardAction, snapshot: GuardSnapshot): GuardVer
       return {
         allow: false,
         code: 'STALE_STATUS',
-        message: MESSAGES.stale,
+        message: text.stale,
         remedies: ['fetch'],
       };
     }
@@ -133,13 +124,13 @@ export function evaluate(action: GuardAction, snapshot: GuardSnapshot): GuardVer
         ? {
             allow: false,
             code: 'REMOTE_AHEAD',
-            message: MESSAGES.remoteAhead,
+            message: text.remoteAhead,
             remedies: ['fetch'],
           }
         : {
             allow: false,
             code: 'NON_FAST_FORWARD',
-            message: MESSAGES.nonFastForward,
+            message: text.nonFastForward,
             remedies: ['fetch'],
           };
     }
@@ -149,7 +140,7 @@ export function evaluate(action: GuardAction, snapshot: GuardSnapshot): GuardVer
     return {
       allow: false,
       code: 'CONFIRMATION_REQUIRED',
-      message: MESSAGES.resetHard,
+      message: text.resetHard,
       remedies: ['confirm', 'cancel'],
       requiresConfirmation: true,
       confirmationLevel: 2,
@@ -161,7 +152,7 @@ export function evaluate(action: GuardAction, snapshot: GuardSnapshot): GuardVer
     return {
       allow: false,
       code: 'CONFIRMATION_REQUIRED',
-      message: MESSAGES.confirm,
+      message: text.confirm,
       remedies: ['confirm', 'cancel'],
       requiresConfirmation: true,
       confirmationLevel: 1,

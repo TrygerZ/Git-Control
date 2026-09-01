@@ -44,7 +44,8 @@ import {
   riskLabel,
   sanitizeGitText,
 } from './format';
-import { useOperationStore, type PendingGuard } from './store';
+import { useT } from './useT';
+import { useOperationStore, useSettingsStore, type PendingGuard } from './store';
 import { Icon } from './ui';
 import type { GitActionRequest, Remedy } from '../messages';
 
@@ -58,10 +59,12 @@ export function GuardDialog(): JSX.Element | null {
 }
 
 function GuardDialogBody({ guard }: { guard: PendingGuard }): JSX.Element {
+  const strings = useT();
+  const language = useSettingsStore((s) => s.language);
   const dismiss = useOperationStore((s) => s.dismissGuard);
   const confirm = useOperationStore((s) => s.confirmGuard);
   const runAction = useOperationStore((s) => s.runAction);
-  const view = presentError(guard.error);
+  const view = presentError(guard.error, language);
   const level = guard.error.confirmationLevel ?? 1;
   const [stage, setStage] = useState<1 | 2>(1);
   const [acknowledged, setAcknowledged] = useState(false);
@@ -146,14 +149,14 @@ function GuardDialogBody({ guard }: { guard: PendingGuard }): JSX.Element {
       }
       if (remedy === 'stash') {
         close();
-        await runAction({ action: 'stash', message: 'Git Control auto stash', includeUntracked: true });
+        await runAction({ action: 'stash', message: strings.guard.autoStashMessage, includeUntracked: true });
         return;
       }
       if (remedy === 'commit') {
         close();
         useOperationStore.getState().pushToast({
           level: 'info',
-          message: 'Buka panel Pending Changes untuk commit perubahan Anda.',
+          message: strings.guard.commitToast,
         });
         return;
       }
@@ -161,7 +164,7 @@ function GuardDialogBody({ guard }: { guard: PendingGuard }): JSX.Element {
         close();
         useOperationStore.getState().pushToast({
           level: 'info',
-          message: 'Selesaikan file konflik di panel Konflik, lalu lanjutkan.',
+          message: strings.guard.resolveToast,
         });
       }
     } finally {
@@ -212,10 +215,10 @@ function GuardDialogBody({ guard }: { guard: PendingGuard }): JSX.Element {
           {severe && (
             <span className="gc-modal__severity">
               <Icon name="warning" />
-              {' '}Permanen
+              {' '}{strings.guard.permanentBadge}
             </span>
           )}
-          {actionTitle(request)}
+          {actionTitle(request, language)}
         </h2>
 
         {/*
@@ -224,25 +227,25 @@ function GuardDialogBody({ guard }: { guard: PendingGuard }): JSX.Element {
           rather than buried in the prose.
         */}
         <dl className="gc-modal__facts">
-          <dt>Target</dt>
+          <dt>{strings.guard.targetLabel}</dt>
           <dd>{actionTarget(request)}</dd>
-          <dt>Masalah</dt>
+          <dt>{strings.guard.problemLabel}</dt>
           <dd>{view.title}</dd>
           {risk !== undefined && (
             <>
-              <dt>Tingkat risiko</dt>
+              <dt>{strings.guard.riskLevelLabel}</dt>
               <dd className="gc-risk">
                 <span className="gc-risk__glyph" aria-hidden="true">
                   <Icon name="warning" />
                 </span>
-                <span>{riskLabel(risk)}</span>
+                <span>{riskLabel(risk, language)}</span>
               </dd>
             </>
           )}
           {level === 2 && (
             <>
-              <dt>Konfirmasi</dt>
-              <dd>Tahap {stage} dari 2</dd>
+              <dt>{strings.guard.confirmationLabel}</dt>
+              <dd>{strings.guard.stageCount(stage, 2)}</dd>
             </>
           )}
         </dl>
@@ -251,13 +254,12 @@ function GuardDialogBody({ guard }: { guard: PendingGuard }): JSX.Element {
           <p>{view.explanation}</p>
           {/* The consequence is the sentence that must not be skimmed, so it is
               set apart rather than run in with the explanation. */}
-          <p className="gc-modal__consequence">{consequenceOf(request)}</p>
+          <p className="gc-modal__consequence">{consequenceOf(request, language)}</p>
           {stage === 2 && (
             <p className="gc-modal__warning">
               <Icon name="warning" />
               <span>
-                Konfirmasi kedua diperlukan. Perubahan yang dibuang tidak dapat dikembalikan, termasuk
-                oleh Git sendiri.
+                {strings.guard.stage2Warning}
               </span>
             </p>
           )}
@@ -275,12 +277,11 @@ function GuardDialogBody({ guard }: { guard: PendingGuard }): JSX.Element {
         */}
         <div className="gc-modal__command">
           <span className="gc-modal__command-label" id={commandId}>
-            Perintah git yang akan dijalankan
+            {strings.guard.gitCommandLabel}
           </span>
           <code aria-describedby={commandId}>{command}</code>
           <span className="gc-modal__command-note">
-            Ini perintah yang setara dengan tombol di bawah. Belum ada yang dijalankan. Baris ini hanya
-            untuk dibaca, supaya Anda tahu apa yang sebenarnya terjadi di git.
+            {strings.guard.gitCommandNote}
           </span>
         </div>
 
@@ -290,7 +291,7 @@ function GuardDialogBody({ guard }: { guard: PendingGuard }): JSX.Element {
           // extension, and the user looks for the bug in the wrong place.
           <div className="gc-modal__detail-group">
             <span className="gc-modal__command-label" id={detailId}>
-              Pesan dari repository Anda
+              {strings.guard.repoMessageLabel}
             </span>
             <pre className="gc-modal__detail" aria-describedby={detailId}>
               {sanitizeGitText(guard.error.detail)}
@@ -313,10 +314,9 @@ function GuardDialogBody({ guard }: { guard: PendingGuard }): JSX.Element {
               have.
             */}
             <span className="gc-checkbox__text">
-              <span>Saya mengerti perubahan ini hilang permanen.</span>
+              <span>{strings.guard.ackCheckboxLabel}</span>
               <span className="gc-checkbox__hint">
-                File yang sudah Anda ubah tapi belum di-commit akan kembali ke isi commit tujuan. Tidak
-                ada perintah git, tombol undo, atau Recycle Bin yang bisa mengembalikannya.
+                {strings.guard.ackCheckboxHint}
               </span>
             </span>
           </label>
@@ -329,7 +329,7 @@ function GuardDialogBody({ guard }: { guard: PendingGuard }): JSX.Element {
             // label says `Lanjutkan`, so the title has to say the same thing, or the
             // hover contradicts the button.
             const staging = isConfirm && level === 2 && stage === 1;
-            const label = staging ? 'Lanjutkan' : remedyLabel(remedy);
+            const label = staging ? strings.guard.continueButton : remedyLabel(remedy, language);
             return (
               <button
                 key={remedy}
@@ -353,10 +353,10 @@ function GuardDialogBody({ guard }: { guard: PendingGuard }): JSX.Element {
                 aria-describedby={isConfirm && confirmDisabled ? ackHintId : undefined}
                 title={
                   staging
-                    ? 'Membuka tahap konfirmasi terakhir. Belum menjalankan perintah apa pun.'
+                    ? strings.guard.stage1Title
                     : isConfirm
-                      ? `Menjalankan ${command} sekarang. ${consequenceOf(request)}`
-                      : remedyConsequence(remedy)
+                      ? strings.guard.confirmTitle(command, consequenceOf(request, language))
+                      : remedyConsequence(remedy, language)
                 }
                 disabled={isConfirm ? confirmDisabled : busy}
                 onClick={() => void handleRemedy(remedy)}
@@ -370,10 +370,10 @@ function GuardDialogBody({ guard }: { guard: PendingGuard }): JSX.Element {
               type="button"
               className="gc-button gc-button--primary gc-button--lg"
               ref={cancelRef}
-              title={remedyConsequence('cancel')}
+              title={remedyConsequence('cancel', language)}
               onClick={close}
             >
-              Batal
+              {strings.guard.cancelButton}
             </button>
           )}
         </div>
@@ -381,7 +381,7 @@ function GuardDialogBody({ guard }: { guard: PendingGuard }): JSX.Element {
         {/* A disabled button with no stated reason is worse than no button. */}
         {confirmDisabled && !busy && (
           <p className="gc-help-text" id={ackHintId}>
-            Centang pernyataan di atas untuk mengaktifkan tombol konfirmasi.
+            {strings.guard.ackRequiredHint}
           </p>
         )}
       </div>

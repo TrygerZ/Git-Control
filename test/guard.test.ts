@@ -1,6 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { DEFAULT_STALENESS_MS, MESSAGES, SafetyGuard, type GuardAction, type GuardSnapshot } from '../src/guard';
+import { DEFAULT_STALENESS_MS, SafetyGuard, type GuardAction, type GuardSnapshot } from '../src/guard';
+import { hostText } from '../src/hostText';
+import type { Lang } from '../src/messages';
 
 const NOW = 1_700_000_000_000;
 
@@ -21,8 +23,8 @@ function snapshot(overrides: Partial<GuardSnapshot> = {}): GuardSnapshot {
   };
 }
 
-function verdict(action: GuardAction, overrides: Partial<GuardSnapshot> = {}) {
-  return SafetyGuard.evaluate(action, snapshot(overrides));
+function verdict(action: GuardAction, overrides: Partial<GuardSnapshot> = {}, lang: Lang = 'en') {
+  return SafetyGuard.evaluate(action, snapshot(overrides), lang);
 }
 
 test('clean repository allows non-destructive actions', () => {
@@ -50,12 +52,18 @@ test('dirty tree blocks checkout, reset-hard, and merge', () => {
     { action: 'merge', branch: 'feature' },
   ];
   for (const action of blocked) {
-    const result = verdict(action, { dirty: true });
-    assert.equal(result.allow, false, action.action);
-    if (result.allow) return;
-    assert.equal(result.code, 'DIRTY_TREE');
-    assert.equal(result.message, 'Commit atau stash perubahan sebelum checkout.');
-    assert.deepEqual(result.remedies, ['commit', 'stash', 'cancel']);
+    const resId = verdict(action, { dirty: true }, 'id');
+    assert.equal(resId.allow, false, action.action);
+    if (resId.allow) return;
+    assert.equal(resId.code, 'DIRTY_TREE');
+    assert.equal(resId.message, 'Commit atau stash perubahan sebelum checkout.');
+    assert.deepEqual(resId.remedies, ['commit', 'stash', 'cancel']);
+
+    const resEn = verdict(action, { dirty: true }, 'en');
+    assert.equal(resEn.allow, false, action.action);
+    if (resEn.allow) return;
+    assert.equal(resEn.code, 'DIRTY_TREE');
+    assert.equal(resEn.message, 'Commit or stash changes before checkout.');
   }
 });
 
@@ -73,11 +81,17 @@ test('dirty tree does not block staging, commit, stash, or fetch', () => {
 test('in-progress operation blocks every non-resolution action', () => {
   const operations = ['merge', 'rebase', 'cherry-pick', 'revert', 'bisect'] as const;
   for (const operation of operations) {
-    const result = verdict({ action: 'checkout-branch', branch: 'main' }, { operation });
-    assert.equal(result.allow, false, operation);
-    if (result.allow) return;
-    assert.equal(result.code, 'CONFLICT');
-    assert.deepEqual(result.remedies, ['resolve-conflicts', 'cancel']);
+    const resId = verdict({ action: 'checkout-branch', branch: 'main' }, { operation }, 'id');
+    assert.equal(resId.allow, false, operation);
+    if (resId.allow) return;
+    assert.equal(resId.code, 'CONFLICT');
+    assert.equal(resId.message, 'Selesaikan operasi git yang sedang berjalan.');
+    assert.deepEqual(resId.remedies, ['resolve-conflicts', 'cancel']);
+
+    const resEn = verdict({ action: 'checkout-branch', branch: 'main' }, { operation }, 'en');
+    assert.equal(resEn.allow, false, operation);
+    if (resEn.allow) return;
+    assert.equal(resEn.message, 'Resolve in-progress git operation first.');
   }
 });
 
@@ -99,24 +113,39 @@ test('commit is allowed during a merge once conflicts are resolved', () => {
 });
 
 test('unresolved conflicts block commit', () => {
-  const result = verdict({ action: 'commit' }, { operation: 'merge', conflicted: true });
-  assert.equal(result.allow, false);
-  if (result.allow) return;
-  assert.equal(result.code, 'CONFLICT');
-  assert.equal(result.message, 'Selesaikan semua file konflik.');
-  assert.deepEqual(result.remedies, ['resolve-conflicts', 'cancel']);
+  const resId = verdict({ action: 'commit' }, { operation: 'merge', conflicted: true }, 'id');
+  assert.equal(resId.allow, false);
+  if (resId.allow) return;
+  assert.equal(resId.code, 'CONFLICT');
+  assert.equal(resId.message, 'Selesaikan semua file konflik.');
+  assert.deepEqual(resId.remedies, ['resolve-conflicts', 'cancel']);
+
+  const resEn = verdict({ action: 'commit' }, { operation: 'merge', conflicted: true }, 'en');
+  assert.equal(resEn.allow, false);
+  if (resEn.allow) return;
+  assert.equal(resEn.message, 'Resolve all conflicted files.');
 });
 
 test('push requires a fetch newer than the staleness window', () => {
-  const result = verdict(
+  const resId = verdict(
     { action: 'push', remote: 'origin', branch: 'main' },
     { lastFetchAt: NOW - DEFAULT_STALENESS_MS - 1 },
+    'id',
   );
-  assert.equal(result.allow, false);
-  if (result.allow) return;
-  assert.equal(result.code, 'STALE_STATUS');
-  assert.equal(result.message, 'Status remote kedaluwarsa.');
-  assert.deepEqual(result.remedies, ['fetch']);
+  assert.equal(resId.allow, false);
+  if (resId.allow) return;
+  assert.equal(resId.code, 'STALE_STATUS');
+  assert.equal(resId.message, 'Status remote kedaluwarsa.');
+  assert.deepEqual(resId.remedies, ['fetch']);
+
+  const resEn = verdict(
+    { action: 'push', remote: 'origin', branch: 'main' },
+    { lastFetchAt: NOW - DEFAULT_STALENESS_MS - 1 },
+    'en',
+  );
+  assert.equal(resEn.allow, false);
+  if (resEn.allow) return;
+  assert.equal(resEn.message, 'Remote status is stale.');
 });
 
 test('a fetch exactly at the staleness threshold still counts as fresh', () => {
@@ -142,24 +171,40 @@ test('never having fetched is stale', () => {
 });
 
 test('push while behind reports REMOTE_AHEAD and only offers fetch', () => {
-  const result = verdict({ action: 'push', remote: 'origin', branch: 'main' }, { behind: 3, ahead: 1 });
-  assert.equal(result.allow, false);
-  if (result.allow) return;
-  assert.equal(result.code, 'REMOTE_AHEAD');
-  assert.equal(result.message, 'Remote memiliki histori berbeda.');
-  assert.deepEqual(result.remedies, ['fetch']);
-  assert.ok(!result.remedies.includes('confirm'));
+  const resId = verdict({ action: 'push', remote: 'origin', branch: 'main' }, { behind: 3, ahead: 1 }, 'id');
+  assert.equal(resId.allow, false);
+  if (resId.allow) return;
+  assert.equal(resId.code, 'REMOTE_AHEAD');
+  assert.equal(resId.message, 'Remote memiliki histori berbeda.');
+  assert.deepEqual(resId.remedies, ['fetch']);
+  assert.ok(!resId.remedies.includes('confirm'));
+
+  const resEn = verdict({ action: 'push', remote: 'origin', branch: 'main' }, { behind: 3, ahead: 1 }, 'en');
+  assert.equal(resEn.allow, false);
+  if (resEn.allow) return;
+  assert.equal(resEn.message, 'Remote has different history.');
 });
 
 test('push-up-to while behind is NON_FAST_FORWARD with a fetch remedy', () => {
-  const result = verdict(
+  const resId = verdict(
     { action: 'push-up-to', remote: 'origin', branch: 'main', hash: 'abcdef1' },
     { behind: 2 },
+    'id',
   );
-  assert.equal(result.allow, false);
-  if (result.allow) return;
-  assert.equal(result.code, 'NON_FAST_FORWARD');
-  assert.deepEqual(result.remedies, ['fetch']);
+  assert.equal(resId.allow, false);
+  if (resId.allow) return;
+  assert.equal(resId.code, 'NON_FAST_FORWARD');
+  assert.equal(resId.message, 'Push bukan fast-forward.');
+  assert.deepEqual(resId.remedies, ['fetch']);
+
+  const resEn = verdict(
+    { action: 'push-up-to', remote: 'origin', branch: 'main', hash: 'abcdef1' },
+    { behind: 2 },
+    'en',
+  );
+  assert.equal(resEn.allow, false);
+  if (resEn.allow) return;
+  assert.equal(resEn.message, 'Push is not fast-forward.');
 });
 
 test('staleness is checked before the behind count', () => {
@@ -173,14 +218,19 @@ test('staleness is checked before the behind count', () => {
 });
 
 test('reset-hard demands a level 2 confirmation and is high risk', () => {
-  const result = verdict({ action: 'reset-hard', hash: 'abcdef1' });
-  assert.equal(result.allow, false);
-  if (result.allow) return;
-  assert.equal(result.code, 'CONFIRMATION_REQUIRED');
-  assert.equal(result.message, 'Hard reset membuang perubahan permanen.');
-  assert.equal(result.requiresConfirmation, true);
-  assert.equal(result.confirmationLevel, 2);
-  assert.equal(result.risk, 'high');
+  const resId = verdict({ action: 'reset-hard', hash: 'abcdef1' }, {}, 'id');
+  assert.equal(resId.allow, false);
+  if (resId.allow) return;
+  assert.equal(resId.code, 'CONFIRMATION_REQUIRED');
+  assert.equal(resId.message, 'Hard reset membuang perubahan permanen.');
+  assert.equal(resId.requiresConfirmation, true);
+  assert.equal(resId.confirmationLevel, 2);
+  assert.equal(resId.risk, 'high');
+
+  const resEn = verdict({ action: 'reset-hard', hash: 'abcdef1' }, {}, 'en');
+  assert.equal(resEn.allow, false);
+  if (resEn.allow) return;
+  assert.equal(resEn.message, 'Hard reset discards changes permanently.');
 });
 
 test('push-up-to, revert, and reset-soft demand a level 1 confirmation', () => {
@@ -190,13 +240,19 @@ test('push-up-to, revert, and reset-soft demand a level 1 confirmation', () => {
     { action: 'reset-soft', hash: 'abcdef1' },
   ];
   for (const action of actions) {
-    const result = verdict(action);
-    assert.equal(result.allow, false, action.action);
-    if (result.allow) return;
-    assert.equal(result.code, 'CONFIRMATION_REQUIRED');
-    assert.equal(result.requiresConfirmation, true);
-    assert.equal(result.confirmationLevel, 1);
-    assert.deepEqual(result.remedies, ['confirm', 'cancel']);
+    const resId = verdict(action, {}, 'id');
+    assert.equal(resId.allow, false, action.action);
+    if (resId.allow) return;
+    assert.equal(resId.code, 'CONFIRMATION_REQUIRED');
+    assert.equal(resId.message, 'Tindakan ini perlu konfirmasi.');
+    assert.equal(resId.requiresConfirmation, true);
+    assert.equal(resId.confirmationLevel, 1);
+    assert.deepEqual(resId.remedies, ['confirm', 'cancel']);
+
+    const resEn = verdict(action, {}, 'en');
+    assert.equal(resEn.allow, false, action.action);
+    if (resEn.allow) return;
+    assert.equal(resEn.message, 'This action requires confirmation.');
   }
 });
 
@@ -225,11 +281,15 @@ test('reset-hard during a merge reports the conflict, not the confirmation', () 
 });
 
 test('exported messages match the PRD wording verbatim', () => {
-  assert.equal(MESSAGES.dirty, 'Commit atau stash perubahan sebelum checkout.');
-  assert.equal(MESSAGES.conflictFiles, 'Selesaikan semua file konflik.');
-  assert.equal(MESSAGES.stale, 'Status remote kedaluwarsa.');
-  assert.equal(MESSAGES.remoteAhead, 'Remote memiliki histori berbeda.');
-  assert.equal(MESSAGES.resetHard, 'Hard reset membuang perubahan permanen.');
+  const idGuard = hostText('id').guard;
+  assert.equal(idGuard.dirty, 'Commit atau stash perubahan sebelum checkout.');
+  assert.equal(idGuard.conflictFiles, 'Selesaikan semua file konflik.');
+  assert.equal(idGuard.stale, 'Status remote kedaluwarsa.');
+  assert.equal(idGuard.remoteAhead, 'Remote memiliki histori berbeda.');
+  assert.equal(idGuard.resetHard, 'Hard reset membuang perubahan permanen.');
+  const enGuard = hostText('en').guard;
+  assert.equal(enGuard.dirty, 'Commit or stash changes before checkout.');
+  assert.equal(enGuard.resetHard, 'Hard reset discards changes permanently.');
 });
 
 test('evaluate never mutates the snapshot it is given', () => {

@@ -14,13 +14,15 @@
  */
 import { useEffect, useRef, useState, type JSX } from 'react';
 import { sanitizeGitText } from './format';
+import { useT } from './useT';
 import { Icon, type IconName } from './ui';
 import { TOAST_TIMEOUT_MS, useOperationStore, type Toast } from './store';
 
 export function ToastRegion(): JSX.Element {
-  const toasts = useOperationStore((s) => s.toasts);
-  const dismiss = useOperationStore((s) => s.dismissToast);
-  const showLogs = useOperationStore((s) => s.showLogs);
+  const strings = useT();
+  const toasts = useOperationStore((st) => st.toasts);
+  const dismiss = useOperationStore((st) => st.dismissToast);
+  const showLogs = useOperationStore((st) => st.showLogs);
   const [paused, setPaused] = useState(false);
 
   const polite = toasts.filter((t) => t.level === 'info');
@@ -49,14 +51,14 @@ export function ToastRegion(): JSX.Element {
         rather than each toast: a live region has to exist in the DOM before its
         content changes, otherwise the insertion is not announced at all.
       */}
-      <div className="gc-toasts__urgent" role="alert" aria-label="Peringatan dan kesalahan">
+      <div className="gc-toasts__urgent" role="alert" aria-label={strings.toast.urgentAria}>
         {urgent.map(render)}
       </div>
       <div
         className="gc-toasts__polite"
         role="status"
         aria-live="polite"
-        aria-label="Notifikasi"
+        aria-label={strings.toast.politeAria}
       >
         {polite.map(render)}
       </div>
@@ -70,12 +72,6 @@ interface ItemProps {
   onDismiss(): void;
   onShowLogs(): void;
 }
-
-const LEVEL_LABEL: Record<Toast['level'], string> = {
-  info: 'Info',
-  warning: 'Peringatan',
-  error: 'Kesalahan',
-};
 
 /**
  * Level glyphs.
@@ -92,6 +88,7 @@ const LEVEL_ICON: Record<Toast['level'], IconName> = {
 };
 
 function ToastItem({ toast, paused, onDismiss, onShowLogs }: ItemProps): JSX.Element {
+  const strings = useT();
   const dismissRef = useRef(onDismiss);
   dismissRef.current = onDismiss;
   /** An error stays until dismissed, so it says so rather than leaving the user waiting. */
@@ -123,7 +120,7 @@ function ToastItem({ toast, paused, onDismiss, onShowLogs }: ItemProps): JSX.Ele
           label reads as a missing value. AT still gets `Kesalahan` before the message
           because they are separate elements in reading order.
         */}
-        <span className="gc-toast__level">{LEVEL_LABEL[toast.level]}</span>
+        <span className="gc-toast__level">{strings.toast.levelLabels[toast.level]}</span>
         {/* Both can be git stderr — hook output reaches `detail` verbatim. */}
         <span className="gc-toast__message">{sanitizeGitText(toast.message)}</span>
         {toast.detail !== undefined && (
@@ -136,7 +133,7 @@ function ToastItem({ toast, paused, onDismiss, onShowLogs }: ItemProps): JSX.Ele
         */}
         {persistent && (
           <span className="gc-toast__persist">
-            Notifikasi ini menunggu tindakan Anda dan tidak hilang sendiri. Tutup setelah dibaca.
+            {strings.toast.persistentHint}
           </span>
         )}
       </div>
@@ -144,10 +141,10 @@ function ToastItem({ toast, paused, onDismiss, onShowLogs }: ItemProps): JSX.Ele
         <button
           type="button"
           className="gc-button gc-button--quiet"
-          title="Buka panel Output berisi keluaran lengkap dari git."
+          title={strings.toast.viewLogsTitle}
           onClick={onShowLogs}
         >
-          Lihat log
+          {strings.toast.viewLogs}
         </button>
       )}
       <button
@@ -155,8 +152,7 @@ function ToastItem({ toast, paused, onDismiss, onShowLogs }: ItemProps): JSX.Ele
         className="gc-icon-button"
         // Names which notification is being closed, so a stack of three does not
         // read as three identical `Tutup notifikasi` buttons.
-        aria-label={`Tutup notifikasi: ${sanitizeGitText(toast.message)}`}
-        title="Tutup notifikasi ini."
+        aria-label={strings.toast.dismissAria(sanitizeGitText(toast.message))}
         onClick={onDismiss}
       >
         <Icon name="close" />
