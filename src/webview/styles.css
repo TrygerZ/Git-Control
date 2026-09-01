@@ -34,12 +34,12 @@
  *
  * Text follows the same three steps: `.gc-section__name` and `.gc-inspector__heading`
  * are headings, `.gc-help-text` is the sentence under a heading, and metadata
- * (`.gc-row__meta`, `.gc-status__label`) is `--gc-fs-2xs` in muted colour. Anything
+ * (`.gc-row__meta`) is `--gc-fs-2xs` in muted colour. Anything
  * that would be a fourth tier is a sign the surface is doing too much.
  *
  * Status colour is always the LAST channel. A `.gc-status__box` is a filled square
- * holding the porcelain letter, next to a glyph and an Indonesian word; remove the
- * colour and three channels remain. Same for `.gc-section__badge`.
+ * holding the porcelain letter; remove the colour and the letter remains. Same for
+ * `.gc-section__badge`.
  */
 
 @import '../../node_modules/@vscode/codicons/dist/codicon.css';
@@ -74,8 +74,13 @@
   --gc-fs-2xl: 1.35em;
   --gc-weight-strong: 600;
 
-  --gc-radius: 3px;
-  --gc-radius-pill: 9px;
+  /* Motion: one fast duration and one easing, shared by every hover/state fade. */
+  --gc-dur-fast: 80ms;
+  --gc-ease: ease-out;
+
+  --gc-radius: 4px;
+  /* Fully round: chips, badges, and count pills are true pills, not rounded rects. */
+  --gc-radius-pill: 999px;
   --gc-row-height: 28px;
   /* WCAG 2.5.8 target size (minimum). Every clickable element honours it. */
   --gc-hit: 28px;
@@ -142,7 +147,6 @@ pre {
 
 /* Hashes and counts are compared by eye down a column, so they get fixed advance. */
 code,
-.gc-row__hash,
 .gc-status__box {
   font-variant-numeric: tabular-nums;
 }
@@ -214,7 +218,7 @@ h3 {
   font-size: inherit;
   white-space: nowrap;
   cursor: pointer;
-  transition: background 80ms ease-in-out;
+  transition: background var(--gc-dur-fast) var(--gc-ease);
 }
 
 .gc-button:hover:not(:disabled) {
@@ -272,10 +276,17 @@ h3 {
   box-shadow: inset 0 0 0 1px var(--gc-danger);
 }
 
+/* Same hover fill as `--primary`: without it the danger button falls back to the
+ * generic secondary hover and changes to the wrong colour family. */
+.gc-button--danger:hover:not(:disabled) {
+  background: var(--vscode-button-hoverBackground);
+}
+
 .gc-button--quiet {
   background: transparent;
   color: var(--vscode-textLink-foreground, var(--vscode-foreground));
   border-color: transparent;
+  transition: background var(--gc-dur-fast) var(--gc-ease);
 }
 
 .gc-button--quiet:hover:not(:disabled) {
@@ -293,6 +304,31 @@ h3 {
   cursor: not-allowed;
 }
 
+/* Same disabled fade for the non-button controls: tree rows, file rows, PR chips,
+ * and checkboxes read as off with the same opacity the buttons use. */
+.gc-tree__folder:disabled,
+.gc-tree__file:disabled,
+.gc-filelist__button:disabled,
+.gc-chip--pr:disabled,
+.gc-checkbox input:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+/* Press feedback: a 1 px dip is the one motion even a fast click always shows. */
+.gc-button:active:not(:disabled),
+.gc-icon-button:active:not(:disabled) {
+  transform: translateY(1px);
+}
+
+/* `aria-busy` on a control: the cursor and a shallow fade say "working" without
+ * disabling the button, which would swallow the next click. */
+.gc-button[aria-busy='true'],
+.gc-icon-button[aria-busy='true'] {
+  cursor: progress;
+  opacity: 0.75;
+}
+
 .gc-icon-button {
   display: inline-flex;
   align-items: center;
@@ -308,10 +344,22 @@ h3 {
   font-size: var(--gc-fs-lg);
   line-height: 1;
   cursor: pointer;
+  transition: background var(--gc-dur-fast) var(--gc-ease);
 }
 
 .gc-icon-button:hover:not(:disabled) {
   background: var(--vscode-toolbar-hoverBackground, var(--vscode-list-hoverBackground));
+}
+
+/*
+ * An expanded toggle (the aside handle, the legend launcher) keeps the hover fill
+ * plus the same inset rule `.gc-button--danger` uses, so "this is on" survives a
+ * theme where two backgrounds are nearly identical.
+ */
+.gc-icon-button[aria-expanded='true'],
+.gc-explorer__aside-toggle[aria-expanded='true'] {
+  background: var(--vscode-toolbar-hoverBackground, var(--vscode-list-hoverBackground));
+  box-shadow: inset 0 0 0 1px var(--vscode-focusBorder);
 }
 
 .gc-field {
@@ -434,7 +482,7 @@ h3 {
   flex: 0 0 auto;
   min-width: 1em;
   text-align: center;
-  font-weight: bold;
+  font-weight: var(--gc-weight-strong);
 }
 
 .gc-banner--error .gc-banner__glyph {
@@ -890,6 +938,16 @@ h3 {
   margin-left: auto;
 }
 
+.gc-lang-toggle {
+  min-width: 2.2em;
+  padding-left: var(--gc-space-2);
+  padding-right: var(--gc-space-2);
+  font-weight: 600;
+  font-size: var(--gc-fs-xs);
+  letter-spacing: 0.05em;
+  text-align: center;
+}
+
 .gc-zoom__value {
   min-width: 3.5em;
   text-align: center;
@@ -1198,8 +1256,8 @@ h3 {
   pointer-events: none;
   z-index: 1;
   transition-property: opacity, background-color, outline-color;
-  transition-duration: 80ms;
-  transition-timing-function: ease-out;
+  transition-duration: var(--gc-dur-fast);
+  transition-timing-function: var(--gc-ease);
 }
 
 /* Visually show row when `labelVisible` says so (legible zoom, hover, selection, focus, HEAD) */
@@ -1382,17 +1440,6 @@ h3 {
   stroke-width: 1;
 }
 
-.gc-row__hash {
-  font-family: var(--vscode-editor-font-family, monospace);
-}
-
-.gc-row__badges,
-.gc-row__chips {
-  display: flex;
-  flex: 0 0 auto;
-  gap: var(--gc-space-2);
-}
-
 /*
  * A selected row inverts its background, and the metadata inside it must follow:
  * `--gc-muted` against `list-activeSelectionBackground` is the one place in this
@@ -1409,32 +1456,6 @@ h3 {
 }
 
 /* --------------------------------------------------------------- badges/chips */
-
-.gc-badge {
-  display: inline-flex;
-  align-items: center;
-  padding: 0 var(--gc-space-2);
-  border: 1px solid currentColor;
-  border-radius: var(--gc-radius);
-  font-size: var(--gc-fs-xs);
-  line-height: 1.5;
-  white-space: nowrap;
-}
-
-.gc-badge--head {
-  color: var(--vscode-charts-blue, var(--vscode-foreground));
-  font-weight: var(--gc-weight-strong);
-}
-
-/* Dashed border repeats the dashed node outline: same fact, same visual language. */
-.gc-badge--local {
-  color: var(--vscode-charts-orange, var(--gc-warning));
-  border-style: dashed;
-}
-
-.gc-badge--merge {
-  color: var(--vscode-charts-purple, var(--vscode-foreground));
-}
 
 .gc-chip {
   display: inline-flex;
@@ -1651,20 +1672,6 @@ h3 {
   box-shadow: inset 0 0 0 1.5px var(--vscode-editor-background);
 }
 
-.gc-legend__line {
-  display: inline-block;
-  flex: 0 0 auto;
-  width: 22px;
-  height: 0;
-  border-top: 1.4px solid var(--vscode-foreground);
-}
-
-/* Mirrors `.gc-edge--merge`: same weight, same rounding, so the sample is honest. */
-.gc-legend__line--merge {
-  border-top-width: 2.6px;
-  border-radius: 3px;
-}
-
 .gc-legend__lanes {
   margin: 0;
   padding: 0;
@@ -1683,13 +1690,7 @@ h3 {
   flex: 0 0 auto;
   width: 14px;
   height: 3px;
-  border-radius: 2px;
-}
-
-.gc-legend__note {
-  margin: var(--gc-space-2) 0 0;
-  color: var(--gc-muted);
-  font-size: var(--gc-fs-xs);
+  border-radius: var(--gc-radius);
 }
 
 .gc-legend__keys {
@@ -1706,7 +1707,7 @@ h3 {
 .gc-legend__keys kbd {
   padding: 0 var(--gc-space-2);
   border: 1px solid var(--gc-border);
-  border-radius: 2px;
+  border-radius: var(--gc-radius);
   background: var(--vscode-keybindingLabel-background, transparent);
   color: var(--vscode-keybindingLabel-foreground, inherit);
 }
@@ -1753,6 +1754,7 @@ h3 {
   text-align: left;
   text-decoration: none;
   cursor: pointer;
+  transition: background var(--gc-dur-fast) var(--gc-ease);
 }
 
 .gc-menu__item:hover,
@@ -1786,13 +1788,6 @@ h3 {
   font-weight: var(--gc-weight-strong);
   text-transform: uppercase;
   letter-spacing: 0.05em;
-}
-
-/* The promise under the heading. Sentence case, so it reads as prose not a label. */
-.gc-menu__group-hint {
-  font-weight: normal;
-  text-transform: none;
-  letter-spacing: normal;
 }
 
 .gc-menu__label {
@@ -2175,6 +2170,7 @@ h3 {
   min-height: var(--gc-hit);
   padding: var(--gc-space-1) var(--gc-space-2);
   border-radius: var(--gc-radius);
+  transition: background var(--gc-dur-fast) var(--gc-ease);
 }
 
 .gc-tree__row:hover {
@@ -2300,17 +2296,6 @@ h3 {
   color: var(--gc-muted);
 }
 
-.gc-status__glyph {
-  min-width: 1em;
-  color: var(--gc-muted);
-  text-align: center;
-}
-
-.gc-status__label {
-  color: var(--gc-muted);
-  font-size: var(--gc-fs-2xs);
-}
-
 .gc-tree__stats,
 .gc-filelist__stats {
   display: inline-flex;
@@ -2383,12 +2368,6 @@ h3 {
   resize: vertical;
 }
 
-.gc-commit__hint {
-  margin: 0;
-  color: var(--gc-muted);
-  font-size: var(--gc-fs-2xs);
-}
-
 .gc-commit__advanced {
   display: flex;
   flex-direction: column;
@@ -2401,6 +2380,11 @@ h3 {
   cursor: pointer;
   padding: var(--gc-space-1) 0;
   user-select: none;
+}
+
+/* A `<summary>` is interactive, so it gets the same hover colour a link gets. */
+.gc-commit__advanced-toggle:hover {
+  color: var(--vscode-textLink-activeForeground, var(--vscode-foreground));
 }
 
 .gc-commit__options {
@@ -2572,6 +2556,7 @@ h3 {
   font: inherit;
   text-align: left;
   cursor: pointer;
+  transition: background var(--gc-dur-fast) var(--gc-ease);
 }
 
 .gc-filelist__button:hover:not(:disabled) {
@@ -2781,6 +2766,7 @@ h3 {
   font-size: var(--gc-fs-xs);
   cursor: pointer;
   text-align: left;
+  transition: background var(--gc-dur-fast) var(--gc-ease);
 }
 
 .gc-chip--pr:hover {
@@ -2878,7 +2864,7 @@ h3 {
   flex: 0 0 auto;
   min-width: 1em;
   text-align: center;
-  font-weight: bold;
+  font-weight: var(--gc-weight-strong);
 }
 
 .gc-toast--info .gc-toast__glyph {
@@ -3005,7 +2991,6 @@ h3 {
   .gc-chip,
   .gc-chip--pr,
   .gc-github__badge,
-  .gc-badge,
   .gc-menu,
   .gc-modal,
   .gc-toast,
@@ -3076,7 +3061,6 @@ h3 {
   }
 
   .gc-legend__swatch,
-  .gc-legend__line,
   .gc-legend__lane-color {
     forced-color-adjust: none;
   }
@@ -3090,21 +3074,11 @@ h3 {
 /* --------------------------------------------------------- narrow sidebar */
 
 /*
- * Below ~420 px the panel is a VS Code sidebar, not a view. Two things break there
- * and both are fixed by dropping the least load-bearing text rather than by shrinking
- * everything: the status word after each letter box, and the last-commit line in the
- * breadcrumb.
- *
- * Dropping the word is safe ONLY because it is not the sole channel — the letter box
- * keeps the porcelain code, the glyph stays, and `fileRowLabel` still reads the full
- * Indonesian word to assistive tech regardless of width. `display: none` on a span
- * that is already `aria-hidden` removes nothing from AT.
+ * Below ~420 px the panel is a VS Code sidebar, not a view. The last-commit line in
+ * the breadcrumb is the least load-bearing text there, so it is dropped rather than
+ * shrinking everything.
  */
 @media (max-width: 420px) {
-  .gc-status__label {
-    display: none;
-  }
-
   .gc-context__subject {
     display: none;
   }
