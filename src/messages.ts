@@ -503,6 +503,11 @@ export interface RequestMap {
    * parameters, so it cannot be used to run an arbitrary host command.
    */
   'actions/showLogs': { payload: Record<string, never>; response: { shown: boolean } };
+  /**
+   * Open the Git Control explorer webview panel. Empty payload by design: it takes no
+   * parameters, so it cannot be used to run an arbitrary host command.
+   */
+  'actions/openExplorer': { payload: Record<string, never>; response: { opened: boolean } };
   /** Open a URL in the system browser. Host-side only; the webview cannot navigate. */
   'actions/openExternal': { payload: OpenExternalPayload; response: { opened: boolean } };
   'github/auth': { payload: Record<string, never>; response: GitHubAuthState };

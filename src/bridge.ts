@@ -91,6 +91,8 @@ export interface BridgeHost {
   openDiff?(payload: OpenDiffPayload): Promise<OpenDiffResult>;
   /** Reveal the output channel. Takes no parameters, so it cannot run commands. */
   showLogs?(): void;
+  /** Open the explorer webview panel. Takes no parameters, so it cannot run commands. */
+  openExplorer?(): void;
   /** Open an external URL. Host-side so the webview never navigates itself. */
   openExternal?(url: string): Promise<boolean>;
   githubRepo?(payload: GitHubRepoPayload): Promise<GitHubRepoInfo>;
@@ -301,6 +303,8 @@ export class MessageBridge {
         return this.handleOpenDiff(request.payload as OpenDiffPayload);
       case 'actions/showLogs':
         return this.handleShowLogs();
+      case 'actions/openExplorer':
+        return this.handleOpenExplorer();
       case 'actions/openExternal':
         return this.handleOpenExternal(request.payload as OpenExternalPayload);
       case 'github/auth':
@@ -434,6 +438,18 @@ export class MessageBridge {
     if (show === undefined) return { shown: false };
     show();
     return { shown: true };
+  }
+
+  /**
+   * Open the Git Control explorer webview panel. Deliberately parameterless: there is
+   * no way to express "run command X" through this kind, so it cannot become an
+   * arbitrary command-execution channel for the webview.
+   */
+  private handleOpenExplorer(): { opened: boolean } {
+    const open = this.host.openExplorer;
+    if (open === undefined) return { opened: false };
+    open();
+    return { opened: true };
   }
 
   /**

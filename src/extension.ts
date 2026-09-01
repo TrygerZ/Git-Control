@@ -512,6 +512,7 @@ class Controller implements vscode.Disposable {
       disconnectGitHub: () => this.disconnectGitHub(),
       openDiff: (payload) => this.openDiff(payload),
       showLogs: () => this.channel.show(true),
+      openExplorer: () => this.openExplorer(),
       openExternal: (url) => this.openExternal(url),
       githubRepo: (payload) => this.githubRepo(payload),
       githubPullRequests: (payload) => this.githubPullRequests(payload),

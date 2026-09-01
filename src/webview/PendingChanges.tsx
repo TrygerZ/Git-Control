@@ -155,6 +155,18 @@ export function PendingChangesApp(): JSX.Element {
     void loadStatus();
   };
 
+  const openExplorer = async (): Promise<void> => {
+    try {
+      await bridge.request('actions/openExplorer', {});
+    } catch (err) {
+      const body = toErrorBody(err);
+      pushToast({
+        level: body.code === 'UNAVAILABLE' ? 'warning' : 'error',
+        message: body.message,
+      });
+    }
+  };
+
   const openDiff = async (entry: ChangeEntry): Promise<void> => {
     try {
       await bridge.request('actions/openDiff', { path: entry.path });
@@ -258,6 +270,14 @@ export function PendingChangesApp(): JSX.Element {
           <span className="gc-pending__count" aria-live="off">
             {formatCount(selected.length)} dipilih
           </span>
+          <button
+            type="button"
+            className="gc-icon-button"
+            aria-label="Buka grafik commit"
+            onClick={() => void openExplorer()}
+          >
+            <Icon name="graph" />
+          </button>
           <button
             type="button"
             className="gc-icon-button"

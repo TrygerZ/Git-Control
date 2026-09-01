@@ -23,6 +23,7 @@ export type IconName =
   | 'arrow-left'
   | 'arrow-right'
   | 'refresh'
+  | 'graph'
   | 'diff-modified'
   | 'diff-added'
   | 'diff-removed'

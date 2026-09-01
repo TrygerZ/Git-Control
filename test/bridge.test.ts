@@ -155,12 +155,12 @@ interface Harness {
   bridge: MessageBridge;
   repo: RepositoryService | null;
   /** Calls recorded by the optional host callbacks. */
-  calls: { showLogs: number; openDiff: OpenDiffPayload[]; external: string[] };
+  calls: { showLogs: number; openExplorer: number; openDiff: OpenDiffPayload[]; external: string[] };
 }
 
 function harness(repo: RepositoryService | null, overrides: Partial<BridgeHost> = {}): Harness {
   const webview = new FakeWebview();
-  const calls = { showLogs: 0, openDiff: [] as OpenDiffPayload[], external: [] as string[] };
+  const calls = { showLogs: 0, openExplorer: 0, openDiff: [] as OpenDiffPayload[], external: [] as string[] };
   const host: BridgeHost = {
     logger: new Logger(new NullSink()),
     resolveRepository: () => Promise.resolve(repo),
@@ -175,6 +175,9 @@ function harness(repo: RepositoryService | null, overrides: Partial<BridgeHost> 
     },
     showLogs: () => {
       calls.showLogs += 1;
+    },
+    openExplorer: () => {
+      calls.openExplorer += 1;
     },
     openExternal: (url) => {
       calls.external.push(url);
@@ -569,6 +572,21 @@ test('actions/showLogs only reveals the channel and takes no parameters', async 
   // Extra fields are ignored, so the kind cannot smuggle a command.
   await h.webview.send(req('actions/showLogs', { command: 'workbench.action.terminal.new' }));
   assert.equal(h.calls.showLogs, 2);
+});
+
+test('actions/openExplorer only opens the explorer panel and takes no parameters', async (t) => {
+  const h = harness(null);
+  t.after(() => h.bridge.dispose());
+
+  const response = await h.webview.send(req('actions/openExplorer', {}));
+  assert.equal(response.ok, true);
+  if (!response.ok) return;
+  assert.deepEqual(response.data, { opened: true });
+  assert.equal(h.calls.openExplorer, 1);
+
+  // Extra fields are ignored, so the kind cannot smuggle a command.
+  await h.webview.send(req('actions/openExplorer', { command: 'workbench.action.terminal.new' }));
+  assert.equal(h.calls.openExplorer, 2);
 });
 
 test('actions/openExternal rejects every non-https scheme (SEC-006)', async (t) => {
