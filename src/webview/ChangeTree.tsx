@@ -14,7 +14,7 @@
  * a focused row reaches that row's controls. Every control carries a name built
  * from the pure helpers in `format.ts`, so no button is called just "Stage".
  */
-import { useEffect, useRef, useState, type JSX, type KeyboardEvent } from 'react';
+import { useEffect, useMemo, useRef, useState, type JSX, type KeyboardEvent } from 'react';
 import {
   UNKNOWN_CHURN,
   baseName,
@@ -63,8 +63,9 @@ export function ChangeTree({
   onOpenDiff,
   fileAction,
 }: Props): JSX.Element {
-  const root: FolderNode = buildTree(entries);
-  const rows = flattenTree(root, collapsed);
+  // ponytail: memoize tree hierarchy and row flattening to prevent re-computation on unrelated re-renders.
+  const root: FolderNode = useMemo(() => buildTree(entries), [entries]);
+  const rows = useMemo(() => flattenTree(root, collapsed), [root, collapsed]);
   const listRef = useRef<HTMLUListElement>(null);
   const [cursor, setCursor] = useState(0);
 

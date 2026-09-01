@@ -126,6 +126,17 @@ export function pruneSelection(
   entries: readonly ChangeEntry[],
 ): Set<string> {
   const live = new Set(entries.map((e) => e.path));
+  let removed = false;
+  for (const path of selection) {
+    if (!live.has(path)) {
+      removed = true;
+      break;
+    }
+  }
+  // ponytail: reference equality check avoids downstream memo invalidation when selection is unchanged.
+  if (!removed && selection instanceof Set) {
+    return selection;
+  }
   const next = new Set<string>();
   for (const path of selection) {
     if (live.has(path)) next.add(path);

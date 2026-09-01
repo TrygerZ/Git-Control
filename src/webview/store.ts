@@ -77,6 +77,10 @@ export interface RepoState {
   refresh(): Promise<void>;
 }
 
+// ----------------------------------------------------------------- in-flight coalescing
+let inFlightStatus: Promise<void> | null = null;
+let inFlightChanges: Promise<void> | null = null;
+
 export const useRepoStore = create<RepoState>((set, get) => ({
   status: null,
   graph: null,
@@ -87,12 +91,18 @@ export const useRepoStore = create<RepoState>((set, get) => ({
   stale: false,
 
   async loadStatus() {
-    try {
-      const status = await bridge.request('repos/status', {});
-      set({ status, error: null });
-    } catch (err) {
-      set({ error: toErrorBody(err) });
-    }
+    if (inFlightStatus !== null) return inFlightStatus;
+    inFlightStatus = (async () => {
+      try {
+        const status = await bridge.request('repos/status', {});
+        set({ status, error: null });
+      } catch (err) {
+        set({ error: toErrorBody(err) });
+      } finally {
+        inFlightStatus = null;
+      }
+    })();
+    return inFlightStatus;
   },
 
   async loadGraph() {
@@ -150,6 +160,7 @@ export interface ChangesState {
   includeUntracked: boolean;
   busy: boolean;
   loading: boolean;
+  hasLoaded: boolean;
   error: ErrorBody | null;
   /** Inline validation message for the commit form, or `null` when valid. */
   messageError: string | null;
@@ -182,24 +193,32 @@ export const useChangesStore = create<ChangesState>((set, get) => ({
   includeUntracked: false,
   busy: false,
   loading: false,
+  hasLoaded: false,
   error: null,
   messageError: null,
   retryPush: null,
 
   async load() {
+    if (inFlightChanges !== null) return inFlightChanges;
     set({ loading: true });
-    try {
-      const status = await bridge.request('repos/status', {});
-      set({
-        changes: status.changes,
-        conflicts: status.conflicts,
-        selection: pruneSelection(get().selection, status.changes),
-        loading: false,
-        error: null,
-      });
-    } catch (err) {
-      set({ loading: false, error: toErrorBody(err) });
-    }
+    inFlightChanges = (async () => {
+      try {
+        const status = await bridge.request('repos/status', {});
+        set({
+          changes: status.changes,
+          conflicts: status.conflicts,
+          selection: pruneSelection(get().selection, status.changes),
+          loading: false,
+          hasLoaded: true,
+          error: null,
+        });
+      } catch (err) {
+        set({ loading: false, error: toErrorBody(err) });
+      } finally {
+        inFlightChanges = null;
+      }
+    })();
+    return inFlightChanges;
   },
 
   toggle(path) {

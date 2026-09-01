@@ -86,6 +86,7 @@ export function PendingChangesApp(): JSX.Element {
   const collapsed = useChangesStore((s) => s.collapsed);
   const busy = useChangesStore((s) => s.busy);
   const loading = useChangesStore((s) => s.loading);
+  const hasLoaded = useChangesStore((s) => s.hasLoaded);
   const error = useChangesStore((s) => s.error);
   const includeUntracked = useChangesStore((s) => s.includeUntracked);
   const load = useChangesStore((s) => s.load);
@@ -262,7 +263,7 @@ export function PendingChangesApp(): JSX.Element {
             className="gc-icon-button"
             aria-label="Muat ulang daftar perubahan"
             title="Baca ulang status repository dari git."
-            disabled={loading}
+            aria-busy={loading}
             onClick={refresh}
           >
             <Icon name="refresh" />
@@ -270,7 +271,7 @@ export function PendingChangesApp(): JSX.Element {
         </div>
       </div>
 
-      {loading && changes.length === 0 ? (
+      {!hasLoaded && loading && changes.length === 0 ? (
         <FileListSkeleton rows={8} />
       ) : changes.length === 0 ? (
         <EmptyState
@@ -327,6 +328,7 @@ export function PendingChangesApp(): JSX.Element {
             <div
               className="gc-pending__sections"
               ref={scrollRef}
+              aria-busy={loading}
               onScroll={(event) => saveState({ scrollTop: event.currentTarget.scrollTop })}
             >
               {SECTION_ORDER.map((section) => {
