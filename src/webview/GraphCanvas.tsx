@@ -528,6 +528,7 @@ export function GraphCanvas({
 
   // Avatars are fetched for the rendered window only: at 10 000 commits asking for all of
   // them would spend the whole GitHub quota on faces nobody is looking at.
+  // ponytail: omit `rows` from deps and use range bounds/rowCount to prevent debounce cancellation during continuous scroll.
   useEffect(() => {
     if (rows.length === 0) return undefined;
     const visibleNodes = rows.slice(range.start, range.end);
@@ -538,7 +539,7 @@ export function GraphCanvas({
       loadCommitAuthors(visibleHashes);
     }, AVATAR_REQUEST_DEBOUNCE_MS);
     return () => window.clearTimeout(timer);
-  }, [range.start, range.end, rows, loadCommitAuthors]);
+  }, [range.start, range.end, rows.length, loadCommitAuthors]);
 
   /** Horizontal and vertical pan, so a wide canvas is reachable without a mouse. */
   const panBy = useCallback((dx: number, dy: number = 0): void => {

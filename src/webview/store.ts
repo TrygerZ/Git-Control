@@ -676,22 +676,24 @@ export const useGitHubStore = create<GitHubState>((set, get) => ({
     }
 
     const { owner, repo } = linkage;
-    for (const batch of batches) {
-      try {
-        const result = await bridge.request('github/commitAuthors', { owner, repo, hashes: batch });
-        set((state) => {
-          const nextAvatars = { ...state.avatars };
-          for (const author of result.authors) {
-            nextAvatars[author.hash] = author.avatarUrl;
-          }
-          return { avatars: nextAvatars, rateLimit: result.rateLimit, error: null };
-        });
-      } catch (err) {
-        // An avatar is decoration. Record it like a failed PR read and keep whatever faces
-        // already arrived; nothing here is worth a toast.
-        set({ error: toErrorBody(err) });
-      }
-    }
+    await Promise.all(
+      batches.map(async (batch) => {
+        try {
+          const result = await bridge.request('github/commitAuthors', { owner, repo, hashes: batch });
+          set((state) => {
+            const nextAvatars = { ...state.avatars };
+            for (const author of result.authors) {
+              nextAvatars[author.hash] = author.avatarUrl;
+            }
+            return { avatars: nextAvatars, rateLimit: result.rateLimit, error: null };
+          });
+        } catch (err) {
+          // An avatar is decoration. Record it like a failed PR read and keep whatever faces
+          // already arrived; nothing here is worth a toast.
+          set({ error: toErrorBody(err) });
+        }
+      }),
+    );
   },
 
   async connect() {

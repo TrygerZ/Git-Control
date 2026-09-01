@@ -119,6 +119,7 @@ const REQUEST_TIMEOUT_MS = 15_000;
  * extension host is a slow leak.
  */
 export const CACHE_MAX_ENTRIES = 200;
+export const AUTHOR_CACHE_MAX_ENTRIES = 1000;
 
 interface CacheEntry {
   at: number;
@@ -134,6 +135,7 @@ export class GitHubClient {
   private readonly sleep: (ms: number) => Promise<void>;
 
   private readonly cache = new Map<string, CacheEntry>();
+  private readonly authorCache = new Map<string, CacheEntry>();
   /** Timestamps of recent failures, used for the sliding breaker window. */
   private failures: number[] = [];
   private breakerOpen = false;
@@ -178,9 +180,15 @@ export class GitHubClient {
     return this.cache.size;
   }
 
+  /** Number of cached author responses. */
+  get authorCacheSize(): number {
+    return this.authorCache.size;
+  }
+
   /** Drop cached responses. Used when the token changes. */
   clearCache(): void {
     this.cache.clear();
+    this.authorCache.clear();
   }
 
   // ------------------------------------------------------------------ reads
@@ -285,9 +293,11 @@ export class GitHubClient {
     }
 
     let allCached = true;
-    const authors: CommitAuthorInfo[] = [];
+    const authors: CommitAuthorInfo[] = new Array(hashes.length);
 
-    for (const hash of hashes) {
+    // ponytail: Concurrency cap of 6 to prevent connection starvation / socket exhaustion.
+    const CONCURRENCY = 6;
+    const fetchAuthor = async (hash: string, index: number): Promise<void> => {
       const path =
         `/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}` +
         `/commits/${encodeURIComponent(hash)}`;
@@ -299,21 +309,36 @@ export class GitHubClient {
           (body) => {
             const json = body as { author?: { login?: unknown; avatar_url?: unknown } | null };
             const author = json.author;
+            let avatarUrl: string | null = null;
+            if (typeof author?.avatar_url === 'string') {
+              try {
+                const parsedUrl = new URL(author.avatar_url);
+                parsedUrl.searchParams.set('s', '64');
+                avatarUrl = parsedUrl.toString();
+              } catch {
+                avatarUrl = author.avatar_url;
+              }
+            }
             return {
               login: typeof author?.login === 'string' ? author.login : null,
-              avatarUrl: typeof author?.avatar_url === 'string' ? author.avatar_url : null,
+              avatarUrl,
             };
           },
         );
         if (!fetched.cached) allCached = false;
-        authors.push({
+        authors[index] = {
           hash,
           login: fetched.data.login,
           avatarUrl: fetched.data.avatarUrl,
-        });
+        };
       } catch {
-        authors.push({ hash, login: null, avatarUrl: null });
+        authors[index] = { hash, login: null, avatarUrl: null };
       }
+    };
+
+    for (let i = 0; i < hashes.length; i += CONCURRENCY) {
+      const slice = hashes.slice(i, i + CONCURRENCY);
+      await Promise.all(slice.map((h, idx) => fetchAuthor(h, i + idx)));
     }
 
     return {
@@ -393,14 +418,18 @@ export class GitHubClient {
    * ceiling. Insertion-order eviction, matching the idempotency map in `bridge.ts`.
    */
   private setCache(key: string, value: unknown): void {
+    const isAuthor = key.startsWith('commitAuthor:');
+    const targetCache = isAuthor ? this.authorCache : this.cache;
+    const maxEntries = isAuthor ? AUTHOR_CACHE_MAX_ENTRIES : CACHE_MAX_ENTRIES;
+
     // Re-inserting moves the key to the end, so a refreshed entry is not the
     // eviction candidate merely because it was first seen long ago.
-    this.cache.delete(key);
-    this.cache.set(key, { at: this.now(), value });
-    while (this.cache.size > CACHE_MAX_ENTRIES) {
-      const oldest = this.cache.keys().next();
+    targetCache.delete(key);
+    targetCache.set(key, { at: this.now(), value });
+    while (targetCache.size > maxEntries) {
+      const oldest = targetCache.keys().next();
       if (oldest.done === true) break;
-      this.cache.delete(oldest.value);
+      targetCache.delete(oldest.value);
     }
   }
 
@@ -518,7 +547,9 @@ export class GitHubClient {
   }
 
   private readCache<T>(key: string, ttlMs: number): T | undefined {
-    const entry = this.cache.get(key);
+    const isAuthor = key.startsWith('commitAuthor:');
+    const targetCache = isAuthor ? this.authorCache : this.cache;
+    const entry = targetCache.get(key);
     if (entry === undefined) return undefined;
     if (this.now() - entry.at > ttlMs) return undefined;
     return entry.value as T;

@@ -527,7 +527,7 @@ test('commitAuthors returns author login and avatar URL', async () => {
     {
       hash,
       login: 'octocat',
-      avatarUrl: 'https://avatars.githubusercontent.com/u/583231?v=4',
+      avatarUrl: 'https://avatars.githubusercontent.com/u/583231?v=4&s=64',
     },
   ]);
   assert.ok(h.calls[0]?.url.endsWith(`/repos/owner/repo/commits/${hash}`));
@@ -572,7 +572,7 @@ test('commitAuthors handles a failed hash (404) without failing the whole batch'
     {
       hash: hashGood,
       login: 'goodauthor',
-      avatarUrl: 'https://avatars.githubusercontent.com/u/123?v=4',
+      avatarUrl: 'https://avatars.githubusercontent.com/u/123?v=4&s=64',
     },
   ]);
 });
