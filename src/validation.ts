@@ -41,13 +41,29 @@ export function validateFullHash(value: unknown): boolean {
 /**
  * Defends against: ref-name injection and refs git itself would reject.
  * Implements the practical subset of `git check-ref-format` rules.
+ *
+ * A fully qualified `refs/...` name is rejected by default. `git for-each-ref`
+ * lists pseudo-refs such as `refs/stash` alongside branches, and a value like
+ * `refs/stash` passed where a branch is expected makes git fail with
+ * `fatal: a branch is expected, got 'refs/stash'`. Callers that legitimately need
+ * the qualified form — only the fast-forward probe, which asks about
+ * `refs/remotes/<remote>/<branch>` — opt in with `allowQualified`.
  */
-export function validateBranchName(value: unknown): boolean {
+export function validateBranchName(
+  value: unknown,
+  opts: { allowQualified?: boolean } = {},
+): boolean {
   if (typeof value !== 'string') return false;
   if (value.length === 0 || value.length > 255) return false;
   if (value === '@') return false;
   if (value.startsWith('-')) return false;
   if (value.startsWith('/') || value.endsWith('/')) return false;
+  if (value.startsWith('refs/')) {
+    if (opts.allowQualified !== true) return false;
+    if (!value.startsWith('refs/remotes/')) return false;
+    const parts = value.split('/');
+    if (parts.length < 4) return false;
+  }
   if (value.includes('//')) return false;
   if (value.includes('..')) return false;
   if (value.includes('@{')) return false;

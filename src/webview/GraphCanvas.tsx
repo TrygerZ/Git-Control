@@ -34,10 +34,11 @@ import {
   type MouseEvent as ReactMouseEvent,
   type PointerEvent as ReactPointerEvent,
 } from 'react';
-import { BranchLegend } from './BranchLegend';
+import { BranchLegend, BranchSelector } from './BranchLegend';
 import { GraphMinimap } from './GraphMinimap';
 import { NodeContextMenu, type MenuAnchor, type MenuItem } from './NodeContextMenu';
 import { EmptyState, GraphSkeleton, Icon, InfoBanner, Spinner, type IconName } from './ui';
+import { loadState, saveState } from './bridge';
 import {
   authorInitials,
   formatCount,
@@ -71,6 +72,7 @@ import {
   stepZoom,
   visibleColumnRange,
   visibleWorldBand,
+  segmentIntersectsBand,
   worldHeight,
   worldWidth,
 } from './viewport';
@@ -257,6 +259,7 @@ export function GraphCanvas({
   const [scrollLeft, setScrollLeft] = useState(0);
   const [viewportWidthState, setViewportWidthState] = useState(800);
   const [showLegend, setShowLegend] = useState(false);
+  const [showRibbons, setShowRibbons] = useState(() => loadState().showRibbons);
   const [menu, setMenu] = useState<{ node: GraphNode; anchor: MenuAnchor } | null>(null);
   const [focusRow, setFocusRow] = useState(0);
   const [pendingFocusRow, setPendingFocusRow] = useState<number | null>(null);
@@ -459,6 +462,12 @@ export function GraphCanvas({
       out.push({ edge, fromX, toX });
     }
     return out;
+  }, [graph, rows, band.left, band.right]);
+
+  // Compute branch ribbons per branch name following first-parent branch chains
+  const visibleRibbons = useMemo(() => {
+    if (graph === null || rows.length === 0) return [];
+    return computeBranchRibbons(rows, graph.edges, band);
   }, [graph, rows, band.left, band.right]);
 
   const laneColor = useCallback(
@@ -721,6 +730,8 @@ export function GraphCanvas({
       <Toolbar
         search={search}
         branchFilter={branchFilter}
+        currentBranch={currentBranch}
+        busy={status !== null && status.operation !== 'idle'}
         refs={graph?.refs ?? []}
         countId={countId}
         onSearch={setSearch}
@@ -877,6 +888,40 @@ export function GraphCanvas({
                     );
                   })}
 
+                  {/*
+                    Branch Ribbons (placed between day background and edges/nodes).
+                    Kept mounted when showRibbons is false to enable smooth CSS opacity transitions without layout pops.
+                  */}
+                  {visibleRibbons.map((ribbon) => {
+                    return (
+                      <g
+                        key={`ribbon-${ribbon.key}`}
+                        className={`gc-branch-ribbon${showRibbons ? '' : ' gc-branch-ribbon--hidden'}`}
+                      >
+                        {/* Semi-transparent track */}
+                        <path
+                          className="gc-branch-ribbon__track"
+                          d={ribbon.trackD}
+                          fill={ribbon.color}
+                        />
+                        {/* Top boundary line */}
+                        <path
+                          className="gc-branch-ribbon__border"
+                          d={ribbon.topD}
+                          fill="none"
+                          stroke={ribbon.color}
+                        />
+                        {/* Bottom boundary line */}
+                        <path
+                          className="gc-branch-ribbon__border"
+                          d={ribbon.bottomD}
+                          fill="none"
+                          stroke={ribbon.color}
+                        />
+                      </g>
+                    );
+                  })}
+
                   {/* Edges */}
                   {visibleEdges.map(({ edge, fromX, toX }) => (
                     <path
@@ -921,13 +966,48 @@ export function GraphCanvas({
                 if (chips.length === 0) return null;
                 const branchChip = chips[0];
                 if (!branchChip) return null;
+
+                // De-overlap strategy: if node row card is placed 'above', flip pill to 'below' (and vice versa)
+                // so the branch pill never collides with its own commit label card.
+                const rowPlacement = staggerMap.get(node.hash) ?? 'below';
+                const pillPlacement = rowPlacement === 'above' ? 'below' : 'above';
+                const nodeCenterY = laneY(node.lane, LANE_HEIGHT, RULER_HEIGHT);
+                const pillTop = pillPlacement === 'above'
+                  ? (nodeCenterY - NODE_RADIUS - 6) * zoom
+                  : (nodeCenterY + NODE_RADIUS + 6) * zoom;
+
+                // Check if path has slash e.g. "main/test" or "feature/something"
+                const hasSlash = branchChip.name.includes('/');
+                if (hasSlash) {
+                  const parts = branchChip.name.split('/');
+                  const parentPart = parts.slice(0, -1).join('/');
+                  const childPart = parts[parts.length - 1];
+
+                  return (
+                    <div
+                      key={`pill-${node.hash}`}
+                      className={`gc-pill gc-pill--trail gc-pill--${branchChip.kind} gc-pill--${pillPlacement}`}
+                      style={{
+                        left: `${node.x * zoom}px`,
+                        top: `${pillTop}px`,
+                      }}
+                      aria-hidden="true"
+                    >
+                      <span className="gc-pill__segment-slash">/</span>
+                      <span className="gc-pill__segment-parent">{parentPart}</span>
+                      <span className="gc-pill__segment-slash">/</span>
+                      <span className="gc-pill__segment-child">{childPart}</span>
+                    </div>
+                  );
+                }
+
                 return (
                   <div
                     key={`pill-${node.hash}`}
-                    className={`gc-pill gc-pill--${branchChip.kind}`}
+                    className={`gc-pill gc-pill--${branchChip.kind} gc-pill--${pillPlacement}`}
                     style={{
                       left: `${node.x * zoom}px`,
-                      top: `${(laneY(node.lane, LANE_HEIGHT, RULER_HEIGHT) - NODE_RADIUS - 6) * zoom}px`,
+                      top: `${pillTop}px`,
                     }}
                     aria-hidden="true"
                   >
@@ -1060,6 +1140,25 @@ export function GraphCanvas({
                 {Math.round(zoom * 100)}%
               </span>
             </button>
+            <label
+              className="gc-checkbox gc-checkbox--float"
+              title={strings.graph.toggleRibbonsTitle}
+            >
+              <input
+                type="checkbox"
+                className="gc-checkbox__input"
+                checked={showRibbons}
+                aria-label={strings.graph.toggleRibbonsAria}
+                onChange={(e) => {
+                  const next = e.target.checked;
+                  setShowRibbons(next);
+                  saveState({ showRibbons: next });
+                }}
+              />
+              <span className="gc-checkbox__text">
+                {strings.graph.toggleRibbonsLabel}
+              </span>
+            </label>
 
             {/* Floating popover for BranchLegend, anchored directly above the controls stack */}
             {showLegend && (
@@ -1109,6 +1208,205 @@ export function GraphCanvas({
 }
 
 // -------------------------------------------------------------------- pieces
+
+export interface BranchRibbonSegment {
+  key: string;
+  color: string;
+  startX: number;
+  endX: number;
+  trackD: string;
+  topD: string;
+  bottomD: string;
+}
+
+// Half-height of 4px yields an 8px total ribbon height (~1/3 of the 28px node diameter),
+// keeping the ribbon readable as a subtle visual trail without engulfing commit nodes.
+export const RIBBON_HALF_HEIGHT = 4;
+const RIBBON_CAP_PAD = COLUMN_WIDTH / 2;
+
+/**
+ * Compute branch ribbon paths along first-parent commit chains.
+ * Follows true branch attribution, connecting commits with horizontal or cubic bezier geometry.
+ */
+export function computeBranchRibbons(
+  nodes: readonly GraphNode[],
+  edges: readonly GraphEdge[],
+  band: { left: number; right: number },
+  laneHeight: number = LANE_HEIGHT,
+  rulerHeight: number = RULER_HEIGHT,
+): BranchRibbonSegment[] {
+  if (nodes.length === 0) return [];
+
+  const nodeMap = new Map<string, GraphNode>();
+  for (const n of nodes) {
+    nodeMap.set(n.hash, n);
+  }
+
+  // Find direct (first-parent) edges within each branch
+  // child (from) -> parent (to)
+  const firstParentMap = new Map<string, string>();
+  for (const edge of edges) {
+    if (edge.kind !== 'direct') continue;
+    const child = nodeMap.get(edge.from);
+    const parent = nodeMap.get(edge.to);
+    if (!child || !parent) continue;
+    if (child.branchName && child.branchName === parent.branchName) {
+      firstParentMap.set(child.hash, parent.hash);
+    }
+  }
+
+  // Group nodes by branchName and build hash lookup for fast search
+  const branchNodesMap = new Map<string, GraphNode[]>();
+  for (const n of nodes) {
+    if (!n.branchName) continue;
+    let list = branchNodesMap.get(n.branchName);
+    if (!list) {
+      list = [];
+      branchNodesMap.set(n.branchName, list);
+    }
+    list.push(n);
+  }
+
+  const ribbons: BranchRibbonSegment[] = [];
+
+  for (const [branchName, bNodes] of branchNodesMap.entries()) {
+    // Collect all links (pairs) between child and its first parent in this branch
+    const hasOutgoingLink = new Set<string>();
+    const hasIncomingLink = new Set<string>();
+
+    for (const child of bNodes) {
+      const parentHash = firstParentMap.get(child.hash);
+      if (parentHash && nodeMap.has(parentHash)) {
+        const parent = nodeMap.get(parentHash)!;
+        hasOutgoingLink.add(child.hash);
+        hasIncomingLink.add(parent.hash);
+
+        // Compute geometry for this link
+        // child is newer (larger x or chronological order), parent is older (smaller x)
+        // Left node is smaller x, right node is larger x
+        const leftNode = child.x <= parent.x ? child : parent;
+        const rightNode = child.x <= parent.x ? parent : child;
+
+        const startX = leftNode.x;
+        const endX = rightNode.x;
+        const minX = Math.max(0, startX - RIBBON_CAP_PAD);
+        const maxX = endX + RIBBON_CAP_PAD;
+
+        if (segmentIntersectsBand(minX, maxX, band)) {
+          const color = child.branchColor ?? 'var(--vscode-focusBorder)';
+          const y1 = laneY(leftNode.lane, laneHeight, rulerHeight);
+          const y2 = laneY(rightNode.lane, laneHeight, rulerHeight);
+
+          if (y1 === y2) {
+            // Horizontal segment
+            const topD = `M${startX} ${y1 - RIBBON_HALF_HEIGHT}L${endX} ${y2 - RIBBON_HALF_HEIGHT}`;
+            const bottomD = `M${startX} ${y1 + RIBBON_HALF_HEIGHT}L${endX} ${y2 + RIBBON_HALF_HEIGHT}`;
+            const trackD = `M${startX} ${y1 - RIBBON_HALF_HEIGHT}L${endX} ${y2 - RIBBON_HALF_HEIGHT}L${endX} ${y2 + RIBBON_HALF_HEIGHT}L${startX} ${y1 + RIBBON_HALF_HEIGHT}Z`;
+
+            ribbons.push({
+              key: `${branchName}-link-${leftNode.hash}-${rightNode.hash}`,
+              color,
+              startX,
+              endX,
+              trackD,
+              topD,
+              bottomD,
+            });
+          } else {
+            // Curved bezier transition
+            const mid = (startX + endX) / 2;
+            const topD = `M${startX} ${y1 - RIBBON_HALF_HEIGHT}C${mid} ${y1 - RIBBON_HALF_HEIGHT} ${mid} ${y2 - RIBBON_HALF_HEIGHT} ${endX} ${y2 - RIBBON_HALF_HEIGHT}`;
+            const bottomD = `M${startX} ${y1 + RIBBON_HALF_HEIGHT}C${mid} ${y1 + RIBBON_HALF_HEIGHT} ${mid} ${y2 + RIBBON_HALF_HEIGHT} ${endX} ${y2 + RIBBON_HALF_HEIGHT}`;
+            const trackD = `M${startX} ${y1 - RIBBON_HALF_HEIGHT}C${mid} ${y1 - RIBBON_HALF_HEIGHT} ${mid} ${y2 - RIBBON_HALF_HEIGHT} ${endX} ${y2 - RIBBON_HALF_HEIGHT}L${endX} ${y2 + RIBBON_HALF_HEIGHT}C${mid} ${y2 + RIBBON_HALF_HEIGHT} ${mid} ${y1 + RIBBON_HALF_HEIGHT} ${startX} ${y1 + RIBBON_HALF_HEIGHT}Z`;
+
+            ribbons.push({
+              key: `${branchName}-link-${leftNode.hash}-${rightNode.hash}`,
+              color,
+              startX,
+              endX,
+              trackD,
+              topD,
+              bottomD,
+            });
+          }
+        }
+      }
+    }
+
+    // End caps for tips/roots and isolated nodes
+    for (const node of bNodes) {
+      // In chronological horizontal layout (parent on left / smaller x, child on right / larger x):
+      // node is tip if no child calls it parent (hasIncomingLink = false)
+      // node is root if it does not have a parent in this branch (hasOutgoingLink = false)
+      const isTip = !hasIncomingLink.has(node.hash);
+      const isRoot = !hasOutgoingLink.has(node.hash);
+
+      const y = laneY(node.lane, laneHeight, rulerHeight);
+      const color = node.branchColor ?? 'var(--vscode-focusBorder)';
+
+      if (isTip && isRoot) {
+        // Isolated single-node branch
+        const startX = Math.max(0, node.x - RIBBON_CAP_PAD);
+        const endX = node.x + RIBBON_CAP_PAD;
+        if (segmentIntersectsBand(startX, endX, band)) {
+          const topD = `M${startX} ${y - RIBBON_HALF_HEIGHT}L${endX} ${y - RIBBON_HALF_HEIGHT}`;
+          const bottomD = `M${startX} ${y + RIBBON_HALF_HEIGHT}L${endX} ${y + RIBBON_HALF_HEIGHT}`;
+          const trackD = `M${startX} ${y - RIBBON_HALF_HEIGHT}L${endX} ${y - RIBBON_HALF_HEIGHT}L${endX} ${y + RIBBON_HALF_HEIGHT}L${startX} ${y + RIBBON_HALF_HEIGHT}Z`;
+          ribbons.push({
+            key: `${branchName}-iso-${node.hash}`,
+            color,
+            startX,
+            endX,
+            trackD,
+            topD,
+            bottomD,
+          });
+        }
+      } else {
+        if (isTip) {
+          // Cap on right side of tip node (or whichever direction if inverted, but node.x + pad covers the tip side)
+          const startX = node.x;
+          const endX = node.x + RIBBON_CAP_PAD;
+          if (segmentIntersectsBand(startX, endX, band)) {
+            const topD = `M${startX} ${y - RIBBON_HALF_HEIGHT}L${endX} ${y - RIBBON_HALF_HEIGHT}`;
+            const bottomD = `M${startX} ${y + RIBBON_HALF_HEIGHT}L${endX} ${y + RIBBON_HALF_HEIGHT}`;
+            const trackD = `M${startX} ${y - RIBBON_HALF_HEIGHT}L${endX} ${y - RIBBON_HALF_HEIGHT}L${endX} ${y + RIBBON_HALF_HEIGHT}L${startX} ${y + RIBBON_HALF_HEIGHT}Z`;
+            ribbons.push({
+              key: `${branchName}-tip-${node.hash}`,
+              color,
+              startX,
+              endX,
+              trackD,
+              topD,
+              bottomD,
+            });
+          }
+        }
+        if (isRoot) {
+          // Cap on left side of root node
+          const startX = Math.max(0, node.x - RIBBON_CAP_PAD);
+          const endX = node.x;
+          if (segmentIntersectsBand(startX, endX, band)) {
+            const topD = `M${startX} ${y - RIBBON_HALF_HEIGHT}L${endX} ${y - RIBBON_HALF_HEIGHT}`;
+            const bottomD = `M${startX} ${y + RIBBON_HALF_HEIGHT}L${endX} ${y + RIBBON_HALF_HEIGHT}`;
+            const trackD = `M${startX} ${y - RIBBON_HALF_HEIGHT}L${endX} ${y - RIBBON_HALF_HEIGHT}L${endX} ${y + RIBBON_HALF_HEIGHT}L${startX} ${y + RIBBON_HALF_HEIGHT}Z`;
+            ribbons.push({
+              key: `${branchName}-root-${node.hash}`,
+              color,
+              startX,
+              endX,
+              trackD,
+              topD,
+              bottomD,
+            });
+          }
+        }
+      }
+    }
+  }
+
+  return ribbons;
+}
 
 /**
  * Edge geometry in horizontal layout: fromX/toX horizontal span, fromY/toY vertical lane centres.
@@ -1168,6 +1466,9 @@ function NodeMark({
   const maxHitRadius = Math.min(COLUMN_WIDTH, LANE_HEIGHT) / 2; // 44 world px (half lane height, targets never overlap in world space)
   const hitRadius = Math.min(maxHitRadius, zoom < 1 ? Math.max(r, 14 / zoom) : r);
 
+  // If node is a HEAD commit or tip branch with special trail marker
+  const isCapsule = node.isHead;
+
   return (
     <g className={classes.join(' ')}>
       {/* Transparent hit target circle for click, dblclick, hover */}
@@ -1189,15 +1490,38 @@ function NodeMark({
           </clipPath>
         </defs>
       )}
-      <circle
-        className="gc-node__dot"
-        cx={x}
-        cy={y}
-        r={r}
-        stroke={color}
-        fill={node.local ? 'var(--vscode-editor-background)' : color}
-      />
-      {hasAvatar && (
+      {isCapsule ? (
+        <g className="gc-node__capsule-wrap">
+          {/* Capsule outline node matching new_branch_trail.png visual reference */}
+          <rect
+            className="gc-node__capsule"
+            x={x - 20}
+            y={y - 9}
+            width={40}
+            height={18}
+            rx={9}
+            stroke={color}
+          />
+          {/* Centered home icon outline inside capsule */}
+          <g transform={`translate(${x - 7}, ${y - 7})`} stroke={color} fill="none">
+            <path
+              d="M2 6.5L7 2.5l5 4V11.5a1 1 0 0 1-1 1h-2.5V8.5H5.5v4H3a1 1 0 0 1-1-1V6.5z"
+              strokeWidth="1.3"
+              strokeLinejoin="round"
+            />
+          </g>
+        </g>
+      ) : (
+        <circle
+          className="gc-node__dot"
+          cx={x}
+          cy={y}
+          r={r}
+          stroke={color}
+          fill={node.local ? 'var(--vscode-editor-background)' : color}
+        />
+      )}
+      {hasAvatar && !isCapsule && (
         <image
           className="gc-node__avatar"
           href={avatarUrl}
@@ -1226,7 +1550,7 @@ function NodeMark({
         filled dot needs the editor background to stay legible against it. Both are
         theme tokens or lane data, never a literal.
       */}
-      {showContent && !hasAvatar && (
+      {showContent && !hasAvatar && !isCapsule && (
         <text
           className="gc-node__initial"
           x={x}
@@ -1242,8 +1566,8 @@ function NodeMark({
         sits at `RULER_HEIGHT + LANE_HEIGHT / 2`, and a merge head-ring at `r + 4` plus a 1.5
         stroke reaches a quarter pixel from the SVG edge, which rounds to a clipped ring.
       */}
-      {node.isHead && <circle className="gc-node__head-ring" cx={x} cy={y} r={r + 3} stroke={color} />}
-      {node.isMerge && <circle className="gc-node__merge-ring" cx={x} cy={y} r={r + 2} stroke={color} />}
+      {node.isHead && !isCapsule && <circle className="gc-node__head-ring" cx={x} cy={y} r={r + 3} stroke={color} />}
+      {node.isMerge && !isCapsule && <circle className="gc-node__merge-ring" cx={x} cy={y} r={r + 2} stroke={color} />}
     </g>
   );
 }
@@ -1370,6 +1694,8 @@ function Highlight({ text, needle }: { text: string; needle: string }): JSX.Elem
 function Toolbar({
   search,
   branchFilter,
+  currentBranch,
+  busy,
   refs,
   countId,
   onSearch,
@@ -1377,6 +1703,8 @@ function Toolbar({
 }: {
   search: string;
   branchFilter: string;
+  currentBranch: string | null;
+  busy: boolean;
   refs: readonly RefInfo[];
   /** Id of the result-count live region, so the search box points at its own output. */
   countId: string;
@@ -1407,6 +1735,12 @@ function Toolbar({
           onChange={(e) => onSearch(e.target.value)}
         />
       </div>
+
+      <BranchSelector
+        currentBranch={currentBranch}
+        refs={refs}
+        busy={busy}
+      />
 
       <div className="gc-toolbar__branch-wrap">
         <select

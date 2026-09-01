@@ -50,6 +50,10 @@ export interface LayoutNode {
   isMerge: boolean;
   /** True when unreachable from every remote-tracking ref. */
   local: boolean;
+  /** Deterministic branch name attribution (null if no branch). */
+  branchName?: string | null;
+  /** Color hex code corresponding to the attributed branch. */
+  branchColor?: string | null;
 }
 
 export interface LayoutEdge {
@@ -92,7 +96,13 @@ export const LANE_HEIGHT = 88;
 export const NODE_RADIUS = 14;
 export const DAY_GAP = 48;
 export const RULER_HEIGHT = 32;
-export const GUTTER_X = 32;
+/**
+ * Left/right canvas gutter in world units.
+ * Must stay in sync with GUTTER_X in src/webview/viewport.ts.
+ * Value 72 matches (COLUMN_WIDTH / 2) + (DAY_GAP / 2) and accommodates the
+ * hovered commit card half-width ((COLUMN_WIDTH - 8) * 1.6 / 2 = 70.4) at any zoom.
+ */
+export const GUTTER_X = 72;
 
 /** Fixed palette: index-based so colors are stable across renders. */
 const LANE_COLORS = [
@@ -148,6 +158,33 @@ export function layoutGraph(input: LayoutInput, options: LayoutOptions = {}): La
     if (covered.has(seed.hash)) continue;
     laneExpect.push(seed.hash);
     markAncestors(seed.hash, byHash, covered);
+  }
+
+  // Branch attribution per node:
+  // Map distinct branch seeds (local / remote / current) to distinct palette colors,
+  // then attribute each commit to the highest-priority branch seed that can reach it.
+  const branchSeeds = seeds.filter((s) => s.rank <= RANK_LOCAL && s.refName !== undefined);
+  const branchColors = new Map<string, string>();
+  let nextBranchColorIdx = 0;
+  for (const bs of branchSeeds) {
+    const branchName = branchDisplayName(bs.refName!);
+    if (!branchColors.has(branchName)) {
+      branchColors.set(branchName, LANE_COLORS[nextBranchColorIdx % LANE_COLORS.length] as string);
+      nextBranchColorIdx += 1;
+    }
+  }
+
+  const nodeBranchMap = new Map<string, { branchName: string; branchColor: string }>();
+  const branchCovered = new Set<string>();
+  for (const bs of branchSeeds) {
+    if (!known.has(bs.hash)) continue;
+    const bName = branchDisplayName(bs.refName!);
+    const bColor = branchColors.get(bName) ?? (LANE_COLORS[0] as string);
+    markBranchAncestors(bs.hash, byHash, branchCovered, (hash) => {
+      if (!nodeBranchMap.has(hash)) {
+        nodeBranchMap.set(hash, { branchName: bName, branchColor: bColor });
+      }
+    });
   }
 
   const laneOf = new Map<string, number>();
@@ -234,6 +271,7 @@ export function layoutGraph(input: LayoutInput, options: LayoutOptions = {}): La
       const nodeX = currentX + i * columnWidth;
       const nodeY = lane * laneHeight;
 
+      const bAttr = nodeBranchMap.get(commit.hash);
       nodes.push({
         hash: commit.hash,
         x: nodeX,
@@ -243,6 +281,8 @@ export function layoutGraph(input: LayoutInput, options: LayoutOptions = {}): La
         isHead: input.head !== null && commit.hash === input.head,
         isMerge: commit.parents.length > 1,
         local: localOnly.has(commit.hash),
+        branchName: bAttr?.branchName ?? null,
+        branchColor: bAttr?.branchColor ?? null,
       });
 
       globalIndex += 1;
@@ -387,6 +427,31 @@ function rankOf(refName: string, currentRef: string | null): number | null {
   if (refName.startsWith('refs/heads/')) return RANK_LOCAL;
   if (refName.startsWith('refs/tags/')) return RANK_TAG;
   return null;
+}
+
+function branchDisplayName(refName: string): string {
+  if (refName.startsWith('refs/heads/')) return refName.slice(11);
+  if (refName.startsWith('refs/remotes/')) return refName.slice(13);
+  return refName;
+}
+
+/** Mark a tip and in-window first-parent branch chain / ancestors. */
+function markBranchAncestors(
+  tip: string,
+  byHash: ReadonlyMap<string, LayoutCommit>,
+  seen: Set<string>,
+  onVisit: (hash: string) => void,
+): void {
+  let curr: string | undefined = tip;
+  while (curr !== undefined) {
+    if (seen.has(curr)) break;
+    seen.add(curr);
+    onVisit(curr);
+    const commit = byHash.get(curr);
+    if (commit === undefined || commit.parents.length === 0) break;
+    // Follow first parent only for the primary branch line
+    curr = commit.parents[0];
+  }
 }
 
 /** Mark a tip and all of its in-window ancestors as covered/reachable. */

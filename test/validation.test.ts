@@ -214,3 +214,27 @@ test('parseCommitTimestamp handles numbers, strings, and invalid inputs consiste
   const ts = new Date('2026-08-23T10:00:00.000Z').getTime();
   assert.equal(parseCommitTimestamp('2026-08-23T10:00:00.000Z'), ts);
 });
+
+test('validateBranchName rejects fully qualified refs unless opted in (Bug 2)', () => {
+  // `git for-each-ref` lists these next to branches; git rejects them where a
+  // branch is expected (`fatal: a branch is expected, got refs/stash`).
+  for (const name of ['refs/stash', 'refs/heads/main', 'refs/notes/commits', 'refs/tags/v1']) {
+    assert.equal(validateBranchName(name), false, name);
+  }
+  // The fast-forward probe needs the qualified remote-tracking form.
+  assert.equal(validateBranchName('refs/remotes/origin/main', { allowQualified: true }), true);
+  assert.equal(validateBranchName('refs/remotes/origin/main'), false);
+  // Non-remote qualified refs must be rejected even with allowQualified: true
+  assert.equal(validateBranchName('refs/stash', { allowQualified: true }), false);
+  assert.equal(validateBranchName('refs/heads/main', { allowQualified: true }), false);
+  assert.equal(validateBranchName('refs/notes/commits', { allowQualified: true }), false);
+  assert.equal(validateBranchName('refs/tags/v1', { allowQualified: true }), false);
+  assert.equal(validateBranchName('refs/remotes/origin', { allowQualified: true }), false);
+  // Opting in never weakens the other rules.
+  assert.equal(validateBranchName('refs/heads/a..b', { allowQualified: true }), false);
+  assert.equal(validateBranchName('refs/heads/x.lock', { allowQualified: true }), false);
+  assert.equal(validateBranchName('refs/remotes/origin/a..b', { allowQualified: true }), false);
+  assert.equal(validateBranchName('refs/remotes/origin/x.lock', { allowQualified: true }), false);
+  // A branch whose own name merely starts with `ref` is unaffected.
+  assert.equal(validateBranchName('refactor/refs'), true);
+});

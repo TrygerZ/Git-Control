@@ -17,7 +17,13 @@ export const LANE_HEIGHT = 88;
 export const NODE_RADIUS = 14;
 export const DAY_GAP = 48;
 export const RULER_HEIGHT = 32;
-export const GUTTER_X = 32;
+/**
+ * Left/right canvas gutter in world units.
+ * Must stay in sync with GUTTER_X in src/layout.ts.
+ * Value 72 matches (COLUMN_WIDTH / 2) + (DAY_GAP / 2) and accommodates the
+ * hovered commit card half-width ((COLUMN_WIDTH - 8) * 1.6 / 2 = 70.4) at any zoom.
+ */
+export const GUTTER_X = 72;
 
 /**
  * Zoom below which small text turns to mush: both the author initial inside a node and the
@@ -147,6 +153,19 @@ export function edgeIntersectsBand(
 ): boolean {
   const min = Math.min(fromX, toX);
   const max = Math.max(fromX, toX);
+  return max >= band.left && min <= band.right;
+}
+
+/**
+ * A ribbon segment or horizontal band overlaps the visible viewport world band.
+ */
+export function segmentIntersectsBand(
+  startX: number,
+  endX: number,
+  band: { left: number; right: number },
+): boolean {
+  const min = Math.min(startX, endX);
+  const max = Math.max(startX, endX);
   return max >= band.left && min <= band.right;
 }
 

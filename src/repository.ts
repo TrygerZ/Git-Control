@@ -196,6 +196,8 @@ export class RepositoryService {
           authorName: commit.authorName,
           authoredAt: commit.authoredAt,
           refNames: commit.refNames,
+          branchName: node.branchName,
+          branchColor: node.branchColor,
         };
       });
 
@@ -507,16 +509,30 @@ function toRefInfo(ref: ParsedRef): RefInfo {
   };
 }
 
+/**
+ * Classify a full ref name.
+ *
+ * `local` means "a branch", i.e. strictly `refs/heads/*`. Everything else that is
+ * not a remote-tracking ref or a tag is a pseudo-ref (`refs/stash`,
+ * `refs/notes/*`, `refs/bisect/*`, `refs/replace/*`, bare `HEAD`) and gets
+ * `other`: `git for-each-ref` lists those too, and treating them as branches is
+ * what made the UI offer `refs/stash` as a checkout target, which git rejects with
+ * `fatal: a branch is expected, got 'refs/stash'`.
+ */
 function refKind(refName: string): RefInfo['kind'] {
+  if (refName.startsWith('refs/heads/')) return 'local';
   if (refName.startsWith('refs/remotes/')) return 'remote';
   if (refName.startsWith('refs/tags/')) return 'tag';
-  return 'local';
+  return 'other';
 }
 
 function shortRefName(refName: string): string {
   for (const prefix of ['refs/heads/', 'refs/remotes/', 'refs/tags/']) {
     if (refName.startsWith(prefix)) return refName.slice(prefix.length);
   }
+  // Pseudo-refs: `refs/stash` displays as `stash`. Display only — an `other` ref
+  // is never handed back to git as a branch name.
+  if (refName.startsWith('refs/')) return refName.slice('refs/'.length);
   return refName;
 }
 

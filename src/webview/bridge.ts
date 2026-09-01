@@ -47,6 +47,7 @@ export interface WebviewState {
   commitMessage: string;
   pushAfterCommit: boolean;
   includeUntracked: boolean;
+  showRibbons: boolean;
 }
 
 const DEFAULT_STATE: WebviewState = {
@@ -57,6 +58,7 @@ const DEFAULT_STATE: WebviewState = {
   commitMessage: '',
   pushAfterCommit: false,
   includeUntracked: false,
+  showRibbons: true,
 };
 
 /** Rejection carrying the full {@link ErrorBody} so the UI can render remedies. */
@@ -242,6 +244,7 @@ export function loadState(): WebviewState {
     commitMessage: typeof partial.commitMessage === 'string' ? partial.commitMessage : '',
     pushAfterCommit: partial.pushAfterCommit === true,
     includeUntracked: partial.includeUntracked === true,
+    showRibbons: partial.showRibbons !== false,
   };
 }
 

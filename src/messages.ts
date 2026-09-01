@@ -49,7 +49,14 @@ export interface RefInfo {
   refName: string;
   /** Short display name, e.g. `main` or `origin/main`. */
   shortName: string;
-  kind: 'local' | 'remote' | 'tag';
+  /**
+   * `other` covers git's pseudo-refs and bookkeeping refs — `refs/stash`,
+   * `refs/notes/*`, `refs/bisect/*`, `refs/replace/*`, bare `HEAD`. They are real
+   * objects and may be drawn, but they are NOT branches: `git switch`/`git merge`
+   * reject them with `fatal: a branch is expected`, so no consumer may offer them
+   * as a checkout or merge target.
+   */
+  kind: 'local' | 'remote' | 'tag' | 'other';
   objectName: string;
   upstream: string | null;
   ahead: number;
@@ -128,6 +135,10 @@ export interface GraphNode {
   authorName: string;
   authoredAt: string;
   refNames: string[];
+  /** Deterministic branch name attribution (null if no branch). */
+  branchName?: string | null;
+  /** Color hex code corresponding to the attributed branch. */
+  branchColor?: string | null;
 }
 
 export interface GraphEdge {
@@ -569,6 +580,7 @@ export interface EventMap {
   'event/repoChanged': RepoChangedEvent;
   'event/operationProgress': OperationProgressEvent;
   'event/toast': ToastEvent;
+  'event/settingsChanged': SettingsSnapshot;
 }
 
 export type EventKind = keyof EventMap;

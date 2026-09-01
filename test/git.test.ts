@@ -168,11 +168,17 @@ test('repoRoot, commitMeta, and isAncestor read real objects', async (t) => {
 
   // A ref name is accepted on BOTH sides. The push-up-to fast-forward check asks
   // "is refs/remotes/origin/<branch> reachable from <hash>?", so the ancestor side
-  // is a name the caller has no hash for; rejecting it there made every partial
+  // is a remote-tracking name the caller has no hash for; rejecting it there made every partial
   // push look non-linear.
   assert.equal(await git.isAncestor('main', 'main'), true);
   assert.equal(await git.isAncestor(first, 'main'), true);
+  assert.equal(await git.isAncestor('refs/remotes/origin/main', first).catch(() => true), true);
   await assert.rejects(() => git.isAncestor('-x', 'main'), /Invalid ref/);
+  await assert.rejects(() => git.isAncestor('refs/stash', 'main'), /Invalid ref/);
+  await assert.rejects(() => git.isAncestor('refs/heads/main', 'main'), /Invalid ref/);
+  await assert.rejects(() => git.isAncestor(first, 'refs/remotes/origin/main'), /Invalid ref/);
+  await assert.rejects(() => git.isAncestor(first, 'refs/stash'), /Invalid ref/);
+  await assert.rejects(() => git.isAncestor(first, '-x'), /Invalid ref/);
 });
 
 test('onBusyChange brackets exclusive operations', async (t) => {
@@ -408,3 +414,68 @@ test('stderr accumulation is capped without failing the operation (SEC-009)', as
   assert.ok(result.stderr.length <= MAX_STDERR_BYTES);
 });
 
+
+// ------------------------------------------------------- Bug 1 + Bug 3 regressions
+
+test('unstage works in a repository with no commits (Bug 1 edge case)', async (t) => {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'git-control-nohead-'));
+  t.after(() => cleanup(dir));
+  const git = new GitRunner({ gitPath: 'git', cwd: dir });
+  await git.run(['init', '--quiet', '--initial-branch=main']);
+  await git.run(['config', 'user.email', 'test@example.com']);
+  await git.run(['config', 'user.name', 'Test User']);
+
+  await fs.writeFile(path.join(dir, 'lambada.txt'), 'x\n', 'utf8');
+  await git.stage(['lambada.txt']);
+  assert.equal((await git.status())[0]?.staged, true);
+
+  // `restore --staged` rebuilds from HEAD, which does not exist yet: exit 128.
+  // `unstage` must take the `rm --cached` route instead of failing.
+  await git.unstage(['lambada.txt']);
+  const after = await git.status();
+  assert.deepEqual(after.map((e) => [e.path, e.untracked]), [['lambada.txt', true]]);
+  // The file itself survives: unstage never touches the working tree.
+  assert.equal(await fs.readFile(path.join(dir, 'lambada.txt'), 'utf8'), 'x\n');
+});
+
+test('stage and unstage work when cwd is a subdirectory of the repo (Bug 3)', async (t) => {
+  const dir = await makeRepo();
+  t.after(() => cleanup(dir));
+  const sub = path.join(dir, 'nested', 'deeper');
+  await fs.mkdir(sub, { recursive: true });
+
+  // The runner is rooted at the SUBDIRECTORY, as it is when VS Code opens one.
+  const git = new GitRunner({ gitPath: 'git', cwd: sub });
+  const root = new GitRunner({ gitPath: 'git', cwd: dir });
+
+  // `git status` reports paths relative to the repository root, from any cwd.
+  await fs.writeFile(path.join(dir, 'top.txt'), 'top\n', 'utf8');
+  assert.deepEqual((await git.status()).map((e) => e.path), ['top.txt']);
+
+  // Those very strings must round-trip through stage/unstage from the subdir.
+  await git.stage(['top.txt']);
+  assert.equal((await root.status())[0]?.staged, true);
+  await git.unstage(['top.txt']);
+  assert.equal((await root.status())[0]?.untracked, true);
+
+  // A path inside the subdirectory is still root-relative, never cwd-relative.
+  await fs.writeFile(path.join(sub, 'inner.txt'), 'inner\n', 'utf8');
+  const innerPath = ['nested', 'deeper', 'inner.txt'].join('/');
+  await git.stage([innerPath]);
+  assert.ok((await root.status()).some((e) => e.path === innerPath && e.staged));
+  await git.unstage([innerPath]);
+  assert.ok((await root.status()).some((e) => e.path === innerPath && e.untracked));
+});
+
+test('pathspecs are literal, so glob characters in a filename are not patterns', async (t) => {
+  const dir = await makeRepo();
+  t.after(() => cleanup(dir));
+  const git = new GitRunner({ gitPath: 'git', cwd: dir });
+
+  await fs.writeFile(path.join(dir, 'weird[1].txt'), 'w\n', 'utf8');
+  await fs.writeFile(path.join(dir, 'weird1.txt'), 'decoy\n', 'utf8');
+  await git.stage(['weird[1].txt']);
+
+  const staged = (await git.status()).filter((e) => e.staged).map((e) => e.path);
+  assert.deepEqual(staged, ['weird[1].txt'], 'only the literal name was staged');
+});

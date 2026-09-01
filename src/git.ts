@@ -420,7 +420,10 @@ export class GitRunner {
    * read as an option, and `sanitizeRefArg` is applied to both.
    */
   async isAncestor(ancestor: string, descendant: string): Promise<boolean> {
-    if (!validateHash(ancestor) && !validateBranchName(ancestor)) {
+    // `allowQualified`: the ancestor side is `refs/remotes/<remote>/<branch>`,
+    // which `validateBranchName` otherwise rejects so a pseudo-ref cannot be
+    // smuggled in where a branch is expected.
+    if (!validateHash(ancestor) && !validateBranchName(ancestor, { allowQualified: true })) {
       throw new GitError({ code: 'VALIDATION_ERROR', message: `Invalid ref: ${ancestor}` });
     }
     if (!validateHash(descendant) && !validateBranchName(descendant)) {
@@ -646,13 +649,29 @@ export class GitRunner {
   // ------------------------------------------------------------ mutations
 
   async stage(paths: string[]): Promise<void> {
-    const safe = this.assertPaths(paths);
+    const safe = this.pathspecs(paths);
     await this.runExclusive(() => this.run(['add', '--', ...safe]));
   }
 
+  /**
+   * Remove paths from the index.
+   *
+   * `git restore --staged` rebuilds the index entry FROM HEAD, so a repository
+   * without commits fails it with `fatal: could not resolve HEAD` (exit 128).
+   * There `git rm --cached` is the correct equivalent, not a fallback hack:
+   * "unstage" in a repo with no HEAD can only mean "drop the index entry".
+   * `--cached` never touches the working tree, and `--force` waives only the
+   * "staged content differs from the file and HEAD" refusal — that staged content
+   * is exactly what the user asked to remove from the index, and the file on disk
+   * keeps it.
+   */
   async unstage(paths: string[]): Promise<void> {
-    const safe = this.assertPaths(paths);
-    await this.runExclusive(() => this.run(['restore', '--staged', '--', ...safe]));
+    const safe = this.pathspecs(paths);
+    const hasHead = (await this.headHash()) !== null;
+    const args = hasHead
+      ? ['restore', '--staged', '--', ...safe]
+      : ['rm', '--cached', '--force', '--quiet', '--', ...safe];
+    await this.runExclusive(() => this.run(args));
   }
 
   /**
@@ -820,6 +839,30 @@ export class GitRunner {
       }
     }
     return paths;
+  }
+
+  /**
+   * Validate paths and turn them into pathspecs anchored at the REPOSITORY ROOT.
+   *
+   * `cwd` is the workspace folder, which is not necessarily the repository root —
+   * VS Code is routinely opened on a subdirectory. `git status` reports paths
+   * relative to the root, so feeding those strings back as plain pathspecs from a
+   * subdirectory resolves them against `cwd` and every stage/unstage fails with
+   * `pathspec '<file>' did not match any file(s) known to git`.
+   *
+   * `:(top)` re-anchors the pathspec at the root, which is exactly what the
+   * incoming strings already are. It is preferred over changing `cwd` to the root:
+   * `cwd` is also what `git status`, `git diff --numstat`, the watcher, and the
+   * diff provider run against, and moving it would silently change the base of all
+   * of them. `literal` is added at the same time because these are exact file names
+   * out of `git status`, not user-typed globs, so a tracked file named `weird[1].c`
+   * must not be read as a character class.
+   *
+   * Both magics need git 1.9+ (2013); the extension already requires far newer.
+   */
+  private pathspecs(paths: string[]): string[] {
+    // Forward slashes only: pathspecs use git's own syntax, not the platform's.
+    return this.assertPaths(paths).map((p) => `:(top,literal)${p.replace(/\\/g, '/')}`);
   }
 }
 

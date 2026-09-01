@@ -386,3 +386,28 @@ test('changes derives conflict entries during a merge', async (t) => {
   assert.equal(status.operation, 'merge');
   assert.equal(status.conflicts.length, 1);
 });
+
+test('refs/stash is classified as other, never as a branch (Bug 2)', async (t) => {
+  const dir = await makeRepo();
+  t.after(() => cleanup(dir));
+  const git = new GitRunner({ gitPath: 'git', cwd: dir });
+
+  // A real stash creates `refs/stash`, which `git for-each-ref` lists alongside
+  // branches. It is a real commit, so it may be drawn - but it is not a branch.
+  await fs.writeFile(path.join(dir, 'one.txt'), 'stashed\n', 'utf8');
+  await git.stashPush('wip');
+
+  const repo = service(dir);
+  const graph = await repo.graph({ limit: 50 });
+  const stash = graph.refs.find((r) => r.refName === 'refs/stash');
+  assert.ok(stash !== undefined, 'refs/stash is present in the ref list');
+  assert.equal(stash.kind, 'other');
+  assert.equal(stash.shortName, 'stash');
+
+  // Nothing under refs/heads is affected.
+  assert.ok(graph.refs.some((r) => r.shortName === 'main' && r.kind === 'local'));
+  // No pseudo-ref leaks into the local set.
+  for (const ref of graph.refs) {
+    if (ref.kind === 'local') assert.ok(ref.refName.startsWith('refs/heads/'), ref.refName);
+  }
+});

@@ -25,6 +25,7 @@ import {
   stepZoom,
   visibleColumnRange,
   visibleWorldBand,
+  segmentIntersectsBand,
   worldHeight,
   worldWidth,
 } from '../src/webview/viewport';
@@ -351,6 +352,49 @@ test('label width derives from COLUMN_WIDTH rather than a constant', () => {
   assert.equal((COLUMN_WIDTH - 8) * 1, 88);
 });
 
+test('leftmost node and commit card stay fully visible across all zoom levels in resting and hovered states', () => {
+  const nodeX = GUTTER_X;
+  const zoomLevels = [MIN_ZOOM, 0.5, 0.75, 1, 1.25, 1.5, 2, 3, MAX_ZOOM];
+
+  for (const zoom of zoomLevels) {
+    const screenNodeX = nodeX * zoom;
+    const rowWidth = (COLUMN_WIDTH - 8) * zoom;
+    const halfWidthResting = rowWidth / 2;
+    const halfWidthHovered = (rowWidth * 1.6) / 2;
+
+    const restingLeft = screenNodeX - halfWidthResting;
+    const hoveredLeft = screenNodeX - halfWidthHovered;
+
+    assert.ok(
+      restingLeft >= 0,
+      `resting card left edge (${restingLeft}px) is negative at zoom ${zoom}`,
+    );
+    assert.ok(
+      hoveredLeft >= 0,
+      `hovered card left edge (${hoveredLeft}px) is negative at zoom ${zoom}`,
+    );
+  }
+});
+
+test('rightmost node commit card stays within canvas total world width across all zoom levels', () => {
+  const maxNodeX = 1000;
+  const totalWorldW = worldWidth(maxNodeX + COLUMN_WIDTH, GUTTER_X);
+  const zoomLevels = [MIN_ZOOM, 1, MAX_ZOOM];
+
+  for (const zoom of zoomLevels) {
+    const screenTotalW = totalWorldW * zoom;
+    const screenMaxNodeX = maxNodeX * zoom;
+    const rowWidth = (COLUMN_WIDTH - 8) * zoom;
+    const halfWidthHovered = (rowWidth * 1.6) / 2;
+    const hoveredRight = screenMaxNodeX + halfWidthHovered;
+
+    assert.ok(
+      hoveredRight <= screenTotalW,
+      `hovered card right edge (${hoveredRight}px) exceeds canvas width (${screenTotalW}px) at zoom ${zoom}`,
+    );
+  }
+});
+
 // ------------------------------------------------------------- label visibility
 
 const RESTING = { hovered: false, selected: false, focused: false, isHead: false };
@@ -406,4 +450,23 @@ test('partitionUnrequestedHashes splits into chunks bounded by 50', () => {
   assert.equal(batches[0]?.length, 50);
   assert.equal(batches[1]?.length, 50);
   assert.equal(batches[2]?.length, 25);
+});
+
+// ----------------------------------------------------------- segmentIntersectsBand (Ribbon culling)
+
+test('segmentIntersectsBand correctly culls ribbons outside the viewport band', () => {
+  const band = { left: 200, right: 800 };
+
+  // Completely to the left
+  assert.equal(segmentIntersectsBand(0, 150, band), false);
+  // Overlapping left boundary
+  assert.equal(segmentIntersectsBand(150, 250, band), true);
+  // Inside viewport band
+  assert.equal(segmentIntersectsBand(300, 500, band), true);
+  // Overlapping right boundary
+  assert.equal(segmentIntersectsBand(750, 900, band), true);
+  // Completely to the right
+  assert.equal(segmentIntersectsBand(850, 1200, band), false);
+  // Spanning across entire viewport band
+  assert.equal(segmentIntersectsBand(100, 1000, band), true);
 });

@@ -469,3 +469,124 @@ test('band geometry is contiguous, covers the left gutter, and centres nodes in 
     [0, 0],
   );
 });
+
+test('deterministic branch attribution per node based on branch rank and reachability', () => {
+  const result = layoutGraph(forked);
+  // Main branch is ranked highest (RANK_CURRENT_BRANCH = 0), feature is next (RANK_LOCAL = 2)
+  const nodeA = result.nodes.find((n) => n.hash === A)!;
+  const nodeB = result.nodes.find((n) => n.hash === B)!;
+  const nodeC = result.nodes.find((n) => n.hash === C)!;
+  const nodeD = result.nodes.find((n) => n.hash === D)!;
+
+  assert.equal(nodeA.branchName, 'main');
+  assert.equal(nodeB.branchName, 'main'); // A inherits B as first parent
+  assert.equal(nodeD.branchName, 'main'); // Common ancestor reachable from main
+  assert.equal(nodeC.branchName, 'feature'); // Forked commit on feature branch
+  assert.ok(nodeA.branchColor !== null);
+  assert.ok(nodeC.branchColor !== null);
+  assert.notEqual(nodeA.branchColor, nodeC.branchColor);
+});
+
+test('ref with other/stash kind does not create branch ribbon attribution', () => {
+  const stashInput: LayoutInput = {
+    commits: [
+      { hash: A, parents: [B] },
+      { hash: B, parents: [] },
+    ],
+    refs: [
+      { refName: 'refs/stash', objectName: A },
+      { refName: 'refs/notes/commits', objectName: B },
+    ],
+    head: null,
+    currentBranch: null,
+  };
+
+  const res = layoutGraph(stashInput);
+  assert.equal(res.nodes[0]!.branchName, null);
+  assert.equal(res.nodes[1]!.branchName, null);
+});
+
+test('branch ribbon geometry follows first-parent continuity across lane transitions', () => {
+  // Scenario: commit A on lane 1 has first parent B on lane 0 under same branch 'feature'.
+  // This occurs when a branch transitions between lanes.
+  const { computeBranchRibbons, RIBBON_HALF_HEIGHT } = require('../src/webview/GraphCanvas');
+
+  const nodes: LayoutNode[] = [
+    {
+      hash: B,
+      x: 100,
+      y: 0,
+      lane: 0,
+      index: 0,
+      isHead: false,
+      isMerge: false,
+      local: false,
+      branchName: 'feature',
+      branchColor: '#00ffff',
+    },
+    {
+      hash: A,
+      x: 200,
+      y: 88,
+      lane: 1,
+      index: 1,
+      isHead: true,
+      isMerge: false,
+      local: false,
+      branchName: 'feature',
+      branchColor: '#00ffff',
+    },
+  ];
+
+  const edges = [
+    { from: A, to: B, fromLane: 1, toLane: 0, kind: 'direct' as const },
+  ];
+
+  const band = { left: 0, right: 1000 };
+  const ribbons = computeBranchRibbons(nodes, edges, band, 88, 40);
+
+  // Assert link segment exists between A and B
+  const linkSegment = ribbons.find((r: any) => r.key.includes('link'));
+  assert.ok(linkSegment, 'Link segment between nodes must exist');
+  assert.equal(linkSegment.startX, 100);
+  assert.equal(linkSegment.endX, 200);
+
+  // Assert link geometry uses cubic bezier transition curve across lane 0 (y=84) and lane 1 (y=172)
+  // Lane 0 centre = 40 + 0*88 + 44 = 84. y - RIBBON_HALF_HEIGHT, y + RIBBON_HALF_HEIGHT
+  // Lane 1 centre = 40 + 1*88 + 44 = 172. y - RIBBON_HALF_HEIGHT, y + RIBBON_HALF_HEIGHT
+  const y0 = 84;
+  const y1 = 172;
+  const rh = RIBBON_HALF_HEIGHT ?? 4;
+  assert.ok(linkSegment.topD.includes(`C150 ${y0 - rh} 150 ${y1 - rh} 200 ${y1 - rh}`), 'Top curve must interpolate lane transition smoothly');
+  assert.ok(linkSegment.bottomD.includes(`C150 ${y0 + rh} 150 ${y1 + rh} 200 ${y1 + rh}`), 'Bottom curve must interpolate lane transition smoothly');
+
+  // Verify tip and root end caps exist
+  const tipSegment = ribbons.find((r: any) => r.key.includes(`tip-${A}`));
+  const rootSegment = ribbons.find((r: any) => r.key.includes(`root-${B}`));
+  assert.ok(tipSegment, 'Tip end cap on commit A must exist');
+  assert.ok(rootSegment, 'Root end cap on commit B must exist');
+});
+
+test('branch ribbon correctly handles merge topology without bleeding onto merged branch', () => {
+  const { computeBranchRibbons } = require('../src/webview/GraphCanvas');
+  const res = layoutGraph(forked, { laneHeight: 88, columnWidth: 100, gutterX: 0 });
+  const band = { left: 0, right: 1000 };
+  const ribbons = computeBranchRibbons(res.nodes, res.edges, band, 88, 40);
+
+  // Main branch: A (merge, lane 0) -> B (lane 0) -> D (lane 0)
+  // Feature branch: C (lane 1)
+  // A has merge edge to C (edge.kind === 'merge'), which should NOT form a first-parent ribbon link between main and feature
+  const mainFeatureLink = ribbons.find((r: any) => r.key.includes(`${A}-${C}`) || r.key.includes(`${C}-${A}`));
+  assert.equal(mainFeatureLink, undefined, 'Merge edge must not form ribbon connection between distinct branches');
+
+  // Main has direct chain A -> B -> D
+  const linkAB = ribbons.find((r: any) => r.key.includes(`${B}-${A}`) || r.key.includes(`${A}-${B}`));
+  const linkBD = ribbons.find((r: any) => r.key.includes(`${D}-${B}`) || r.key.includes(`${B}-${D}`));
+  assert.ok(linkAB, 'Direct first-parent link A-B on main must exist');
+  assert.ok(linkBD, 'Direct first-parent link B-D on main must exist');
+
+  // Feature node C is single node on feature branch
+  const featureRibbon = ribbons.filter((r: any) => r.key.startsWith('feature'));
+  assert.ok(featureRibbon.length > 0, 'Feature branch ribbon must exist');
+  assert.ok(featureRibbon.every((r: any) => !r.key.includes('link')), 'Feature branch with single commit has no intra-branch links');
+});
