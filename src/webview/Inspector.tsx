@@ -36,8 +36,6 @@ export function Inspector({ hash }: Props): JSX.Element {
   const [parent, setParent] = useState<string | null>(null);
   const [opening, setOpening] = useState<string | null>(null);
   const [paging, setPaging] = useState(false);
-  const diffMode = useSettingsStore((s) => s.diffMode);
-  const setDiffMode = useSettingsStore((s) => s.setDiffMode);
   const pushToast = useOperationStore((s) => s.pushToast);
   const showLogs = useOperationStore((s) => s.showLogs);
   const linkage = useGitHubStore((s) => s.linkage);
@@ -305,35 +303,6 @@ export function Inspector({ hash }: Props): JSX.Element {
           </select>
         </label>
       )}
-
-      {/*
-        Segmented control, styled off `aria-pressed` rather than a conditional class.
-
-        The selected half used to be `--primary`, which is the tier reserved for "the
-        one action on this surface" — so the inspector had two loud buttons for a
-        choice that changes nothing in the repository. `aria-pressed` is already the
-        truth here; letting the stylesheet read it removes the second source.
-      */}
-      <div className="gc-inspector__toolbar" role="group" aria-label="Mode diff">
-        <button
-          type="button"
-          className="gc-button"
-          aria-pressed={diffMode === 'unified'}
-          title="Tampilkan perubahan sebagai satu kolom, baris lama dan baru berurutan."
-          onClick={() => setDiffMode('unified')}
-        >
-          Satu kolom
-        </button>
-        <button
-          type="button"
-          className="gc-button"
-          aria-pressed={diffMode === 'side-by-side'}
-          title="Tampilkan versi lama dan baru berdampingan."
-          onClick={() => setDiffMode('side-by-side')}
-        >
-          Dua kolom
-        </button>
-      </div>
 
       {totals !== null && (
         <p className="gc-inspector__totals">

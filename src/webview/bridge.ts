@@ -46,7 +46,6 @@ export interface WebviewState {
   commitMessage: string;
   pushAfterCommit: boolean;
   includeUntracked: boolean;
-  diffMode: 'unified' | 'side-by-side';
 }
 
 const DEFAULT_STATE: WebviewState = {
@@ -57,7 +56,6 @@ const DEFAULT_STATE: WebviewState = {
   commitMessage: '',
   pushAfterCommit: false,
   includeUntracked: false,
-  diffMode: 'unified',
 };
 
 /** Rejection carrying the full {@link ErrorBody} so the UI can render remedies. */
@@ -243,7 +241,6 @@ export function loadState(): WebviewState {
     commitMessage: typeof partial.commitMessage === 'string' ? partial.commitMessage : '',
     pushAfterCommit: partial.pushAfterCommit === true,
     includeUntracked: partial.includeUntracked === true,
-    diffMode: partial.diffMode === 'side-by-side' ? 'side-by-side' : 'unified',
   };
 }
 

@@ -513,20 +513,17 @@ export interface SettingsState {
   zoom: number;
   branchFilter: string;
   search: string;
-  diffMode: 'unified' | 'side-by-side';
   snapshot: SettingsSnapshot | null;
   load(): Promise<void>;
   setZoom(zoom: number): void;
   setBranchFilter(filter: string): void;
   setSearch(search: string): void;
-  setDiffMode(mode: 'unified' | 'side-by-side'): void;
 }
 
 export const useSettingsStore = create<SettingsState>((set, get) => ({
   zoom: 1,
   branchFilter: '',
   search: '',
-  diffMode: 'unified',
   snapshot: null,
 
   async load() {
@@ -557,11 +554,6 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
 
   setSearch(search) {
     set({ search: search.slice(0, SEARCH_MAX) });
-  },
-
-  setDiffMode(mode) {
-    set({ diffMode: mode });
-    saveState({ diffMode: mode });
   },
 }));
 
