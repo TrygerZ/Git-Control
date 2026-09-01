@@ -16,6 +16,7 @@ import {
   formatDateLabel,
   gitCommandOf,
   githubConnectionLabel,
+  linkageChangedRepo,
   operationLabel,
   presentError,
   pullRequestLabel,
@@ -28,8 +29,8 @@ import {
   shortHash,
   statusLabel,
   truncate,
-  linkageChangedRepo,
 } from '../src/webview/format';
+import { ICON_PATHS } from '../src/webview/iconPaths';
 import type {
   ChangeEntry,
   ErrorCode,
@@ -409,22 +410,14 @@ test('statusLabel treats blank as unchanged and unknown letters as unknown', () 
   assert.deepEqual(statusLabel('Z', 'en'), { code: '·', label: 'Unknown', icon: 'question' });
 });
 
-test('every STATUS_LABELS entry and statusLabel result has an icon existing in vendored codicon.css', () => {
-  const cssPath = path.join(__dirname, '..', '..', 'node_modules', '@vscode', 'codicons', 'dist', 'codicon.css');
-  const css = fs.readFileSync(cssPath, 'utf8');
-  const codiconClassRegex = /\.codicon-([\w-]+):before/g;
-  const availableIcons = new Set<string>();
-  for (const match of css.matchAll(codiconClassRegex)) {
-    if (match[1]) availableIcons.add(match[1]);
-  }
-
+test('every STATUS_LABELS entry and statusLabel result has an icon path defined in ICON_PATHS', () => {
   const porcelainList = ['M', 'A', 'D', 'R', 'C', 'T', 'U', '?', '!', ' ', 'Z'];
   for (const code of porcelainList) {
     const res = statusLabel(code);
     assert.ok(res.icon !== undefined && res.icon.length > 0, `code ${code} must have non-empty icon`);
     assert.ok(
-      availableIcons.has(res.icon),
-      `icon "${res.icon}" for code "${code}" must exist in vendored codicon.css`,
+      typeof ICON_PATHS[res.icon] === 'function',
+      `icon "${res.icon}" for code "${code}" must exist in ICON_PATHS`,
     );
   }
 });

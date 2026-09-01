@@ -37,7 +37,7 @@ interface Manifest {
     };
   };
   contributes?: {
-    commands?: Array<{ command?: string; title?: string }>;
+    commands?: Array<{ command?: string; title?: string; icon?: string | { light?: string; dark?: string } }>;
     configuration?: { properties?: Record<string, ConfigProperty> };
   };
 }
@@ -145,5 +145,19 @@ test('.vscodeignore excludes source, tests, maps, dependencies, and markdown', (
   const ignore = fs.readFileSync(path.join(__dirname, '..', '..', '.vscodeignore'), 'utf8');
   for (const pattern of ['src/**', 'test/**', '**/*.map', 'node_modules/**', '**/*.md']) {
     assert.match(ignore, new RegExp(`^${pattern.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'm'), pattern);
+  }
+});
+
+test('command icons point to valid resource files', () => {
+  for (const command of manifest().contributes?.commands ?? []) {
+    if (typeof command.icon === 'object' && command.icon !== null) {
+      const icon = command.icon as { light?: string; dark?: string };
+      if (icon.light) {
+        assert.ok(fs.existsSync(path.join(__dirname, '..', '..', icon.light)), `Icon light file missing: ${icon.light}`);
+      }
+      if (icon.dark) {
+        assert.ok(fs.existsSync(path.join(__dirname, '..', '..', icon.dark)), `Icon dark file missing: ${icon.dark}`);
+      }
+    }
   }
 });

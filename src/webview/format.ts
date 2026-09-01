@@ -174,7 +174,7 @@ export interface StatusLabel {
   code: string;
   /** Localized word, so status never depends on colour alone. */
   label: string;
-  /** Corresponding Codicon name for VS Code icon rendering. */
+  /** Corresponding custom SVG icon name from iconPaths. */
   icon: IconName;
 }
 

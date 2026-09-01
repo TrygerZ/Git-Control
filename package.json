@@ -51,7 +51,11 @@
     "commands": [
       {
         "command": "gitControl.openExplorer",
-        "title": "Git Control: Open Explorer"
+        "title": "Git Control: Open Explorer",
+        "icon": {
+          "light": "resources/graph-light.svg",
+          "dark": "resources/graph-dark.svg"
+        }
       },
       {
         "command": "gitControl.openPendingChanges",
@@ -78,6 +82,15 @@
         "title": "Git Control: Pick Repository"
       }
     ],
+    "menus": {
+      "scm/title": [
+        {
+          "command": "gitControl.openExplorer",
+          "group": "navigation",
+          "when": "gitOpenRepositoryCount != 0"
+        }
+      ]
+    },
     "configuration": {
       "title": "Git Control",
       "properties": {
@@ -157,7 +170,6 @@
     "test:integration": "node esbuild.js && node test/integration-runner.js"
   },
   "dependencies": {
-    "@vscode/codicons": "0.0.46-24",
     "react": "19.2.8",
     "react-dom": "19.2.8",
     "zustand": "5.0.15"

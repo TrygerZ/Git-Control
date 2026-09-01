@@ -3,7 +3,7 @@
  *
  * Folders derive their state from their descendants (`tree.triState`) and a
  * folder toggle applies recursively (`tree.toggleNode`). Status is shown as a
- * Codicon icon with an Indonesian tooltip and accessible name, so nothing depends on colour.
+ * Inline SVG icon with an Indonesian tooltip and accessible name, so nothing depends on colour.
  *
  * Accessibility
  * -------------
@@ -260,7 +260,7 @@ function FileRow({
     <>
       {/*
         File row presentation:
-        - Codicon status icon inside colored box with accessible name on cell
+        - Inline SVG status icon inside colored box with accessible name on cell
         - Clean file name with ellipsis, directory in tooltip
         - Precise tabular churn count
         - Quick inline Stage/Unstage button on hover

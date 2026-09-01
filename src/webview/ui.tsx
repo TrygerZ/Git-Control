@@ -16,13 +16,14 @@ import { useT } from './useT';
 import { useSettingsStore } from './store';
 import type { ErrorBody, Remedy, RepoStatus } from '../messages';
 import type { IconName } from './icons';
+import { ICON_PATHS } from './iconPaths';
 
 export type { IconName };
 
 // ---------------------------------------------------------------------- icon
 
 /**
- * Reusable icon component rendering VS Code Codicons.
+ * Reusable icon component rendering custom inline SVGs.
  *
  * Decorative by default (`aria-hidden="true"`). When given a `label`, it exposes
  * `role="img"` with `aria-label` matching the existing a11y contract.
@@ -33,12 +34,27 @@ export function Icon({
 }: {
   name: IconName;
   label?: string;
-}): JSX.Element {
-  const className = `gc-icon codicon codicon-${name}`;
-  if (label !== undefined && label.length > 0) {
-    return <span className={className} role="img" aria-label={label} />;
-  }
-  return <span className={className} aria-hidden="true" />;
+}): JSX.Element | null {
+  const renderPath = ICON_PATHS[name];
+  if (!renderPath) return null;
+
+  const content = renderPath();
+  const hasLabel = label !== undefined && label.length > 0;
+
+  return (
+    <svg
+      className="gc-icon"
+      viewBox="0 0 16 16"
+      width="1em"
+      height="1em"
+      aria-hidden={hasLabel ? undefined : 'true'}
+      role={hasLabel ? 'img' : undefined}
+      aria-label={hasLabel ? label : undefined}
+      focusable="false"
+    >
+      {content}
+    </svg>
+  );
 }
 
 // ------------------------------------------------------------------ skeleton
