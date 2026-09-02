@@ -1796,10 +1796,13 @@ h3 {
 /* -------------------------------------------------------------------- legend */
 
 /*
- * Floating popover for the teaching legend, anchored directly above the bottom-right controls stack.
- * z-index 20 sits above controls (10) and minimap (9) but below context menus (30) and modals (40).
- * width is required alongside max-width: absolute flex popover shrinks to its intrinsic dl grid
- * width and never reaches max-width without an explicit width, so both are capped with min().
+ * Floating popover for the teaching legend, anchored directly above the
+ * bottom-right controls stack.
+ * z-index 20 sits above controls (10) and minimap (9) but below context
+ * menus (30) and modals (40).
+ * width is required alongside max-width: absolute flex popover shrinks to
+ * its intrinsic dl grid width and never reaches max-width without an
+ * explicit width, so both are capped with min().
  */
 .gc-legend-popover {
   position: absolute;
@@ -2509,6 +2512,18 @@ h3 {
 .gc-tree__row--active .gc-tree__action-cell {
   opacity: 1;
   pointer-events: auto;
+}
+
+/*
+ * Devices without hover never trigger the reveal, so actions stay visible.
+ * Uses hover: none over pointer: coarse because the question is hover
+ * availability, not pointer precision.
+ */
+@media (hover: none) {
+  .gc-tree__action-cell {
+    opacity: 1;
+    pointer-events: auto;
+  }
 }
 
 .gc-tree__row .gc-checkbox__input {
