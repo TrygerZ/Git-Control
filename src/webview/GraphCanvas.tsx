@@ -1740,26 +1740,29 @@ function Toolbar({
         currentBranch={currentBranch}
         refs={refs}
         busy={busy}
+        showLabel
       />
 
       <div className="gc-toolbar__branch-wrap">
-        <select
-          className="gc-toolbar__branch-select"
-          value={branchFilter}
-          aria-label={strings.graph.branchFilterAria}
-          onChange={(e) => onBranchFilter(e.target.value)}
-        >
-          <option value="">{strings.graph.branchFilterAll}</option>
-          {branches.map((ref) => (
-            // `value` stays raw: it is compared against lane refs host-side.
-            // Only the label is sanitised.
-            <option key={ref.refName} value={ref.shortName}>
-              {ref.kind === 'remote'
-                ? strings.graph.branchFilterRemotePrefix(sanitizeGitText(ref.shortName))
-                : sanitizeGitText(ref.shortName)}
-            </option>
-          ))}
-        </select>
+        <label className="gc-field gc-toolbar__field">
+          <span className="gc-field__label">{strings.graph.branchFilterLabel}</span>
+          <select
+            className="gc-toolbar__branch-select"
+            value={branchFilter}
+            onChange={(e) => onBranchFilter(e.target.value)}
+          >
+            <option value="">{strings.graph.branchFilterAll}</option>
+            {branches.map((ref) => (
+              // `value` stays raw: it is compared against lane refs host-side.
+              // Only the label is sanitised.
+              <option key={ref.refName} value={ref.shortName}>
+                {ref.kind === 'remote'
+                  ? strings.graph.branchFilterRemotePrefix(sanitizeGitText(ref.shortName))
+                  : sanitizeGitText(ref.shortName)}
+              </option>
+            ))}
+          </select>
+        </label>
       </div>
 
       {(search.length > 0 || branchFilter.length > 0) && (

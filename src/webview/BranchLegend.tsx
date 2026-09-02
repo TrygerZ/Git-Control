@@ -23,6 +23,8 @@ export interface BranchSelectorProps {
   currentBranch: string | null;
   refs: readonly RefInfo[];
   busy?: boolean;
+  /** When true, renders a visible label above the select (graph toolbar). Omit in narrow sidebars. */
+  showLabel?: boolean;
 }
 
 export interface BranchOption {
@@ -130,7 +132,12 @@ export function checkoutActionPayload(
  * Offers only local branches (kind === 'local'), disables current HEAD branch and busy state,
  * triggers `checkout-branch` action on select.
  */
-export function BranchSelector({ currentBranch, refs, busy = false }: BranchSelectorProps): JSX.Element {
+export function BranchSelector({
+  currentBranch,
+  refs,
+  busy = false,
+  showLabel = false,
+}: BranchSelectorProps): JSX.Element {
   const strings = useT();
   const runAction = useOperationStore((s) => s.runAction);
   const state = computeBranchOptions(
@@ -147,22 +154,38 @@ export function BranchSelector({ currentBranch, refs, busy = false }: BranchSele
     void runAction(payload);
   };
 
+  // showLabel: graph toolbar — visual label distinguishes the mutating
+  // checkout action from the view-only filter. When a proper <label> is
+  // present the accessible name comes from that label, so aria-label would
+  // overwrite it and break label-in-name — omit it in the labelled variant.
+  // Default (sidebar) keeps aria-label to save vertical space.
+  const select = (
+    <select
+      className="gc-toolbar__branch-select"
+      value={state.selectedValue}
+      disabled={state.disabled}
+      {...(!showLabel ? { 'aria-label': strings.graph.checkoutBranchAria } : {})}
+      title={strings.graph.checkoutBranchTitle}
+      onChange={(e) => onSelect(e.target.value)}
+    >
+      {state.options.map((opt) => (
+        <option key={opt.value || '__detached'} value={opt.value} disabled={opt.disabled} title={opt.hint ?? opt.label}>
+          {opt.label}
+        </option>
+      ))}
+    </select>
+  );
+
   return (
     <div className="gc-toolbar__branch-wrap">
-      <select
-        className="gc-toolbar__branch-select"
-        value={state.selectedValue}
-        disabled={state.disabled}
-        aria-label={strings.graph.checkoutBranchAria}
-        title={strings.graph.checkoutBranchTitle}
-        onChange={(e) => onSelect(e.target.value)}
-      >
-        {state.options.map((opt) => (
-          <option key={opt.value || '__detached'} value={opt.value} disabled={opt.disabled} title={opt.hint ?? opt.label}>
-            {opt.label}
-          </option>
-        ))}
-      </select>
+      {showLabel ? (
+        <label className="gc-field gc-toolbar__field">
+          <span className="gc-field__label">{strings.graph.checkoutBranchLabel}</span>
+          {select}
+        </label>
+      ) : (
+        select
+      )}
     </div>
   );
 }

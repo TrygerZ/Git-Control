@@ -825,7 +825,7 @@ h3 {
  */
 .gc-toolbar--filters {
   display: flex;
-  align-items: center;
+  align-items: flex-end;
   gap: var(--gc-space-3);
   padding: var(--gc-space-2) var(--gc-space-3);
   border: 1px solid var(--gc-border);
@@ -868,6 +868,10 @@ h3 {
   /* Floor prevents branch select collapsing to chevron; min() respects narrow panels */
   min-width: min(9em, 100%);
   max-width: 100%;
+}
+
+.gc-toolbar__field {
+  width: 100%;
 }
 
 .gc-toolbar__branch-select {
