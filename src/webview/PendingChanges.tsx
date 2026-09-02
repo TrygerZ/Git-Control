@@ -406,8 +406,8 @@ export function PendingChangesApp(): JSX.Element {
                       onOpenDiff={(entry) => void openDiff(entry)}
                       fileAction={
                         section === 'staged'
-                          ? { label: 'Unstage', run: (e) => void unstage([e.path]) }
-                          : { label: 'Stage', run: (e) => void stage([e.path]) }
+                          ? { label: strings.changeTree.unstageLabel, icon: 'arrow-up', ariaLabel: (p) => strings.changeTree.unstageFileAria(p), run: (e) => void unstage([e.path]) }
+                          : { label: strings.changeTree.stageLabel, icon: 'arrow-down', ariaLabel: (p) => strings.changeTree.stageFileAria(p), run: (e) => void stage([e.path]) }
                       }
                     />
                   </section>

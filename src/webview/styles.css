@@ -2379,14 +2379,14 @@ h3 {
  * Sections with clear natural dividers and refined spacing rhythm.
  */
 .gc-section {
-  padding-bottom: var(--gc-space-4);
-  margin-bottom: var(--gc-space-4);
+  padding-bottom: var(--gc-space-2);
+  margin-bottom: var(--gc-space-2);
   border-bottom: 1px solid var(--gc-border);
 }
 
 .gc-section:last-child {
   padding-bottom: 0;
-  margin-bottom: var(--gc-space-2);
+  margin-bottom: var(--gc-space-1);
   border-bottom: none;
 }
 
@@ -2394,7 +2394,7 @@ h3 {
   display: flex;
   align-items: center;
   gap: var(--gc-space-2);
-  margin: 0 0 var(--gc-space-2);
+  margin: 0 0 var(--gc-space-1);
   color: var(--vscode-foreground);
   font-size: var(--gc-fs-sm);
   font-weight: var(--gc-weight-strong);
@@ -2454,9 +2454,9 @@ h3 {
 .gc-tree__row {
   display: flex;
   align-items: center;
-  gap: var(--gc-space-2);
+  gap: var(--gc-space-1);
   min-height: var(--gc-hit);
-  padding: var(--gc-space-1) var(--gc-space-2);
+  padding: 0 var(--gc-space-1);
   border-radius: var(--gc-radius);
   transition: background var(--gc-dur-fast) var(--gc-ease);
 }
@@ -2476,10 +2476,10 @@ h3 {
 .gc-tree__file {
   display: flex;
   align-items: center;
-  gap: var(--gc-space-2);
+  gap: var(--gc-space-1);
   flex: 1 1 auto;
   min-width: 0;
-  min-height: var(--gc-hit);
+  min-height: 0;
   padding: 0;
   border: none;
   background: transparent;
@@ -2499,6 +2499,20 @@ h3 {
 .gc-tree__action-cell {
   display: flex;
   align-items: center;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--gc-dur-fast) var(--gc-ease);
+}
+
+.gc-tree__row:hover .gc-tree__action-cell,
+.gc-tree__row:focus-within .gc-tree__action-cell,
+.gc-tree__row--active .gc-tree__action-cell {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.gc-tree__row .gc-checkbox__input {
+  margin: var(--gc-space-1);
 }
 
 .gc-tree__twisty {
@@ -2601,8 +2615,8 @@ h3 {
 }
 
 .gc-tree__action {
-  padding: 0 var(--gc-space-2);
-  font-size: var(--gc-fs-2xs);
+  padding: 0;
+  font-size: var(--gc-fs-sm);
 }
 
 .gc-stat--add {

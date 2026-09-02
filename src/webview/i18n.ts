@@ -371,6 +371,10 @@ const en = {
     binaryLabel: 'binary',
     binaryAria: 'Binary file',
     churnSummary: (add: number, del: number) => `${add} lines added, ${del} lines deleted`,
+    stageLabel: 'Stage',
+    unstageLabel: 'Unstage',
+    stageFileAria: (path: string) => `Stage ${path}`,
+    unstageFileAria: (path: string) => `Unstage ${path}`,
   },
 
   // Commit form component
@@ -977,6 +981,10 @@ const id: Catalog = {
     binaryLabel: 'binary',
     binaryAria: 'File binary',
     churnSummary: (add: number, del: number) => `${add} baris ditambah, ${del} baris dihapus`,
+    stageLabel: 'Stage',
+    unstageLabel: 'Unstage',
+    stageFileAria: (path: string) => `Stage ${path}`,
+    unstageFileAria: (path: string) => `Unstage ${path}`,
   },
 
   // Commit form component

@@ -49,7 +49,7 @@ interface Props {
   onToggleCollapsed(prefix: string): void;
   onOpenDiff(entry: ChangeEntry): void;
   /** Per-file primary action, e.g. stage or unstage depending on the section. */
-  fileAction: { label: string; run(entry: ChangeEntry): void } | null;
+  fileAction: { label: string; icon: 'arrow-down' | 'arrow-up'; ariaLabel(path: string): string; run(entry: ChangeEntry): void } | null;
 }
 
 export function ChangeTree({
@@ -239,7 +239,7 @@ function FileRow({
 }: {
   entry: ChangeEntry;
   onOpenDiff(entry: ChangeEntry): void;
-  fileAction: { label: string; run(entry: ChangeEntry): void } | null;
+  fileAction: { label: string; icon: 'arrow-down' | 'arrow-up'; ariaLabel(path: string): string; run(entry: ChangeEntry): void } | null;
   busy: boolean;
   churnTruncated: boolean;
 }): JSX.Element {
@@ -263,7 +263,7 @@ function FileRow({
         - Inline SVG status icon inside colored box with accessible name on cell
         - Clean file name with ellipsis, directory in tooltip
         - Precise tabular churn count
-        - Quick inline Stage/Unstage button on hover
+        - Hover-reveal stage/unstage icon (arrow-down/up), churn stays permanent beside action (opacity overlay, no reflow)
       */}
       <span
         className="gc-tree__status"
@@ -319,12 +319,13 @@ function FileRow({
         <span role="gridcell" aria-colindex={5} className="gc-tree__action-cell">
           <button
             type="button"
-            className="gc-button gc-button--quiet gc-tree__action"
-            aria-label={`${fileAction.label} ${sanitizeGitText(entry.path)}`}
+            className="gc-icon-button gc-tree__action"
+            aria-label={fileAction.ariaLabel(sanitizeGitText(entry.path))}
+            title={fileAction.label}
             disabled={busy}
             onClick={() => fileAction.run(entry)}
           >
-            {fileAction.label}
+            <Icon name={fileAction.icon} />
           </button>
         </span>
       )}
