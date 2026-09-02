@@ -922,12 +922,6 @@ h3 {
   border-bottom: 1px solid var(--gc-border);
 }
 
-.gc-toolbar__primary-group {
-  display: flex;
-  align-items: center;
-  gap: var(--gc-space-2);
-}
-
 /*
  * Two buttons that always act on the same selection, drawn as one control: the outer
  * corners round, the inner pair meets on a single shared rule. `margin-left: -1px`
@@ -983,104 +977,6 @@ h3 {
  * (4px vertical, 12px horizontal) and a 4px gap between icon and label are
  * deliberate; icon is 14px optically aligned to the cap height.
  */
-.gc-toolbar__primary-group.gc-segmented {
-  /* One frame around the pair, not two loose boxes. */
-  border: 1px solid var(--vscode-input-border, var(--gc-border));
-  border-radius: var(--gc-radius);
-  overflow: visible;
-}
-
-.gc-toolbar__primary-group.gc-segmented .gc-button {
-  border: none;
-  border-radius: 0;
-  margin-left: 0;
-  /* Deliberate rhythm: icon 14px, label --gc-fs-sm, 4px gap, 4/12 padding. */
-  gap: var(--gc-space-2);
-  padding: var(--gc-space-2) var(--gc-space-4);
-  font-size: var(--gc-fs-sm);
-  letter-spacing: 0.01em;
-}
-
-.gc-toolbar__primary-group.gc-segmented .gc-button:first-child {
-  border-top-left-radius: var(--gc-radius);
-  border-bottom-left-radius: var(--gc-radius);
-}
-
-.gc-toolbar__primary-group.gc-segmented .gc-button:last-child {
-  border-top-right-radius: var(--gc-radius);
-  border-bottom-right-radius: var(--gc-radius);
-}
-
-.gc-toolbar__primary-group.gc-segmented .gc-button + .gc-button {
-  border-left: 1px solid var(--vscode-input-border, var(--gc-border));
-  margin-left: 0;
-}
-
-.gc-toolbar__primary-group.gc-segmented .gc-button .gc-icon {
-  /* 14px optical size for the arrow: width/height are geometry, not type, so
-   * px is legitimate here; font-size stays token-driven via the button. */
-  width: 14px;
-  height: 14px;
-  flex: 0 0 auto;
-}
-
-.gc-button--stage,
-.gc-button--unstage {
-  transition:
-    background var(--gc-dur-fast) var(--gc-ease),
-    border-color var(--gc-dur-fast) var(--gc-ease),
-    box-shadow var(--gc-dur-fast) var(--gc-ease),
-    opacity var(--gc-dur-fast) var(--gc-ease);
-}
-
-.gc-button--stage {
-  /* Real surface: secondaryBackground is the theme's quiet fill for this tier. */
-  background: var(
-    --vscode-button-secondaryBackground,
-    var(--vscode-input-background, var(--vscode-editorWidget-background, var(--vscode-badge-background)))
-  );
-  color: var(--vscode-button-secondaryForeground, var(--vscode-foreground));
-  box-shadow: inset 0 0 0 1px var(--vscode-focusBorder);
-  font-weight: var(--gc-weight-strong);
-  letter-spacing: 0.012em;
-  z-index: 1;
-}
-
-.gc-button--stage:hover:not(:disabled) {
-  background: var(
-    --vscode-button-secondaryHoverBackground,
-    var(--vscode-toolbar-hoverBackground, var(--vscode-list-hoverBackground))
-  );
-  border-color: transparent;
-}
-
-.gc-button--stage:active:not(:disabled) {
-  background: var(--vscode-list-activeSelectionBackground, var(--vscode-list-hoverBackground));
-}
-
-.gc-button--unstage {
-  background: var(
-    --vscode-input-background,
-    var(--vscode-editorWidget-background, var(--vscode-badge-background))
-  );
-  color: var(--vscode-foreground);
-  font-weight: 400;
-  letter-spacing: 0.008em;
-  border-color: transparent;
-}
-
-.gc-button--unstage:hover:not(:disabled) {
-  background: var(--vscode-toolbar-hoverBackground, var(--vscode-list-hoverBackground));
-  border-color: transparent;
-}
-
-.gc-button--stage:disabled,
-.gc-button--unstage:disabled {
-  opacity: 0.45;
-  border-color: transparent;
-  box-shadow: none;
-}
-
 /* Quiet segmented pair (Select all / Clear) — same join idiom as Stage/Unstage
  * but quieter: hairline `--gc-border` frame, no accent inset, so it never competes
  * with the action tier. The join reads as "one control, two choices". */
@@ -2407,6 +2303,31 @@ h3 {
   margin: 0 0 var(--gc-space-1);
 }
 
+/*
+ * Section bulk button: same hit area and icon size as the per-row `+`/`-`
+ * (both are `gc-icon-button`, so `--gc-hit` and `--gc-fs-lg` already apply).
+ * Hidden at rest via opacity so it stays in the Tab order; revealed on hover
+ * or when any child has focus, exactly like `.gc-tree__action-cell`.
+ */
+.gc-section__bulk {
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--gc-dur-fast) var(--gc-ease);
+}
+
+.gc-section__head:hover .gc-section__bulk,
+.gc-section__head:focus-within .gc-section__bulk {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+@media (hover: none) {
+  .gc-section__bulk {
+    opacity: 1;
+    pointer-events: auto;
+  }
+}
+
 .gc-section__title {
   display: flex;
   flex: 1 1 auto;
@@ -2664,18 +2585,16 @@ h3 {
 
 /* ---------------------------------------------------------------- commit form */
 
+/* At the top of the panel (VS Code Source Control anatomy) the commit box needs
+ * a bottom separator so the toolbar below it reads as a second row, not merged
+ * with the textarea. No top border: the context bar already carries one. */
 .gc-commit {
   display: flex;
   flex-direction: column;
   gap: var(--gc-space-3);
-  padding-top: var(--gc-space-3);
-  border-top: 1px solid var(--gc-border);
-}
-
-.gc-commit__title {
-  margin: 0;
-  font-size: var(--gc-fs-sm);
-  font-weight: var(--gc-weight-strong);
+  padding-bottom: var(--gc-space-3);
+  border-bottom: 1px solid var(--gc-border);
+  flex: 0 0 auto;
 }
 
 .gc-commit__field-wrap {
@@ -2722,17 +2641,24 @@ h3 {
   padding: var(--gc-space-2) 0 var(--gc-space-1);
 }
 
-.gc-commit__scope {
-  margin: 0;
-  color: var(--gc-muted);
-  font-size: var(--gc-fs-xs);
-}
-
 .gc-commit__actions {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: var(--gc-space-3);
+  gap: var(--gc-space-2);
+}
+
+/* Full-width paired actions, like VS Code's Source Control. At 170 px the
+ * sidebar is barely wider than two labels, so the pair must wrap rather than
+ * clip. `flex: 1 1` lets each claim half the row and fall to its own line
+ * when the row is too narrow. `white-space: normal` overrides the button
+ * default `nowrap` so the label is never cut at the edge. */
+.gc-commit__actions .gc-button--primary,
+.gc-commit__actions .gc-button--action {
+  flex: 1 1 5.5em;
+  min-width: min(7em, 100%);
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 
 /* ----------------------------------------------------------------- inspector */
@@ -3478,16 +3404,14 @@ h3 {
     border: 2px solid ButtonBorder;
   }
 
-  /* Tier-two segmented frame (Stage/Unstage) plus inspector copy pair and quiet
-   * segmented pair — the single container border and internal divider must remain
-   * visible when colours are discarded, otherwise the "one control" reading is lost. */
-  .gc-toolbar__primary-group.gc-segmented,
+  /* Inspector copy pair and quiet segmented pair — the single container border
+   * and internal divider must remain visible when colours are discarded,
+   * otherwise the "one control" reading is lost. */
   .gc-inspector__copy-group,
   .gc-segmented--quiet {
     border: 1px solid ButtonBorder;
   }
 
-  .gc-toolbar__primary-group.gc-segmented .gc-button + .gc-button,
   .gc-inspector__copy-group .gc-icon-button + .gc-icon-button,
   .gc-segmented--quiet .gc-button + .gc-button {
     border-left: 1px solid ButtonBorder;

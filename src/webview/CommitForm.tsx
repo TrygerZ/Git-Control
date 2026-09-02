@@ -1,5 +1,5 @@
 /**
- * Commit form (FEAT-02).
+ * Commit form (FEAT-02), at the top of the Source Control anatomy.
  *
  * Validation is inline and focus-managed: an empty message moves focus back to
  * the textarea and announces the error rather than silently refusing. The button
@@ -10,8 +10,12 @@
  * for a reason the user cannot see is a dead end. It submits, fails validation,
  * and says why — which also keeps the reason reachable by keyboard.
  *
- * This is the one primary button on the panel. Everything in the toolbar above is
- * a step towards it, so it is the only control here drawn at full weight.
+ * This is the one primary button on the panel. The toolbar with branch and
+ * selection helpers sits below it, and the grouped file list below that, so the
+ * message box is the first thing a hand reaches. The staged count that used to
+ * live as a paragraph below the form now lives as the Commit button's title when
+ * disabled, while the badge on the Staged Changes header carries the same number
+ * visually.
  */
 import { useEffect, useRef, type JSX } from 'react';
 import { formatCount } from './format';
@@ -49,11 +53,16 @@ export function CommitForm(): JSX.Element {
     void commit();
   };
 
-  const tooShort = message.trim().length < COMMIT_MESSAGE_MIN;
   const stagedCount = changes.filter((entry) => entry.staged).length;
-  const hintId = 'gc-commit-hint';
   const errorId = 'gc-commit-error';
-  const scopeId = 'gc-commit-scope';
+
+  // Scope sentence ("N staged files ready") used to live as a paragraph below the
+  // form; it now lives on the Commit button's title so the disabled reason is still
+  // perceivable without duplicating the badge already on the Staged Changes header.
+  const commitButtonTitle =
+    stagedCount === 0
+      ? strings.commitForm.noStagedFiles
+      : `${strings.commitForm.commitTitle} ${strings.commitForm.stagedFilesReady(formatCount(stagedCount, language))}`;
 
   // Remote derivation rule:
   // 1. If status.upstream is present, extract remote prefix (e.g. "origin/main" -> "origin").
@@ -98,19 +107,21 @@ export function CommitForm(): JSX.Element {
 
   return (
     <form className="gc-commit" onSubmit={submit} aria-label={strings.commitForm.formAria}>
-      <h2 className="gc-commit__title">{strings.commitForm.title}</h2>
-
       <div className="gc-commit__field-wrap">
+        {/*
+          Only describe by errorId when present: minimum length rule is in placeholder,
+          and failures are announced by role="alert" on the error block.
+        */}
         <textarea
           ref={textareaRef}
           className="gc-commit__message"
           value={message}
-          rows={2}
+          rows={3}
           required
           minLength={COMMIT_MESSAGE_MIN}
           aria-invalid={messageError !== null}
           aria-label={strings.commitForm.messageAria}
-          aria-describedby={messageError !== null ? `${errorId} ${hintId}` : hintId}
+          aria-describedby={messageError !== null ? errorId : undefined}
           placeholder={strings.commitForm.placeholder}
           onChange={(e) => setMessage(e.target.value)}
         />
@@ -142,19 +153,12 @@ export function CommitForm(): JSX.Element {
         </div>
       </details>
 
-      <p className="gc-commit__scope" id={scopeId}>
-        {stagedCount === 0
-          ? strings.commitForm.noStagedFiles
-          : strings.commitForm.stagedFilesReady(formatCount(stagedCount, language))}
-      </p>
-
       <div className="gc-commit__actions">
         <button
           type="submit"
           className="gc-button gc-button--primary gc-button--lg"
-          title={strings.commitForm.commitTitle}
+          title={commitButtonTitle}
           disabled={busy || stagedCount === 0}
-          aria-describedby={tooShort ? `${hintId} ${scopeId}` : scopeId}
         >
           {strings.commitForm.commitButton}
         </button>

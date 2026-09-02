@@ -1,17 +1,18 @@
 /**
- * Pending Changes panel (FEAT-02), Unity-style.
+ * Pending Changes panel (FEAT-02), VS Code Source Control anatomy.
  *
  * Sections in fixed order: Konflik first (it blocks everything else), then
- * Staged, Unstaged, Untracked. Selection is shared across sections so a single
- * `Stage` press can act on a mixed pick.
+ * Staged, Unstaged, Untracked. Selection is shared across sections so a bulk
+ * action can act on a mixed pick.
  *
  * `discard` is deliberately absent: it destroys work and the contract offers no
  * guarded path for it. Adding it without a guard dialog would violate the PRD's
  * safety rule.
  *
- * Layout, following the Unity reference: a quiet context breadcrumb, then one
- * toolbar of few loud actions, then the grouped file list with its own filter box,
- * then the commit form. Nothing else competes for attention.
+ * Layout, following VS Code: context breadcrumb, notifications, commit message
+ * box with Commit/Push at the top, then a slim toolbar (branch, selection
+ * helpers, view actions), then the grouped file list with its filter, then
+ * sections with per-row and per-section staging only — no global Stage/Unstage.
  */
 import { useEffect, useId, useMemo, useRef, useState, type JSX } from 'react';
 import { ChangeTree } from './ChangeTree';
@@ -200,9 +201,6 @@ export function PendingChangesApp(): JSX.Element {
     }
   };
 
-  const stageable = stageableFrom(selected, changes);
-  const unstageable = unstageableFrom(selected, changes, conflicts);
-
   return (
     <div className="gc-pending">
       <ContextBar status={status} />
@@ -223,39 +221,14 @@ export function PendingChangesApp(): JSX.Element {
         )}
       </div>
 
-      {/*
-        Primary actions (Stage, Unstage, Refresh) with secondary actions (Select all, Clear)
-        grouped cleanly. Filter disclosure toggle keeps toolbar clean and uncluttered.
-      */}
+      <CommitForm />
+
       <div
         className="gc-pending__bar gc-toolbar--actions"
         role="toolbar"
         aria-label={strings.pending.toolbarLabel}
         aria-orientation="horizontal"
       >
-        <div className="gc-toolbar__primary-group gc-segmented">
-          <button
-            type="button"
-            className="gc-button gc-button--action gc-button--stage"
-            aria-label={strings.pending.stageAria(formatCount(stageable.length, language))}
-            title={strings.pending.stageTitle}
-            disabled={busy || stageable.length === 0}
-            onClick={() => void stagePaths(selected)}
-          >
-            <Icon name="arrow-down" />{strings.pending.stageButton}
-          </button>
-          <button
-            type="button"
-            className="gc-button gc-button--action gc-button--unstage"
-            aria-label={strings.pending.unstageAria(formatCount(unstageable.length, language))}
-            title={strings.pending.unstageTitle}
-            disabled={busy || unstageable.length === 0}
-            onClick={() => void unstagePaths(selected)}
-          >
-            <Icon name="arrow-up" />{strings.pending.unstageButton}
-          </button>
-        </div>
-
         <div className="gc-toolbar__secondary-group">
           <BranchSelector
             currentBranch={status?.branch ?? null}
@@ -437,7 +410,7 @@ export function PendingChangesApp(): JSX.Element {
                       </h3>
                       <button
                         type="button"
-                        className="gc-icon-button"
+                        className="gc-icon-button gc-section__bulk"
                         aria-label={sectionBtnAria}
                         title={sectionBtnTitle}
                         disabled={busy || validPaths.length === 0}
@@ -472,7 +445,6 @@ export function PendingChangesApp(): JSX.Element {
         </>
       )}
 
-      <CommitForm />
       <GuardDialog />
       <ToastRegion />
     </div>

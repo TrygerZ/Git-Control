@@ -10,8 +10,8 @@ test('i18n module provides complete catalogs for en and id without em-dash', () 
   const enCatalog = t('en');
   const idCatalog = t('id');
 
-  assert.ok(enCatalog.pending.stageButton);
-  assert.ok(idCatalog.pending.stageButton);
+  assert.ok(enCatalog.pending.sectionStaged);
+  assert.ok(idCatalog.pending.sectionStaged);
   assert.ok(enCatalog.format.unknownDate);
   assert.ok(idCatalog.format.unknownDate);
 
@@ -48,8 +48,6 @@ test('i18n t(lang) returns corresponding catalog', () => {
   assert.equal(t('en').inspector.copyShortHash, 'Copy short hash');
   assert.equal(t('id').changeTree.expandFolder, 'Buka');
   assert.equal(t('en').changeTree.expandFolder, 'Expand');
-  assert.equal(t('id').commitForm.title, 'Commit');
-  assert.equal(t('en').commitForm.title, 'Commit');
   assert.equal(t('id').commitForm.publishButton, 'Terbitkan branch');
   assert.equal(t('en').commitForm.publishButton, 'Publish branch');
   assert.equal(t('id').commitForm.pushButton, 'Push');
