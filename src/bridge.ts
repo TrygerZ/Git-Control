@@ -1167,6 +1167,10 @@ function fromGitError(err: GitError, lang: Lang = 'en'): ErrorBody {
 }
 
 const HOOK_MARKERS = [/\bhook\b/i, /hooks\//i, /declined/i];
+const DIRTY_TREE_MARKERS = [
+  /local changes to the following files would be overwritten/i,
+  /Please commit your changes or stash them/i,
+];
 const NON_FF_MARKERS = [/non-fast-forward/i, /fetch first/i, /\[rejected\]/i, /behind its remote/i];
 
 /**
@@ -1179,14 +1183,33 @@ const NON_FF_MARKERS = [/non-fast-forward/i, /fetch first/i, /\[rejected\]/i, /b
  * into bug reports. Git's own credential helpers do echo URLs on failure.
  */
 function fromGitFailure(err: GitError, lang: Lang = 'en'): ErrorBody {
-  const text = hostText(lang).bridge;
+  const host = hostText(lang);
+  const text = host.bridge;
   const stderr = redact(err.stderr.length > 0 ? err.stderr : err.message);
+  // Hook output is chosen by third parties and can contain arbitrary text, so it
+  // must be checked first before pattern matching git error phrasing.
   if (HOOK_MARKERS.some((m) => m.test(stderr))) {
     return {
       status: 409,
       code: 'HOOK_REJECTED',
       message: text.hookRejected,
       detail: stderr.trim(),
+    };
+  }
+  // Several actions (revert, cherry-pick, merge, checkout, rebase) are intentionally
+  // not blocked by the guard on a dirty tree when they might succeed without touching
+  // dirty files. When git aborts because a dirty file would be overwritten, classify
+  // it as DIRTY_TREE with standard remedies ('commit', 'stash', 'cancel') so the user
+  // gets an actionable way out instead of a dead-end SERVER_ERROR.
+  // Placed before NON_FF_MARKERS because dirty tree errors can appear alongside push/fetch
+  // context in some flows, and commit/stash is the more immediate instruction when both match.
+  if (DIRTY_TREE_MARKERS.some((m) => m.test(stderr))) {
+    return {
+      status: 412,
+      code: 'DIRTY_TREE',
+      message: host.guard.dirty,
+      detail: stderr.trim(),
+      remedies: ['commit', 'stash', 'cancel'],
     };
   }
   if (NON_FF_MARKERS.some((m) => m.test(stderr))) {

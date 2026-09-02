@@ -49,6 +49,29 @@ test('hook rejection maps to 409 HOOK_REJECTED with hook output in detail', () =
   assert.equal(bodyEn.message, hostText('en').bridge.hookRejected);
 });
 
+test('dirty tree git rejection maps to 412 DIRTY_TREE with commit/stash/cancel remedies', () => {
+  const stderr =
+    'error: Your local changes to the following files would be overwritten by merge:\n\ta.txt\nPlease commit your changes or stash them before you merge.\nAborting\nfatal: revert failed';
+  const bodyId = toErrorBody(
+    new GitError({ code: 'GIT_FAILED', message: 'failed', exitCode: 128, stderr }),
+    'id',
+  );
+  assert.equal(bodyId.status, 412);
+  assert.equal(bodyId.code, 'DIRTY_TREE');
+  assert.equal(bodyId.message, hostText('id').guard.dirty);
+  assert.equal(bodyId.detail, stderr);
+  assert.deepEqual(bodyId.remedies, ['commit', 'stash', 'cancel']);
+
+  const bodyEn = toErrorBody(
+    new GitError({ code: 'GIT_FAILED', message: 'failed', exitCode: 128, stderr }),
+    'en',
+  );
+  assert.equal(bodyEn.status, 412);
+  assert.equal(bodyEn.code, 'DIRTY_TREE');
+  assert.equal(bodyEn.message, hostText('en').guard.dirty);
+  assert.deepEqual(bodyEn.remedies, ['commit', 'stash', 'cancel']);
+});
+
 test('non-fast-forward push maps to 409 NON_FAST_FORWARD with a fetch remedy only', () => {
   const stderr = '! [rejected] main -> main (non-fast-forward)';
   const bodyId = toErrorBody(
