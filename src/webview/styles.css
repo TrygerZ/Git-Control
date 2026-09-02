@@ -834,11 +834,17 @@ h3 {
 }
 
 .gc-toolbar__search-wrap {
-  position: relative;
   display: flex;
   align-items: center;
   flex: 1 1 14em;
   min-width: 10em;
+}
+
+.gc-toolbar__search-input-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+  width: 100%;
 }
 
 .gc-toolbar__search-icon {
@@ -874,7 +880,8 @@ h3 {
   width: 100%;
 }
 
-.gc-toolbar__branch-select {
+.gc-toolbar__branch-select,
+.gc-field .gc-toolbar__branch-select {
   /*
    * Container-relative cap, not just font-relative: 14em alone is ~168 px at
    * --gc-fs-sm, which already exceeds a 170 px sidebar once padding and the

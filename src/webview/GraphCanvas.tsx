@@ -1721,19 +1721,23 @@ function Toolbar({
       aria-orientation="horizontal"
     >
       <div className="gc-toolbar__search-wrap">
-        <span className="gc-toolbar__search-icon" aria-hidden="true">
-          <Icon name="search" />
-        </span>
-        <input
-          type="search"
-          className="gc-toolbar__search-input"
-          value={search}
-          maxLength={100}
-          placeholder={strings.graph.searchPlaceholder}
-          aria-label={strings.graph.searchAria}
-          aria-describedby={countId}
-          onChange={(e) => onSearch(e.target.value)}
-        />
+        <label className="gc-field gc-toolbar__field">
+          <span className="gc-field__label">{strings.graph.searchLabel}</span>
+          <span className="gc-toolbar__search-input-wrap">
+            <span className="gc-toolbar__search-icon" aria-hidden="true">
+              <Icon name="search" />
+            </span>
+            <input
+              type="search"
+              className="gc-toolbar__search-input"
+              value={search}
+              maxLength={100}
+              placeholder={strings.graph.searchPlaceholder}
+              aria-describedby={countId}
+              onChange={(e) => onSearch(e.target.value)}
+            />
+          </span>
+        </label>
       </div>
 
       <BranchSelector
