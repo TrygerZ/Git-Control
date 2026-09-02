@@ -165,7 +165,7 @@ export function CommitForm(): JSX.Element {
         {remote !== null && (
           <button
             type="button"
-            className="gc-button gc-button--action"
+            className="gc-button gc-button--action gc-button--lg"
             title={pushTitle}
             disabled={pushDisabled}
             onClick={handlePush}
