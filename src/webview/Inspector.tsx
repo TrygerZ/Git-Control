@@ -200,12 +200,13 @@ export function Inspector({ hash }: Props): JSX.Element {
             {detail.shortHash}
           </code>
           {/*
-            Two copy actions differ only in hash length; short hash is already
-            visible as DATA beside them, so visible text "Copy short/full hash"
-            forces parsing a sentence to tell them apart. Icon-only with full
-            aria-label + title keeps the affordance compact (fits 250px) while
-            preserving the accessible name. Same segmented idiom as Select all /
-            Clear so the panel keeps one grouping language.
+            Two copy actions differ only in hash length. Previous design used the
+            same stacked-squares glyph for both, indistinguishable without hover.
+            Fix: textual hint instead of a second metaphor — "7" is literal for
+            the 7-char short hash, honest at 16px and needs no new icon (avoids
+            repeating the add/diff-added strokeWidth-only trap). Full hash keeps
+            the clipboard glyph; short keeps the number. Group stays segmented so
+            the row still fits 250px.
           */}
           <div className="gc-inspector__copy-group" role="group" aria-label={strings.inspector.copyGroupAria}>
             <button
@@ -215,7 +216,9 @@ export function Inspector({ hash }: Props): JSX.Element {
               title={strings.inspector.copyShortHashTitle}
               onClick={() => void copy(shortHash(detail.hash))}
             >
-              <Icon name="copy" />
+              <span className="gc-inspector__copy-mark" aria-hidden="true">
+                7
+              </span>
             </button>
             <button
               type="button"

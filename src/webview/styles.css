@@ -2851,6 +2851,16 @@ h3 {
   z-index: 2;
 }
 
+.gc-inspector__copy-mark {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: var(--gc-fs-sm);
+  font-weight: var(--gc-weight-strong);
+  line-height: 1;
+  color: var(--vscode-foreground);
+}
+
 /*
  * External action leaves the app — different class from clipboard, so not in the
  * same segmented rhythm. A vertical divider plus a standalone button makes the
