@@ -20,14 +20,13 @@
  * Everything used to be one weight, which meant nothing led. There are now exactly
  * three tiers, and every control sits in one of them on purpose:
  *
- *   primary   `.gc-button--primary` (+ `--lg`) — one per surface. `Commit` on the
- *             pending panel, `Lanjutkan merge` while a merge is unfinished. Filled
- *             with the theme's button background.
- *   action    `.gc-button--action` — repository-changing but reversible: `Stage`,
- *             `Unstage`. Outlined, with the accent on the border only. On segmented
- *             pairs, the leading action (`Stage`) carries an inset accent rule and
- *             strong weight, while the trailing action (`Unstage`) stays quieter with
- *             normal weight.
+ *   primary   `.gc-button--primary` — one per surface (with opt-in `--lg` for
+ *             dialogs). `Commit` on the pending panel, `Lanjutkan merge` while a
+ *             merge is unfinished. Filled with the theme's button background.
+ *   action    `.gc-button--action` — repository-changing but reversible: `Push`,
+ *             `Stage`, `Unstage`. Outlined with a subtle border and transparent fill
+ *             so it stays distinct from the filled secondary button while never
+ *             competing with primary.
  *   quiet     `.gc-button--quiet`, `.gc-icon-button` — view-only or per-row work:
  *             selection helpers, refresh, copy, per-file Stage. No fill, no border
  *             until hover.
@@ -235,9 +234,8 @@ h3 {
 }
 
 /*
- * The one loud button on a surface. Taller and wider than the tier below it, so the
- * hierarchy survives a theme where `button-background` and `button-secondaryBackground`
- * are nearly the same colour — size is the channel that cannot be themed away.
+ * Opt-in prominent button tier for modal dialogs (`GuardDialog`). Taller and wider
+ * so the escape hatch or primary confirmation clearly leads the modal surface.
  */
 .gc-button--lg {
   min-height: var(--gc-hit-lg);
@@ -248,12 +246,15 @@ h3 {
 /*
  * Tier two: changes the repository, but reversibly. Outlined rather than filled, so
  * `Stage` reads as "an act" next to `Pilih semua` while never competing with
- * `Commit`. The accent is on the border, which is also the only part a forced-colours
- * theme keeps.
+ * `Commit`. Uses panel/contrast border with description foreground fallback so resting
+ * state stays calm without collapsing to transparent on unbordered themes.
  */
 .gc-button--action {
   background: transparent;
-  border-color: var(--vscode-focusBorder);
+  border-color: var(
+    --vscode-panel-border,
+    var(--vscode-contrastBorder, var(--vscode-descriptionForeground, var(--vscode-foreground)))
+  );
   color: var(--vscode-foreground);
   font-weight: var(--gc-weight-strong);
 }
@@ -982,8 +983,8 @@ h3 {
  *
  * Resting surface: both buttons carry a real fill from the theme's secondary/background
  * stack, not transparent, so the control reads as a designed object at rest rather than
- * only on hover. Commit stays louder by size (--gc-hit-lg vs --gc-hit) and by its
- * filled primary background, which this pair never uses.
+ * only on hover. Commit stays louder by its filled primary background and font weight,
+ * which this pair never uses.
  *
  * The pair is framed as one machined control: a single outer border with a single
  * internal divider, outer corners rounded, inner corners square. Padding rhythm

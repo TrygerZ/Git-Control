@@ -156,7 +156,7 @@ export function CommitForm(): JSX.Element {
       <div className="gc-commit__actions">
         <button
           type="submit"
-          className="gc-button gc-button--primary gc-button--lg"
+          className="gc-button gc-button--primary"
           title={commitButtonTitle}
           disabled={busy || stagedCount === 0}
         >
@@ -165,7 +165,7 @@ export function CommitForm(): JSX.Element {
         {remote !== null && (
           <button
             type="button"
-            className="gc-button gc-button--action gc-button--lg"
+            className="gc-button gc-button--action"
             title={pushTitle}
             disabled={pushDisabled}
             onClick={handlePush}
