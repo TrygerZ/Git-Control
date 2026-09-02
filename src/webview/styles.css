@@ -855,10 +855,11 @@ h3 {
   pointer-events: none;
 }
 
-.gc-toolbar__search-input {
+.gc-toolbar__search-input,
+.gc-field .gc-toolbar__search-input {
   width: 100%;
   min-height: var(--gc-hit);
-  padding: var(--gc-space-1) var(--gc-space-3) var(--gc-space-1) var(--gc-space-6);
+  padding: var(--gc-space-1) var(--gc-space-3) var(--gc-space-1) var(--gc-space-7);
   border: 1px solid var(--vscode-input-border, var(--gc-border));
   border-radius: var(--gc-radius);
   background: var(--vscode-input-background);
