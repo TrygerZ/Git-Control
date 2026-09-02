@@ -1794,14 +1794,17 @@ h3 {
 /*
  * Floating popover for the teaching legend, anchored directly above the bottom-right controls stack.
  * z-index 20 sits above controls (10) and minimap (9) but below context menus (30) and modals (40).
+ * width is required alongside max-width: absolute flex popover shrinks to its intrinsic dl grid
+ * width and never reaches max-width without an explicit width, so both are capped with min().
  */
 .gc-legend-popover {
   position: absolute;
   right: 0;
   bottom: calc(100% + var(--gc-space-2));
   z-index: 20;
-  max-width: min(28em, calc(100vw - 2 * var(--gc-space-3)));
-  max-height: min(24em, 60vh);
+  width: min(34em, calc(100vw - 2 * var(--gc-space-3)));
+  max-width: min(34em, calc(100vw - 2 * var(--gc-space-3)));
+  max-height: min(36em, 72vh);
   display: flex;
 }
 
@@ -1813,6 +1816,7 @@ h3 {
 .gc-legend {
   display: flex;
   flex-direction: column;
+  width: 100%;
   border: 1px solid var(--vscode-menu-border, var(--vscode-contrastBorder, var(--gc-border)));
   border-radius: var(--gc-radius);
   padding: var(--gc-space-3);
@@ -3512,12 +3516,6 @@ h3 {
   .gc-canvas__controls {
     right: var(--gc-space-3);
     bottom: var(--gc-space-3);
-  }
-
-  .gc-legend-popover {
-    right: 0;
-    bottom: calc(100% + var(--gc-space-2));
-    max-width: calc(100vw - 2 * var(--gc-space-3));
   }
 
   .gc-minimap-wrap {
