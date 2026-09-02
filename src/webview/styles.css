@@ -756,8 +756,8 @@ h3 {
 }
 
 .gc-explorer__aside-toggle {
-  font-size: var(--gc-fs-xs);
-  padding: var(--gc-space-1) var(--gc-space-2);
+  font-size: var(--gc-fs-md);
+  padding: var(--gc-space-1) var(--gc-space-3);
 }
 
 .gc-explorer__aside-content {
@@ -2685,6 +2685,16 @@ h3 {
   min-width: 0;
 }
 
+.gc-inspector__identity .gc-avatar {
+  /*
+   * Optically center avatar with the first line of the subject title.
+   * Subject is --gc-fs-xl (1.2em) with line-height 1.25 -> first line height ~19.5px.
+   * Avatar is 28px. Slight negative top margin pulls avatar up ~2px so its
+   * center line aligns with the first line cap-height, stable across 1, 2, or 3 lines.
+   */
+  margin-top: calc(-1 * var(--gc-space-1));
+}
+
 .gc-inspector__titles {
   display: flex;
   flex-direction: column;
@@ -2693,12 +2703,12 @@ h3 {
 }
 
 /*
- * The one big title on this panel. `--gc-fs-2xl` rather than `lg`: it is the answer
- * to "what am I looking at", and everything below it is detail about that answer.
+ * The one big title on this panel. `--gc-fs-xl` establishes the top tier
+ * in the three-level text hierarchy (Title: xl -> Heading: sm -> Byline/Meta: xs/sm).
  */
 .gc-inspector__subject {
   margin: 0;
-  font-size: var(--gc-fs-2xl);
+  font-size: var(--gc-fs-xl);
   font-weight: var(--gc-weight-strong);
   line-height: 1.25;
   overflow-wrap: anywhere;
@@ -2720,12 +2730,11 @@ h3 {
   display: flex;
   flex-direction: column;
   gap: var(--gc-space-2);
-  padding-bottom: var(--gc-space-4);
+  padding-bottom: var(--gc-space-3);
   border-bottom: 1px solid var(--gc-border);
 }
 
-.gc-inspector__block:last-child,
-.gc-inspector__block--files {
+.gc-inspector__block:last-child {
   padding-bottom: 0;
   border-bottom: none;
 }
@@ -2739,7 +2748,7 @@ h3 {
 .gc-inspector__heading {
   margin: 0;
   color: var(--gc-muted);
-  font-size: var(--gc-fs-xs);
+  font-size: var(--gc-fs-sm);
   font-weight: var(--gc-weight-strong);
   text-transform: uppercase;
   letter-spacing: 0.05em;
@@ -2747,13 +2756,10 @@ h3 {
 
 .gc-inspector__hashes {
   /*
-   * One line at 250 px sidebar: hash pill + two 28px icon buttons + external
-   * icon fits in ~210 px (pill ~66 + copy group ~56 + external ~28 + gaps 24).
-   * Text labels would need >360 px. Icon-only keeps the row unbroken; below
-   * 250 px it wraps to hash on first line, controls on second, predictably.
+   * Hash controls row: wraps naturally on narrow widths without overflowing.
    */
   display: flex;
-  flex-wrap: nowrap;
+  flex-wrap: wrap;
   align-items: center;
   gap: var(--gc-space-2);
   min-width: 0;
@@ -2788,22 +2794,26 @@ h3 {
  * so repeating "Copy short hash" as visible text forces the reader to parse a
  * sentence to tell two identical-length labels apart. Full accessible names
  * survive on aria-label + title.
- * Joined as one segmented control — same idiom as Select all / Clear — so the
- * eye reads "two lengths, one act" and the panel keeps one grouping language.
+ * Joined as one segmented control — outer height fixed to var(--gc-hit) (28px)
+ * with a real border so it stays 28px matching adjacent controls (hash chip and
+ * external button) in normal mode and forced-colors (where border is forced).
  */
 .gc-inspector__copy-group {
   display: inline-flex;
   align-items: stretch;
   flex: 0 0 auto;
+  height: var(--gc-hit);
   border: 1px solid var(--gc-border);
   border-radius: var(--gc-radius);
   overflow: visible;
 }
 
 .gc-inspector__copy-group .gc-icon-button {
+  min-height: 0;
+  height: 100%;
   border-radius: 0;
   position: relative;
-  border-color: transparent;
+  border: 1px solid transparent;
   background: transparent;
   font-size: var(--gc-fs-sm);
 }
@@ -2830,6 +2840,10 @@ h3 {
   z-index: 2;
 }
 
+/*
+ * The '7' is literal text representing 7-char short hash. Sized at --gc-fs-sm
+ * so its optical weight and height match the adjacent clipboard icon glyph.
+ */
 .gc-inspector__copy-mark {
   display: inline-flex;
   align-items: center;
@@ -2841,40 +2855,19 @@ h3 {
 }
 
 /*
- * External action leaves the app — different class from clipboard, so not in the
- * same segmented rhythm. A vertical divider plus a standalone button makes the
- * boundary explicit; at 250 px the three icons plus pill still fit one line.
+ * External action leaves the app — standalone icon button bordered like other buttons,
+ * uniform font-size (--gc-fs-sm) matching the clipboard icon and copy mark.
  */
-.gc-inspector__external {
-  flex: 0 0 auto;
-  margin-left: var(--gc-space-1);
-  padding-left: var(--gc-space-2);
-  border-left: 1px solid var(--gc-border);
-  font-size: var(--gc-fs-xs);
-}
-
 .gc-inspector__external.gc-icon-button {
-  padding-left: 0;
-  border-left: none;
+  flex: 0 0 auto;
   border: 1px solid var(--gc-border);
-  margin-left: var(--gc-space-2);
-}
-
-/* Wrap predictably below 250 px: hash owns the first line, controls the second. */
-@media (max-width: 280px) {
-  .gc-inspector__hashes {
-    flex-wrap: wrap;
-  }
-  .gc-inspector__hash-value {
-    flex: 1 1 100%;
-    max-width: 100%;
-  }
+  font-size: var(--gc-fs-sm);
 }
 
 .gc-inspector__meta {
   display: grid;
   grid-template-columns: auto 1fr;
-  gap: var(--gc-space-1) var(--gc-space-4);
+  gap: var(--gc-space-2) var(--gc-space-4);
   margin: 0;
   font-size: var(--gc-fs-sm);
 }

@@ -196,7 +196,7 @@ export function Inspector({ hash }: Props): JSX.Element {
         </div>
 
         <div className="gc-inspector__hashes">
-          <code className="gc-inspector__short gc-inspector__hash-value" aria-label={strings.inspector.copyShortHashAria(shortHash(detail.hash))}>
+          <code className="gc-inspector__short gc-inspector__hash-value">
             {detail.shortHash}
           </code>
           {/*
@@ -212,9 +212,9 @@ export function Inspector({ hash }: Props): JSX.Element {
             <button
               type="button"
               className="gc-icon-button"
-              aria-label={strings.inspector.copyShortHashAria(shortHash(detail.hash))}
+              aria-label={strings.inspector.copyShortHashAria(detail.shortHash)}
               title={strings.inspector.copyShortHashTitle}
-              onClick={() => void copy(shortHash(detail.hash))}
+              onClick={() => void copy(detail.shortHash)}
             >
               <span className="gc-inspector__copy-mark" aria-hidden="true">
                 7
@@ -271,7 +271,7 @@ export function Inspector({ hash }: Props): JSX.Element {
               <ul className="gc-inspector__parents">
                 {detail.parents.map((p) => (
                   <li key={p}>
-                    <code>{shortHash(p)}</code>
+                    <code className="gc-inspector__hash-value">{shortHash(p)}</code>
                   </li>
                 ))}
               </ul>
