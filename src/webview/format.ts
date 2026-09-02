@@ -635,7 +635,7 @@ export function gitCommandOf(action: GitActionRequest): string {
     case 'checkout-commit':
       return `git checkout --detach ${shortHash(action.hash)}`;
     case 'create-branch':
-      return `git branch ${s(action.name)} ${shortHash(action.startPoint)}`;
+      return `git switch --create ${s(action.name)} ${shortHash(action.startPoint)}`;
     case 'merge':
       return `git merge ${action.noFf === true ? '--no-ff ' : ''}${s(action.branch)}`;
     case 'revert':

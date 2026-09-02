@@ -333,6 +333,70 @@ test('reset-hard needs confirm plus forceAcknowledgement, enforced host-side', a
   assert.equal(full.ok, true);
 });
 
+test('create-branch creates and switches to new branch via bridge', async (t) => {
+  const dir = await makeRepo();
+  t.after(() => cleanup(dir));
+  const repo = new RepositoryService({ folderPath: dir, gitPath: 'git', store: new MemoryStore() });
+  const head = (await repo.status()).head as string;
+  const h = harness(repo);
+  t.after(() => h.bridge.dispose());
+
+  const response = await h.webview.send(
+    req('actions/git', {
+      action: 'create-branch',
+      name: 'feature-test',
+      startPoint: head,
+      idempotencyKey: 'cb1',
+    }),
+  );
+  assert.equal(response.ok, true);
+  const status = await repo.status();
+  assert.equal(status.branch, 'feature-test');
+  assert.equal(status.head, head);
+});
+
+test('reset-hard on dirty tree is allowed with level 2 confirmation and cleans tree', async (t) => {
+  const dir = await makeRepo();
+  t.after(() => cleanup(dir));
+  // make an initial tracked file committed, then modify it to make tree dirty (since reset --hard removes tracked changes, untracked files are ignored by git reset --hard without git clean)
+  await fs.writeFile(path.join(dir, 'tracked.txt'), 'tracked initial\n', 'utf8');
+  const git = new GitRunner({ gitPath: 'git', cwd: dir });
+  await git.stage(['tracked.txt']);
+  await git.commit('add tracked file');
+
+  await fs.writeFile(path.join(dir, 'tracked.txt'), 'dirty modification\n', 'utf8');
+  const repo = new RepositoryService({ folderPath: dir, gitPath: 'git', store: new MemoryStore() });
+  const head = (await repo.status()).head as string;
+  assert.equal((await repo.status()).dirty, true);
+
+  const h = harness(repo);
+  t.after(() => h.bridge.dispose());
+
+  // Blocked first with CONFIRMATION_REQUIRED level 2 (NOT DIRTY_TREE)
+  const bare = await h.webview.send(
+    req('actions/git', { action: 'reset-hard', hash: head, idempotencyKey: 'rh-dirty-1' }),
+  );
+  assert.equal(bare.ok, false);
+  if (bare.ok) return;
+  assert.equal(bare.error.code, 'CONFIRMATION_REQUIRED');
+  assert.equal(bare.error.confirmationLevel, 2);
+  assert.ok(bare.error.remedies?.includes('confirm'));
+
+  // Retry with full confirmation succeeds and cleans the dirty tree
+  const retry = await h.webview.send(
+    req('actions/git', {
+      action: 'reset-hard',
+      hash: head,
+      confirm: true,
+      forceAcknowledgement: true,
+      idempotencyKey: 'rh-dirty-2',
+    }),
+  );
+  assert.equal(retry.ok, true);
+  const freshStatus = await repo.status();
+  assert.equal(freshStatus.dirty, false);
+});
+
 test('level 1 confirmation passes with confirm alone', async (t) => {
   const dir = await makeRepo();
   t.after(() => cleanup(dir));
@@ -1110,9 +1174,9 @@ test('reset-hard re-evaluates the guard inside the exclusive lock (SEC-008)', as
   const h = harness(repo);
   t.after(() => h.bridge.dispose());
 
-  // Dirty the tree AFTER the outer guard has seen a clean status, by hooking the
+  // Induce a merge operation AFTER the outer guard has seen an idle status, by hooking the
   // point where the lock is already held. This is exactly the TOCTOU the finding
-  // describes: an external process writing between the check and the mutation.
+  // describes: an external process starting a merge between the check and the mutation.
   let resets = 0;
   const realRun = repo.git.run.bind(repo.git);
   repo.git.run = async (args, opts) => {
@@ -1123,9 +1187,10 @@ test('reset-hard re-evaluates the guard inside the exclusive lock (SEC-008)', as
   repo.git.resetHard = (hash, opts = {}) =>
     realResetHard(hash, {
       precheck: async () => {
-        // Simulate the external writer. `precheck` runs after this, inside the
-        // lock, and must see the file.
-        await fs.writeFile(path.join(dir, 'raced.txt'), 'x\n', 'utf8');
+        // Simulate in-progress operation. `precheck` runs after this, inside the
+        // lock, and must see the conflict.
+        const gitDir = path.join(dir, '.git');
+        await fs.writeFile(path.join(gitDir, 'MERGE_HEAD'), `${head}\n`, 'utf8');
         if (opts.precheck !== undefined) await opts.precheck();
       },
     });
@@ -1140,14 +1205,11 @@ test('reset-hard re-evaluates the guard inside the exclusive lock (SEC-008)', as
     }),
   );
 
-  // The in-lock re-check saw the dirty tree and refused. Without it `git reset
-  // --hard` would have run and discarded `raced.txt`.
-  assert.equal(response.ok, false, 'the in-lock guard must reject a tree dirtied after the outer check');
+  // The in-lock re-check saw the merge conflict in progress and refused.
+  assert.equal(response.ok, false, 'the in-lock guard must reject an operation started after the outer check');
   if (response.ok) return;
-  assert.equal(response.error.code, 'DIRTY_TREE');
+  assert.equal(response.error.code, 'CONFLICT');
   assert.equal(resets, 0, 'git reset never ran');
-  // The work the guard protected is still there.
-  assert.equal(await fs.readFile(path.join(dir, 'raced.txt'), 'utf8'), 'x\n');
 });
 
 test('reset-hard still succeeds when nothing changes under the lock (SEC-008)', async (t) => {

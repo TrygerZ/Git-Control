@@ -58,11 +58,14 @@ const RESOLUTION_ACTIONS = new Set<GuardAction['action']>([
   'commit',
 ]);
 
-/** A dirty working tree would be overwritten or blocked by these. */
+/**
+ * A dirty working tree would be overwritten or blocked by these.
+ * Note: `reset-hard` is intentionally excluded so it proceeds to the 2-stage
+ * CONFIRMATION_REQUIRED flow — discarding a dirty tree is its explicit purpose.
+ */
 const DIRTY_BLOCKED = new Set<GuardAction['action']>([
   'checkout-branch',
   'checkout-commit',
-  'reset-hard',
   'merge',
 ]);
 

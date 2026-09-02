@@ -8,6 +8,7 @@ import { GitHubPanel } from './GitHubPanel';
 import { GraphCanvas } from './GraphCanvas';
 import { GuardDialog } from './GuardDialog';
 import { Inspector } from './Inspector';
+import { PromptDialog } from './PromptDialog';
 import { ToastRegion } from './Toast';
 import { bridge, loadState } from './bridge';
 import { githubBaseUrl, type MenuItem } from './NodeContextMenu';
@@ -38,6 +39,10 @@ export function ExplorerApp(): JSX.Element {
   const pushToast = useOperationStore((s) => s.pushToast);
   const showLogs = useOperationStore((s) => s.showLogs);
   const progressLog = useOperationStore((s) => s.progressLog);
+  const [createBranchTarget, setCreateBranchTarget] = useState<{
+    startPoint: string;
+    defaultName: string;
+  } | null>(null);
 
   const [githubUrl, setGithubUrl] = useState<string | null>(null);
   const [inspectorOpen, setInspectorOpen] = useState(true);
@@ -80,12 +85,9 @@ export function ExplorerApp(): JSX.Element {
           setInspectorOpen(true);
           return;
         case 'createBranch': {
-          const name = window.prompt(strings.explorer.newBranchPrompt, `${strings.explorer.defaultBranchPrefix}/${node.shortHash}`);
-          if (name === null || name.trim().length === 0) return;
-          void runAction({
-            action: 'create-branch',
-            name: name.trim(),
+          setCreateBranchTarget({
             startPoint: command.startPoint,
+            defaultName: `${strings.explorer.defaultBranchPrefix}/${node.shortHash}`,
           });
           return;
         }
@@ -176,6 +178,30 @@ export function ExplorerApp(): JSX.Element {
       </div>
 
       <GuardDialog />
+      {createBranchTarget !== null && (
+        <PromptDialog
+          title={strings.explorer.createBranchTitle}
+          label={strings.explorer.newBranchPrompt}
+          submitLabel={strings.explorer.createBranchTitle}
+          cancelLabel={strings.guard.cancelButton}
+          initialValue={createBranchTarget.defaultName}
+          validate={(val) => {
+            // Client-side quick validation: non-empty only. Host (validateBranchName) is sole authority.
+            if (val.length === 0) return strings.explorer.branchNameRequired;
+            return null;
+          }}
+          onSubmit={(name) => {
+            const target = createBranchTarget;
+            setCreateBranchTarget(null);
+            void runAction({
+              action: 'create-branch',
+              name,
+              startPoint: target.startPoint,
+            });
+          }}
+          onCancel={() => setCreateBranchTarget(null)}
+        />
+      )}
       <ToastRegion />
     </div>
   );

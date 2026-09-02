@@ -411,9 +411,7 @@ export const useOperationStore = create<OperationState_>((set, get) => ({
       if (result.operation !== 'idle') set({ state: 'conflict' });
       return true;
     };
-    try {
-      return await send({});
-    } catch (err) {
+    const handleFailure = (err: unknown): boolean => {
       const body = toErrorBody(err);
       const needsDialog =
         body.requiresConfirmation === true ||
@@ -429,8 +427,7 @@ export const useOperationStore = create<OperationState_>((set, get) => ({
               try {
                 await send(extra);
               } catch (retryErr) {
-                get().fail(retryErr);
-                set({ pendingGuard: null });
+                handleFailure(retryErr);
               }
             },
           },
@@ -439,6 +436,11 @@ export const useOperationStore = create<OperationState_>((set, get) => ({
       }
       get().fail(err);
       return false;
+    };
+    try {
+      return await send({});
+    } catch (err) {
+      return handleFailure(err);
     }
   },
 

@@ -139,12 +139,14 @@ export function menuItemsFor(
     });
   }
 
-  items.push({
-    id: 'create-branch',
-    label: strings.createBranch,
-    group: 'ubah',
-    command: { kind: 'createBranch', startPoint: node.hash },
-  });
+  if (!busy) {
+    items.push({
+      id: 'create-branch',
+      label: strings.createBranch,
+      group: 'ubah',
+      command: { kind: 'createBranch', startPoint: node.hash },
+    });
+  }
 
   const mergeable = branchesHere.find((r) => r.shortName !== currentBranch);
   if (mergeable !== undefined && currentBranch !== null && !busy) {

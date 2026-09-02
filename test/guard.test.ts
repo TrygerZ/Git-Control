@@ -44,11 +44,10 @@ test('clean repository allows non-destructive actions', () => {
   }
 });
 
-test('dirty tree blocks checkout, reset-hard, and merge', () => {
+test('dirty tree blocks checkout and merge', () => {
   const blocked: GuardAction[] = [
     { action: 'checkout-branch', branch: 'main' },
     { action: 'checkout-commit', hash: 'abcdef1' },
-    { action: 'reset-hard', hash: 'abcdef1' },
     { action: 'merge', branch: 'feature' },
   ];
   for (const action of blocked) {
@@ -65,6 +64,23 @@ test('dirty tree blocks checkout, reset-hard, and merge', () => {
     assert.equal(resEn.code, 'DIRTY_TREE');
     assert.equal(resEn.message, 'Commit or stash changes before checkout.');
   }
+
+  // reset-hard on dirty tree is not blocked with DIRTY_TREE, but requires level 2 confirmation
+  const rhId = verdict({ action: 'reset-hard', hash: 'abcdef1' }, { dirty: true }, 'id');
+  assert.equal(rhId.allow, false);
+  if (rhId.allow) return;
+  assert.equal(rhId.code, 'CONFIRMATION_REQUIRED');
+  assert.equal(rhId.confirmationLevel, 2);
+  assert.equal(rhId.risk, 'high');
+  assert.deepEqual(rhId.remedies, ['confirm', 'cancel']);
+
+  const rhEn = verdict({ action: 'reset-hard', hash: 'abcdef1' }, { dirty: true }, 'en');
+  assert.equal(rhEn.allow, false);
+  if (rhEn.allow) return;
+  assert.equal(rhEn.code, 'CONFIRMATION_REQUIRED');
+  assert.equal(rhEn.confirmationLevel, 2);
+  assert.equal(rhEn.risk, 'high');
+  assert.deepEqual(rhEn.remedies, ['confirm', 'cancel']);
 });
 
 test('dirty tree does not block staging, commit, stash, or fetch', () => {

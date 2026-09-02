@@ -238,7 +238,7 @@ const en = {
     actionConsequences: {
       checkoutBranch: (branch: string) => `Switch to branch ${branch}. Working directory files will follow that branch.`,
       checkoutCommit: 'Enter detached HEAD mode. New commits will not belong to any branch.',
-      createBranch: (name: string, hash: string) => `Create branch ${name} at commit ${hash} without switching.`,
+      createBranch: (name: string, hash: string) => `Create branch ${name} at commit ${hash} and switch to it.`,
       merge: (branch: string) => `Merge ${branch} into current branch. Conflicts may arise.`,
       revert: 'Create a new commit undoing changes from that commit. History remains intact.',
       resetSoft: 'Move branch pointer to that commit. Changes remain in staging area.',
@@ -535,8 +535,8 @@ const en = {
     stage1Title: 'Final confirmation stage. Not executed yet.',
     confirmTitle: (command: string, consequence: string) => `Running ${command} now. ${consequence}`,
     ackRequiredHint: 'Check the statement above first.',
-    commitToast: 'Commit in Pending Changes panel.',
-    resolveToast: 'Resolve conflicts in Conflicts panel.',
+    commitToast: 'Action cancelled. Commit in Pending Changes panel, then retry.',
+    resolveToast: 'Action cancelled. Resolve conflicts in Conflicts panel, then retry.',
     autoStashMessage: 'Git Control auto stash',
   },
 
@@ -597,6 +597,8 @@ const en = {
   explorer: {
     toastCopyFailed: 'Could not copy to clipboard.',
     newBranchPrompt: 'New branch name',
+    createBranchTitle: 'Create branch',
+    branchNameRequired: 'Branch name cannot be empty.',
     defaultBranchPrefix: 'feature',
     asideAria: 'Details panel',
     hideDetails: 'Hide details',
@@ -849,7 +851,7 @@ const id: Catalog = {
     actionConsequences: {
       checkoutBranch: (branch: string) => `Pindah ke branch ${branch}. File di folder kerja akan mengikuti branch itu.`,
       checkoutCommit: 'Masuk ke mode detached HEAD. Commit baru tidak menempel pada branch mana pun.',
-      createBranch: (name: string, hash: string) => `Membuat branch ${name} pada commit ${hash} tanpa berpindah.`,
+      createBranch: (name: string, hash: string) => `Membuat branch ${name} pada commit ${hash} dan langsung berpindah.`,
       merge: (branch: string) => `Menggabungkan ${branch} ke branch aktif. Bisa memunculkan konflik.`,
       revert: 'Membuat commit baru yang membatalkan perubahan commit tersebut. Histori tetap utuh.',
       resetSoft: 'Memindahkan branch ke commit tersebut. Perubahan tetap ada di staging area.',
@@ -1147,8 +1149,8 @@ const id: Catalog = {
     stage1Title: 'Tahap konfirmasi terakhir. Belum dijalankan.',
     confirmTitle: (command: string, consequence: string) => `Menjalankan ${command} sekarang. ${consequence}`,
     ackRequiredHint: 'Centang pernyataan di atas dulu.',
-    commitToast: 'Commit di panel Pending Changes.',
-    resolveToast: 'Selesaikan konflik di panel Konflik.',
+    commitToast: 'Tindakan dibatalkan. Lakukan commit di panel Pending Changes, lalu coba lagi.',
+    resolveToast: 'Tindakan dibatalkan. Selesaikan konflik di panel Konflik, lalu coba lagi.',
     autoStashMessage: 'Git Control auto stash',
   },
 
@@ -1209,6 +1211,8 @@ const id: Catalog = {
   explorer: {
     toastCopyFailed: 'Tidak bisa menyalin ke clipboard.',
     newBranchPrompt: 'Nama branch baru',
+    createBranchTitle: 'Buat branch',
+    branchNameRequired: 'Nama branch tidak boleh kosong.',
     defaultBranchPrefix: 'fitur',
     asideAria: 'Panel detail',
     hideDetails: 'Sembunyikan detail',

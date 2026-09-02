@@ -66,6 +66,7 @@ function GuardDialogBody({ guard }: { guard: PendingGuard }): JSX.Element {
   const runAction = useOperationStore((s) => s.runAction);
   const view = presentError(guard.error, language);
   const level = guard.error.confirmationLevel ?? 1;
+  const request: GitActionRequest = guard.request;
   const [stage, setStage] = useState<1 | 2>(1);
   const [acknowledged, setAcknowledged] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -143,13 +144,19 @@ function GuardDialogBody({ guard }: { guard: PendingGuard }): JSX.Element {
         return;
       }
       if (remedy === 'fetch') {
-        close();
-        await runAction({ action: 'fetch', prune: true });
+        const ok = await runAction({ action: 'fetch', prune: true });
+        if (ok) {
+          // Re-run original action: remedy only clears the obstacle, stopping here drops user's intent silently.
+          await runAction(request);
+        }
         return;
       }
       if (remedy === 'stash') {
-        close();
-        await runAction({ action: 'stash', message: strings.guard.autoStashMessage, includeUntracked: true });
+        const ok = await runAction({ action: 'stash', message: strings.guard.autoStashMessage, includeUntracked: true });
+        if (ok) {
+          // Re-run original action: remedy only clears the obstacle, stopping here drops user's intent silently.
+          await runAction(request);
+        }
         return;
       }
       if (remedy === 'commit') {
@@ -172,7 +179,6 @@ function GuardDialogBody({ guard }: { guard: PendingGuard }): JSX.Element {
     }
   };
 
-  const request: GitActionRequest = guard.request;
   const risk = guard.error.risk;
   const confirmDisabled = busy || (level === 2 && stage === 2 && !acknowledged);
   const titleId = 'gc-guard-title';
