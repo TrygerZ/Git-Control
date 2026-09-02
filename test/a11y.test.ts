@@ -609,8 +609,9 @@ test('every menu item declares a group, and the read-only ones cannot mutate', (
     if (item.group === 'jelajah') {
       assert.notEqual(item.command.kind, 'action', `${item.id} must not run git`);
       assert.notEqual(item.command.kind, 'createBranch', `${item.id} must not write a ref`);
+      assert.notEqual(item.command.kind, 'mergeInto', `${item.id} must not mutate repository`);
     }
-    if (item.command.kind === 'action') {
+    if (item.command.kind === 'action' || item.command.kind === 'mergeInto') {
       assert.equal(item.group, 'ubah', `${item.id} runs git and belongs in the mutating half`);
     }
   }
@@ -629,7 +630,7 @@ test('only non-obvious or destructive menu items carry a hint', () => {
   const withHint = items.filter((i) => i.hint !== undefined).map((i) => i.id);
   assert.deepEqual(
     withHint.sort(),
-    ['checkout-commit', 'push-up-to', 'reset-hard', 'reset-soft', 'revert'].sort(),
+    ['checkout-commit', 'merge-into', 'push-up-to', 'reset-hard', 'reset-soft', 'revert'].sort(),
   );
   for (const item of items) {
     if (item.hint !== undefined) {
@@ -639,15 +640,27 @@ test('only non-obvious or destructive menu items carry a hint', () => {
 });
 
 test('the destructive items are the ones marked risky, and they say what is lost', () => {
-  const items = menuItemsFor(node(), status(), [], null, 'id');
+  const items = menuItemsFor(
+    node(),
+    status(),
+    [ref({ shortName: 'main', refName: 'refs/heads/main' })],
+    null,
+    'id',
+  );
   const risky = new Set(items.filter((i) => i.risky === true).map((i) => i.id));
-  for (const id of ['reset-hard', 'reset-soft', 'revert', 'checkout-commit']) {
+  for (const id of ['reset-hard', 'reset-soft', 'revert', 'checkout-commit', 'merge-into']) {
     assert.ok(risky.has(id), `${id} is marked risky`);
   }
   const hard = items.find((i) => i.id === 'reset-hard');
   assert.match(hard?.hint ?? '', /[Pp]ermanen/, 'reset hard names the permanence');
 
-  const enItems = menuItemsFor(node(), status(), [], null, 'en');
+  const enItems = menuItemsFor(
+    node(),
+    status(),
+    [ref({ shortName: 'main', refName: 'refs/heads/main' })],
+    null,
+    'en',
+  );
   const enHard = enItems.find((i) => i.id === 'reset-hard');
   assert.match(enHard?.hint ?? '', /[Pp]ermanently/, 'en reset hard names the permanence');
 });

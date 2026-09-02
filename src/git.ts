@@ -769,6 +769,21 @@ export class GitRunner {
     await this.runExclusive(() => this.run(args));
   }
 
+  /**
+   * Switch to `target` branch and merge `source` (branch or commit hash) into it.
+   * Both commands execute in a single exclusive lock so no other git process intervenes.
+   */
+  async mergeInto(target: string, source: string): Promise<void> {
+    this.assertBranch(target);
+    if (!validateHash(source) && !validateBranchName(source)) {
+      throw new GitError({ code: 'VALIDATION_ERROR', message: `Invalid source: ${source}` });
+    }
+    await this.runExclusive(async () => {
+      await this.run(['switch', '--', sanitizeRefArg(target)]);
+      await this.run(['merge', sanitizeRefArg(source)]);
+    });
+  }
+
   async revert(hash: string): Promise<void> {
     this.assertHash(hash);
     await this.runExclusive(() => this.run(['revert', '--no-edit', sanitizeRefArg(hash)]));

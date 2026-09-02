@@ -582,6 +582,7 @@ const ACTIONS: GitActionRequest[] = [
   { action: 'checkout-commit', hash: HASH },
   { action: 'create-branch', name: 'fitur', startPoint: HASH },
   { action: 'merge', branch: 'fitur' },
+  { action: 'merge-into', target: 'main', source: 'fitur' },
   { action: 'revert', hash: HASH },
   { action: 'reset-soft', hash: HASH },
   { action: 'reset-hard', hash: HASH },
@@ -627,6 +628,7 @@ test('consequenceOf and actionTitle describe every action in Indonesian', () => 
 test('actionTarget picks the branch, name, hash, or remote', () => {
   assert.equal(actionTarget({ action: 'checkout-branch', branch: 'main' }), 'main');
   assert.equal(actionTarget({ action: 'create-branch', name: 'fitur', startPoint: HASH }), 'fitur');
+  assert.equal(actionTarget({ action: 'merge-into', target: 'main', source: 'fitur' }), 'main');
   assert.equal(actionTarget({ action: 'revert', hash: HASH }), 'abc1234');
   assert.equal(actionTarget({ action: 'fetch', remote: 'origin' }), 'origin');
   assert.equal(actionTarget({ action: 'stash-pop' }), '?');

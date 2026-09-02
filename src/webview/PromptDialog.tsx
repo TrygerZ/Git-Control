@@ -1,12 +1,13 @@
 /**
- * Single-field text prompt modal (FEAT-04 / FIX-01).
+ * Single-field text prompt or dropdown selection modal (FEAT-04 / FIX-01).
  *
- * Used for actions requiring user text input (such as branch creation) in the
- * sandboxed VS Code webview where window.prompt() is a no-op.
+ * Collects a single string from the user, either freeform or constrained to a list of options.
+ * Used for actions requiring user input (such as branch creation or merge destination selection)
+ * in the sandboxed VS Code webview where window.prompt() is a no-op.
  *
  * Implements strict accessibility:
  * - Backdrop + dialog with role="dialog", aria-modal="true", aria-labelledby, aria-describedby
- * - Initial focus on input, focus restored to previous element on unmount
+ * - Initial focus on input/select, focus restored to previous element on unmount
  * - Tab trapping inside modal and Escape key handling to cancel
  * - Form submission for Enter key activation
  * - Inline validation error presentation with aria-invalid + role="alert"
@@ -14,7 +15,7 @@
 import { useEffect, useId, useRef, useState, type FormEvent, type JSX, type KeyboardEvent } from 'react';
 
 const FOCUSABLE =
-  'button:not([disabled]), [href], input:not([disabled]), select, textarea, [tabindex]:not([tabindex="-1"])';
+  'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea, [tabindex]:not([tabindex="-1"])';
 
 export interface PromptDialogProps {
   title: string;
@@ -24,6 +25,7 @@ export interface PromptDialogProps {
   initialValue?: string;
   placeholder?: string;
   hint?: string;
+  options?: readonly string[];
   validate?: (value: string) => string | null;
   onSubmit: (value: string) => void;
   onCancel: () => void;
@@ -37,6 +39,7 @@ export function PromptDialog({
   initialValue = '',
   placeholder,
   hint,
+  options,
   validate,
   onSubmit,
   onCancel,
@@ -44,7 +47,7 @@ export function PromptDialog({
   const [value, setValue] = useState(initialValue);
   const [error, setError] = useState<string | null>(null);
   const dialogRef = useRef<HTMLDivElement>(null);
-  const inputRef = useRef<HTMLInputElement>(null);
+  const controlRef = useRef<HTMLInputElement | HTMLSelectElement | null>(null);
   const returnFocus = useRef<Element | null>(null);
 
   const titleId = useId();
@@ -54,8 +57,10 @@ export function PromptDialog({
 
   useEffect(() => {
     returnFocus.current = document.activeElement;
-    inputRef.current?.focus();
-    inputRef.current?.select();
+    controlRef.current?.focus();
+    if (controlRef.current instanceof HTMLInputElement) {
+      controlRef.current.select();
+    }
     return () => {
       const previous = returnFocus.current;
       if (previous instanceof HTMLElement) previous.focus();
@@ -122,18 +127,41 @@ export function PromptDialog({
         <form onSubmit={handleSubmit} className="gc-modal__body" id={descId}>
           <label className="gc-field">
             <span className="gc-field__label">{label}</span>
-            <input
-              ref={inputRef}
-              type="text"
-              value={value}
-              placeholder={placeholder}
-              aria-invalid={error !== null}
-              aria-describedby={describedBy}
-              onChange={(e) => {
-                setValue(e.target.value);
-                if (error !== null) setError(null);
-              }}
-            />
+            {options !== undefined ? (
+              <select
+                ref={(node) => {
+                  controlRef.current = node;
+                }}
+                value={value}
+                aria-invalid={error !== null}
+                aria-describedby={describedBy}
+                onChange={(e) => {
+                  setValue(e.target.value);
+                  if (error !== null) setError(null);
+                }}
+              >
+                {options.map((opt) => (
+                  <option key={opt} value={opt}>
+                    {opt}
+                  </option>
+                ))}
+              </select>
+            ) : (
+              <input
+                ref={(node) => {
+                  controlRef.current = node;
+                }}
+                type="text"
+                value={value}
+                placeholder={placeholder}
+                aria-invalid={error !== null}
+                aria-describedby={describedBy}
+                onChange={(e) => {
+                  setValue(e.target.value);
+                  if (error !== null) setError(null);
+                }}
+              />
+            )}
           </label>
 
           {hint !== undefined && (

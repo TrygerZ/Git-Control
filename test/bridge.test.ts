@@ -1568,3 +1568,93 @@ test('staging an ignored path is dropped, not failed', async (t) => {
   const after = await repo.status();
   assert.ok(after.changes.some((c) => c.path === 'a.txt' && c.staged));
 });
+
+test('merge-into performs switch then merge and stays on target branch', async (t) => {
+  const dir = await makeRepo();
+  t.after(() => cleanup(dir));
+  const repo = new RepositoryService({ folderPath: dir, gitPath: 'git', store: new MemoryStore() });
+  const h = harness(repo);
+  t.after(() => h.bridge.dispose());
+
+  // Create side branch off main with a unique commit
+  await repo.git.createBranch('side', 'main');
+  await fs.writeFile(path.join(dir, 'side.txt'), 'side content\n', 'utf8');
+  await repo.git.stage(['side.txt']);
+  const sideCommit = await repo.git.commit('side commit');
+  await repo.git.switchBranch('side'); // currently on side branch
+
+  repo.invalidate();
+  const token = (await repo.status()).statusToken;
+
+  const response = await h.webview.send(
+    req('actions/git', {
+      action: 'merge-into',
+      target: 'main',
+      source: 'side',
+      confirm: true,
+      statusToken: token,
+      idempotencyKey: 'merge-into-1',
+    }),
+  );
+  assert.equal(response.ok, true);
+
+  // Verify real git repository state
+  const current = await repo.git.currentBranch();
+  assert.equal(current.branch, 'main');
+
+  // Verify side commit is reachable from main
+  assert.ok(sideCommit !== null);
+  const logOnMain = await repo.git.run(['log', '--format=%H', '-n', '5', 'main']);
+  assert.ok(logOnMain.stdout.includes(sideCommit));
+});
+
+test('merge-into rejects invalid target with VALIDATION_ERROR before touching git', async (t) => {
+  const dir = await makeRepo();
+  t.after(() => cleanup(dir));
+  const repo = new RepositoryService({ folderPath: dir, gitPath: 'git', store: new MemoryStore() });
+  const h = harness(repo);
+  t.after(() => h.bridge.dispose());
+
+  const token = (await repo.status()).statusToken;
+  const response = await h.webview.send(
+    req('actions/git', {
+      action: 'merge-into',
+      target: 'bad..branch..name',
+      source: 'main',
+      confirm: true,
+      statusToken: token,
+      idempotencyKey: 'merge-into-2',
+    }),
+  );
+  assert.equal(response.ok, false);
+  if (response.ok) return;
+  assert.equal(response.error.status, 400);
+  assert.equal(response.error.code, 'VALIDATION_ERROR');
+});
+
+test('merge-into on dirty tree is blocked with DIRTY_TREE', async (t) => {
+  const dir = await makeRepo();
+  t.after(() => cleanup(dir));
+  const repo = new RepositoryService({ folderPath: dir, gitPath: 'git', store: new MemoryStore() });
+  const h = harness(repo);
+  t.after(() => h.bridge.dispose());
+
+  await fs.writeFile(path.join(dir, 'dirty.txt'), 'uncommitted work\n', 'utf8');
+  repo.invalidate();
+  const token = (await repo.status()).statusToken;
+
+  const response = await h.webview.send(
+    req('actions/git', {
+      action: 'merge-into',
+      target: 'main',
+      source: 'side',
+      confirm: true,
+      statusToken: token,
+      idempotencyKey: 'merge-into-3',
+    }),
+  );
+  assert.equal(response.ok, false);
+  if (response.ok) return;
+  assert.equal(response.error.status, 412);
+  assert.equal(response.error.code, 'DIRTY_TREE');
+});

@@ -751,6 +751,8 @@ export class MessageBridge {
         return git.merge(action.branch, {
           ...(action.noFf === undefined ? {} : { noFf: action.noFf }),
         });
+      case 'merge-into':
+        return git.mergeInto(action.target, action.source);
       case 'revert':
         return git.revert(action.hash);
       case 'reset-soft':
@@ -1077,6 +1079,10 @@ function validateAction(action: GitActionPayload, msg: string = 'Invalid request
       return;
     case 'merge':
       if (!validateBranchName(action.branch)) bad('branch');
+      return;
+    case 'merge-into':
+      if (!validateBranchName(action.target)) bad('target');
+      if (!validateBranchName(action.source) && !validateHash(action.source)) bad('source');
       return;
     case 'push':
       if (!validateRemoteName(action.remote)) bad('remote');

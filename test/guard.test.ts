@@ -49,6 +49,7 @@ test('dirty tree blocks checkout and merge', () => {
     { action: 'checkout-branch', branch: 'main' },
     { action: 'checkout-commit', hash: 'abcdef1' },
     { action: 'merge', branch: 'feature' },
+    { action: 'merge-into', target: 'main', source: 'feature' },
   ];
   for (const action of blocked) {
     const resId = verdict(action, { dirty: true }, 'id');
@@ -254,6 +255,7 @@ test('push-up-to, revert, and reset-soft demand a level 1 confirmation', () => {
     { action: 'push-up-to', remote: 'origin', branch: 'main', hash: 'abcdef1' },
     { action: 'revert', hash: 'abcdef1' },
     { action: 'reset-soft', hash: 'abcdef1' },
+    { action: 'merge-into', target: 'main', source: 'feature' },
   ];
   for (const action of actions) {
     const resId = verdict(action, {}, 'id');

@@ -39,7 +39,8 @@ export type MenuCommand =
   | { kind: 'copy'; text: string; toast: string }
   | { kind: 'openGitHub'; url: string }
   | { kind: 'viewDiff'; hash: string }
-  | { kind: 'createBranch'; startPoint: string };
+  | { kind: 'createBranch'; startPoint: string }
+  | { kind: 'mergeInto'; source: string; targets: readonly string[] };
 
 /**
  * Which half of the menu an item belongs to.
@@ -155,6 +156,26 @@ export function menuItemsFor(
       label: strings.merge(sanitizeGitText(mergeable.shortName), sanitizeGitText(currentBranch)),
       group: 'ubah',
       command: { kind: 'action', request: { action: 'merge', branch: mergeable.shortName } },
+    });
+  }
+
+  const localBranches = Array.from(
+    new Set(refs.filter((r) => r.kind === 'local').map((r) => r.shortName)),
+  ).sort((a, b) => {
+    if (a === currentBranch) return -1;
+    if (b === currentBranch) return 1;
+    return a.localeCompare(b);
+  });
+  if (localBranches.length > 0 && !busy) {
+    const singleBranch = branchesHere.length === 1 ? branchesHere[0] : undefined;
+    const source = singleBranch !== undefined ? singleBranch.shortName : node.hash;
+    items.push({
+      id: 'merge-into',
+      label: strings.mergeInto,
+      group: 'ubah',
+      hint: strings.mergeIntoHint,
+      risky: true,
+      command: { kind: 'mergeInto', source, targets: localBranches },
     });
   }
 

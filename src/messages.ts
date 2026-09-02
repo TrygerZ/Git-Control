@@ -220,6 +220,7 @@ export type GitActionRequest =
   | { action: 'checkout-commit'; hash: string }
   | { action: 'create-branch'; name: string; startPoint: string }
   | { action: 'merge'; branch: string; noFf?: boolean }
+  | { action: 'merge-into'; target: string; source: string }
   | { action: 'revert'; hash: string }
   | { action: 'reset-soft'; hash: string }
   | { action: 'reset-hard'; hash: string }

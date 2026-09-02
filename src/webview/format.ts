@@ -29,6 +29,12 @@ export function shortHash(hash: string, length: number = SHORT_HASH_LENGTH): str
   return hash.slice(0, Math.max(1, length));
 }
 
+// merge-into.source can be a branch name or a 40-character hash; only shorten hashes,
+// because shortHash would make a branch name unreadable.
+function refOrShortHash(source: string): string {
+  return /^[0-9a-f]{40}$/i.test(source) ? shortHash(source) : sanitizeGitText(source);
+}
+
 // ------------------------------------------------------------ untrusted text
 
 /**
@@ -638,6 +644,10 @@ export function gitCommandOf(action: GitActionRequest): string {
       return `git switch --create ${s(action.name)} ${shortHash(action.startPoint)}`;
     case 'merge':
       return `git merge ${action.noFf === true ? '--no-ff ' : ''}${s(action.branch)}`;
+    case 'merge-into': {
+      const formattedSource = refOrShortHash(action.source);
+      return `git switch ${s(action.target)} && git merge ${formattedSource}`;
+    }
     case 'revert':
       return `git revert --no-edit ${shortHash(action.hash)}`;
     case 'reset-soft':
@@ -676,6 +686,10 @@ export function consequenceOf(action: GitActionRequest, lang: Lang = 'en'): stri
       return strings.createBranch(s(action.name), shortHash(action.startPoint));
     case 'merge':
       return strings.merge(s(action.branch));
+    case 'merge-into': {
+      const formattedSource = refOrShortHash(action.source);
+      return strings.mergeInto(s(action.target), formattedSource);
+    }
     case 'revert':
       return strings.revert;
     case 'reset-soft':
@@ -714,6 +728,10 @@ export function actionTitle(action: GitActionRequest, lang: Lang = 'en'): string
       return strings.createBranch(s(action.name));
     case 'merge':
       return strings.merge(s(action.branch));
+    case 'merge-into': {
+      const formattedSource = refOrShortHash(action.source);
+      return strings.mergeInto(s(action.target), formattedSource);
+    }
     case 'revert':
       return strings.revert(shortHash(action.hash));
     case 'reset-soft':
@@ -741,6 +759,7 @@ export function actionTitle(action: GitActionRequest, lang: Lang = 'en'): string
 
 /** Target the action operates on, shown as the dialog's subject line. Sanitised. */
 export function actionTarget(action: GitActionRequest): string {
+  if (action.action === 'merge-into') return sanitizeGitText(action.target);
   if ('branch' in action && typeof action.branch === 'string') return sanitizeGitText(action.branch);
   if ('name' in action) return sanitizeGitText(action.name);
   if ('hash' in action) return shortHash(action.hash);

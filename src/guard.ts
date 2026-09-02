@@ -67,10 +67,20 @@ const DIRTY_BLOCKED = new Set<GuardAction['action']>([
   'checkout-branch',
   'checkout-commit',
   'merge',
+  'merge-into',
 ]);
 
-/** Actions needing a single confirmation click. */
-const CONFIRM_LEVEL_1 = new Set<GuardAction['action']>(['push-up-to', 'revert', 'reset-soft']);
+/**
+ * Actions needing a single confirmation click.
+ * `merge-into` changes the active branch (switch + merge), so on a clean tree without confirmation
+ * the user would suddenly find themselves on another branch without having asked for it.
+ */
+const CONFIRM_LEVEL_1 = new Set<GuardAction['action']>([
+  'push-up-to',
+  'revert',
+  'reset-soft',
+  'merge-into',
+]);
 
 /**
  * Decide whether `action` may run against `snapshot`.

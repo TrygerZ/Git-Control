@@ -43,6 +43,10 @@ export function ExplorerApp(): JSX.Element {
     startPoint: string;
     defaultName: string;
   } | null>(null);
+  const [mergeIntoTarget, setMergeIntoTarget] = useState<{
+    source: string;
+    targets: readonly string[];
+  } | null>(null);
 
   const [githubUrl, setGithubUrl] = useState<string | null>(null);
   const [inspectorOpen, setInspectorOpen] = useState(true);
@@ -88,6 +92,13 @@ export function ExplorerApp(): JSX.Element {
           setCreateBranchTarget({
             startPoint: command.startPoint,
             defaultName: `${strings.explorer.defaultBranchPrefix}/${node.shortHash}`,
+          });
+          return;
+        }
+        case 'mergeInto': {
+          setMergeIntoTarget({
+            source: command.source,
+            targets: command.targets,
           });
           return;
         }
@@ -200,6 +211,26 @@ export function ExplorerApp(): JSX.Element {
             });
           }}
           onCancel={() => setCreateBranchTarget(null)}
+        />
+      )}
+      {mergeIntoTarget !== null && (
+        <PromptDialog
+          title={strings.explorer.mergeIntoTitle}
+          label={strings.explorer.mergeIntoPrompt}
+          submitLabel={strings.explorer.mergeIntoSubmit}
+          cancelLabel={strings.guard.cancelButton}
+          options={mergeIntoTarget.targets}
+          initialValue={mergeIntoTarget.targets[0]}
+          onSubmit={(target) => {
+            const { source } = mergeIntoTarget;
+            setMergeIntoTarget(null);
+            void runAction({
+              action: 'merge-into',
+              target,
+              source,
+            });
+          }}
+          onCancel={() => setMergeIntoTarget(null)}
         />
       )}
       <ToastRegion />
