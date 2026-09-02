@@ -865,7 +865,8 @@ h3 {
   display: flex;
   align-items: center;
   flex: 1 1 0;
-  min-width: 0;
+  /* Floor prevents branch select collapsing to chevron; min() respects narrow panels */
+  min-width: min(9em, 100%);
   max-width: 100%;
 }
 
