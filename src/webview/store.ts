@@ -158,7 +158,6 @@ export interface ChangesState {
   collapsed: Set<string>;
   commitMessage: string;
   pushAfterCommit: boolean;
-  includeUntracked: boolean;
   busy: boolean;
   loading: boolean;
   hasLoaded: boolean;
@@ -175,7 +174,6 @@ export interface ChangesState {
   clear(): void;
   setCommitMessage(message: string): void;
   setPushAfterCommit(value: boolean): void;
-  setIncludeUntracked(value: boolean): void;
   stage(paths: string[]): Promise<void>;
   unstage(paths: string[]): Promise<void>;
   commit(): Promise<boolean>;
@@ -190,7 +188,6 @@ export const useChangesStore = create<ChangesState>((set, get) => ({
   collapsed: new Set<string>(),
   commitMessage: '',
   pushAfterCommit: false,
-  includeUntracked: false,
   busy: false,
   loading: false,
   hasLoaded: false,
@@ -263,11 +260,6 @@ export const useChangesStore = create<ChangesState>((set, get) => ({
   setPushAfterCommit(value) {
     set({ pushAfterCommit: value });
     saveState({ pushAfterCommit: value });
-  },
-
-  setIncludeUntracked(value) {
-    set({ includeUntracked: value });
-    saveState({ includeUntracked: value });
   },
 
   async stage(paths) {

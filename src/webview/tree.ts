@@ -189,6 +189,29 @@ export interface TreeRow {
   depth: number;
 }
 
+/**
+ * Filter selected paths for staging.
+ *
+ * Untracked files ('??') are included directly when the user checked them.
+ * Ignored files ('!') are dropped because `git add` on an ignored path exits
+ * with error and fails the entire batch. Unknown paths are dropped.
+ */
+export function stageableFrom(
+  selection: ReadonlyArray<string> | ReadonlySet<string>,
+  changes: readonly ChangeEntry[],
+): string[] {
+  const set = selection instanceof Set ? selection : new Set(selection);
+  const out: string[] = [];
+  for (const path of set) {
+    const entry = changes.find((c) => c.path === path);
+    if (entry === undefined) continue;
+    if (entry.indexStatus !== '!' && entry.worktreeStatus !== '!') {
+      out.push(path);
+    }
+  }
+  return out;
+}
+
 export function flattenTree(
   root: FolderNode,
   collapsed: ReadonlySet<string>,

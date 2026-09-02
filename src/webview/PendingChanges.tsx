@@ -23,7 +23,7 @@ import { ToastRegion } from './Toast';
 import { bridge, loadState, saveState } from './bridge';
 import { formatCount, sanitizeGitText, UNKNOWN_CHURN } from './format';
 import { useT } from './useT';
-import { groupBySection, type ChangeSection } from './tree';
+import { groupBySection, stageableFrom, type ChangeSection } from './tree';
 import {
   toErrorBody,
   useChangesStore,
@@ -68,7 +68,6 @@ export function PendingChangesApp(): JSX.Element {
   const loading = useChangesStore((s) => s.loading);
   const hasLoaded = useChangesStore((s) => s.hasLoaded);
   const error = useChangesStore((s) => s.error);
-  const includeUntracked = useChangesStore((s) => s.includeUntracked);
   const load = useChangesStore((s) => s.load);
   const toggle = useChangesStore((s) => s.toggle);
   const toggleFolder = useChangesStore((s) => s.toggleFolder);
@@ -110,7 +109,6 @@ export function PendingChangesApp(): JSX.Element {
       collapsed: new Set(persisted.collapsedFolders),
       commitMessage: persisted.commitMessage,
       pushAfterCommit: persisted.pushAfterCommit,
-      includeUntracked: persisted.includeUntracked,
     });
     // Scroll position is restored after the first paint, once rows exist.
     requestAnimationFrame(() => {
@@ -172,15 +170,23 @@ export function PendingChangesApp(): JSX.Element {
     }
   };
 
-  /** Untracked files are only staged when the user opted in. */
-  const stageablePaths = (): string[] =>
-    selected.filter((path) => {
-      const entry = changes.find((c) => c.path === path);
-      if (entry === undefined) return false;
-      return includeUntracked || !entry.untracked;
-    });
+  /**
+   * Untracked files are staged directly because explicit selection is user opt-in.
+   * Ignored files ('!') are dropped because `git add` fails on ignored paths
+   * with exit 1 and fails the entire batch.
+   */
+  const stageable = stageableFrom(selected, changes);
 
-  const stageable = stageablePaths();
+  const handleStage = async (): Promise<void> => {
+    if (stageable.length < selected.length) {
+      const skipped = selected.length - stageable.length;
+      pushToast({
+        level: 'info',
+        message: strings.pending.ignoredSkippedToast(formatCount(skipped, language)),
+      });
+    }
+    await stage(stageable);
+  };
 
   /**
    * Only staged paths can be unstaged. `selectAll` sweeps in untracked entries,
@@ -234,7 +240,7 @@ export function PendingChangesApp(): JSX.Element {
             aria-label={strings.pending.stageAria(formatCount(stageable.length, language))}
             title={strings.pending.stageTitle}
             disabled={busy || stageable.length === 0}
-            onClick={() => void stage(stageablePaths())}
+            onClick={() => void handleStage()}
           >
             <Icon name="arrow-down" />{strings.pending.stageButton}
           </button>

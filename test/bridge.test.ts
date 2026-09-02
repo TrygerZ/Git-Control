@@ -1440,3 +1440,69 @@ test('a mixed unstage batch drops only the untracked paths', async (t) => {
   assert.equal(after.staged, false);
   assert.ok(after.changes.some((c) => c.path === 'lambada.txt' && c.untracked));
 });
+
+test('a mixed stage batch keeps untracked paths', async (t) => {
+  const dir = await makeRepo();
+  t.after(() => cleanup(dir));
+  await fs.writeFile(path.join(dir, 'lambada.txt'), 'x\n', 'utf8');
+  await fs.writeFile(path.join(dir, 'a.txt'), 'changed\n', 'utf8');
+  const repo = new RepositoryService({ folderPath: dir, gitPath: 'git', store: new MemoryStore() });
+  const h = harness(repo);
+  t.after(() => h.bridge.dispose());
+
+  const seen: string[][] = [];
+  const realStage = repo.git.stage.bind(repo.git);
+  repo.git.stage = async (paths) => {
+    seen.push([...paths]);
+    return realStage(paths);
+  };
+
+  const token = (await repo.status()).statusToken;
+  const response = await h.webview.send(
+    req('actions/stage', {
+      paths: ['a.txt', 'lambada.txt'],
+      stage: true,
+      statusToken: token,
+      idempotencyKey: 's1',
+    }),
+  );
+  assert.equal(response.ok, true);
+  assert.deepEqual(seen, [['a.txt', 'lambada.txt']]);
+  const after = await repo.status();
+  assert.ok(after.changes.every((c) => c.staged));
+});
+
+test('staging an ignored path is dropped, not failed', async (t) => {
+  const dir = await makeRepo();
+  t.after(() => cleanup(dir));
+  await fs.writeFile(path.join(dir, '.gitignore'), 'ignored.txt\n', 'utf8');
+  const repo = new RepositoryService({ folderPath: dir, gitPath: 'git', store: new MemoryStore() });
+  await repo.git.stage(['.gitignore']);
+  await repo.git.commit('ignore rule');
+  await fs.writeFile(path.join(dir, 'ignored.txt'), 'secret\n', 'utf8');
+  await fs.writeFile(path.join(dir, 'a.txt'), 'changed\n', 'utf8');
+  repo.invalidate();
+  const h = harness(repo);
+  t.after(() => h.bridge.dispose());
+
+  const seen: string[][] = [];
+  const realStage = repo.git.stage.bind(repo.git);
+  repo.git.stage = async (paths) => {
+    seen.push([...paths]);
+    return realStage(paths);
+  };
+
+  const token = (await repo.status({ includeIgnored: true })).statusToken;
+  const response = await h.webview.send(
+    req('actions/stage', {
+      paths: ['a.txt', 'ignored.txt'],
+      stage: true,
+      statusToken: token,
+      idempotencyKey: 's2',
+    }),
+  );
+  assert.equal(response.ok, true);
+  assert.deepEqual(seen, [['a.txt']]);
+  const after = await repo.status();
+  assert.ok(after.changes.some((c) => c.path === 'a.txt' && c.staged));
+});

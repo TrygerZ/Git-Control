@@ -26,8 +26,6 @@ export function CommitForm(): JSX.Element {
   const setMessage = useChangesStore((st) => st.setCommitMessage);
   const pushAfter = useChangesStore((st) => st.pushAfterCommit);
   const setPushAfter = useChangesStore((st) => st.setPushAfterCommit);
-  const includeUntracked = useChangesStore((st) => st.includeUntracked);
-  const setIncludeUntracked = useChangesStore((st) => st.setIncludeUntracked);
   const busy = useChangesStore((st) => st.busy);
   const messageError = useChangesStore((st) => st.messageError);
   const commit = useChangesStore((st) => st.commit);
@@ -92,18 +90,6 @@ export function CommitForm(): JSX.Element {
             />
             <span className="gc-checkbox__text">
               <span>{strings.commitForm.pushAfter}</span>
-            </span>
-          </label>
-
-          <label className="gc-checkbox">
-            <input
-              type="checkbox"
-              checked={includeUntracked}
-              disabled={busy}
-              onChange={(e) => setIncludeUntracked(e.target.checked)}
-            />
-            <span className="gc-checkbox__text">
-              <span>{strings.commitForm.includeUntracked}</span>
             </span>
           </label>
         </div>

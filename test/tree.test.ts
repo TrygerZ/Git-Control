@@ -8,6 +8,7 @@ import {
   groupBySection,
   pruneSelection,
   sectionOf,
+  stageableFrom,
   toggleNode,
   togglePath,
   triState,
@@ -183,4 +184,15 @@ test('flattenTree reports depth for indentation', () => {
   const rows = flattenTree(buildTree(nested), new Set());
   const main = rows.find((r) => r.node.name === 'main.tsx');
   assert.equal(main?.depth, 2);
+});
+
+test('stageableFrom keeps modified and untracked, drops ignored and unknown', () => {
+  const entries: ChangeEntry[] = [
+    entry('mod.ts', { indexStatus: ' ', worktreeStatus: 'M', staged: false, unstaged: true }),
+    entry('new.ts', { indexStatus: '?', worktreeStatus: '?', staged: false, untracked: true }),
+    entry('ignored.ts', { indexStatus: '!', worktreeStatus: '!' }),
+  ];
+  const selected = ['mod.ts', 'new.ts', 'ignored.ts', 'unknown.ts'];
+  const res = stageableFrom(selected, entries);
+  assert.deepEqual(res, ['mod.ts', 'new.ts']);
 });

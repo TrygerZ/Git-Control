@@ -586,6 +586,13 @@ export class MessageBridge {
     this.gate({ action: 'stage' }, status, payload);
 
     /*
+     * Staging drops ignored entries (`!`) because `git add` fails on ignored
+     * paths with an exit code of 1 and aborts the entire batch. Clean/untracked
+     * or unknown paths pass through.
+     *
+     * Staging does not drop untracked files — the user's explicit request is the
+     * opt-in.
+     *
      * Unstage only what is actually in the index.
      *
      * The webview filters its selection too, but the webview is untrusted input:
@@ -602,7 +609,10 @@ export class MessageBridge {
      * unstageable, so they stay.
      */
     const paths = payload.stage
-      ? payload.paths
+      ? payload.paths.filter((p) => {
+          const entry = status.changes.find((c) => c.path === p);
+          return entry === undefined || (entry.indexStatus !== '!' && entry.worktreeStatus !== '!');
+        })
       : payload.paths.filter((p) => {
           if (status.conflicts.some((c) => c.path === p)) return true;
           const entry = status.changes.find((c) => c.path === p);

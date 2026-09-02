@@ -46,7 +46,6 @@ export interface WebviewState {
   selectedPaths: string[];
   commitMessage: string;
   pushAfterCommit: boolean;
-  includeUntracked: boolean;
   showRibbons: boolean;
 }
 
@@ -57,7 +56,6 @@ const DEFAULT_STATE: WebviewState = {
   selectedPaths: [],
   commitMessage: '',
   pushAfterCommit: false,
-  includeUntracked: false,
   showRibbons: true,
 };
 
@@ -243,7 +241,6 @@ export function loadState(): WebviewState {
       : [],
     commitMessage: typeof partial.commitMessage === 'string' ? partial.commitMessage : '',
     pushAfterCommit: partial.pushAfterCommit === true,
-    includeUntracked: partial.includeUntracked === true,
     showRibbons: partial.showRibbons !== false,
   };
 }
