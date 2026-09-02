@@ -351,12 +351,11 @@ h3 {
 }
 
 /*
- * An expanded toggle (the aside handle, the legend launcher) keeps the hover fill
+ * An expanded toggle (the legend launcher, etc.) keeps the hover fill
  * plus the same inset rule `.gc-button--danger` uses, so "this is on" survives a
  * theme where two backgrounds are nearly identical.
  */
-.gc-icon-button[aria-expanded='true'],
-.gc-explorer__aside-toggle[aria-expanded='true'] {
+.gc-icon-button[aria-expanded='true']:not(.gc-explorer__aside-toggle) {
   background: var(--vscode-toolbar-hoverBackground, var(--vscode-list-hoverBackground));
   box-shadow: inset 0 0 0 1px var(--vscode-focusBorder);
 }
@@ -750,14 +749,28 @@ h3 {
   padding-left: 0;
 }
 
-.gc-explorer__aside-head {
-  display: flex;
-  justify-content: flex-end;
+.gc-explorer__aside--closed .gc-explorer__aside-head {
+  padding-bottom: 0;
+  border-bottom: none;
 }
 
-.gc-explorer__aside-toggle {
-  font-size: var(--gc-fs-md);
-  padding: var(--gc-space-1) var(--gc-space-3);
+.gc-explorer__aside-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--gc-space-2);
+  min-height: var(--gc-hit);
+  padding-bottom: var(--gc-space-2);
+  border-bottom: 1px solid var(--gc-border);
+}
+
+.gc-explorer__aside-title {
+  margin: 0;
+  color: var(--gc-muted);
+  font-size: var(--gc-fs-sm);
+  font-weight: var(--gc-weight-strong);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
 }
 
 .gc-explorer__aside-content {

@@ -20,7 +20,7 @@ import {
   useSettingsStore,
   wireHostEvents,
 } from './store';
-import { ContextBar, ErrorBanner } from './ui';
+import { ContextBar, ErrorBanner, Icon } from './ui';
 import { sanitizeGitText } from './format';
 import type { GraphNode } from '../messages';
 
@@ -156,14 +156,17 @@ export function ExplorerApp(): JSX.Element {
           aria-label={strings.explorer.asideAria}
         >
           <div className="gc-explorer__aside-head">
+            <span className="gc-explorer__aside-title">{strings.explorer.asideTitle}</span>
             <button
               type="button"
-              className="gc-button gc-button--quiet gc-explorer__aside-toggle"
+              className="gc-icon-button gc-explorer__aside-toggle"
               aria-expanded={inspectorOpen}
               aria-controls={asideId}
+              aria-label={inspectorOpen ? strings.explorer.hideDetails : strings.explorer.showDetails}
+              title={inspectorOpen ? strings.explorer.hideDetails : strings.explorer.showDetails}
               onClick={() => setInspectorOpen(!inspectorOpen)}
             >
-              {inspectorOpen ? strings.explorer.hideDetails : strings.explorer.showDetails}
+              <Icon name={inspectorOpen ? 'chevron-down' : 'chevron-right'} />
             </button>
           </div>
           <div id={asideId} className="gc-explorer__aside-content">
