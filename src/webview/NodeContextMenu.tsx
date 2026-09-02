@@ -82,8 +82,8 @@ interface Props {
   onClose(): void;
 }
 
-/** First remote-tracking ref's remote name, used as the push target. */
-export function githubRemoteName(refs: readonly RefInfo[]): string | null {
+/** First remote-tracking ref's remote name, used as the default push/fetch remote. */
+export function firstRemoteName(refs: readonly RefInfo[]): string | null {
   for (const ref of refs) {
     if (ref.kind !== 'remote') continue;
     const remote = ref.shortName.split('/')[0];
@@ -206,7 +206,7 @@ export function menuItemsFor(
     });
   }
 
-  const remote = githubRemoteName(refs);
+  const remote = firstRemoteName(refs);
   if (node.local && currentBranch !== null && remote !== null && !busy) {
     items.push({
       id: 'push-up-to',

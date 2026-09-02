@@ -5,6 +5,10 @@ import * as path from 'node:path';
 import { ICON_PATHS } from '../src/webview/iconPaths';
 import type { IconName } from '../src/webview/icons';
 
+/**
+ * Static icon name list extracted from the IconName union in src/webview/icons.ts.
+ * Verified bidirectional with ICON_PATHS keys to prevent sync drift.
+ */
 const ALL_ICON_NAMES: readonly IconName[] = [
   'search',
   'git-branch',
@@ -34,14 +38,29 @@ const ALL_ICON_NAMES: readonly IconName[] = [
   'file-symlink-file',
   'question',
   'diff-ignored',
+  'external',
 ];
 
-test('every IconName has an SVG render function in ICON_PATHS', () => {
+test('every IconName has an SVG render function in ICON_PATHS and no orphan paths exist', () => {
+  const iconPathKeys = Object.keys(ICON_PATHS) as IconName[];
+
+  // 1. Every declared IconName in ALL_ICON_NAMES has a render function in ICON_PATHS
   for (const name of ALL_ICON_NAMES) {
     const fn = ICON_PATHS[name];
-    assert.equal(typeof fn, 'function', `Icon "${name}" must have a render function`);
+    assert.equal(typeof fn, 'function', `Icon "${name}" must have a render function in ICON_PATHS`);
     const element = fn();
     assert.ok(element !== null && element !== undefined, `Icon "${name}" element must be defined`);
+  }
+
+  // 2. Bidirectional check: every key in ICON_PATHS is in ALL_ICON_NAMES and vice versa
+  const unionSet = new Set<string>(ALL_ICON_NAMES);
+  const pathKeySet = new Set<string>(iconPathKeys);
+
+  for (const key of iconPathKeys) {
+    assert.ok(unionSet.has(key), `ICON_PATHS has unexpected key "${key}" not in ALL_ICON_NAMES union`);
+  }
+  for (const name of ALL_ICON_NAMES) {
+    assert.ok(pathKeySet.has(name), `ALL_ICON_NAMES has "${name}" which is missing in ICON_PATHS`);
   }
 });
 

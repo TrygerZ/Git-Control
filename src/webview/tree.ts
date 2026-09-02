@@ -212,6 +212,30 @@ export function stageableFrom(
   return out;
 }
 
+/**
+ * Filter paths for unstaging.
+ *
+ * Only staged paths or paths in conflict can be unstaged. Untracked entries are
+ * dropped because `git restore --staged` on an untracked path fails the entire
+ * batch with "pathspec did not match any file(s)".
+ */
+export function unstageableFrom(
+  selection: ReadonlyArray<string> | ReadonlySet<string>,
+  changes: readonly ChangeEntry[],
+  conflicts: readonly { path: string }[] = [],
+): string[] {
+  const set = selection instanceof Set ? selection : new Set(selection);
+  const out: string[] = [];
+  for (const path of set) {
+    const entry = changes.find((c) => c.path === path);
+    if (entry === undefined) continue;
+    if (entry.staged || conflicts.some((c) => c.path === path)) {
+      out.push(path);
+    }
+  }
+  return out;
+}
+
 export function flattenTree(
   root: FolderNode,
   collapsed: ReadonlySet<string>,

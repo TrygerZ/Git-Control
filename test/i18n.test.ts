@@ -50,6 +50,10 @@ test('i18n t(lang) returns corresponding catalog', () => {
   assert.equal(t('en').changeTree.expandFolder, 'Expand');
   assert.equal(t('id').commitForm.title, 'Commit');
   assert.equal(t('en').commitForm.title, 'Commit');
+  assert.equal(t('id').commitForm.publishButton, 'Terbitkan branch');
+  assert.equal(t('en').commitForm.publishButton, 'Publish branch');
+  assert.equal(t('id').commitForm.pushButton, 'Push');
+  assert.equal(t('en').commitForm.pushButton, 'Push');
   assert.equal(t('id').conflict.continueMerge, 'Lanjutkan merge');
   assert.equal(t('en').conflict.continueMerge, 'Continue merge');
   assert.equal(t('id').toast.urgentAria, 'Peringatan dan kesalahan');

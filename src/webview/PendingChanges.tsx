@@ -23,7 +23,7 @@ import { ToastRegion } from './Toast';
 import { bridge, loadState, saveState } from './bridge';
 import { formatCount, sanitizeGitText, UNKNOWN_CHURN } from './format';
 import { useT } from './useT';
-import { groupBySection, stageableFrom, type ChangeSection } from './tree';
+import { groupBySection, stageableFrom, unstageableFrom, type ChangeSection } from './tree';
 import {
   toErrorBody,
   useChangesStore,
@@ -175,33 +175,33 @@ export function PendingChangesApp(): JSX.Element {
    * Ignored files ('!') are dropped because `git add` fails on ignored paths
    * with exit 1 and fails the entire batch.
    */
-  const stageable = stageableFrom(selected, changes);
-
-  const handleStage = async (): Promise<void> => {
-    if (stageable.length < selected.length) {
-      const skipped = selected.length - stageable.length;
+  const stagePaths = async (paths: readonly string[]): Promise<void> => {
+    const valid = stageableFrom(paths, changes);
+    if (valid.length < paths.length) {
+      const skipped = paths.length - valid.length;
       pushToast({
         level: 'info',
         message: strings.pending.ignoredSkippedToast(formatCount(skipped, language)),
       });
     }
-    await stage(stageable);
+    if (valid.length > 0) {
+      await stage(valid);
+    }
   };
 
   /**
-   * Only staged paths can be unstaged. `selectAll` sweeps in untracked entries,
-   * and `git restore --staged` on a path that is in neither HEAD nor the index
-   * fails the whole batch with `pathspec ... did not match any file(s) known to
-   * git`. Conflicted paths DO have index entries, so they stay.
+   * Only staged paths or conflicts can be unstaged. Untracked paths are dropped
+   * so `git restore --staged` does not fail the batch.
    */
-  const unstageablePaths = (): string[] =>
-    selected.filter((path) => {
-      const entry = changes.find((c) => c.path === path);
-      if (entry === undefined) return false;
-      return entry.staged || conflicts.some((c) => c.path === path);
-    });
+  const unstagePaths = async (paths: readonly string[]): Promise<void> => {
+    const valid = unstageableFrom(paths, changes, conflicts);
+    if (valid.length > 0) {
+      await unstage(valid);
+    }
+  };
 
-  const unstageable = unstageablePaths();
+  const stageable = stageableFrom(selected, changes);
+  const unstageable = unstageableFrom(selected, changes, conflicts);
 
   return (
     <div className="gc-pending">
@@ -240,7 +240,7 @@ export function PendingChangesApp(): JSX.Element {
             aria-label={strings.pending.stageAria(formatCount(stageable.length, language))}
             title={strings.pending.stageTitle}
             disabled={busy || stageable.length === 0}
-            onClick={() => void handleStage()}
+            onClick={() => void stagePaths(selected)}
           >
             <Icon name="arrow-down" />{strings.pending.stageButton}
           </button>
@@ -250,7 +250,7 @@ export function PendingChangesApp(): JSX.Element {
             aria-label={strings.pending.unstageAria(formatCount(unstageable.length, language))}
             title={strings.pending.unstageTitle}
             disabled={busy || unstageable.length === 0}
-            onClick={() => void unstage(unstageablePaths())}
+            onClick={() => void unstagePaths(selected)}
           >
             <Icon name="arrow-up" />{strings.pending.unstageButton}
           </button>
@@ -381,18 +381,72 @@ export function PendingChangesApp(): JSX.Element {
                 if (entries.length === 0) return null;
                 const badge = SECTION_BADGES[section];
                 const title = sectionTitles[section];
+
+                // Target semantics for section bulk action:
+                // 1. If files in this section are selected in the global selection store, operate on those.
+                // 2. Fallback to all files in this section if none are selected. This matches VS Code's
+                //    "Stage All Changes" / "Unstage All Changes" behavior when no row checkbox is active,
+                //    preventing dead buttons in default clean selection state while staging remains reversible.
+                const sectionPaths = entries.map((e) => e.path);
+                const sectionSelectedPaths = sectionPaths.filter((p) => selection.has(p));
+                const isSelectionActive = sectionSelectedPaths.length > 0;
+                const targetPaths = isSelectionActive ? sectionSelectedPaths : sectionPaths;
+
+                const isStagedSection = section === 'staged';
+                const validPaths = isStagedSection
+                  ? unstageableFrom(targetPaths, changes, conflicts)
+                  : stageableFrom(targetPaths, changes);
+
+                const countStr = formatCount(validPaths.length, language);
+                const sectionBtnAria = isStagedSection
+                  ? isSelectionActive
+                    ? strings.pending.unstageSectionSelectedAria(countStr, title)
+                    : strings.pending.unstageSectionAllAria(countStr, title)
+                  : isSelectionActive
+                    ? strings.pending.stageSectionSelectedAria(countStr, title)
+                    : strings.pending.stageSectionAllAria(countStr, title);
+
+                const sectionBtnTitle = isStagedSection
+                  ? isSelectionActive
+                    ? strings.pending.unstageSectionSelectedTitle(countStr)
+                    : strings.pending.unstageSectionAllTitle(countStr)
+                  : isSelectionActive
+                    ? strings.pending.stageSectionSelectedTitle(countStr)
+                    : strings.pending.stageSectionAllTitle(countStr);
+
+                const handleSectionBulk = (): void => {
+                  if (isStagedSection) {
+                    void unstagePaths(targetPaths);
+                  } else {
+                    void stagePaths(targetPaths);
+                  }
+                };
+
                 return (
                   <section className="gc-section" key={section} aria-label={title}>
-                    <h3 className="gc-section__title">
-                      <span
-                        className={`gc-section__badge gc-section__badge--${badge.tone}`}
-                        aria-hidden="true"
+                    <div className="gc-section__head">
+                      {/* Bulk action button and count badge live outside the heading so their labels are not included in heading accessible name. */}
+                      <h3 className="gc-section__title">
+                        <span
+                          className={`gc-section__badge gc-section__badge--${badge.tone}`}
+                          aria-hidden="true"
+                        >
+                          {badge.letter}
+                        </span>
+                        <span className="gc-section__name">{title}</span>
+                      </h3>
+                      <button
+                        type="button"
+                        className="gc-icon-button"
+                        aria-label={sectionBtnAria}
+                        title={sectionBtnTitle}
+                        disabled={busy || validPaths.length === 0}
+                        onClick={handleSectionBulk}
                       >
-                        {badge.letter}
-                      </span>
-                      <span className="gc-section__name">{title}</span>
+                        <Icon name={isStagedSection ? 'dash' : 'add'} />
+                      </button>
                       <span className="gc-section__count">{formatCount(entries.length, language)}</span>
-                    </h3>
+                    </div>
                     <ChangeTree
                       entries={entries}
                       selection={selection}
@@ -406,8 +460,8 @@ export function PendingChangesApp(): JSX.Element {
                       onOpenDiff={(entry) => void openDiff(entry)}
                       fileAction={
                         section === 'staged'
-                          ? { label: strings.changeTree.unstageLabel, icon: 'arrow-up', ariaLabel: (p) => strings.changeTree.unstageFileAria(p), run: (e) => void unstage([e.path]) }
-                          : { label: strings.changeTree.stageLabel, icon: 'arrow-down', ariaLabel: (p) => strings.changeTree.stageFileAria(p), run: (e) => void stage([e.path]) }
+                          ? { label: strings.changeTree.unstageLabel, icon: 'dash', ariaLabel: (p) => strings.changeTree.unstageFileAria(p), run: (e) => void unstage([e.path]) }
+                          : { label: strings.changeTree.stageLabel, icon: 'add', ariaLabel: (p) => strings.changeTree.stageFileAria(p), run: (e) => void stage([e.path]) }
                       }
                     />
                   </section>

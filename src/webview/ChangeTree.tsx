@@ -49,7 +49,7 @@ interface Props {
   onToggleCollapsed(prefix: string): void;
   onOpenDiff(entry: ChangeEntry): void;
   /** Per-file primary action, e.g. stage or unstage depending on the section. */
-  fileAction: { label: string; icon: 'arrow-down' | 'arrow-up'; ariaLabel(path: string): string; run(entry: ChangeEntry): void } | null;
+  fileAction: { label: string; icon: 'add' | 'dash'; ariaLabel(path: string): string; run(entry: ChangeEntry): void } | null;
 }
 
 export function ChangeTree({
@@ -239,7 +239,7 @@ function FileRow({
 }: {
   entry: ChangeEntry;
   onOpenDiff(entry: ChangeEntry): void;
-  fileAction: { label: string; icon: 'arrow-down' | 'arrow-up'; ariaLabel(path: string): string; run(entry: ChangeEntry): void } | null;
+  fileAction: { label: string; icon: 'add' | 'dash'; ariaLabel(path: string): string; run(entry: ChangeEntry): void } | null;
   busy: boolean;
   churnTruncated: boolean;
 }): JSX.Element {

@@ -2400,11 +2400,20 @@ h3 {
   border-bottom: none;
 }
 
-.gc-section__title {
+.gc-section__head {
   display: flex;
   align-items: center;
   gap: var(--gc-space-2);
   margin: 0 0 var(--gc-space-1);
+}
+
+.gc-section__title {
+  display: flex;
+  flex: 1 1 auto;
+  align-items: center;
+  gap: var(--gc-space-2);
+  min-width: 0;
+  margin: 0;
   color: var(--vscode-foreground);
   font-size: var(--gc-fs-sm);
   font-weight: var(--gc-weight-strong);
@@ -2445,7 +2454,7 @@ h3 {
 }
 
 .gc-section__count {
-  margin-left: auto;
+  margin: 0;
   padding: 0 var(--gc-space-2);
   border-radius: var(--gc-radius-pill);
   color: var(--gc-muted);

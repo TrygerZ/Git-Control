@@ -16,17 +16,23 @@
 import { useEffect, useRef, type JSX } from 'react';
 import { formatCount } from './format';
 import { useT } from './useT';
-import { COMMIT_MESSAGE_MIN, useChangesStore, useSettingsStore } from './store';
+import { COMMIT_MESSAGE_MIN, useChangesStore, useOperationStore, useRepoStore, useSettingsStore } from './store';
 import { Spinner } from './ui';
+import { firstRemoteName } from './NodeContextMenu';
 
 export function CommitForm(): JSX.Element {
   const strings = useT();
   const language = useSettingsStore((x) => x.language);
+  const status = useRepoStore((st) => st.status);
+  const graph = useRepoStore((st) => st.graph);
+  const runAction = useOperationStore((st) => st.runAction);
+  const opBusy = useOperationStore((st) => st.state === 'loading');
   const message = useChangesStore((st) => st.commitMessage);
   const setMessage = useChangesStore((st) => st.setCommitMessage);
   const pushAfter = useChangesStore((st) => st.pushAfterCommit);
   const setPushAfter = useChangesStore((st) => st.setPushAfterCommit);
-  const busy = useChangesStore((st) => st.busy);
+  const changesBusy = useChangesStore((st) => st.busy);
+  const busy = changesBusy || opBusy;
   const messageError = useChangesStore((st) => st.messageError);
   const commit = useChangesStore((st) => st.commit);
   const retryPush = useChangesStore((st) => st.retryPush);
@@ -48,6 +54,47 @@ export function CommitForm(): JSX.Element {
   const hintId = 'gc-commit-hint';
   const errorId = 'gc-commit-error';
   const scopeId = 'gc-commit-scope';
+
+  // Remote derivation rule:
+  // 1. If status.upstream is present, extract remote prefix (e.g. "origin/main" -> "origin").
+  // 2. Otherwise fall back to first remote-tracking ref prefix in repo graph.
+  // 3. If neither exists, remote is null and push button must not render.
+  const remote =
+    status?.upstream !== null && status?.upstream !== undefined
+      ? status.upstream.split('/')[0] ?? null
+      : firstRemoteName(graph?.refs ?? []);
+
+  const branch = status?.branch ?? null;
+  const hasUpstream = status?.upstream !== null && status?.upstream !== undefined;
+  const setUpstream = !hasUpstream;
+
+  let pushDisabled = false;
+  let pushTitle = '';
+  if (busy) {
+    pushDisabled = true;
+    pushTitle = strings.commitForm.pushDisabledBusy;
+  } else if (status === null || branch === null) {
+    pushDisabled = true;
+    pushTitle = strings.commitForm.pushDisabledNoBranch;
+  } else if (hasUpstream && (status.ahead ?? 0) === 0) {
+    pushDisabled = true;
+    pushTitle = strings.commitForm.pushDisabledInSync;
+  } else if (remote !== null) {
+    pushTitle = setUpstream
+      ? strings.commitForm.publishTitle(remote, branch)
+      : strings.commitForm.pushTitle(remote, branch);
+  }
+
+  const pushLabel = setUpstream
+    ? strings.commitForm.publishButton
+    : (status?.ahead ?? 0) > 0
+      ? strings.commitForm.pushWithCountButton(formatCount(status?.ahead ?? 0, language))
+      : strings.commitForm.pushButton;
+
+  const handlePush = (): void => {
+    if (remote === null || branch === null) return;
+    void runAction({ action: 'push', remote, branch, setUpstream });
+  };
 
   return (
     <form className="gc-commit" onSubmit={submit} aria-label={strings.commitForm.formAria}>
@@ -111,6 +158,17 @@ export function CommitForm(): JSX.Element {
         >
           {strings.commitForm.commitButton}
         </button>
+        {remote !== null && (
+          <button
+            type="button"
+            className="gc-button gc-button--action"
+            title={pushTitle}
+            disabled={pushDisabled}
+            onClick={handlePush}
+          >
+            {pushLabel}
+          </button>
+        )}
         {busy && <Spinner label={strings.commitForm.savingCommit} />}
         {retryPush !== null && (
           <button

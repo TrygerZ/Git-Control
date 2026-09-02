@@ -9,6 +9,7 @@ import {
   pruneSelection,
   sectionOf,
   stageableFrom,
+  unstageableFrom,
   toggleNode,
   togglePath,
   triState,
@@ -195,4 +196,16 @@ test('stageableFrom keeps modified and untracked, drops ignored and unknown', ()
   const selected = ['mod.ts', 'new.ts', 'ignored.ts', 'unknown.ts'];
   const res = stageableFrom(selected, entries);
   assert.deepEqual(res, ['mod.ts', 'new.ts']);
+});
+
+test('unstageableFrom keeps staged and conflicted, drops untracked and unknown', () => {
+  const entries: ChangeEntry[] = [
+    entry('staged.ts', { indexStatus: 'M', worktreeStatus: ' ', staged: true, unstaged: false }),
+    entry('conflict.ts', { indexStatus: 'U', worktreeStatus: 'U', staged: false, unstaged: true }),
+    entry('untracked.ts', { indexStatus: '?', worktreeStatus: '?', staged: false, untracked: true }),
+  ];
+  const conflicts = [{ path: 'conflict.ts' }];
+  const selected = ['staged.ts', 'conflict.ts', 'untracked.ts', 'missing.ts'];
+  const res = unstageableFrom(selected, entries, conflicts);
+  assert.deepEqual(res, ['staged.ts', 'conflict.ts']);
 });
