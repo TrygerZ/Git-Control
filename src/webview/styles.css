@@ -1021,7 +1021,9 @@ h3 {
   z-index: 2;
 }
 
-/* Selection count is data, not an action — muted and tabular so it anchors the pair. */
+/* Selection count is data, not an action — muted and tabular so it anchors the pair.
+ * Always given its own row (flex-basis: 100%) so count placement and toolbar height
+ * never jump or depend on localized string lengths across EN and ID. */
 .gc-selection-group {
   display: inline-flex;
   align-items: center;
@@ -1031,6 +1033,7 @@ h3 {
 }
 
 .gc-selection-group .gc-pending__count {
+  flex-basis: 100%;
   color: var(--gc-muted);
   font-size: var(--gc-fs-xs);
   font-variant-numeric: tabular-nums;
@@ -1054,9 +1057,10 @@ h3 {
 }
 
 .gc-lang-toggle {
-  min-width: 2.2em;
-  padding-left: var(--gc-space-2);
-  padding-right: var(--gc-space-2);
+  width: var(--gc-hit);
+  min-width: var(--gc-hit);
+  padding-left: 0;
+  padding-right: 0;
   font-weight: 600;
   font-size: var(--gc-fs-xs);
   letter-spacing: 0.05em;
@@ -1206,6 +1210,9 @@ h3 {
  * A column rather than a row: in a 300 px sidebar a horizontal strip would cover the
  * commit subjects it sits on top of. `right`/`bottom` are one step off the edge so
  * the group never overlaps the scrollbar gutter.
+ *
+ * `align-items: flex-end` anchors every child to the right axis so square icon
+ * buttons do not stretch to the wider checkbox label when translations change.
  */
 .gc-canvas__controls {
   position: absolute;
@@ -1214,6 +1221,7 @@ h3 {
   z-index: 10;
   display: flex;
   flex-direction: column;
+  align-items: flex-end;
   gap: var(--gc-space-2);
 }
 
