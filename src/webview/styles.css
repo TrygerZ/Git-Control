@@ -1778,8 +1778,14 @@ h3 {
   flex: 0 0 auto;
 }
 
+/*
+ * Pull the scrollport left into the panel padding so outer box shadows (such as
+ * the 3 px HEAD swatch ring) do not clip, while padding restores the content box.
+ */
 .gc-legend__body {
   overflow-y: auto;
+  margin-left: calc(-1 * var(--gc-space-2));
+  padding-left: var(--gc-space-2);
   padding-right: var(--gc-space-1);
 }
 
