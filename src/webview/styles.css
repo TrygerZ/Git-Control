@@ -1721,17 +1721,23 @@ h3 {
  * bottom-right controls stack.
  * z-index 20 sits above controls (10) and minimap (9) but below context
  * menus (30) and modals (40).
- * width is required alongside max-width: absolute flex popover shrinks to
+ * Capped to canvas width rather than viewport width so split/aside layout
+ * does not cause the popover's left edge to clip against .gc-explorer.
+ * Width is required alongside max-width: absolute flex popover shrinks to
  * its intrinsic dl grid width and never reaches max-width without an
  * explicit width, so both are capped with min().
  */
 .gc-legend-popover {
+  --gc-legend-width: min(
+    34em,
+    calc(var(--gc-canvas-width, 100vw) - var(--gc-space-5) - var(--gc-space-3))
+  );
   position: absolute;
   right: 0;
   bottom: calc(100% + var(--gc-space-2));
   z-index: 20;
-  width: min(34em, calc(100vw - 2 * var(--gc-space-3)));
-  max-width: min(34em, calc(100vw - 2 * var(--gc-space-3)));
+  width: var(--gc-legend-width);
+  max-width: var(--gc-legend-width);
   max-height: min(36em, 72vh);
   display: flex;
 }

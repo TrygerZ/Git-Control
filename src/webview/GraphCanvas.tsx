@@ -1162,7 +1162,11 @@ export function GraphCanvas({
 
             {/* Floating popover for BranchLegend, anchored directly above the controls stack */}
             {showLegend && (
-              <div ref={legendPanelRef} className="gc-legend-popover">
+              <div
+                ref={legendPanelRef}
+                className="gc-legend-popover"
+                style={{ ['--gc-canvas-width' as string]: `${viewportWidthState}px` }}
+              >
                 <BranchLegend
                   id={legendId}
                   lanes={visibleLanes}
