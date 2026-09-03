@@ -10,6 +10,9 @@
 
 # Internal, never published.
 docs/**
+foto/**
+screenshots/**
+.playwright-mcp/**
 .env
 .env.*
 
@@ -34,3 +37,6 @@ node_modules/**
 .vscode/**
 .vscode-test/**
 **/*.vsix
+**/*.md
+!README.md
+!CHANGELOG.md
