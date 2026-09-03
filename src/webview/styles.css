@@ -2670,7 +2670,8 @@ h3 {
  * sidebar is barely wider than two labels, so the pair must wrap rather than
  * clip. `flex: 1 1` lets each claim half the row and fall to its own line
  * when the row is too narrow. `white-space: normal` overrides the button
- * default `nowrap` so the label is never cut at the edge. */
+ * default `nowrap` so the label is never cut at the edge. `text-align: center`
+ * centers multiline wrapped text inside each stretched button box. */
 .gc-commit__actions .gc-button--primary,
 .gc-commit__actions .gc-button--action {
   align-self: stretch;
@@ -2678,6 +2679,7 @@ h3 {
   min-width: min(7em, 100%);
   white-space: normal;
   overflow-wrap: anywhere;
+  text-align: center;
 }
 
 /* ----------------------------------------------------------------- inspector */
