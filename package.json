@@ -98,7 +98,7 @@
           "type": "string",
           "default": "",
           "scope": "machine",
-          "description": "Override the git executable path. Empty uses 'git' from PATH. Machine-scoped: a workspace cannot set it, because it names a program this extension executes."
+          "description": "Override the git executable path. Must be an absolute path. Empty uses 'git' resolved from PATH. Machine-scoped: a workspace cannot set it, because it names a program this extension executes."
         },
         "gitControl.commitLimit": {
           "type": "number",

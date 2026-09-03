@@ -12,6 +12,7 @@
  *    stays unit-testable.
  */
 import { spawn } from 'node:child_process';
+import * as fsSync from 'node:fs';
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import {
@@ -83,6 +84,80 @@ export interface RunOptions {
    * treats as possibly-partial, e.g. `--numstat`.
    */
   truncateStdout?: boolean;
+}
+
+/**
+ * Cached absolute path to git resolved from PATH so lookup occurs once.
+ * Map keyed by PATH string so tests manipulating PATH get correct resolution.
+ */
+const resolvedGitPathCache = new Map<string, string | null>();
+
+/**
+ * Resolve the git executable to an absolute path.
+ *
+ * Requirements:
+ * - If candidate is non-empty, it MUST be an absolute path; relative paths are rejected.
+ * - If candidate is empty, search system PATH for git executable.
+ * - On Windows: respect PATHEXT and NEVER include relative paths or '.' / CWD.
+ * - On POSIX: resolve via PATH and reject relative candidates.
+ */
+export function resolveGitExecutable(candidate?: string, env: { PATH?: string; PATHEXT?: string } = process.env): string | null {
+  if (typeof candidate === 'string' && candidate.trim().length > 0) {
+    const trimmed = candidate.trim();
+    if (trimmed !== 'git') {
+      if (!path.isAbsolute(trimmed)) {
+        return null;
+      }
+      try {
+        if (fsSync.existsSync(trimmed) && fsSync.statSync(trimmed).isFile()) {
+          return trimmed;
+        }
+      } catch {
+        // Not accessible or not a file.
+      }
+      return null;
+    }
+  }
+
+  const isWindows = process.platform === 'win32';
+  const pathEnv = env.PATH ?? '';
+  const cacheKey = `${isWindows ? 'win32' : 'posix'}|${pathEnv}|${env.PATHEXT ?? ''}`;
+  if (resolvedGitPathCache.has(cacheKey)) {
+    return resolvedGitPathCache.get(cacheKey)!;
+  }
+
+  const rawEntries = pathEnv.split(isWindows ? ';' : ':');
+  const extensions = isWindows
+    ? (env.PATHEXT ?? '.COM;.EXE;.BAT;.CMD').split(';').map((e) => e.trim().toLowerCase()).filter(Boolean)
+    : [''];
+
+  for (const raw of rawEntries) {
+    const entry = raw.trim();
+    if (!entry || !path.isAbsolute(entry)) continue;
+
+    if (isWindows) {
+      for (const ext of extensions) {
+        const full = path.join(entry, `git${ext}`);
+        try {
+          if (fsSync.existsSync(full) && fsSync.statSync(full).isFile()) {
+            resolvedGitPathCache.set(cacheKey, full);
+            return full;
+          }
+        } catch {}
+      }
+    } else {
+      const full = path.join(entry, 'git');
+      try {
+        if (fsSync.existsSync(full) && fsSync.statSync(full).isFile()) {
+          resolvedGitPathCache.set(cacheKey, full);
+          return full;
+        }
+      } catch {}
+    }
+  }
+
+  resolvedGitPathCache.set(cacheKey, null);
+  return null;
 }
 
 export interface GitRunnerOptions {
@@ -160,7 +235,12 @@ export class GitRunner {
   private readonly busyListeners = new Set<(busy: boolean) => void>();
 
   constructor(options: GitRunnerOptions) {
-    this.gitPath = options.gitPath.length > 0 ? options.gitPath : 'git';
+    const candidate = options.gitPath.trim();
+    if (candidate.length > 0) {
+      this.gitPath = resolveGitExecutable(candidate) ?? candidate;
+    } else {
+      this.gitPath = resolveGitExecutable() ?? 'git';
+    }
     this.cwd = options.cwd;
     this.logger = options.logger ?? ((): void => undefined);
   }
@@ -173,12 +253,25 @@ export class GitRunner {
     const truncateStdout = opts.truncateStdout === true;
     this.logger(`git ${args.join(' ')}`);
 
+    if (!path.isAbsolute(this.gitPath)) {
+      throw new GitError({
+        code: 'GIT_SPAWN_FAILED',
+        message: `Git executable path must be absolute to prevent CWD hijacking: ${this.gitPath}`,
+        args,
+      });
+    }
+
     return new Promise<GitResult>((resolve, reject) => {
       const child = spawn(this.gitPath, args, {
         cwd: this.cwd,
         shell: false,
         windowsHide: true,
-        env: { ...process.env, GIT_OPTIONAL_LOCKS: '0', LC_ALL: 'C' },
+        env: {
+          ...process.env,
+          GIT_OPTIONAL_LOCKS: '0',
+          LC_ALL: 'C',
+          NoDefaultCurrentDirectoryInExePath: '1',
+        },
       });
 
       let stdout = '';

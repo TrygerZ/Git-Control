@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import * as fs from 'node:fs/promises';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { GitError, GitRunner, MAX_STDERR_BYTES } from '../src/git';
+import { GitError, GitRunner, MAX_STDERR_BYTES, resolveGitExecutable } from '../src/git';
 import { cleanup, makeFixture } from './repoFixture';
 
 /** Throwaway repository with one commit. Copied from a per-process template. */
@@ -479,3 +479,39 @@ test('pathspecs are literal, so glob characters in a filename are not patterns',
   const staged = (await git.status()).filter((e) => e.staged).map((e) => e.path);
   assert.deepEqual(staged, ['weird[1].txt'], 'only the literal name was staged');
 });
+
+test('resolveGitExecutable returns absolute path from PATH and rejects relative paths', () => {
+  const resolved = resolveGitExecutable();
+  assert.ok(resolved !== null, 'git should be resolved from system PATH');
+  assert.ok(path.isAbsolute(resolved), `resolved path must be absolute: ${resolved}`);
+
+  // Explicit relative candidate must be rejected (returns null)
+  assert.equal(resolveGitExecutable('git-relative'), null);
+  assert.equal(resolveGitExecutable('./git'), null);
+  assert.equal(resolveGitExecutable('..\\git.exe'), null);
+
+  // Absolute path to existing git binary is accepted
+  assert.equal(resolveGitExecutable(resolved), resolved);
+
+  // Resolution never uses relative entry or dot in PATH
+  const isWindows = process.platform === 'win32';
+  const fakeEnv = {
+    PATH: isWindows ? '.;C:\\fake\\relative' : '.:/fake/relative',
+    PATHEXT: '.COM;.EXE;.BAT;.CMD',
+  };
+  assert.equal(resolveGitExecutable(undefined, fakeEnv), null);
+});
+
+test('GitRunner rejects relative gitPath and passes NoDefaultCurrentDirectoryInExePath in env', async () => {
+  const runner = new GitRunner({ gitPath: 'some-relative-git', cwd: os.tmpdir() });
+  await assert.rejects(
+    () => runner.run(['--version']),
+    (err: unknown) => {
+      assert.ok(err instanceof GitError);
+      assert.equal(err.code, 'GIT_SPAWN_FAILED');
+      assert.match(err.message, /Git executable path must be absolute/);
+      return true;
+    },
+  );
+});
+

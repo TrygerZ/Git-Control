@@ -44,6 +44,7 @@ const en = {
   extension: {
     gitMissing: 'Git was not found on PATH.',
     gitMissingAction: 'Install instructions',
+    gitPathRelative: 'Git path must be an absolute path.',
     notARepo: 'This folder is not a Git repository.',
     pickFolder: 'Pick folder',
     pickRepo: 'Pick repository',
@@ -106,6 +107,7 @@ const id: HostCatalog = {
   extension: {
     gitMissing: 'Git tidak ditemukan pada PATH.',
     gitMissingAction: 'Petunjuk instalasi',
+    gitPathRelative: 'Lokasi path git harus berupa path absolut.',
     notARepo: 'Folder ini bukan repository Git.',
     pickFolder: 'Pilih folder',
     pickRepo: 'Pilih repository',

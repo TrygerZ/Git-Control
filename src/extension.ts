@@ -9,7 +9,7 @@
 import * as path from 'node:path';
 import * as vscode from 'vscode';
 import { MessageBridge, type BridgeHost, type WebviewLike } from './bridge';
-import { GitRunner } from './git';
+import { GitRunner, resolveGitExecutable } from './git';
 import {
   GitHubClient,
   GitHubError,
@@ -136,14 +136,32 @@ class Controller implements vscode.Disposable {
   /** Resolve the git executable: setting first, then `git` on PATH. */
   private async discoverGit(): Promise<string | null> {
     const configured = vscode.workspace.getConfiguration('gitControl').get<string>('gitPath', '').trim();
-    for (const candidate of configured.length > 0 ? [configured, 'git'] : ['git']) {
-      const probe = new GitRunner({ gitPath: candidate, cwd: this.probeCwd() });
+    if (configured.length > 0) {
+      if (!path.isAbsolute(configured)) {
+        const text = extText().extension;
+        this.logger.info('git/config-error', `${text.gitPathRelative}: ${configured}`);
+        void vscode.window.showErrorMessage(text.gitPathRelative);
+        return null;
+      }
+      const probe = new GitRunner({ gitPath: configured, cwd: this.probeCwd() });
       try {
         const version = await probe.version();
-        this.logger.info('git/discover', `${candidate} ${version}`);
-        return candidate;
+        this.logger.info('git/discover', `${configured} ${version}`);
+        return configured;
       } catch {
-        // Try the next candidate.
+        return null;
+      }
+    }
+
+    const resolved = resolveGitExecutable();
+    if (resolved !== null) {
+      const probe = new GitRunner({ gitPath: resolved, cwd: this.probeCwd() });
+      try {
+        const version = await probe.version();
+        this.logger.info('git/discover', `${resolved} ${version}`);
+        return resolved;
+      } catch {
+        // Fall through to null.
       }
     }
     return null;
