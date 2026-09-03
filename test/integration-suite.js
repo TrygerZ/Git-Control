@@ -20,14 +20,15 @@
  *     the host exits instead; see `assertTokenNeverInWorkspaceStorage`.
  */
 const assert = require('node:assert/strict');
+const { execFileSync } = require('node:child_process');
 const path = require('node:path');
 const vscode = require('vscode');
 
 const EXTENSION_ID = 'TrygerZ.git-control';
-const NOT_A_REPO = 'Folder ini bukan repository Git.';
-const GIT_MISSING = 'Git tidak ditemukan pada PATH.';
-const GITHUB_CONNECTED = 'GitHub tersambung.';
-const GITHUB_DISCONNECTED = 'GitHub diputus.';
+const NOT_A_REPO = 'This folder is not a Git repository.';
+const GIT_MISSING = 'Git was not found on PATH.';
+const GITHUB_CONNECTED = 'GitHub connected.';
+const GITHUB_DISCONNECTED = 'GitHub disconnected.';
 
 /**
  * Captured host interactions. Populated by the wrappers installed below.
@@ -284,7 +285,7 @@ async function noRepoScenario() {
     return;
   }
   seen.warnings.length = 0;
-  await rediscoverGit('git');
+  await rediscoverGit(resolveGitPath());
   const warning = await waitFor(() => seen.warnings.find((line) => line === NOT_A_REPO));
   assert.equal(warning, NOT_A_REPO, `the host reports "${NOT_A_REPO}"`);
   pass(`non-repository workspace reports "${NOT_A_REPO}" and stays alive`);
@@ -292,6 +293,13 @@ async function noRepoScenario() {
   await vscode.commands.executeCommand('gitControl.refresh');
   assert.equal(vscode.extensions.getExtension(EXTENSION_ID).isActive, true);
   pass('extension is still active after the non-repository warning');
+}
+
+function resolveGitPath() {
+  return execFileSync('where.exe', ['git'], { encoding: 'utf8' })
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .find((line) => line.length > 0);
 }
 
 // --------------------------------------------------- scenario: missing-git
