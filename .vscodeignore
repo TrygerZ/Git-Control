@@ -9,8 +9,7 @@
 # `package.json` (always included by vsce).
 
 # Internal, never published.
-PRD_Git_Control.md
-**/*.md
+docs/**
 .env
 .env.*
 

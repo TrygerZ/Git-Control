@@ -1,6 +1,7 @@
-﻿# Markdown is developer-only scratch space (PRD, audits, notes). Never shipped,
-# never committed.
+﻿# Ignore internal docs
+docs/
 *.md
+!README.md
 foto/
 
 node_modules/
@@ -9,3 +10,5 @@ dist/
 *.vsix
 .env
 .vscode-test/
+.playwright-mcp/
+scripts/
