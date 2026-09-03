@@ -2,6 +2,7 @@
 // Usage: node esbuild.js [--watch] [--production]
 const esbuild = require('esbuild');
 const fs = require('node:fs');
+const fsp = require('node:fs/promises');
 const path = require('node:path');
 
 const watch = process.argv.includes('--watch');
@@ -69,7 +70,16 @@ async function main() {
     await Promise.all(contexts.map((c) => c.watch()));
     return;
   }
-  await Promise.all(configs.map((c) => esbuild.build(c)));
+  await Promise.all([
+    fsp.rm(path.join(__dirname, 'dist'), { recursive: true, force: true }),
+    fsp.rm(path.join(__dirname, 'out', 'test'), { recursive: true, force: true }),
+  ]);
+  const results = await Promise.all(configs.map((c) => esbuild.build({ ...c, write: false })));
+  await Promise.all(
+    results.flatMap((result) =>
+      (result.outputFiles ?? []).map((file) => fsp.mkdir(path.dirname(file.path), { recursive: true }).then(() => fsp.writeFile(file.path, file.contents))),
+    ),
+  );
 }
 
 main().catch((err) => {
