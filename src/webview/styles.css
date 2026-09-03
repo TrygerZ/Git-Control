@@ -863,8 +863,12 @@ h3 {
 .gc-toolbar__search-icon {
   position: absolute;
   left: var(--gc-space-3);
+  top: 0;
+  bottom: 0;
+  display: flex;
+  align-items: center;
   color: var(--gc-muted);
-  font-size: var(--gc-fs-xs);
+  font-size: var(--gc-fs-sm);
   pointer-events: none;
 }
 
