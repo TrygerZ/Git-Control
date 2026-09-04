@@ -28,6 +28,7 @@ import type {
   RepoGraph,
   RepoStatus,
   SettingsSnapshot,
+  IconThemeSnapshot,
 } from '../messages';
 import { clampZoom, COLUMN_WIDTH, LANE_HEIGHT, partitionUnrequestedHashes } from './viewport';
 
@@ -594,6 +595,23 @@ async function persist(key: string, value: string | number | boolean): Promise<v
   }
 }
 
+// -------------------------------------------------------------- iconThemeStore
+
+/**
+ * Read-only snapshot of the active File Icon Theme. Its own store, not a
+ * `useSettingsStore` field: the value arrives unsolicited via
+ * `event/iconThemeChanged`, is never persisted or mutated by the webview, and
+ * changes on a different cadence (theme/extension install) than settings. Icons
+ * are the only consumers.
+ */
+export interface IconThemeState {
+  snapshot: IconThemeSnapshot | null;
+}
+
+export const useIconThemeStore = create<IconThemeState>(() => ({
+  snapshot: null,
+}));
+
 // -------------------------------------------------------------- githubStore
 
 export interface GitHubState {
@@ -814,11 +832,16 @@ export function wireHostEvents(mode: 'explorer' | 'pending'): () => void {
     useSettingsStore.getState().setLanguage(language);
   });
 
+  const offIconTheme = bridge.on('event/iconThemeChanged', (snapshot) => {
+    useIconThemeStore.setState({ snapshot });
+  });
+
   return () => {
     offChanged();
     offProgress();
     offToast();
     offSettings();
+    offIconTheme();
     wired = false;
   };
 }

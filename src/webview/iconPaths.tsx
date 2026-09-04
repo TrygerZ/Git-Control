@@ -220,4 +220,29 @@ export const ICON_PATHS: Record<IconName, () => JSX.Element> = {
       <path d="M6.5 9.5l6-6" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
     </>
   ),
+  // Generic file (theme icon fallback): page with folded corner.
+  file: () => (
+    <>
+      <path
+        d="M4 2.5h4.5L12 6v7.5H4z"
+        stroke="currentColor"
+        strokeWidth="1.4"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        fill="none"
+      />
+      <path d="M8.5 2.5V6H12" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" fill="none" />
+    </>
+  ),
+  // Generic closed folder (theme icon fallback).
+  folder: () => (
+    <path
+      d="M2.5 4.5l.5-.5h4l1 1.5h5.5l.5.5v6l-.5.5H3l-.5-.5z"
+      stroke="currentColor"
+      strokeWidth="1.4"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      fill="none"
+    />
+  ),
 };

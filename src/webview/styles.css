@@ -2560,12 +2560,6 @@ h3 {
   font-weight: var(--gc-weight-strong);
 }
 
-.gc-tree__status {
-  display: inline-flex;
-  flex: 0 0 auto;
-  align-items: center;
-}
-
 /*
  * The box holds one icon and nothing else, so it sits at `--gc-fs-md` rather
  * than at the metadata step: stacking two fractional em steps was what pushed the
@@ -2619,6 +2613,77 @@ h3 {
 }
 
 .gc-status__box--neutral {
+  color: var(--gc-muted);
+}
+
+/*
+ * Theme file icons. SVG images get an explicit box with `object-fit: contain`
+ * so a theme SVG with an odd viewBox cannot distort the row rhythm; glyphs
+ * inherit their font-family/colour/size from the resolver's inline style
+ * (namespaced `gc-icon-font-*` families injected by `IconThemeStyles`).
+ */
+.gc-file-icon {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  object-fit: contain;
+}
+
+/*
+ * Column 2 of a file row now holds the theme icon instead of the status box.
+ * Same footprint as the old box so the row rhythm survives the swap.
+ */
+.gc-tree__icon-cell {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+}
+
+/*
+ * Status letter at the end of the row, mirroring VS Code Source Control. Tone
+ * colours reuse the `--gc-tone-*` tokens; forced-colours mode keeps the letter
+ * readable because it is plain text, while theme SVG icons may be replaced.
+ */
+.gc-tree__status-letter {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  color: var(--gc-muted);
+  font-family: var(--vscode-editor-font-family, monospace);
+  font-size: var(--gc-fs-md);
+  font-weight: var(--gc-weight-strong);
+  line-height: 1;
+}
+
+.gc-tree__status-letter--added {
+  color: var(--gc-tone-added);
+}
+
+.gc-tree__status-letter--removed {
+  color: var(--gc-tone-removed);
+}
+
+.gc-tree__status-letter--changed {
+  color: var(--gc-tone-changed);
+}
+
+.gc-tree__status-letter--pending {
+  color: var(--gc-tone-pending);
+}
+
+.gc-tree__status-letter--special {
+  color: var(--gc-tone-special);
+}
+
+.gc-tree__status-letter--neutral {
   color: var(--gc-muted);
 }
 

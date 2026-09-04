@@ -2,7 +2,7 @@
  * Small shared primitives: skeletons, banners, and the error boundary.
  * Kept in one file because none of them own state worth isolating.
  */
-import { Component, type ErrorInfo, type JSX, type ReactNode } from 'react';
+import { Component, useEffect, type ErrorInfo, type JSX, type ReactNode } from 'react';
 import {
   presentError,
   remedyConsequence,
@@ -13,10 +13,16 @@ import {
   syncSummary,
 } from './format';
 import { useT } from './useT';
-import { useSettingsStore } from './store';
-import type { ErrorBody, Remedy, RepoStatus } from '../messages';
+import { useSettingsStore, useIconThemeStore } from './store';
+import type {
+  ErrorBody,
+  Remedy,
+  RepoStatus,
+  IconThemeSnapshot,
+} from '../messages';
 import type { IconName } from './icons';
 import { ICON_PATHS } from './iconPaths';
+import { resolveFileIcon, resolveFolderIcon, type ResolvedIcon } from './fileIcon';
 
 export type { IconName };
 
@@ -55,6 +61,130 @@ export function Icon({
       {content}
     </svg>
   );
+}
+
+// -------------------------------------------------------------- file icons
+
+const FILE_ICON_FALLBACK: IconName = 'file';
+const FOLDER_ICON_FALLBACK: IconName = 'folder';
+const ICON_FONT_PREFIX = 'gc-icon-font-';
+
+/** Theme font id → namespaced `font-family`, so themes cannot collide with page fonts. */
+function iconFontFamily(fontId: string | undefined): string | undefined {
+  return fontId === undefined ? undefined : `${ICON_FONT_PREFIX}${fontId}`;
+}
+
+/**
+ * Render one resolved theme icon. All output is decorative (`aria-hidden`):
+ * the surrounding cell or button already names the file for assistive tech.
+ */
+function ThemeIcon({ icon, fallback }: { icon: ResolvedIcon | undefined; fallback: IconName }): JSX.Element {
+  if (icon === undefined) return <Icon name={fallback} />;
+  if (icon.kind === 'svg') {
+    return <img src={icon.uri} alt="" aria-hidden="true" className="gc-file-icon" />;
+  }
+  return (
+    <span
+      className="gc-file-icon gc-file-icon--glyph"
+      aria-hidden="true"
+      style={{
+        fontFamily: iconFontFamily(icon.fontId),
+        color: icon.color,
+        fontSize: icon.fontSize,
+      }}
+    >
+      {icon.char}
+    </span>
+  );
+}
+
+/**
+ * Theme-driven file/folder icon. Reads the `useIconThemeStore` snapshot; with no
+ * theme (`null`) the generic fallback icon renders, which is also what an
+ * unresolvable name produces.
+ */
+export function FileIcon({
+  kind,
+  name,
+  expanded,
+}: {
+  kind: 'file' | 'folder';
+  name: string;
+  expanded?: boolean;
+}): JSX.Element {
+  const snapshot = useIconThemeStore((s) => s.snapshot);
+  const resolved =
+    kind === 'file'
+      ? resolveFileIcon(name, snapshot)
+      : resolveFolderIcon(name, expanded === true, snapshot);
+  return <ThemeIcon icon={resolved} fallback={kind === 'file' ? FILE_ICON_FALLBACK : FOLDER_ICON_FALLBACK} />;
+}
+
+/** Fixed id for the single injected `@font-face` style element (never stacked). */
+const FONT_STYLE_ID = 'gc-icon-font-faces';
+/** CSSOM fallback sheet, kept so a theme switch replaces rather than stacks. */
+let fontFaceSheet: CSSStyleSheet | undefined;
+
+function fontFaceCss(snapshot: IconThemeSnapshot): string {
+  return snapshot.fonts
+    .map((font) => {
+      const parts = [
+        `font-family: '${ICON_FONT_PREFIX}${font.id}';`,
+        `src: url('${font.srcUri}') format('${font.format}');`,
+        `font-weight: ${font.weight ?? 'normal'};`,
+        `font-style: ${font.style ?? 'normal'};`,
+        'font-display: block;',
+      ];
+      return `@font-face { ${parts.join(' ')} }`;
+    })
+    .join('\n');
+}
+
+/**
+ * Inject `@font-face` rules for the theme's icon fonts (Seti and every other
+ * font-based theme). Runs in both roots; the style element is reused by id, so
+ * re-renders and theme switches replace content instead of stacking.
+ *
+ * CSP: `style-src ${cspSource} 'nonce-…'` with no `unsafe-inline`. A dynamically
+ * created `<style>` carrying the page nonce is honoured by the parser — the
+ * nonce is copied from the bundle's own `<script nonce>` via the `.nonce`
+ * property (`getAttribute('nonce')` is hidden in the DOM). When no nonce is
+ * reachable the rules go through an adopted stylesheet, which CSSOM-inserted
+ * rules are exempt from `style-src` inline checks. Neither path loosens CSP.
+ */
+export function IconThemeStyles(): null {
+  const snapshot = useIconThemeStore((s) => s.snapshot);
+  useEffect(() => {
+    const css = snapshot === null ? '' : fontFaceCss(snapshot);
+    if (css.length === 0) {
+      document.getElementById(FONT_STYLE_ID)?.remove();
+      return;
+    }
+    // `.nonce` property, not `getAttribute`: the DOM hides the nonce attribute
+    // of CSP-protected elements, but the IDL property still reflects it.
+    const nonce = (document.querySelector('script[nonce]') as HTMLScriptElement | null)?.nonce;
+    if (typeof nonce === 'string' && nonce.length > 0) {
+      document.adoptedStyleSheets = document.adoptedStyleSheets.filter((s) => s !== fontFaceSheet);
+      fontFaceSheet = undefined;
+      let style = document.getElementById(FONT_STYLE_ID);
+      if (style === null) {
+        style = document.createElement('style');
+        style.id = FONT_STYLE_ID;
+        style.nonce = nonce;
+        document.head.append(style);
+      }
+      style.textContent = css;
+    } else {
+      // CSSOM fallback: adoptable stylesheets are never blocked by style-src.
+      fontFaceSheet?.replaceSync(css);
+      if (fontFaceSheet === undefined) {
+        fontFaceSheet = new CSSStyleSheet();
+        fontFaceSheet.replaceSync(css);
+        document.adoptedStyleSheets = [...document.adoptedStyleSheets, fontFaceSheet];
+      }
+    }
+  }, [snapshot]);
+  return null;
 }
 
 // ------------------------------------------------------------------ skeleton

@@ -28,7 +28,7 @@ import {
 } from './format';
 import { useT } from './useT';
 import { useSettingsStore } from './store';
-import { Icon } from './ui';
+import { FileIcon, Icon } from './ui';
 import { buildTree, collectPaths, flattenTree, triState, type FolderNode, type TreeNode } from './tree';
 import type { ChangeEntry } from '../messages';
 
@@ -152,7 +152,7 @@ export function ChangeTree({
       role="treegrid"
       aria-label={label}
       aria-rowcount={rows.length}
-      aria-colcount={5}
+      aria-colcount={6}
       ref={listRef}
     >
       {rows.map(({ node, depth }, index) => {
@@ -211,6 +211,10 @@ export function ChangeTree({
                   <span className="gc-tree__twisty" aria-hidden="true">
                     <Icon name={isCollapsed ? 'chevron-right' : 'chevron-down'} />
                   </span>
+                  {/* Decorative: the button's aria-label already names the folder. */}
+                  <span className="gc-tree__icon" aria-hidden="true">
+                    <FileIcon kind="folder" name={node.name} expanded={!isCollapsed} />
+                  </span>
                   <span className="gc-tree__name">{safeName}</span>
                 </button>
               </span>
@@ -259,21 +263,17 @@ function FileRow({
   return (
     <>
       {/*
-        File row presentation:
-        - Inline SVG status icon inside colored box with accessible name on cell
+        File row presentation (VS Code Source Control pattern):
+        - Theme file icon in column 2 (decorative; falls back to generic file icon)
         - Clean file name with ellipsis, directory in tooltip
         - Precise tabular churn count
-        - Hover-reveal stage/unstage icon (arrow-down/up), churn stays permanent beside action (opacity overlay, no reflow)
+        - Status letter moved to the far right with its tone colour and the
+          accessible name ("Status: Modified"), so no information was lost when
+          the old status box was replaced by the theme icon
+        - Hover-reveal stage/unstage icon (arrow-down/up)
       */}
-      <span
-        className="gc-tree__status"
-        role="gridcell"
-        aria-colindex={2}
-        aria-label={strings.changeTree.statusAria(status.label)}
-      >
-        <span className={`gc-status__box gc-status__box--${tone}`} aria-hidden="true">
-          <Icon name={status.icon} />
-        </span>
+      <span role="gridcell" aria-colindex={2} className="gc-tree__icon-cell">
+        <FileIcon kind="file" name={baseName(entry.path)} />
       </span>
       <span role="gridcell" aria-colindex={3} className="gc-tree__file-cell">
         <button
@@ -315,8 +315,21 @@ function FileRow({
           <span className="gc-stat gc-stat--del">−{entry.deletions ?? 0}</span>
         </span>
       )}
+      {/*
+        Status letter, right-aligned like VS Code's Source Control rows. The
+        letter itself is decorative; the cell's aria-label carries the localized
+        status word so screen readers still announce "Status: Modified".
+      */}
+      <span
+        className={`gc-tree__status-letter gc-tree__status-letter--${tone}`}
+        role="gridcell"
+        aria-colindex={5}
+        aria-label={strings.changeTree.statusAria(status.label)}
+      >
+        <span aria-hidden="true">{status.code}</span>
+      </span>
       {fileAction !== null && (
-        <span role="gridcell" aria-colindex={5} className="gc-tree__action-cell">
+        <span role="gridcell" aria-colindex={6} className="gc-tree__action-cell">
           <button
             type="button"
             className="gc-icon-button gc-tree__action"

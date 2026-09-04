@@ -23,7 +23,7 @@ import {
 import { useT } from './useT';
 import { bridge } from './bridge';
 import { toErrorBody, useGitHubStore, useOperationStore, useSettingsStore } from './store';
-import { EmptyState, ErrorBanner, FileListSkeleton, Icon, InfoBanner, MetadataSkeleton, Spinner } from './ui';
+import { EmptyState, ErrorBanner, FileIcon, FileListSkeleton, Icon, InfoBanner, MetadataSkeleton, Spinner } from './ui';
 import type { CommitDetail, CommitFileChange, ErrorBody } from '../messages';
 
 interface Props {
@@ -361,6 +361,8 @@ export function Inspector({ hash }: Props): JSX.Element {
                     onClick={() => void openDiff(file)}
                     disabled={opening === file.path}
                   >
+                    {/* Decorative theme icon; the button's aria-label names the file. */}
+                    <FileIcon kind="file" name={baseName(file.path)} />
                     <span className="gc-filelist__name" aria-hidden="true" title={safePath}>
                       {file.origPath !== undefined
                         ? `${sanitizeGitText(file.origPath)} → ${baseName(file.path)}`

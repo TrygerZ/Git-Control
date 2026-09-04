@@ -16,13 +16,17 @@
 import { createRoot } from 'react-dom/client';
 import { ExplorerApp } from './ExplorerApp';
 import { PendingChangesApp } from './PendingChanges';
-import { ErrorBoundary } from './ui';
+import { ErrorBoundary, IconThemeStyles } from './ui';
 
 const host = document.getElementById('root');
 
 if (host !== null) {
   const view = document.body.dataset.view === 'pending' ? 'pending' : 'explorer';
   createRoot(host).render(
-    <ErrorBoundary>{view === 'pending' ? <PendingChangesApp /> : <ExplorerApp />}</ErrorBoundary>,
+    <ErrorBoundary>
+      {/* Theme icon fonts for both roots; renders nothing itself. */}
+      <IconThemeStyles />
+      {view === 'pending' ? <PendingChangesApp /> : <ExplorerApp />}
+    </ErrorBoundary>,
   );
 }
