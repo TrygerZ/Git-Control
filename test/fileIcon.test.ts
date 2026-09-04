@@ -202,3 +202,89 @@ test('empty name yields undefined', () => {
   assert.equal(resolveFileIcon('', snapshot({ file: 'x' })), undefined);
   assert.equal(resolveFolderIcon('', false, snapshot({ folder: 'x' })), undefined);
 });
+
+// ------------------------------------------------- hardening (H6) + scope gaps
+
+// QA coverage gap: degenerate dotted names must degrade to the default tier,
+// never crash or match inherited object keys.
+test('trailing dot, lone dot, and dotdot names fall back safely', () => {
+  const snap = snapshot({
+    definitions: { def: { iconUri: 'default.svg' } },
+    file: 'def',
+    fileExtensions: { def2: 'def' },
+  });
+  assert.deepEqual(resolveFileIcon('foo.', snap), svg('default.svg'));
+  assert.deepEqual(resolveFileIcon('.', snap), svg('default.svg'));
+  assert.deepEqual(resolveFileIcon('..', snap), svg('default.svg'));
+  // 'prod.yml' with only a sibling key defined must fall through to default.
+  assert.deepEqual(resolveFileIcon('prod.yml', snap), svg('default.svg'));
+});
+
+// H6: filenames are attacker-controlled, so prototype-chain keys must never
+// resolve — not to a definition, not to `Object.prototype`.
+test('__proto__ and constructor filenames never resolve through the prototype chain', () => {
+  const snap = snapshot({
+    definitions: { def: { iconUri: 'default.svg' } },
+    file: 'def',
+    folder: 'def',
+  });
+  // The hostile names hit no own property → fall through to the default tier.
+  assert.deepEqual(resolveFileIcon('__proto__', snap), svg('default.svg'));
+  assert.deepEqual(resolveFileIcon('constructor', snap), svg('default.svg'));
+  assert.deepEqual(resolveFolderIcon('__proto__', false, snap), svg('default.svg'));
+
+  // Legit own keys still resolve — including a theme that genuinely ships a
+  // "__proto__" own data property (what JSON.parse / postMessage produce).
+  const ownKeys = snapshot({
+    definitions: { def: { iconUri: 'default.svg' } },
+    file: 'def',
+  });
+  // `Object.assign`, not property assignment: `constructor` collides with the
+  // static Object type in TS.
+  Object.assign(ownKeys.fileNames, { constructor: 'def' });
+  Object.defineProperty(ownKeys.fileNames, '__proto__', {
+    value: 'def',
+    enumerable: true,
+    writable: true,
+    configurable: true,
+  });
+  assert.deepEqual(resolveFileIcon('constructor', ownKeys), svg('default.svg'));
+  assert.deepEqual(resolveFileIcon('__proto__', ownKeys), svg('default.svg'));
+  // Plain `__proto__` assignment must NOT create an own key (setter fires),
+  // so the lookup degrades to the default tier instead of resolving 'def'.
+  const setterShape = snapshot({ definitions: { def: { iconUri: 'd.svg' } }, file: 'def' });
+  (setterShape.fileNames as Record<string, unknown>).__proto__ = 'def';
+  assert.equal(Object.hasOwn(setterShape.fileNames, '__proto__'), false);
+  assert.deepEqual(resolveFileIcon('__proto__', setterShape), svg('d.svg'));
+});
+
+test('languageIds entries pointing at unusable definitions fall through to default', () => {
+  const snap = snapshot({
+    definitions: { def: { iconUri: 'default.svg' } },
+    languageIds: { typescript: 'ghost' },
+    languageByExtension: { ts: 'typescript' },
+    file: 'def',
+  });
+  assert.deepEqual(resolveFileIcon('a.ts', snap), svg('default.svg'));
+});
+
+test('default definition unusable yields undefined, not a partial glyph', () => {
+  const snap = snapshot({
+    definitions: {},
+    file: 'ghost',
+  });
+  assert.equal(resolveFileIcon('anything.xyz', snap), undefined);
+});
+
+test('expanded folder name unusable falls back to closed name, then default', () => {
+  const snap = snapshot({
+    definitions: { closedName: { iconUri: 'cn.svg' }, closed: { iconUri: 'c.svg' } },
+    folderNames: { src: 'closedName' },
+    folder: 'closed',
+    folderExpanded: 'ghost-open',
+  });
+  // folderNamesExpanded maps src → 'ghost-open' (unusable) → closed name.
+  assert.deepEqual(resolveFolderIcon('src', true, snap), svg('cn.svg'));
+  // No name match at all → folderExpanded unusable → folder default.
+  assert.deepEqual(resolveFolderIcon('other', true, snap), svg('c.svg'));
+});

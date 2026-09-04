@@ -23,6 +23,7 @@ import type {
 import type { IconName } from './icons';
 import { ICON_PATHS } from './iconPaths';
 import { resolveFileIcon, resolveFolderIcon, type ResolvedIcon } from './fileIcon';
+import { syncIconFontCss } from './iconFontStyles';
 
 export type { IconName };
 
@@ -120,11 +121,6 @@ export function FileIcon({
   return <ThemeIcon icon={resolved} fallback={kind === 'file' ? FILE_ICON_FALLBACK : FOLDER_ICON_FALLBACK} />;
 }
 
-/** Fixed id for the single injected `@font-face` style element (never stacked). */
-const FONT_STYLE_ID = 'gc-icon-font-faces';
-/** CSSOM fallback sheet, kept so a theme switch replaces rather than stacks. */
-let fontFaceSheet: CSSStyleSheet | undefined;
-
 function fontFaceCss(snapshot: IconThemeSnapshot): string {
   return snapshot.fonts
     .map((font) => {
@@ -142,47 +138,15 @@ function fontFaceCss(snapshot: IconThemeSnapshot): string {
 
 /**
  * Inject `@font-face` rules for the theme's icon fonts (Seti and every other
- * font-based theme). Runs in both roots; the style element is reused by id, so
- * re-renders and theme switches replace content instead of stacking.
- *
- * CSP: `style-src ${cspSource} 'nonce-…'` with no `unsafe-inline`. A dynamically
- * created `<style>` carrying the page nonce is honoured by the parser — the
- * nonce is copied from the bundle's own `<script nonce>` via the `.nonce`
- * property (`getAttribute('nonce')` is hidden in the DOM). When no nonce is
- * reachable the rules go through an adopted stylesheet, which CSSOM-inserted
- * rules are exempt from `style-src` inline checks. Neither path loosens CSP.
+ * font-based theme). The DOM work lives in `iconFontStyles.ts` so the nonce /
+ * CSSOM / cleanup paths stay unit-testable; see the docs there for the CSP
+ * reasoning. Whichever path a snapshot takes, the other path's residue is torn
+ * down first — an old theme's `@font-face` rules never outlive their snapshot.
  */
 export function IconThemeStyles(): null {
   const snapshot = useIconThemeStore((s) => s.snapshot);
   useEffect(() => {
-    const css = snapshot === null ? '' : fontFaceCss(snapshot);
-    if (css.length === 0) {
-      document.getElementById(FONT_STYLE_ID)?.remove();
-      return;
-    }
-    // `.nonce` property, not `getAttribute`: the DOM hides the nonce attribute
-    // of CSP-protected elements, but the IDL property still reflects it.
-    const nonce = (document.querySelector('script[nonce]') as HTMLScriptElement | null)?.nonce;
-    if (typeof nonce === 'string' && nonce.length > 0) {
-      document.adoptedStyleSheets = document.adoptedStyleSheets.filter((s) => s !== fontFaceSheet);
-      fontFaceSheet = undefined;
-      let style = document.getElementById(FONT_STYLE_ID);
-      if (style === null) {
-        style = document.createElement('style');
-        style.id = FONT_STYLE_ID;
-        style.nonce = nonce;
-        document.head.append(style);
-      }
-      style.textContent = css;
-    } else {
-      // CSSOM fallback: adoptable stylesheets are never blocked by style-src.
-      fontFaceSheet?.replaceSync(css);
-      if (fontFaceSheet === undefined) {
-        fontFaceSheet = new CSSStyleSheet();
-        fontFaceSheet.replaceSync(css);
-        document.adoptedStyleSheets = [...document.adoptedStyleSheets, fontFaceSheet];
-      }
-    }
+    syncIconFontCss(snapshot === null ? '' : fontFaceCss(snapshot));
   }, [snapshot]);
   return null;
 }

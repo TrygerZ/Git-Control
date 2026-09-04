@@ -92,6 +92,8 @@ class Controller implements vscode.Disposable {
   private activeRepoPath: string | undefined;
   /** Cached GitHub client, rebuilt when the API base or the token changes. */
   private github: { client: GitHubClient; apiUrl: string; token: string | null } | undefined;
+  /** H3: increments per in-flight icon-theme broadcast; stale runs are dropped. */
+  private iconThemeGeneration = 0;
 
   constructor(context: vscode.ExtensionContext, logger: Logger, channel: vscode.OutputChannel) {
     this.context = context;
@@ -586,6 +588,9 @@ class Controller implements vscode.Disposable {
    * worker rejects the new snapshot's URIs.
    */
   private async broadcastIconThemeChanged(): Promise<void> {
+    // H3 generation guard: a theme switch while a broadcast is still awaiting
+    // its snapshot must not let the stale result emit after the newer one.
+    const generation = ++this.iconThemeGeneration;
     // Re-assign options BEFORE the new snapshot is sent; a stale resource root
     // makes the service worker reject the new URIs. Covers theme switches AND removal.
     const current = this.webviewOptions();
@@ -594,6 +599,7 @@ class Controller implements vscode.Disposable {
     const webview = this.pendingView?.webview ?? this.panel?.webview;
     if (webview === undefined) return; // no webview ⇒ no bridge ⇒ no receiver
     const snapshot = await buildIconThemeSnapshot(webview);
+    if (generation !== this.iconThemeGeneration) return; // superseded — drop
     const payload = snapshot === undefined ? null : snapshot;
     for (const bridge of this.bridges) bridge.emit('event/iconThemeChanged', payload);
   }

@@ -14,10 +14,20 @@ export type ResolvedIcon =
   | { kind: 'svg'; uri: string }
   | { kind: 'glyph'; char: string; color?: string; fontId?: string; fontSize?: string };
 
+/**
+ * H6: own-property lookup. A hostile filename (`__proto__`, `constructor`)
+ * reaches these maps as a key, so inherited names must never surface:
+ * `Object.hasOwn` keeps `Object.prototype` etc. from being returned as data.
+ */
+function lookup<T>(map: Record<string, T>, key: string | undefined): T | undefined {
+  if (key === undefined || !Object.hasOwn(map, key)) return undefined;
+  return map[key];
+}
+
 /** Map a definition id onto a usable `ResolvedIcon`; `null` = unusable entry. */
 function defToIcon(snapshot: IconThemeSnapshot, id: string | undefined): ResolvedIcon | null {
   if (id === undefined) return null;
-  const def: IconThemeDef | undefined = snapshot.definitions[id];
+  const def: IconThemeDef | undefined = lookup(snapshot.definitions, id);
   if (def === undefined) return null;
   if (def.iconUri !== undefined && def.iconUri.length > 0) return { kind: 'svg', uri: def.iconUri };
   if (def.fontCharacter !== undefined && def.fontCharacter.length > 0) {
@@ -46,7 +56,7 @@ export function resolveFileIcon(
   if (name.length === 0) return undefined;
 
   // 1. Exact filename beats everything ("dockerfile", ".eslintrc.json").
-  const byName = defToIcon(snapshot, snapshot.fileNames[name]);
+  const byName = defToIcon(snapshot, lookup(snapshot.fileNames, name));
   if (byName !== null) return byName;
 
   // 2. Extensions, longest first. Segment after the FIRST dot, so
@@ -57,7 +67,7 @@ export function resolveFileIcon(
   if (dot !== -1) {
     let candidate = name.slice(dot + 1);
     while (candidate.length > 0) {
-      const byExt = defToIcon(snapshot, snapshot.fileExtensions[candidate]);
+      const byExt = defToIcon(snapshot, lookup(snapshot.fileExtensions, candidate));
       if (byExt !== null) return byExt;
       const nextDot = candidate.indexOf('.');
       if (nextDot === -1) break;
@@ -68,9 +78,9 @@ export function resolveFileIcon(
   // 3. Language id, keyed by exact filename first, then by last extension.
   const lastDot = name.lastIndexOf('.');
   const extension = lastDot === -1 ? '' : name.slice(lastDot + 1);
-  const lang = snapshot.languageByFilename[name] ?? snapshot.languageByExtension[extension];
+  const lang = lookup(snapshot.languageByFilename, name) ?? lookup(snapshot.languageByExtension, extension);
   if (lang !== undefined) {
-    const byLang = defToIcon(snapshot, snapshot.languageIds[lang]);
+    const byLang = defToIcon(snapshot, lookup(snapshot.languageIds, lang));
     if (byLang !== null) return byLang;
   }
 
@@ -87,13 +97,13 @@ export function resolveFolderIcon(
   if (snapshot === null) return undefined;
   const name = folderName.toLowerCase();
   if (expanded) {
-    const byName = defToIcon(snapshot, snapshot.folderNamesExpanded[name]);
+    const byName = defToIcon(snapshot, lookup(snapshot.folderNamesExpanded, name));
     if (byName !== null) return byName;
     // An open folder without a dedicated open icon falls back to the closed one.
-    const byCollapsed = defToIcon(snapshot, snapshot.folderNames[name]);
+    const byCollapsed = defToIcon(snapshot, lookup(snapshot.folderNames, name));
     if (byCollapsed !== null) return byCollapsed;
   } else {
-    const byName = defToIcon(snapshot, snapshot.folderNames[name]);
+    const byName = defToIcon(snapshot, lookup(snapshot.folderNames, name));
     if (byName !== null) return byName;
   }
   const byDefault = expanded

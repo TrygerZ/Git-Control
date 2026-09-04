@@ -17,6 +17,45 @@ export interface LanguageIndex {
   byFilename: Record<string, string>;
 }
 
+// ------------------------------------------------------------- resource caps
+
+/**
+ * Hard ceilings so a broken or hostile theme cannot freeze the extension host
+ * (sync `JSON.parse` + the JSONC fallback pass transiently hold ~3x the file
+ * size) or flood the webview with a huge `postMessage` payload. All published
+ * themes stay far below these — Seti's JSON is < 100 KB with 1 font.
+ */
+/** Largest theme JSON accepted, rejected before decoding. */
+export const MAX_THEME_JSON_BYTES = 5_000_000;
+/** Max `iconDefinitions` entries kept; overflow is dropped, not fatal. */
+export const MAX_THEME_DEFINITIONS = 10_000;
+/** Max `fonts[]` entries kept; each becomes one `@font-face` rule. */
+export const MAX_THEME_FONTS = 32;
+
+// --------------------------------------------------------------- font whitelist
+
+/**
+ * H4: every font field is interpolated raw into the webview's `@font-face`
+ * template, so values are whitelisted HERE, at the host, before the snapshot
+ * crosses `postMessage` — the webview then never has to trust theme data.
+ * `format` also lives in per-source entries (see `normalizeFonts`); the empty
+ * string stays allowed because themes may omit `format` and the previous
+ * behavior passed it through.
+ */
+const FONT_FORMATS: ReadonlySet<string> = new Set([
+  '',
+  'woff',
+  'woff2',
+  'truetype',
+  'opentype',
+  'embedded-opentype',
+  'svg',
+]);
+const FONT_WEIGHTS = /^(?:[0-9]{1,3}|normal|bold)$/;
+const FONT_STYLES: ReadonlySet<string> = new Set(['normal', 'italic', 'oblique']);
+/** Font id lands in a CSS `font-family` name, so keep it to safe characters. */
+const FONT_IDS = /^[A-Za-z0-9_-]{1,64}$/;
+
 // ------------------------------------------------------------- fontCharacter
 
 /**
@@ -32,6 +71,13 @@ export function parseFontCharacter(raw: unknown): string | undefined {
     const hex = match[1];
     if (hex !== undefined) {
       const code = Number.parseInt(hex, 16);
+      // Hex-shaped input must decode to a valid Unicode scalar value or it is
+      // not a glyph: above 0x10FFFF `String.fromCodePoint` throws RangeError
+      // (H2), and surrogate halves 0xD800-0xDFFF are rejected too — they do
+      // not throw, but they are not characters: they render as U+FFFD and are
+      // lossy under UTF-8/JSON re-encoding, so the escaped form is junk either
+      // way. Invalid → undefined, so the definition is treated as glyph-less.
+      if (code > 0x10ffff || (code >= 0xd800 && code <= 0xdfff)) return undefined;
       if (Number.isFinite(code)) return String.fromCodePoint(code);
     }
   }
@@ -189,6 +235,29 @@ function normalizeDef(
   return def;
 }
 
+/**
+ * H4 whitelist for one raw font entry. Every field here reaches the webview's
+ * CSS template (or its `font-family` lookup) verbatim, so anything outside the
+ * whitelist drops the whole font entry — no escaping, no pass-through.
+ */
+function isAllowedFont(entry: Record<string, unknown>): entry is Record<string, unknown> & { id: string } {
+  if (typeof entry.id !== 'string' || !FONT_IDS.test(entry.id)) return false;
+  // Non-string weight/style mean the theme JSON is not the shape themes ship;
+  // the webview template interpolates these verbatim, so drop, don't coerce.
+  if (entry.weight !== undefined && (typeof entry.weight !== 'string' || !FONT_WEIGHTS.test(entry.weight))) return false;
+  if (entry.style !== undefined && (typeof entry.style !== 'string' || !FONT_STYLES.has(entry.style))) return false;
+  for (const source of Array.isArray(entry.src) ? entry.src : []) {
+    if (
+      isObject(source) &&
+      typeof source.format === 'string' &&
+      !FONT_FORMATS.has(source.format)
+    ) {
+      return false;
+    }
+  }
+  return true;
+}
+
 function normalizeFonts(
   raw: unknown,
   resolveAsset: (relPath: string) => string | undefined,
@@ -196,10 +265,11 @@ function normalizeFonts(
   if (!Array.isArray(raw)) return [];
   const fonts: IconThemeFont[] = [];
   for (const entry of raw) {
-    if (!isObject(entry)) continue;
+    if (fonts.length >= MAX_THEME_FONTS) break; // H5: cap @font-face rules
+    if (!isObject(entry) || !isAllowedFont(entry)) continue;
     const id = entry.id;
     const src = entry.src;
-    if (typeof id !== 'string' || id.length === 0 || !Array.isArray(src)) continue;
+    if (!Array.isArray(src)) continue;
     for (const source of src) {
       if (!isObject(source)) continue;
       const path = source.path;
@@ -251,10 +321,18 @@ export function assembleSnapshot(
     ...normalizeStringMapKeysOnly(doc.iconDefinitions),
     ...normalizeStringMapKeysOnly(overlay?.iconDefinitions),
   };
-  const definitions: Record<string, IconThemeDef> = {};
+  // H6: null prototype — a theme key `"__proto__"` must set an own data
+  // property here, never trigger the inherited setter and repoint this
+  // object's [[Prototype]] at a theme-controlled definition.
+  const definitions: Record<string, IconThemeDef> = Object.create(null) as Record<string, IconThemeDef>;
+  let definitionCount = 0;
   for (const [key, raw] of Object.entries(mergedDefsRaw)) {
+    if (definitionCount >= MAX_THEME_DEFINITIONS) break; // H5: cap, not fatal
     const def = normalizeDef(raw, resolveAsset);
-    if (def !== undefined) definitions[key] = def;
+    if (def !== undefined) {
+      definitions[key] = def;
+      definitionCount++;
+    }
   }
 
   const mergedFileExtensions = mergedMap('fileExtensions');
@@ -298,4 +376,25 @@ export function assembleSnapshot(
  */
 function normalizeStringMapKeysOnly(raw: unknown): Record<string, unknown> {
   return isObject(raw) ? { ...raw } : {};
+}
+
+/**
+ * `assembleSnapshot` with a fail-closed contract: any internal throw (e.g. an
+ * injected `resolveAsset` that misbehaves) becomes `undefined`. The host's
+ * async watcher has no catch around this call, so the exception must die here
+ * (H2). Separated from `assembleSnapshot` so the never-throw guarantee is
+ * testable without the `vscode` API.
+ */
+export function tryAssembleSnapshot(
+  doc: unknown,
+  themeId: string,
+  kind: ThemeKind,
+  resolveAsset: (relPath: string) => string | undefined,
+  languages: LanguageIndex,
+): IconThemeSnapshot | undefined {
+  try {
+    return assembleSnapshot(doc, themeId, kind, resolveAsset, languages);
+  } catch {
+    return undefined;
+  }
 }

@@ -12,7 +12,8 @@
  */
 import * as vscode from 'vscode';
 import {
-  assembleSnapshot,
+  MAX_THEME_JSON_BYTES,
+  tryAssembleSnapshot,
   buildLanguageIndex,
   isWithin,
   parseThemeJsonText,
@@ -104,7 +105,8 @@ function languageIndex(): LanguageIndex {
 
 /**
  * Build the snapshot for the currently active icon theme, or `undefined` when
- * the theme is off (`null`), not found, unreadable, or unparseable.
+ * the theme is off (`null`), not found, unreadable, over the byte cap, or
+ * unparseable. Never throws: the async watcher caller has no catch.
  */
 export async function buildIconThemeSnapshot(webview: vscode.Webview): Promise<IconThemeSnapshot | undefined> {
   const active = findActiveIconTheme();
@@ -116,18 +118,21 @@ export async function buildIconThemeSnapshot(webview: vscode.Webview): Promise<I
   } catch {
     return undefined;
   }
+  // H5: reject before decoding — JSON.parse plus the JSONC fallback pass hold
+  // ~3x the file size in memory, all synchronous on the extension host.
+  if (bytes.length > MAX_THEME_JSON_BYTES) return undefined;
   const doc = parseThemeJsonText(new TextDecoder().decode(bytes));
   if (doc === undefined) return undefined;
 
   const resolveAsset = makeAssetResolver(webview, active.themeJsonUri, active.extensionUri);
-  const snapshot = assembleSnapshot(
+  // Fail-closed: any internal throw becomes `undefined`, never a rejection.
+  return tryAssembleSnapshot(
     doc,
     active.themeId,
     themeKindOf(vscode.window.activeColorTheme.kind),
     resolveAsset,
     languageIndex(),
   );
-  return snapshot;
 }
 
 /**
