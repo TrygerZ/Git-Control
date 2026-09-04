@@ -12,7 +12,7 @@
 import { create } from 'zustand';
 import { BridgeRequestError, bridge, isBridgeError, mutation, saveState } from './bridge';
 import { linkageChangedRepo, sanitizeGitText } from './format';
-import { pruneSelection, toggleNode, togglePath, type TreeNode } from './tree';
+import { pruneSelection, toggleNode, togglePath, type ChangeSection, type TreeNode } from './tree';
 import { activeLang, setActiveLang, t } from './i18n';
 import type {
   ChangeEntry,
@@ -156,6 +156,7 @@ export interface ChangesState {
   conflicts: ConflictEntry[];
   selection: Set<string>;
   collapsed: Set<string>;
+  collapsedSections: Set<ChangeSection>;
   commitMessage: string;
   pushAfterCommit: boolean;
   busy: boolean;
@@ -170,6 +171,7 @@ export interface ChangesState {
   toggle(path: string): void;
   toggleFolder(node: TreeNode): void;
   toggleCollapsed(prefix: string): void;
+  toggleSection(section: ChangeSection): void;
   selectAll(): void;
   clear(): void;
   setCommitMessage(message: string): void;
@@ -186,6 +188,7 @@ export const useChangesStore = create<ChangesState>((set, get) => ({
   conflicts: [],
   selection: new Set<string>(),
   collapsed: new Set<string>(),
+  collapsedSections: new Set<ChangeSection>(),
   commitMessage: '',
   pushAfterCommit: false,
   busy: false,
@@ -236,6 +239,14 @@ export const useChangesStore = create<ChangesState>((set, get) => ({
     else collapsed.add(prefix);
     set({ collapsed });
     saveState({ collapsedFolders: [...collapsed] });
+  },
+
+  toggleSection(section) {
+    const collapsedSections = new Set(get().collapsedSections);
+    if (collapsedSections.has(section)) collapsedSections.delete(section);
+    else collapsedSections.add(section);
+    set({ collapsedSections });
+    saveState({ collapsedSections: [...collapsedSections] });
   },
 
   selectAll() {

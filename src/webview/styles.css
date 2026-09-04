@@ -2342,6 +2342,37 @@ h3 {
 }
 
 /*
+ * Section header toggle: a native button inside the heading, so Enter, Space,
+ * and `aria-expanded` come for free and the heading stays a heading. It fills
+ * the row width so the click target covers chevron, badge, and title; the bulk
+ * button and count badge remain siblings outside it.
+ */
+.gc-section__toggle {
+  display: flex;
+  flex: 1 1 auto;
+  align-items: center;
+  gap: var(--gc-space-2);
+  min-width: 0;
+  padding: 0;
+  border: none;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.gc-section__toggle:hover .gc-section__name {
+  text-decoration: underline;
+}
+
+.gc-section__twisty {
+  flex: 0 0 auto;
+  width: 1em;
+  text-align: center;
+}
+
+/*
  * Section bulk button: same hit area and icon size as the per-row `+`/`-`
  * (both are `gc-icon-button`, so `--gc-hit` and `--gc-fs-lg` already apply).
  * Hidden at rest via opacity so it stays in the Tab order; revealed on hover
@@ -2376,6 +2407,14 @@ h3 {
   color: var(--vscode-foreground);
   font-size: var(--gc-fs-sm);
   font-weight: var(--gc-weight-strong);
+}
+
+/*
+ * The toggle button inside the heading is the flex child now; the heading's
+ * own flex growth moves onto it, so the heading itself collapses to content.
+ */
+.gc-section__title .gc-section__toggle {
+  color: inherit;
 }
 
 .gc-section__name {
@@ -3425,6 +3464,7 @@ h3 {
   /* Status glyphs are icon-only; border reappears here so the shape survives without colour. */
   .gc-status__box,
   .gc-section__badge,
+  .gc-section__toggle,
   .gc-conflicts__badge,
   .gc-inspector__hash-value,
   .gc-avatar {

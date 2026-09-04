@@ -24,6 +24,7 @@ import type {
   ResponseData,
 } from '../messages';
 import { isHostEvent } from '../messages';
+import type { ChangeSection } from './tree';
 import { activeLang, t } from './i18n';
 
 /** Shape of the object the host injects. Not covered by `@types/vscode`. */
@@ -43,6 +44,7 @@ export interface WebviewState {
   selectedHash: string | null;
   scrollTop: number;
   collapsedFolders: string[];
+  collapsedSections: ChangeSection[];
   selectedPaths: string[];
   commitMessage: string;
   pushAfterCommit: boolean;
@@ -53,6 +55,7 @@ const DEFAULT_STATE: WebviewState = {
   selectedHash: null,
   scrollTop: 0,
   collapsedFolders: [],
+  collapsedSections: [],
   selectedPaths: [],
   commitMessage: '',
   pushAfterCommit: false,
@@ -235,6 +238,9 @@ export function loadState(): WebviewState {
     scrollTop: typeof partial.scrollTop === 'number' ? partial.scrollTop : 0,
     collapsedFolders: Array.isArray(partial.collapsedFolders)
       ? partial.collapsedFolders.filter((v): v is string => typeof v === 'string')
+      : [],
+    collapsedSections: Array.isArray(partial.collapsedSections)
+      ? partial.collapsedSections.filter((v): v is ChangeSection => typeof v === 'string')
       : [],
     selectedPaths: Array.isArray(partial.selectedPaths)
       ? partial.selectedPaths.filter((v): v is string => typeof v === 'string')
