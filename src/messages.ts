@@ -576,12 +576,60 @@ export interface RepoChangedEvent {
   statusToken: string;
 }
 
+/**
+ * Serializable snapshot of the active File Icon Theme. Plain JSON only — no
+ * `vscode.Uri`, `Map`, `Set`, or functions — because it crosses `postMessage`
+ * into the webview. Built by the extension host in `src/iconTheme.ts`.
+ */
+export interface IconThemeFont {
+  id: string;
+  /** `asWebviewUri` result for the font file (woff/ttf). */
+  srcUri: string;
+  format: string;
+  weight?: string;
+  style?: string;
+  size?: string;
+}
+
+/** One entry of the theme's `iconDefinitions`, resolved to webview-safe values. */
+export interface IconThemeDef {
+  /** SVG-based themes: resolved webview URI. */
+  iconUri?: string;
+  /** Font-based themes: real glyph character (unescaped from `"\\E001"`). */
+  fontCharacter?: string;
+  fontColor?: string;
+  fontId?: string;
+  fontSize?: string;
+}
+
+export interface IconThemeSnapshot {
+  themeId: string;
+  definitions: Record<string, IconThemeDef>;
+  file?: string;
+  folder?: string;
+  folderExpanded?: string;
+  /** All keys lowercased; matching happens lowercase. */
+  fileExtensions: Record<string, string>;
+  fileNames: Record<string, string>;
+  folderNames: Record<string, string>;
+  folderNamesExpanded: Record<string, string>;
+  languageIds: Record<string, string>;
+  /** Language id lookup for precedence over `fileExtensions`: "ts" → "typescript". */
+  languageByExtension: Record<string, string>;
+  /** Language id lookup by exact filename: "dockerfile" → "dockerfile". */
+  languageByFilename: Record<string, string>;
+  fonts: IconThemeFont[];
+  hidesExplorerArrows: boolean;
+}
+
 /** Event kind → payload map for unsolicited host pushes. */
 export interface EventMap {
   'event/repoChanged': RepoChangedEvent;
   'event/operationProgress': OperationProgressEvent;
   'event/toast': ToastEvent;
   'event/settingsChanged': SettingsSnapshot;
+  /** `null` = no active icon theme → webview falls back to generic icons. */
+  'event/iconThemeChanged': IconThemeSnapshot | null;
 }
 
 export type EventKind = keyof EventMap;
