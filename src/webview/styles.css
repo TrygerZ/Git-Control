@@ -2816,6 +2816,40 @@ h3 {
   text-align: center;
 }
 
+/* Permanent progress line reserved for the in-flow status indicator.
+ * Mounting or unmounting in-flow elements alters parent height and shifts
+ * panels below. Reserving exactly one text row keeps heights identical across
+ * idle and busy states. */
+.gc-commit__status {
+  display: flex;
+  align-items: center;
+  margin: 0;
+  min-height: 1.4em;
+  line-height: 1.4;
+  font-size: var(--gc-fs-xs);
+  color: var(--gc-muted);
+}
+
+.gc-commit__status .gc-spinner {
+  min-height: 1.4em;
+  line-height: 1.4;
+  font-size: inherit;
+  color: inherit;
+  min-width: 0;
+}
+
+/* Sidebar-narrow rows wrap a long status label onto a second line, re-heighting
+ * the reserved row. Scoped here only: the global .gc-spinner__label keeps its
+ * natural wrapping for diff loads and pagination in wider containers.
+ * min-width: 0 lets the flex items shrink inside the row instead of forcing
+ * the label past the form edge. */
+.gc-commit__status .gc-spinner__label {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+
 /* ----------------------------------------------------------------- inspector */
 
 .gc-inspector {

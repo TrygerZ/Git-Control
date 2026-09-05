@@ -120,3 +120,108 @@ test('the section header renders a real toggle button with aria-expanded and a d
     'no button nested inside the section toggle',
   );
 });
+
+test('commit form progress spinner renders inside gc-commit__status outside actions', () => {
+  const commitFormSrc = fs.readFileSync(
+    path.join(__dirname, '..', '..', 'src', 'webview', 'CommitForm.tsx'),
+    'utf8',
+  );
+  const stylesSrc = fs.readFileSync(
+    path.join(__dirname, '..', '..', 'src', 'webview', 'styles.css'),
+    'utf8',
+  );
+  const storeSrc = fs.readFileSync(
+    path.join(__dirname, '..', '..', 'src', 'webview', 'store.ts'),
+    'utf8',
+  );
+
+  // Structural binding, not a loose regex: everything before the status
+  // paragraph must be Spinner-free. A Spinner inside the actions div would
+  // necessarily appear in this slice, so the check cannot cross a closing tag.
+  const actionsIdx = commitFormSrc.indexOf('<div className="gc-commit__actions">');
+  const statusIdx = commitFormSrc.indexOf('<p className="gc-commit__status">');
+  assert.ok(actionsIdx >= 0, 'actions block must exist');
+  assert.ok(statusIdx > actionsIdx, 'status row must come after the actions block');
+  const beforeStatus = commitFormSrc.slice(0, statusIdx);
+  assert.ok(
+    !beforeStatus.includes('<Spinner'),
+    'Spinner must not render before the gc-commit__status row (in particular, not inside gc-commit__actions)',
+  );
+  assert.match(
+    commitFormSrc,
+    /<p className="gc-commit__status">\s*\{busy && \(?\s*<Spinner/,
+    'Spinner must be rendered inside gc-commit__status',
+  );
+
+  // Invariant, not literal: the status row must reserve a font-relative
+  // minimum height and clamp its spinner to the same one-line box. Any
+  // em/rem-based reservation passes; dropping the reservation fails.
+  const statusBlock = stylesSrc.match(/\.gc-commit__status\s*\{([^}]*)\}/)?.[1] ?? '';
+  assert.match(
+    statusBlock,
+    /min-height:\s*[\d.]+(?:em|rem)\s*;/,
+    '.gc-commit__status must reserve a font-relative minimum height',
+  );
+  assert.match(
+    statusBlock,
+    /line-height:\s*[\d.]+\s*;/,
+    '.gc-commit__status must pin line-height so idle and busy rows measure identically',
+  );
+  const spinnerOverride = stylesSrc.match(/\.gc-commit__status\s+\.gc-spinner\s*\{([^}]*)\}/)?.[1] ?? '';
+  assert.match(
+    spinnerOverride,
+    /min-height:\s*[\d.]+(?:em|rem)\s*;/,
+    '.gc-commit__status .gc-spinner must clamp its hit area to the reserved row',
+  );
+
+  // One-line clamp (defect 2): the label inside the status row must never wrap.
+  const labelOverride =
+    stylesSrc.match(/\.gc-commit__status\s+\.gc-spinner__label\s*\{([^}]*)\}/)?.[1] ?? '';
+  assert.match(
+    labelOverride,
+    /white-space:\s*nowrap\s*;/,
+    'status label must stay on one line',
+  );
+  assert.match(
+    labelOverride,
+    /text-overflow:\s*ellipsis\s*;/,
+    'an overlong status label must clip with ellipsis instead of growing the row',
+  );
+
+  // Operation discriminator (defect 1): the label follows busyKind, never the
+  // combined changesBusy boolean, and the store must type it.
+  assert.match(
+    storeSrc,
+    /busyKind:\s*'stage'\s*\|\s*'commit'\s*\|\s*null/,
+    'changes store must carry a busyKind discriminator',
+  );
+  assert.doesNotMatch(
+    commitFormSrc,
+    /label=\{\s*changesBusy\s*\?/,
+    'spinner label must not be chosen from the combined changesBusy boolean',
+  );
+  assert.match(
+    commitFormSrc,
+    /busyKind === 'stage'/,
+    'stage operation must map to the staging label',
+  );
+  assert.match(
+    commitFormSrc,
+    /busyKind === 'commit'/,
+    'commit operation must map to the saving label',
+  );
+
+  // Decoupling guard: the generic fallback spinner label must use its own
+  // generic key, never the push-scoped pushDisabledBusy button title. The
+  // push title at the busy branch of pushTitle stays pushDisabledBusy.
+  assert.doesNotMatch(
+    commitFormSrc,
+    /statusLabel[\s\S]*?pushDisabledBusy/,
+    'fallback spinner label must not reuse the push-scoped pushDisabledBusy key',
+  );
+  assert.match(
+    commitFormSrc,
+    /:\s*strings\.commitForm\.operationInProgress;?/,
+    'fallback spinner label must use the generic operationInProgress key',
+  );
+});
