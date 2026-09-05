@@ -1108,6 +1108,38 @@ test('BranchSelector: select element is disabled when busy or when no local bran
   assert.equal(emptyState.disabled, true, 'select must be disabled when no local branches exist');
 });
 
+// Source contract: no DOM harness exists here, so the rendered branch dropdown is
+// pinned by its source. The `disabled` attribute was removed from <option> because
+// the native popup renders disabled options dimmed and unreadable; the active branch
+// must stay identifiable through the "(current)" / "(aktif)" label instead. The
+// select-level disabled binding (busy or no local branches) is a separate invariant
+// and must survive.
+test('BranchSelector render contract: options never carry disabled, select keeps its disabled binding, current label stays marked', () => {
+  const sourcePath = path.join(__dirname, '..', '..', 'src', 'webview', 'BranchLegend.tsx');
+  const source = fs.readFileSync(sourcePath, 'utf8');
+
+  // No <option> element may bind a disabled attribute.
+  assert.doesNotMatch(
+    source,
+    /<option\b[^>]*\bdisabled/,
+    'option elements must not carry a disabled attribute: the native popup renders disabled options dimmed and unreadable',
+  );
+
+  // The select keeps disabled={state.disabled} so busy and no-local-branch states stay inert.
+  assert.match(
+    source,
+    /<select\b[^>]*disabled=\{state\.disabled\}/,
+    'select must keep disabled={state.disabled} for the busy and no-local-branch invariants',
+  );
+
+  // The active branch is identified through formatCurrent, not a disabled flag.
+  assert.match(
+    source,
+    /formatCurrent\(display\)/,
+    'current branch label must be built through formatCurrent so the current marker stays present',
+  );
+});
+
 test('BranchSelector: selecting target branch produces checkout-branch action payload with exact branch name', () => {
   // Valid checkout to a different branch when idle
   const payload = checkoutActionPayload('feature', 'main', false);

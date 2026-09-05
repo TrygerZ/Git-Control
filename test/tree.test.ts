@@ -219,4 +219,3 @@ test('isSectionBulkDisabled disables on busy, empty paths, or collapsed section'
   assert.equal(isSectionBulkDisabled(true, 0, true), true);
 });
 
-

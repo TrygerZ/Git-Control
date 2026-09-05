@@ -43,14 +43,10 @@ export interface BranchSelectorState {
 /**
  * Branch labels set the flex item's intrinsic width; a single 60-char name would
  * force `.gc-toolbar__branch-select` wider than any sidebar. Truncate display only,
- * never `value` — the ref that checkout acts on.
+ * never `value`: the ref that checkout acts on. Suffix-aware truncation measures
+ * the current marker inside `computeBranchOptions` so the FINAL label stays bounded.
  */
 const BRANCH_LABEL_LIMIT = 32;
-
-function truncateBranchLabel(label: string): { display: string; full: string } {
-  if (label.length <= BRANCH_LABEL_LIMIT) return { display: label, full: label };
-  return { display: `${label.slice(0, BRANCH_LABEL_LIMIT - 1)}\u2026`, full: label };
-}
 
 export function computeBranchOptions(
   refs: readonly RefInfo[],
