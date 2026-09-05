@@ -2370,10 +2370,6 @@ h3 {
   cursor: pointer;
 }
 
-.gc-section__toggle:hover .gc-section__name {
-  text-decoration: underline;
-}
-
 .gc-section__twisty {
   flex: 0 0 auto;
   width: 1em;
