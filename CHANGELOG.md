@@ -5,6 +5,18 @@ All notable changes to the "Git Control" extension will be documented in this fi
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.1.1] - 2026-09-05
+
+### Fixed
+- Restored readable text contrast for the active branch in checkout dropdowns across the graph toolbar and sidebar, ensuring current branch items remain legible in native menus while redundant checkouts remain blocked.
+- Eliminated layout shifts in the Pending Changes panel when folding or expanding sections, stabilizing scrollbar spacing and preserving header action button alignment.
+- Prevented panel shifting during bulk staging operations, stabilizing section dividers so that emptying a change section does not displace neighboring groups.
+- Resolved commit form and panel shifting when progress indicators appear or disappear, reserving a dedicated single-line status row with a minimum height floor so indicators never displace neighboring controls.
+- Corrected misleading progress status messaging during staging and unstaging operations, ensuring indicators accurately reflect the active action instead of defaulting to a commit message.
+
+### Changed
+- Removed hover underlines from collapsible section headers in the Pending Changes panel to eliminate visual noise and maintain a clean appearance.
+
 ## [2.1.0] - 2026-09-05
 
 ### Added
