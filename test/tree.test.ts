@@ -6,6 +6,7 @@ import {
   collectPaths,
   flattenTree,
   groupBySection,
+  isSectionBulkDisabled,
   pruneSelection,
   sectionOf,
   stageableFrom,
@@ -209,3 +210,13 @@ test('unstageableFrom keeps staged and conflicted, drops untracked and unknown',
   const res = unstageableFrom(selected, entries, conflicts);
   assert.deepEqual(res, ['staged.ts', 'conflict.ts']);
 });
+
+test('isSectionBulkDisabled disables on busy, empty paths, or collapsed section', () => {
+  assert.equal(isSectionBulkDisabled(false, 5, false), false);
+  assert.equal(isSectionBulkDisabled(true, 5, false), true);
+  assert.equal(isSectionBulkDisabled(false, 0, false), true);
+  assert.equal(isSectionBulkDisabled(false, 5, true), true);
+  assert.equal(isSectionBulkDisabled(true, 0, true), true);
+});
+
+

@@ -112,6 +112,8 @@ test('the section header renders a real toggle button with aria-expanded and a d
   assert.match(src, /className="gc-section__toggle"/);
   assert.match(src, /isCollapsed \? 'chevron-right' : 'chevron-down'/);
   assert.match(src, /<span className="gc-section__twisty" aria-hidden="true">/);
+  assert.match(src, /className="gc-icon-button gc-section__bulk"/);
+  assert.match(src, /disabled=\{isSectionBulkDisabled\(busy, validPaths\.length, isCollapsed\)\}/);
   assert.doesNotMatch(
     src,
     /className="gc-section__toggle"[\s\S]{0,600}<button/,

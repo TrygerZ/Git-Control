@@ -24,7 +24,7 @@ import { ToastRegion } from './Toast';
 import { bridge, loadState, saveState } from './bridge';
 import { formatCount, sanitizeGitText, UNKNOWN_CHURN } from './format';
 import { useT } from './useT';
-import { groupBySection, stageableFrom, unstageableFrom, type ChangeSection } from './tree';
+import { groupBySection, isSectionBulkDisabled, stageableFrom, unstageableFrom, type ChangeSection } from './tree';
 import {
   toErrorBody,
   useChangesStore,
@@ -429,19 +429,17 @@ export function PendingChangesApp(): JSX.Element {
                           <span className="gc-section__name">{title}</span>
                         </button>
                       </h3>
-                      {/* Bulk staging a section whose rows are folded is an action on unseen files, so the button is not rendered while collapsed. */}
-                      {!isCollapsed && (
-                        <button
-                          type="button"
-                          className="gc-icon-button gc-section__bulk"
-                          aria-label={sectionBtnAria}
-                          title={sectionBtnTitle}
-                          disabled={busy || validPaths.length === 0}
-                          onClick={handleSectionBulk}
-                        >
-                          <Icon name={isStagedSection ? 'dash' : 'add'} />
-                        </button>
-                      )}
+                      {/* Bulk staging a section whose rows are folded is an action on unseen files, so the button is disabled while collapsed to prevent action while keeping header composition stable. */}
+                      <button
+                        type="button"
+                        className="gc-icon-button gc-section__bulk"
+                        aria-label={sectionBtnAria}
+                        title={sectionBtnTitle}
+                        disabled={isSectionBulkDisabled(busy, validPaths.length, isCollapsed)}
+                        onClick={handleSectionBulk}
+                      >
+                        <Icon name={isStagedSection ? 'dash' : 'add'} />
+                      </button>
                       <span className="gc-section__count">{formatCount(entries.length, language)}</span>
                     </div>
                     {!isCollapsed && (
