@@ -374,6 +374,78 @@ test('small themes keep every definition', () => {
   assert.equal(Object.keys(snap.definitions).length, 2);
 });
 
+// B1: the cap binds entries VISITED (counter rises even for dropped junk), not
+// entries accepted. Under the old accepted-count cap the 50 000 invalid entries
+// were all iterated and the valid entry after them was still accepted; now the
+// visited budget is spent on the junk, so the late valid entry is never seen.
+test('flood of invalid definitions terminates at the cap and yields a valid snapshot', () => {
+  const defs: Record<string, unknown> = {};
+  for (let i = 0; i < MAX_THEME_DEFINITIONS; i++) defs[`bad${i}`] = ['not', 'an', 'object'];
+  defs['late-valid'] = { fontCharacter: '\\E001' }; // first entry past the visited budget
+  const snap = assembleSnapshot({ iconDefinitions: defs, file: '_f' }, 't', 'dark', NO_ASSETS, LANGS);
+  assert.ok(snap !== undefined);
+  assert.equal(Object.keys(snap.definitions).length, 0);
+  assert.equal(snap.definitions['late-valid'], undefined);
+  assert.equal(snap.file, '_f'); // rest of the snapshot unaffected
+});
+
+// B1, the flood shape QA named: 50k entries well past the cap must not spin the
+// loop (or any pre-loop allocation) over all of them. Locked via the same
+// visited-budget semantics: junk fills the budget, a valid entry after it is
+// dropped. Uses 50k — big enough to be meaningful, cheap enough for the suite.
+test('definition map with 50k hostile entries stays bounded, not just un-crashed', () => {
+  const defs: Record<string, unknown> = {};
+  for (let i = 0; i < 50_000; i++) defs[`bad${i}`] = ['x'];
+  defs['one-valid'] = { fontCharacter: '\\E001' };
+  const snap = assembleSnapshot({ iconDefinitions: defs }, 't', 'dark', NO_ASSETS, LANGS);
+  assert.ok(snap !== undefined);
+  assert.equal(Object.keys(snap.definitions).length, 0);
+  assert.equal(snap.definitions['one-valid'], undefined);
+});
+
+// B1: the user-facing maps (`fileExtensions` and friends) share the visited
+// ceiling — a theme can put 50k keys in `fileExtensions` without any
+// `iconDefinitions` entry at all, so that path needed its own bound.
+test('user-facing maps are capped at the same ceiling as definitions', () => {
+  const exts: Record<string, string> = {};
+  for (let i = 0; i < MAX_THEME_DEFINITIONS + 500; i++) exts[`e${i}`] = '_x';
+  const snap = assembleSnapshot({ iconDefinitions: {}, fileExtensions: exts }, 't', 'dark', NO_ASSETS, LANGS);
+  assert.ok(snap !== undefined);
+  assert.equal(Object.keys(snap.fileExtensions).length, MAX_THEME_DEFINITIONS);
+});
+
+// B2: `srcUri` reaches the webview's `src: url('${srcUri}')` verbatim, and
+// `vscode.Uri` keeps `'"();{}` raw in URI paths — a font file named `x').woff`
+// inside the theme directory would resolve to a URI that closes the quoted
+// URL early and injects CSS. The host drops such sources; the webview's
+// `fontFaceCss` never has to defend itself.
+test('font srcUri that could escape the CSS url() context is dropped at the host', () => {
+  const hostile = [
+    "u:./x').woff", // closes the quote → escapes url('...')
+    'u:./y.woff);}', // closes the rule
+    'u:./z.woff{a:b}', // opens a new rule body
+    'u:./w.woff\n', // raw newline ends the CSS string
+    "u:./v.woff\\\\evil", // backslash is the CSS escape character
+  ];
+  const doc = {
+    fonts: hostile.map((path) => ({ id: 'f', src: [{ path }] })),
+    iconDefinitions: {},
+  };
+  const snap = assembleSnapshot(doc, 't', 'dark', (p) => p, LANGS);
+  assert.ok(snap !== undefined);
+  assert.deepEqual(snap.fonts, []);
+  // A normal webview-shaped URI (sub-delims excluded, percent-encoded drive)
+  // still passes — Seti and friends keep working.
+  const benign = {
+    fonts: [{ id: 'ok', src: [{ path: 'https://file+.vscode-resource.vscode-cdn.net/c%3A/ext/f.woff?v=1' }] }],
+    iconDefinitions: {},
+  };
+  const snapOk = assembleSnapshot(benign, 't', 'dark', (p) => p, LANGS);
+  assert.ok(snapOk !== undefined);
+  assert.equal(snapOk.fonts.length, 1);
+  assert.equal(snapOk.fonts[0]?.srcUri, 'https://file+.vscode-resource.vscode-cdn.net/c%3A/ext/f.woff?v=1');
+});
+
 // ------------------------------------------------------------ prototype keys
 
 // H6 (write side): a theme key `"__proto__"` must become an own data property,

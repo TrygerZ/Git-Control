@@ -55,6 +55,15 @@ const FONT_WEIGHTS = /^(?:[0-9]{1,3}|normal|bold)$/;
 const FONT_STYLES: ReadonlySet<string> = new Set(['normal', 'italic', 'oblique']);
 /** Font id lands in a CSS `font-family` name, so keep it to safe characters. */
 const FONT_IDS = /^[A-Za-z0-9_-]{1,64}$/;
+/**
+ * B2: `srcUri` is interpolated into the webview's `src: url('${srcUri}')`.
+ * `vscode.Uri` keeps `'"();{}` and friends raw inside a URI path, so a font
+ * file literally named `x').woff` inside the theme directory resolves to a
+ * URI that would close the quoted URL early and inject CSS rules. Any URI
+ * carrying one of those characters is dropped — H4 policy: reject, don't
+ * escape. Newline separators would end the CSS string too (illegal raw).
+ */
+const CSS_URL_UNSAFE = /['"();{}\\\n\r\u2028\u2029]/;
 
 // ------------------------------------------------------------- fontCharacter
 
@@ -137,11 +146,21 @@ function stripJsonComments(text: string): string {
 
 // -------------------------------------------------------------- normalization
 
-/** `{ key: value }` with string values only and lowercased keys; junk in → `{}` out. */
+/**
+ * `{ key: value }` with string values only and lowercased keys; junk in → `{}` out.
+ * `for...in` + `Object.hasOwn` replaces `Object.entries` (which would allocate
+ * a pair array sized to the whole input before any cap could run) and the
+ * visited counter rises per entry even when the value is junk — a hostile
+ * million-key map costs bounded work, not just bounded output size.
+ */
 export function normalizeStringMap(raw: unknown): Record<string, string> {
   if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) return {};
   const out: Record<string, string> = {};
-  for (const [key, value] of Object.entries(raw)) {
+  let visited = 0;
+  for (const key in raw) {
+    if (!Object.hasOwn(raw, key)) continue;
+    if (++visited > MAX_THEME_DEFINITIONS) break; // H5: bind work, reuse the definitions ceiling
+    const value = (raw as Record<string, unknown>)[key];
     if (typeof value === 'string') out[key.toLowerCase()] = value;
   }
   return out;
@@ -277,6 +296,7 @@ function normalizeFonts(
       if (typeof path !== 'string' || path.length === 0) continue;
       const srcUri = resolveAsset(path);
       if (srcUri === undefined) continue;
+      if (CSS_URL_UNSAFE.test(srcUri)) continue; // B2: cannot break out of url('...')
       const font: IconThemeFont = { id, srcUri, format: typeof format === 'string' ? format : '' };
       if (typeof entry.weight === 'string') font.weight = entry.weight;
       if (typeof entry.style === 'string') font.style = entry.style;
@@ -292,8 +312,9 @@ function normalizeFonts(
  * Turn a parsed theme document (+ its `light`/`highContrast` overlay) into the
  * serializable snapshot. `resolveAsset` resolves a JSON-relative path to a
  * webview URI, or `undefined` when the path must be rejected (traversal, read
- * failure). Overlay merge is shallow **per map** — `{...base, ...overlay}` —
- * never a whole-document replace.
+ * failure). Overlay merge is shallow **per map**: the overlay's value for a
+ * key wins, and per-map iteration is bounded by the resource caps — never a
+ * whole-document replace.
  */
 export function assembleSnapshot(
   doc: unknown,
@@ -317,23 +338,28 @@ export function assembleSnapshot(
     ...normalizeStringMap(overlay?.[key]),
   });
 
-  const mergedDefsRaw: Record<string, unknown> = {
-    ...normalizeStringMapKeysOnly(doc.iconDefinitions),
-    ...normalizeStringMapKeysOnly(overlay?.iconDefinitions),
-  };
+  // H5: bounded work, not just bounded output. Iterating the raw sources
+  // directly (overlay second, so overlay keys win — same as the spread it
+  // replaces) removes two O(input) allocations the old code paid BEFORE the
+  // loop: the `{...base, ...overlay}` copy and the `Object.entries` pair
+  // array. The counter rises per visited entry, accepted or not, so a flood
+  // of invalid definitions still terminates at the cap.
   // H6: null prototype — a theme key `"__proto__"` must set an own data
   // property here, never trigger the inherited setter and repoint this
   // object's [[Prototype]] at a theme-controlled definition.
   const definitions: Record<string, IconThemeDef> = Object.create(null) as Record<string, IconThemeDef>;
-  let definitionCount = 0;
-  for (const [key, raw] of Object.entries(mergedDefsRaw)) {
-    if (definitionCount >= MAX_THEME_DEFINITIONS) break; // H5: cap, not fatal
-    const def = normalizeDef(raw, resolveAsset);
-    if (def !== undefined) {
-      definitions[key] = def;
-      definitionCount++;
+  let definitionsVisited = 0;
+  const collectDefinitions = (raw: unknown): void => {
+    if (!isObject(raw)) return;
+    for (const key in raw) {
+      if (++definitionsVisited > MAX_THEME_DEFINITIONS) return; // H5: cap, not fatal
+      if (!Object.hasOwn(raw, key)) continue;
+      const def = normalizeDef(raw[key], resolveAsset);
+      if (def !== undefined) definitions[key] = def;
     }
-  }
+  };
+  collectDefinitions(doc.iconDefinitions);
+  collectDefinitions(overlay?.iconDefinitions);
 
   const mergedFileExtensions = mergedMap('fileExtensions');
   const mergedFileNames = mergedMap('fileNames');
@@ -367,15 +393,6 @@ export function assembleSnapshot(
     fonts: normalizeFonts(overlay?.fonts ?? doc.fonts, resolveAsset),
     hidesExplorerArrows: hidesBase || hidesOverlay,
   };
-}
-
-/**
- * Key-preserving map copy used for `iconDefinitions` (ids are matched
- * verbatim, so unlike the user-facing maps their keys are NOT lowercased).
- * Non-object input → `{}`.
- */
-function normalizeStringMapKeysOnly(raw: unknown): Record<string, unknown> {
-  return isObject(raw) ? { ...raw } : {};
 }
 
 /**
