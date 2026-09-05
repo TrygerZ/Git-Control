@@ -36,6 +36,7 @@ export function CommitForm(): JSX.Element {
   const pushAfter = useChangesStore((st) => st.pushAfterCommit);
   const setPushAfter = useChangesStore((st) => st.setPushAfterCommit);
   const changesBusy = useChangesStore((st) => st.busy);
+  const busyKind = useChangesStore((st) => st.busyKind);
   const busy = changesBusy || opBusy;
   const messageError = useChangesStore((st) => st.messageError);
   const commit = useChangesStore((st) => st.commit);
@@ -105,6 +106,19 @@ export function CommitForm(): JSX.Element {
     void runAction({ action: 'push', remote, branch, setUpstream });
   };
 
+  // Label follows the operation marker, never the combined `busy` boolean:
+  // `commit()` also raises the changes-store `busy`, so a boolean-based label
+  // would claim "staging" during a commit. `busyKind === null` with `busy`
+  // true means an operation-store action (push, fetch) is running; the only
+  // truthful claim is the generic progress key `operationInProgress`, kept
+  // separate from the push-scoped `pushDisabledBusy` button title.
+  const statusLabel =
+    busyKind === 'stage'
+      ? strings.commitForm.stagingChanges
+      : busyKind === 'commit'
+        ? strings.commitForm.savingCommit
+        : strings.commitForm.operationInProgress;
+
   return (
     <form className="gc-commit" onSubmit={submit} aria-label={strings.commitForm.formAria}>
       <div className="gc-commit__field-wrap">
@@ -173,7 +187,6 @@ export function CommitForm(): JSX.Element {
             {pushLabel}
           </button>
         )}
-        {busy && <Spinner label={strings.commitForm.savingCommit} />}
         {retryPush !== null && (
           <button
             type="button"
@@ -186,6 +199,20 @@ export function CommitForm(): JSX.Element {
           </button>
         )}
       </div>
+
+      {/*
+        Progress slot stays permanently rendered to reserve exactly one text row.
+        In-flow mount/unmount would alter parent height and shift elements below.
+      */}
+      <p
+        className="gc-commit__status"
+        // Full label in title: the row ellipsis-clips in narrow sidebars, so
+        // low-vision users need a hover reveal. Only while busy: an idle row
+        // has no text and must not show an empty tooltip.
+        {...(busy ? { title: statusLabel } : {})}
+      >
+        {busy && <Spinner label={statusLabel} />}
+      </p>
     </form>
   );
 }

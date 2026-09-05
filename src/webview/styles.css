@@ -2246,10 +2246,16 @@ h3 {
   display: none;
 }
 
+/*
+ * Scroll container for change sections.
+ * Gutter is locked to stable so scrollbar appearance does not cause content reflow.
+ */
 .gc-pending__sections {
   flex: 1 1 auto;
   min-height: 120px;
-  overflow: auto;
+  overflow-y: auto;
+  overflow-x: hidden;
+  scrollbar-gutter: stable;
 }
 
 .gc-pending__count {
@@ -2320,18 +2326,20 @@ h3 {
 }
 
 /*
- * Sections with clear natural dividers and refined spacing rhythm.
+ * Sections with clear natural dividers and stable spacing rhythm.
+ * The divider is a border-top on the following sibling, so whether a section
+ * exists or is removed never changes the styling of any other section. Total
+ * inter-section spacing is intentionally kept identical to the previous
+ * design: padding-bottom of the earlier section plus padding-top of the next
+ * equals two spacing steps with the border centered between them.
  */
 .gc-section {
   padding-bottom: var(--gc-space-2);
-  margin-bottom: var(--gc-space-2);
-  border-bottom: 1px solid var(--gc-border);
 }
 
-.gc-section:last-child {
-  padding-bottom: 0;
-  margin-bottom: var(--gc-space-1);
-  border-bottom: none;
+.gc-section + .gc-section {
+  padding-top: var(--gc-space-2);
+  border-top: 1px solid var(--gc-border);
 }
 
 .gc-section__head {
@@ -2362,10 +2370,6 @@ h3 {
   cursor: pointer;
 }
 
-.gc-section__toggle:hover .gc-section__name {
-  text-decoration: underline;
-}
-
 .gc-section__twisty {
   flex: 0 0 auto;
   width: 1em;
@@ -2375,8 +2379,10 @@ h3 {
 /*
  * Section bulk button: same hit area and icon size as the per-row `+`/`-`
  * (both are `gc-icon-button`, so `--gc-hit` and `--gc-fs-lg` already apply).
- * Hidden at rest via opacity so it stays in the Tab order; revealed on hover
- * or when any child has focus, exactly like `.gc-tree__action-cell`.
+ * The button always stays in the DOM and in the Tab order so the header row
+ * composition never changes between expanded and collapsed states. It is
+ * hidden at rest via opacity and revealed only on hover or focus-within and
+ * only when not disabled, so an unusable button never becomes visible.
  */
 .gc-section__bulk {
   opacity: 0;
@@ -2384,14 +2390,14 @@ h3 {
   transition: opacity var(--gc-dur-fast) var(--gc-ease);
 }
 
-.gc-section__head:hover .gc-section__bulk,
-.gc-section__head:focus-within .gc-section__bulk {
+.gc-section__head:hover .gc-section__bulk:not(:disabled),
+.gc-section__head:focus-within .gc-section__bulk:not(:disabled) {
   opacity: 1;
   pointer-events: auto;
 }
 
 @media (hover: none) {
-  .gc-section__bulk {
+  .gc-section__bulk:not(:disabled) {
     opacity: 1;
     pointer-events: auto;
   }
@@ -2804,6 +2810,42 @@ h3 {
   white-space: normal;
   overflow-wrap: anywhere;
   text-align: center;
+}
+
+/* Permanent progress line reserved for the in-flow status indicator.
+ * Mounting or unmounting in-flow elements alters parent height and shifts
+ * panels below. Reserving exactly one text row keeps heights identical across
+ * idle and busy states. The max() floor keeps the reservation from shrinking
+ * below the 10px spinner dot (border-box: its 2px border is inside that box),
+ * so a very small base font can never let the busy row outgrow the idle row. */
+.gc-commit__status {
+  display: flex;
+  align-items: center;
+  margin: 0;
+  min-height: max(1.4em, 10px);
+  line-height: 1.4;
+  font-size: var(--gc-fs-xs);
+  color: var(--gc-muted);
+}
+
+.gc-commit__status .gc-spinner {
+  min-height: max(1.4em, 10px);
+  line-height: 1.4;
+  font-size: inherit;
+  color: inherit;
+  min-width: 0;
+}
+
+/* Sidebar-narrow rows wrap a long status label onto a second line, re-heighting
+ * the reserved row. Scoped here only: the global .gc-spinner__label keeps its
+ * natural wrapping for diff loads and pagination in wider containers.
+ * min-width: 0 lets the flex items shrink inside the row instead of forcing
+ * the label past the form edge. */
+.gc-commit__status .gc-spinner__label {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
 }
 
 /* ----------------------------------------------------------------- inspector */

@@ -30,7 +30,6 @@ export interface BranchSelectorProps {
 export interface BranchOption {
   value: string;
   label: string;
-  disabled: boolean;
   /** Full branch name when label is truncated, so the option keeps its tooltip. */
   hint?: string;
 }
@@ -44,14 +43,10 @@ export interface BranchSelectorState {
 /**
  * Branch labels set the flex item's intrinsic width; a single 60-char name would
  * force `.gc-toolbar__branch-select` wider than any sidebar. Truncate display only,
- * never `value` — the ref that checkout acts on.
+ * never `value`: the ref that checkout acts on. Suffix-aware truncation measures
+ * the current marker inside `computeBranchOptions` so the FINAL label stays bounded.
  */
 const BRANCH_LABEL_LIMIT = 32;
-
-function truncateBranchLabel(label: string): { display: string; full: string } {
-  if (label.length <= BRANCH_LABEL_LIMIT) return { display: label, full: label };
-  return { display: `${label.slice(0, BRANCH_LABEL_LIMIT - 1)}\u2026`, full: label };
-}
 
 export function computeBranchOptions(
   refs: readonly RefInfo[],
@@ -64,10 +59,13 @@ export function computeBranchOptions(
   const options: BranchOption[] = [];
 
   if (currentBranch === null) {
+    // No `disabled` here: the placeholder is the selected option while detached,
+    // and the native popup renders disabled options with dimmed foreground,
+    // making the visible selection unreadable. Non-checkout is enforced by
+    // checkoutActionPayload (empty value never fires an action).
     options.push({
       value: '',
       label: detachedLabel,
-      disabled: true,
     });
   }
 
@@ -88,10 +86,13 @@ export function computeBranchOptions(
     // Full name stays in title so the OS dropdown (unstyleable) still reveals it.
     const fullLabel = isCurrent ? formatCurrent(truncated.full) : truncated.full;
     const needsTitle = truncated.display !== truncated.full;
+    // No `disabled` even for the current branch: the native `<select>` popup
+    // renders disabled options with dimmed foreground, so the selected item
+    // (the current branch) is unreadable at first paint. Redundant checkout is
+    // instead blocked by checkoutActionPayload via onSelect.
     options.push({
       value: ref.shortName,
       label,
-      disabled: isCurrent,
       ...(needsTitle ? { hint: fullLabel } : {}),
     });
   }
@@ -129,8 +130,8 @@ export function checkoutActionPayload(
 
 /**
  * Interactive branch checkout dropdown.
- * Offers only local branches (kind === 'local'), disables current HEAD branch and busy state,
- * triggers `checkout-branch` action on select.
+ * Offers only local branches (kind === 'local'), disables the select on busy state
+ * or when no local branches exist, triggers `checkout-branch` action on select.
  */
 export function BranchSelector({
   currentBranch,
@@ -169,7 +170,7 @@ export function BranchSelector({
       onChange={(e) => onSelect(e.target.value)}
     >
       {state.options.map((opt) => (
-        <option key={opt.value || '__detached'} value={opt.value} disabled={opt.disabled} title={opt.hint ?? opt.label}>
+        <option key={opt.value || '__detached'} value={opt.value} title={opt.hint ?? opt.label}>
           {opt.label}
         </option>
       ))}

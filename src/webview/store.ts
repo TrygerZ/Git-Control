@@ -161,6 +161,8 @@ export interface ChangesState {
   commitMessage: string;
   pushAfterCommit: boolean;
   busy: boolean;
+  /** Which changes-store mutation is running; `null` while `busy` comes only from `opBusy`. */
+  busyKind: 'stage' | 'commit' | null;
   loading: boolean;
   hasLoaded: boolean;
   error: ErrorBody | null;
@@ -193,6 +195,7 @@ export const useChangesStore = create<ChangesState>((set, get) => ({
   commitMessage: '',
   pushAfterCommit: false,
   busy: false,
+  busyKind: null,
   loading: false,
   hasLoaded: false,
   error: null,
@@ -294,7 +297,7 @@ export const useChangesStore = create<ChangesState>((set, get) => ({
       set({ messageError: strings.commitForm.messageRequired });
       return false;
     }
-    set({ busy: true, messageError: null });
+    set({ busy: true, busyKind: 'commit', messageError: null });
     const ops = useOperationStore.getState();
     try {
       const token = await freshToken();
@@ -305,7 +308,7 @@ export const useChangesStore = create<ChangesState>((set, get) => ({
         push: get().pushAfterCommit,
       });
       const result: CommitResult = await handle.send({ statusToken: token });
-      set({ busy: false, commitMessage: '', selection: new Set<string>() });
+      set({ busy: false, busyKind: null, commitMessage: '', selection: new Set<string>() });
       saveState({ commitMessage: '', selectedPaths: [] });
       if (get().pushAfterCommit && !result.pushed) {
         ops.pushToast({
@@ -329,7 +332,7 @@ export const useChangesStore = create<ChangesState>((set, get) => ({
       await useRepoStore.getState().refresh();
       return true;
     } catch (err) {
-      set({ busy: false });
+      set({ busy: false, busyKind: null });
       ops.fail(err);
       return false;
     }
@@ -346,15 +349,15 @@ async function runStage(
   get: () => ChangesState,
 ): Promise<void> {
   if (paths.length === 0) return;
-  set({ busy: true });
+  set({ busy: true, busyKind: 'stage' });
   try {
     const token = await freshToken();
     await mutation('actions/stage', { paths, stage }).send({ statusToken: token });
-    set({ busy: false });
+    set({ busy: false, busyKind: null });
     await get().load();
     await useRepoStore.getState().loadStatus();
   } catch (err) {
-    set({ busy: false });
+    set({ busy: false, busyKind: null });
     useOperationStore.getState().fail(err);
   }
 }

@@ -112,9 +112,127 @@ test('the section header renders a real toggle button with aria-expanded and a d
   assert.match(src, /className="gc-section__toggle"/);
   assert.match(src, /isCollapsed \? 'chevron-right' : 'chevron-down'/);
   assert.match(src, /<span className="gc-section__twisty" aria-hidden="true">/);
+  assert.match(src, /className="gc-icon-button gc-section__bulk"/);
+  assert.match(src, /disabled=\{isSectionBulkDisabled\(busy, validPaths\.length, isCollapsed\)\}/);
   assert.doesNotMatch(
     src,
     /className="gc-section__toggle"[\s\S]{0,600}<button/,
     'no button nested inside the section toggle',
+  );
+});
+
+test('commit form progress spinner renders inside gc-commit__status outside actions', () => {
+  const commitFormSrc = fs.readFileSync(
+    path.join(__dirname, '..', '..', 'src', 'webview', 'CommitForm.tsx'),
+    'utf8',
+  );
+  const stylesSrc = fs.readFileSync(
+    path.join(__dirname, '..', '..', 'src', 'webview', 'styles.css'),
+    'utf8',
+  );
+  const storeSrc = fs.readFileSync(
+    path.join(__dirname, '..', '..', 'src', 'webview', 'store.ts'),
+    'utf8',
+  );
+
+  // Structural binding, not a loose regex: everything before the status
+  // paragraph must be Spinner-free. A Spinner inside the actions div would
+  // necessarily appear in this slice, so the check cannot cross a closing tag.
+  const actionsIdx = commitFormSrc.indexOf('<div className="gc-commit__actions">');
+  const statusIdx = commitFormSrc.search(/<p\s+className="gc-commit__status"/);
+  assert.ok(actionsIdx >= 0, 'actions block must exist');
+  assert.ok(statusIdx > actionsIdx, 'status row must come after the actions block');
+  const beforeStatus = commitFormSrc.slice(0, statusIdx);
+  assert.ok(
+    !beforeStatus.includes('<Spinner'),
+    'Spinner must not render before the gc-commit__status row (in particular, not inside gc-commit__actions)',
+  );
+  assert.match(
+    commitFormSrc,
+    /<p\s+className="gc-commit__status"[^>]*>\s*\{busy && \(?\s*<Spinner/,
+    'Spinner must be rendered inside gc-commit__status',
+  );
+
+  // Invariant, not literal: the status row must reserve a font-relative
+  // minimum height and clamp its spinner to the same one-line box. The
+  // max() floor (px term) must be present so a very small base font can
+  // never let the spinner dot outgrow the reserved row. Removing the floor
+  // or reverting to a bare em/rem reservation fails.
+  const statusBlock = stylesSrc.match(/\.gc-commit__status\s*\{([^}]*)\}/)?.[1] ?? '';
+  assert.match(
+    statusBlock,
+    /min-height:\s*max\(\s*[\d.]+(?:em|rem)\s*,\s*[\d.]+px\s*\)\s*;/,
+    '.gc-commit__status must reserve a font-relative height with a px floor',
+  );
+  assert.match(
+    statusBlock,
+    /line-height:\s*[\d.]+\s*;/,
+    '.gc-commit__status must pin line-height so idle and busy rows measure identically',
+  );
+  const spinnerOverride = stylesSrc.match(/\.gc-commit__status\s+\.gc-spinner\s*\{([^}]*)\}/)?.[1] ?? '';
+  assert.match(
+    spinnerOverride,
+    /min-height:\s*max\(\s*[\d.]+(?:em|rem)\s*,\s*[\d.]+px\s*\)\s*;/,
+    '.gc-commit__status .gc-spinner must clamp to the reserved row with the same px floor',
+  );
+
+  // One-line clamp (defect 2): the label inside the status row must never wrap.
+  const labelOverride =
+    stylesSrc.match(/\.gc-commit__status\s+\.gc-spinner__label\s*\{([^}]*)\}/)?.[1] ?? '';
+  assert.match(
+    labelOverride,
+    /white-space:\s*nowrap\s*;/,
+    'status label must stay on one line',
+  );
+  assert.match(
+    labelOverride,
+    /text-overflow:\s*ellipsis\s*;/,
+    'an overlong status label must clip with ellipsis instead of growing the row',
+  );
+
+  // Clipped-label reveal: the ellipsis hides text from low-vision users, so
+  // the row must carry a conditional title with the full label. Mounted only
+  // while busy: the idle row is empty and must not show an empty tooltip.
+  assert.match(
+    commitFormSrc,
+    /\{\.\.\.\(\s*busy\s*\?\s*\{\s*title:\s*statusLabel\s*\}\s*:\s*\{\s*\}\s*\)\}/,
+    'status row must carry a conditional title with the full status label',
+  );
+
+  // Operation discriminator (defect 1): the label follows busyKind, never the
+  // combined changesBusy boolean, and the store must type it.
+  assert.match(
+    storeSrc,
+    /busyKind:\s*'stage'\s*\|\s*'commit'\s*\|\s*null/,
+    'changes store must carry a busyKind discriminator',
+  );
+  assert.doesNotMatch(
+    commitFormSrc,
+    /label=\{\s*changesBusy\s*\?/,
+    'spinner label must not be chosen from the combined changesBusy boolean',
+  );
+  assert.match(
+    commitFormSrc,
+    /busyKind === 'stage'/,
+    'stage operation must map to the staging label',
+  );
+  assert.match(
+    commitFormSrc,
+    /busyKind === 'commit'/,
+    'commit operation must map to the saving label',
+  );
+
+  // Decoupling guard: the generic fallback spinner label must use its own
+  // generic key, never the push-scoped pushDisabledBusy button title. The
+  // push title at the busy branch of pushTitle stays pushDisabledBusy.
+  assert.doesNotMatch(
+    commitFormSrc,
+    /statusLabel[\s\S]*?pushDisabledBusy/,
+    'fallback spinner label must not reuse the push-scoped pushDisabledBusy key',
+  );
+  assert.match(
+    commitFormSrc,
+    /:\s*strings\.commitForm\.operationInProgress;?/,
+    'fallback spinner label must use the generic operationInProgress key',
   );
 });

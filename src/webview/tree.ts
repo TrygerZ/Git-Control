@@ -236,6 +236,14 @@ export function unstageableFrom(
   return out;
 }
 
+export function isSectionBulkDisabled(
+  busy: boolean,
+  validPathsCount: number,
+  isCollapsed: boolean,
+): boolean {
+  return busy || validPathsCount === 0 || isCollapsed;
+}
+
 export function flattenTree(
   root: FolderNode,
   collapsed: ReadonlySet<string>,
