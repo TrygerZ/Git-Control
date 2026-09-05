@@ -1074,7 +1074,7 @@ test('BranchSelector: only local branches are included as options (remote, tag, 
   assert.ok(!state.options.some((o) => o.value === 'origin/main' || o.value === 'v1.0' || o.value === 'stash'));
 });
 
-test('BranchSelector: current active branch (HEAD) is present but disabled to prevent redundant checkout', () => {
+test('BranchSelector: current active branch (HEAD) is present, marked current, and NOT disabled so the native popup stays readable', () => {
   const refs: RefInfo[] = [
     ref({ refName: 'refs/heads/main', shortName: 'main', kind: 'local', objectName: HASH }),
     ref({ refName: 'refs/heads/feature', shortName: 'feature', kind: 'local', objectName: HASH }),
@@ -1085,11 +1085,11 @@ test('BranchSelector: current active branch (HEAD) is present but disabled to pr
   const featureOpt = state.options.find((o) => o.value === 'feature');
 
   assert.ok(mainOpt, 'main option must exist');
-  assert.equal(mainOpt.disabled, true, 'current HEAD branch must be disabled');
-  assert.equal(mainOpt.label, 'main (aktif)');
+  assert.ok(!('disabled' in mainOpt), 'option must carry no disabled flag: the native popup renders disabled options dimmed and unreadable');
+  assert.equal(mainOpt.label, 'main (aktif)', 'current branch label must keep the current marker');
 
   assert.ok(featureOpt, 'feature option must exist');
-  assert.equal(featureOpt.disabled, false, 'non-current branch must NOT be disabled');
+  assert.ok(!('disabled' in featureOpt), 'option must carry no disabled flag');
   assert.equal(featureOpt.label, 'feature');
 });
 
