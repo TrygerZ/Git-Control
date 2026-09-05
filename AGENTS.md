@@ -101,9 +101,9 @@ When implementing a new Git action, modify layers in this exact sequence:
 
 ## Git & Release Workflow
 
-- **Branches:** Create a new branch from `main` for every bugfix or change. Never commit directly to `main`. Follow `<type>/<kebab-case-slug>` naming using Conventional Commits types (`feat`, `fix`, `refactor`, `docs`, `chore`, `test`, `perf`, `ci`), e.g. `feat/vscode-file-icon-theme`.
+- **Branches:** Create a new branch from `main` for new features and bug fixes. Follow `<type>/<kebab-case-slug>` naming using Conventional Commits types (`feat`, `fix`, `refactor`, `docs`, `chore`, `test`, `perf`, `ci`), e.g. `feat/vscode-file-icon-theme`. Minor updates do not require a branch and may commit directly to `main` (for example: typo fixes, wording adjustments in documentation, comment edits, and small configuration adjustments). When in doubt whether a change is minor, create a branch.
 - **Commits:** Conventional Commits with scope in lowercase imperative without trailing period (`feat(webview): ...`, `fix(icons): ...`, `chore(release): ...`).
-- **Merge gates:** Ensure `npm test` and `npm run typecheck` pass cleanly on the branch before reporting results and requesting merge. Never merge to `main` until user explicitly approves or requests it; task completion and passing all gates do not constitute approval.
+- **Merge gates:** For branched work, ensure `npm test` and `npm run typecheck` pass cleanly on the branch before reporting results and requesting merge. Never merge to `main` until user explicitly approves or requests it; task completion and passing all gates do not constitute approval.
 - **Permissions:** Only commit or push when explicitly requested by user. Without explicit user request, never `push --force`, never `reset --hard` on published branches, never delete branches (`branch -D`), and never rewrite history.
 - **Releases:** Update `CHANGELOG.md` following Keep a Changelog (`Added`, `Changed`, `Fixed`, `Security`) + SemVer, bump `package.json`, run `npm run package`.
 
