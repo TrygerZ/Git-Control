@@ -139,7 +139,7 @@ test('commit form progress spinner renders inside gc-commit__status outside acti
   // paragraph must be Spinner-free. A Spinner inside the actions div would
   // necessarily appear in this slice, so the check cannot cross a closing tag.
   const actionsIdx = commitFormSrc.indexOf('<div className="gc-commit__actions">');
-  const statusIdx = commitFormSrc.indexOf('<p className="gc-commit__status">');
+  const statusIdx = commitFormSrc.search(/<p\s+className="gc-commit__status"/);
   assert.ok(actionsIdx >= 0, 'actions block must exist');
   assert.ok(statusIdx > actionsIdx, 'status row must come after the actions block');
   const beforeStatus = commitFormSrc.slice(0, statusIdx);
@@ -149,18 +149,20 @@ test('commit form progress spinner renders inside gc-commit__status outside acti
   );
   assert.match(
     commitFormSrc,
-    /<p className="gc-commit__status">\s*\{busy && \(?\s*<Spinner/,
+    /<p\s+className="gc-commit__status"[^>]*>\s*\{busy && \(?\s*<Spinner/,
     'Spinner must be rendered inside gc-commit__status',
   );
 
   // Invariant, not literal: the status row must reserve a font-relative
-  // minimum height and clamp its spinner to the same one-line box. Any
-  // em/rem-based reservation passes; dropping the reservation fails.
+  // minimum height and clamp its spinner to the same one-line box. The
+  // max() floor (px term) must be present so a very small base font can
+  // never let the spinner dot outgrow the reserved row. Removing the floor
+  // or reverting to a bare em/rem reservation fails.
   const statusBlock = stylesSrc.match(/\.gc-commit__status\s*\{([^}]*)\}/)?.[1] ?? '';
   assert.match(
     statusBlock,
-    /min-height:\s*[\d.]+(?:em|rem)\s*;/,
-    '.gc-commit__status must reserve a font-relative minimum height',
+    /min-height:\s*max\(\s*[\d.]+(?:em|rem)\s*,\s*[\d.]+px\s*\)\s*;/,
+    '.gc-commit__status must reserve a font-relative height with a px floor',
   );
   assert.match(
     statusBlock,
@@ -170,8 +172,8 @@ test('commit form progress spinner renders inside gc-commit__status outside acti
   const spinnerOverride = stylesSrc.match(/\.gc-commit__status\s+\.gc-spinner\s*\{([^}]*)\}/)?.[1] ?? '';
   assert.match(
     spinnerOverride,
-    /min-height:\s*[\d.]+(?:em|rem)\s*;/,
-    '.gc-commit__status .gc-spinner must clamp its hit area to the reserved row',
+    /min-height:\s*max\(\s*[\d.]+(?:em|rem)\s*,\s*[\d.]+px\s*\)\s*;/,
+    '.gc-commit__status .gc-spinner must clamp to the reserved row with the same px floor',
   );
 
   // One-line clamp (defect 2): the label inside the status row must never wrap.
@@ -186,6 +188,15 @@ test('commit form progress spinner renders inside gc-commit__status outside acti
     labelOverride,
     /text-overflow:\s*ellipsis\s*;/,
     'an overlong status label must clip with ellipsis instead of growing the row',
+  );
+
+  // Clipped-label reveal: the ellipsis hides text from low-vision users, so
+  // the row must carry a conditional title with the full label. Mounted only
+  // while busy: the idle row is empty and must not show an empty tooltip.
+  assert.match(
+    commitFormSrc,
+    /\{\.\.\.\(\s*busy\s*\?\s*\{\s*title:\s*statusLabel\s*\}\s*:\s*\{\s*\}\s*\)\}/,
+    'status row must carry a conditional title with the full status label',
   );
 
   // Operation discriminator (defect 1): the label follows busyKind, never the

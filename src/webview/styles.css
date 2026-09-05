@@ -2819,19 +2819,21 @@ h3 {
 /* Permanent progress line reserved for the in-flow status indicator.
  * Mounting or unmounting in-flow elements alters parent height and shifts
  * panels below. Reserving exactly one text row keeps heights identical across
- * idle and busy states. */
+ * idle and busy states. The max() floor keeps the reservation from shrinking
+ * below the 10px spinner dot (border-box: its 2px border is inside that box),
+ * so a very small base font can never let the busy row outgrow the idle row. */
 .gc-commit__status {
   display: flex;
   align-items: center;
   margin: 0;
-  min-height: 1.4em;
+  min-height: max(1.4em, 10px);
   line-height: 1.4;
   font-size: var(--gc-fs-xs);
   color: var(--gc-muted);
 }
 
 .gc-commit__status .gc-spinner {
-  min-height: 1.4em;
+  min-height: max(1.4em, 10px);
   line-height: 1.4;
   font-size: inherit;
   color: inherit;

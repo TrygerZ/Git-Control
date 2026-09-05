@@ -204,7 +204,13 @@ export function CommitForm(): JSX.Element {
         Progress slot stays permanently rendered to reserve exactly one text row.
         In-flow mount/unmount would alter parent height and shift elements below.
       */}
-      <p className="gc-commit__status">
+      <p
+        className="gc-commit__status"
+        // Full label in title: the row ellipsis-clips in narrow sidebars, so
+        // low-vision users need a hover reveal. Only while busy: an idle row
+        // has no text and must not show an empty tooltip.
+        {...(busy ? { title: statusLabel } : {})}
+      >
         {busy && <Spinner label={statusLabel} />}
       </p>
     </form>
