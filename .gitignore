@@ -1,8 +1,5 @@
 ﻿# Ignore internal docs
 docs/
-*.md
-!README.md
-!CHANGELOG.md
 foto/
 
 node_modules/
