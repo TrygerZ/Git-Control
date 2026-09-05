@@ -16,6 +16,7 @@ import {
   hasPrivateScope,
 } from './github';
 import { hostText } from './hostText';
+import { buildIconThemeSnapshot, iconThemeRootUri } from './iconTheme';
 import { Logger } from './logger';
 import { parseRemoteUrl, resolveGitHubApiBase, webUrlOf, type GitHubApiBase, type ParsedRemoteUrl } from './remoteUrl';
 import { clampZoom } from './webview/viewport';
@@ -28,6 +29,7 @@ import type {
   GitHubLinkage,
   GitHubRepoInfo,
   GitHubRepoPayload,
+  IconThemeSnapshot,
   Lang,
   OpenDiffPayload,
   OpenDiffResult,
@@ -85,10 +87,14 @@ class Controller implements vscode.Disposable {
   private readonly bridges = new Set<MessageBridge>();
   private readonly disposables: vscode.Disposable[] = [];
   private panel: vscode.WebviewPanel | undefined;
+  /** Sidebar view webview, tracked so icon-theme options can be re-assigned. */
+  private pendingView: vscode.WebviewView | undefined;
   private gitPath: string | null = null;
   private activeRepoPath: string | undefined;
   /** Cached GitHub client, rebuilt when the API base or the token changes. */
   private github: { client: GitHubClient; apiUrl: string; token: string | null } | undefined;
+  /** H3: increments per in-flight icon-theme broadcast; stale runs are dropped. */
+  private iconThemeGeneration = 0;
 
   constructor(context: vscode.ExtensionContext, logger: Logger, channel: vscode.OutputChannel) {
     this.context = context;
@@ -108,6 +114,17 @@ class Controller implements vscode.Disposable {
       vscode.workspace.onDidChangeConfiguration((event) => {
         if (event.affectsConfiguration('gitControl.gitPath')) void this.rediscoverGit();
         if (event.affectsConfiguration('gitControl.language')) void this.broadcastSettingsChanged();
+        // Icon theme switch → new asset root; options must be re-assigned BEFORE
+        // the new snapshot is sent or the service worker rejects the new URIs.
+        if (event.affectsConfiguration('workbench.iconTheme')) void this.broadcastIconThemeChanged();
+      }),
+      vscode.window.onDidChangeActiveColorTheme(() => {
+        // Light/dark/HC switch changes only the overlay; root stays valid.
+        this.broadcastIconThemeChanged();
+      }),
+      vscode.extensions.onDidChange(() => {
+        // Install/uninstall/enable of a theme extension → root may change.
+        void this.broadcastIconThemeChanged();
       }),
     );
 
@@ -351,8 +368,16 @@ class Controller implements vscode.Disposable {
         'gitControl.pendingChanges',
         {
           resolveWebviewView: (view) => {
+            this.pendingView = view;
+            view.onDidDispose(() => {
+              if (this.pendingView === view) this.pendingView = undefined;
+            });
             view.webview.options = this.webviewOptions();
             view.webview.html = this.html(view.webview, 'pending');
+            // No icon-theme push here: the webview is still loading and would
+            // drop the event. It PULLS `iconTheme/get` once its listeners are
+            // wired; `webviewOptions()` above already carries the active
+            // theme's `localResourceRoots`. Runtime switches push via watchers.
             this.attachBridge(view.webview, view);
           },
         },
@@ -494,6 +519,7 @@ class Controller implements vscode.Disposable {
       dark: vscode.Uri.joinPath(this.context.extensionUri, 'resources', 'graph-dark.svg'),
     };
     panel.webview.html = this.html(panel.webview, 'explorer');
+    // No icon-theme push here either: same pull-on-mount contract as the view.
     this.attachBridge(panel.webview, panel);
     panel.onDidDispose(() => {
       this.panel = undefined;
@@ -502,17 +528,27 @@ class Controller implements vscode.Disposable {
   }
 
   private webviewOptions(): vscode.WebviewOptions {
+    const roots = [
+      vscode.Uri.joinPath(this.context.extensionUri, 'dist'),
+      vscode.Uri.joinPath(this.context.extensionUri, 'resources'),
+    ];
+    // Only the directory of the theme that is ACTIVELY selected — never all
+    // extensions. Dropped again automatically when no theme is active.
+    const themeRoot = iconThemeRootUri();
+    if (themeRoot !== undefined) roots.push(themeRoot);
     return {
       enableScripts: true,
-      localResourceRoots: [
-        vscode.Uri.joinPath(this.context.extensionUri, 'dist'),
-        vscode.Uri.joinPath(this.context.extensionUri, 'resources'),
-      ],
+      localResourceRoots: roots,
     };
   }
 
   private attachBridge(webview: vscode.Webview, owner: { onDidDispose?: vscode.Event<void> }): void {
-    const bridge = new MessageBridge(webview as unknown as WebviewLike, this.bridgeHost());
+    const bridge = new MessageBridge(webview as unknown as WebviewLike, {
+      ...this.bridgeHost(),
+      // Bound to THIS webview: `buildIconThemeSnapshot` resolves asset URIs
+      // through `asWebviewUri`, which is per-webview.
+      iconThemeSnapshot: () => this.buildIconThemeSnapshotOrNull(webview),
+    });
     this.bridges.add(bridge);
     const detach = (): void => {
       bridge.dispose();
@@ -520,6 +556,12 @@ class Controller implements vscode.Disposable {
     };
     if (owner.onDidDispose !== undefined) owner.onDidDispose(detach);
     else this.disposables.push({ dispose: detach });
+  }
+
+  /** Snapshot for one webview; `undefined` (no active theme) maps to `null`. */
+  private async buildIconThemeSnapshotOrNull(webview: vscode.Webview): Promise<IconThemeSnapshot | null> {
+    const snapshot = await buildIconThemeSnapshot(webview);
+    return snapshot ?? null;
   }
 
   private bridgeHost(): BridgeHost {
@@ -553,6 +595,28 @@ class Controller implements vscode.Disposable {
   private broadcastSettingsChanged(): void {
     const snapshot = this.settingsSnapshot();
     for (const bridge of this.bridges) bridge.emit('event/settingsChanged', snapshot);
+  }
+
+  /**
+   * Re-resolve the active icon theme and push `event/iconThemeChanged` to every
+   * live bridge. Re-assigns `webview.options` BEFORE sending, or the service
+   * worker rejects the new snapshot's URIs.
+   */
+  private async broadcastIconThemeChanged(): Promise<void> {
+    // H3 generation guard: a theme switch while a broadcast is still awaiting
+    // its snapshot must not let the stale result emit after the newer one.
+    const generation = ++this.iconThemeGeneration;
+    // Re-assign options BEFORE the new snapshot is sent; a stale resource root
+    // makes the service worker reject the new URIs. Covers theme switches AND removal.
+    const current = this.webviewOptions();
+    if (this.pendingView !== undefined) this.pendingView.webview.options = current;
+    if (this.panel !== undefined) this.panel.webview.options = current;
+    const webview = this.pendingView?.webview ?? this.panel?.webview;
+    if (webview === undefined) return; // no webview ⇒ no bridge ⇒ no receiver
+    const snapshot = await buildIconThemeSnapshot(webview);
+    if (generation !== this.iconThemeGeneration) return; // superseded — drop
+    const payload = snapshot === undefined ? null : snapshot;
+    for (const bridge of this.bridges) bridge.emit('event/iconThemeChanged', payload);
   }
 
   // -------------------------------------------------------------- settings

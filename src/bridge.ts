@@ -47,6 +47,7 @@ import type {
   GraphPayload,
   HostEvent,
   HostMessage,
+  IconThemeSnapshot,
   Lang,
   MutationMeta,
   OpenDiffPayload,
@@ -101,6 +102,14 @@ export interface BridgeHost {
   githubPullRequests?(payload: PullRequestsPayload): Promise<PullRequestsResult>;
   githubCommitAuthors?(payload: CommitAuthorsPayload): Promise<CommitAuthorsResult>;
   githubLinkage?(): Promise<GitHubLinkage>;
+  /**
+   * Snapshot of the active file icon theme for the webview this bridge serves,
+   * or `null` when no theme is active. Implemented in `extension.ts` because
+   * building it needs `vscode` (`asWebviewUri`), bound per-webview. The pull
+   * complements the push event so a webview that mounts after the push can
+   * still get the snapshot.
+   */
+  iconThemeSnapshot?(): Promise<IconThemeSnapshot | null>;
 }
 
 /**
@@ -321,6 +330,13 @@ export class MessageBridge {
         return this.host.settings();
       case 'settings/set':
         return this.handleSettingsSet(request.payload as SettingsSetPayload);
+      case 'iconTheme/get':
+        validateEmptyPayload(request.payload, this.text().invalid);
+        {
+          const snapshot = this.host.iconThemeSnapshot;
+          if (snapshot === undefined) fail(503, 'UNAVAILABLE', this.text().unavailable);
+          return snapshot();
+        }
       default:
         return fail(400, 'VALIDATION_ERROR', this.text().invalid, {
           detail: `unknown kind: ${String(request.kind)}`,

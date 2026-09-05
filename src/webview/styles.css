@@ -2342,6 +2342,37 @@ h3 {
 }
 
 /*
+ * Section header toggle: a native button inside the heading, so Enter, Space,
+ * and `aria-expanded` come for free and the heading stays a heading. It fills
+ * the row width so the click target covers chevron, badge, and title; the bulk
+ * button and count badge remain siblings outside it.
+ */
+.gc-section__toggle {
+  display: flex;
+  flex: 1 1 auto;
+  align-items: center;
+  gap: var(--gc-space-2);
+  min-width: 0;
+  padding: 0;
+  border: none;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.gc-section__toggle:hover .gc-section__name {
+  text-decoration: underline;
+}
+
+.gc-section__twisty {
+  flex: 0 0 auto;
+  width: 1em;
+  text-align: center;
+}
+
+/*
  * Section bulk button: same hit area and icon size as the per-row `+`/`-`
  * (both are `gc-icon-button`, so `--gc-hit` and `--gc-fs-lg` already apply).
  * Hidden at rest via opacity so it stays in the Tab order; revealed on hover
@@ -2376,6 +2407,14 @@ h3 {
   color: var(--vscode-foreground);
   font-size: var(--gc-fs-sm);
   font-weight: var(--gc-weight-strong);
+}
+
+/*
+ * The toggle button inside the heading is the flex child now; the heading's
+ * own flex growth moves onto it, so the heading itself collapses to content.
+ */
+.gc-section__title .gc-section__toggle {
+  color: inherit;
 }
 
 .gc-section__name {
@@ -2521,12 +2560,6 @@ h3 {
   font-weight: var(--gc-weight-strong);
 }
 
-.gc-tree__status {
-  display: inline-flex;
-  flex: 0 0 auto;
-  align-items: center;
-}
-
 /*
  * The box holds one icon and nothing else, so it sits at `--gc-fs-md` rather
  * than at the metadata step: stacking two fractional em steps was what pushed the
@@ -2580,6 +2613,77 @@ h3 {
 }
 
 .gc-status__box--neutral {
+  color: var(--gc-muted);
+}
+
+/*
+ * Theme file icons. SVG images get an explicit box with `object-fit: contain`
+ * so a theme SVG with an odd viewBox cannot distort the row rhythm; glyphs
+ * inherit their font-family/colour/size from the resolver's inline style
+ * (namespaced `gc-icon-font-*` families injected by `IconThemeStyles`).
+ */
+.gc-file-icon {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  object-fit: contain;
+}
+
+/*
+ * Column 2 of a file row now holds the theme icon instead of the status box.
+ * Same footprint as the old box so the row rhythm survives the swap.
+ */
+.gc-tree__icon-cell {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+}
+
+/*
+ * Status letter at the end of the row, mirroring VS Code Source Control. Tone
+ * colours reuse the `--gc-tone-*` tokens; forced-colours mode keeps the letter
+ * readable because it is plain text, while theme SVG icons may be replaced.
+ */
+.gc-tree__status-letter {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  color: var(--gc-muted);
+  font-family: var(--vscode-editor-font-family, monospace);
+  font-size: var(--gc-fs-md);
+  font-weight: var(--gc-weight-strong);
+  line-height: 1;
+}
+
+.gc-tree__status-letter--added {
+  color: var(--gc-tone-added);
+}
+
+.gc-tree__status-letter--removed {
+  color: var(--gc-tone-removed);
+}
+
+.gc-tree__status-letter--changed {
+  color: var(--gc-tone-changed);
+}
+
+.gc-tree__status-letter--pending {
+  color: var(--gc-tone-pending);
+}
+
+.gc-tree__status-letter--special {
+  color: var(--gc-tone-special);
+}
+
+.gc-tree__status-letter--neutral {
   color: var(--gc-muted);
 }
 
@@ -3425,6 +3529,7 @@ h3 {
   /* Status glyphs are icon-only; border reappears here so the shape survives without colour. */
   .gc-status__box,
   .gc-section__badge,
+  .gc-section__toggle,
   .gc-conflicts__badge,
   .gc-inspector__hash-value,
   .gc-avatar {

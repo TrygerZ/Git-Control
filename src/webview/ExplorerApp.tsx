@@ -15,6 +15,7 @@ import { githubBaseUrl, type MenuItem } from './NodeContextMenu';
 import { useT } from './useT';
 import {
   useGitHubStore,
+  useIconThemeStore,
   useOperationStore,
   useRepoStore,
   useSettingsStore,
@@ -35,6 +36,7 @@ export function ExplorerApp(): JSX.Element {
   const refresh = useRepoStore((s) => s.refresh);
   const selectCommit = useRepoStore((s) => s.selectCommit);
   const loadSettings = useSettingsStore((s) => s.load);
+  const loadIconTheme = useIconThemeStore((s) => s.load);
   const runAction = useOperationStore((s) => s.runAction);
   const pushToast = useOperationStore((s) => s.pushToast);
   const showLogs = useOperationStore((s) => s.showLogs);
@@ -58,6 +60,9 @@ export function ExplorerApp(): JSX.Element {
     const persisted = loadState();
     if (persisted.selectedHash !== null) selectCommit(persisted.selectedHash);
     const off = wireHostEvents('explorer');
+    // Icon theme pull must follow `wireHostEvents`: the race is closed by the
+    // webview asking for the snapshot after its listeners exist.
+    void loadIconTheme();
     void loadSettings();
     void refresh();
     // The host parses each remote URL, so the GitHub item appears only when a
@@ -67,7 +72,7 @@ export function ExplorerApp(): JSX.Element {
       .then((result) => setGithubUrl(githubBaseUrl(result.remotes)))
       .catch(() => setGithubUrl(null));
     return off;
-  }, [loadSettings, refresh, selectCommit]);
+  }, [loadIconTheme, loadSettings, refresh, selectCommit]);
 
   const onMenuCommand = useCallback(
     (item: MenuItem, node: GraphNode): void => {

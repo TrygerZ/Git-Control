@@ -27,4 +27,6 @@ export type IconName =
   | 'file-symlink-file'
   | 'question'
   | 'diff-ignored'
-  | 'external';
+  | 'external'
+  | 'file'
+  | 'folder';

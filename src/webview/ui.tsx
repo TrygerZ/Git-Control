@@ -2,7 +2,7 @@
  * Small shared primitives: skeletons, banners, and the error boundary.
  * Kept in one file because none of them own state worth isolating.
  */
-import { Component, type ErrorInfo, type JSX, type ReactNode } from 'react';
+import { Component, useEffect, type ErrorInfo, type JSX, type ReactNode } from 'react';
 import {
   presentError,
   remedyConsequence,
@@ -13,10 +13,17 @@ import {
   syncSummary,
 } from './format';
 import { useT } from './useT';
-import { useSettingsStore } from './store';
-import type { ErrorBody, Remedy, RepoStatus } from '../messages';
+import { useSettingsStore, useIconThemeStore } from './store';
+import type {
+  ErrorBody,
+  Remedy,
+  RepoStatus,
+  IconThemeSnapshot,
+} from '../messages';
 import type { IconName } from './icons';
 import { ICON_PATHS } from './iconPaths';
+import { resolveFileIcon, resolveFolderIcon, type ResolvedIcon } from './fileIcon';
+import { syncIconFontCss } from './iconFontStyles';
 
 export type { IconName };
 
@@ -55,6 +62,93 @@ export function Icon({
       {content}
     </svg>
   );
+}
+
+// -------------------------------------------------------------- file icons
+
+const FILE_ICON_FALLBACK: IconName = 'file';
+const FOLDER_ICON_FALLBACK: IconName = 'folder';
+const ICON_FONT_PREFIX = 'gc-icon-font-';
+
+/** Theme font id → namespaced `font-family`, so themes cannot collide with page fonts. */
+function iconFontFamily(fontId: string | undefined): string | undefined {
+  return fontId === undefined ? undefined : `${ICON_FONT_PREFIX}${fontId}`;
+}
+
+/**
+ * Render one resolved theme icon. All output is decorative (`aria-hidden`):
+ * the surrounding cell or button already names the file for assistive tech.
+ */
+function ThemeIcon({ icon, fallback }: { icon: ResolvedIcon | undefined; fallback: IconName }): JSX.Element {
+  if (icon === undefined) return <Icon name={fallback} />;
+  if (icon.kind === 'svg') {
+    return <img src={icon.uri} alt="" aria-hidden="true" className="gc-file-icon" />;
+  }
+  return (
+    <span
+      className="gc-file-icon gc-file-icon--glyph"
+      aria-hidden="true"
+      style={{
+        fontFamily: iconFontFamily(icon.fontId),
+        color: icon.color,
+        fontSize: icon.fontSize,
+      }}
+    >
+      {icon.char}
+    </span>
+  );
+}
+
+/**
+ * Theme-driven file/folder icon. Reads the `useIconThemeStore` snapshot; with no
+ * theme (`null`) the generic fallback icon renders, which is also what an
+ * unresolvable name produces.
+ */
+export function FileIcon({
+  kind,
+  name,
+  expanded,
+}: {
+  kind: 'file' | 'folder';
+  name: string;
+  expanded?: boolean;
+}): JSX.Element {
+  const snapshot = useIconThemeStore((s) => s.snapshot);
+  const resolved =
+    kind === 'file'
+      ? resolveFileIcon(name, snapshot)
+      : resolveFolderIcon(name, expanded === true, snapshot);
+  return <ThemeIcon icon={resolved} fallback={kind === 'file' ? FILE_ICON_FALLBACK : FOLDER_ICON_FALLBACK} />;
+}
+
+function fontFaceCss(snapshot: IconThemeSnapshot): string {
+  return snapshot.fonts
+    .map((font) => {
+      const parts = [
+        `font-family: '${ICON_FONT_PREFIX}${font.id}';`,
+        `src: url('${font.srcUri}') format('${font.format}');`,
+        `font-weight: ${font.weight ?? 'normal'};`,
+        `font-style: ${font.style ?? 'normal'};`,
+        'font-display: block;',
+      ];
+      return `@font-face { ${parts.join(' ')} }`;
+    })
+    .join('\n');
+}
+
+/**
+ * Inject `@font-face` rules for the theme's icon fonts (Seti and every other
+ * font-based theme). The DOM work lives in `iconFontStyles.ts` so the nonce /
+ * CSSOM / cleanup paths stay unit-testable; see the docs there for the CSP
+ * reasoning. Whichever path a snapshot takes, the other path's residue is torn
+ * down first — an old theme's `@font-face` rules never outlive their snapshot.
+ */
+export function IconThemeStyles(): null {
+  const snapshot = useIconThemeStore((s) => s.snapshot);
+  useEffect(() => {
+    syncIconFontCss(snapshot === null ? '' : fontFaceCss(snapshot));
+  }, [snapshot]);
+  return null;
 }
 
 // ------------------------------------------------------------------ skeleton

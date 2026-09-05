@@ -47,6 +47,8 @@ const en = {
     searchEmptyTitle: 'No matching files.',
     clearSearch: 'Clear search',
     sectionAria: (title: string, count: string) => `${title}: ${count} files`,
+    expandSectionAria: (section: string) => `Expand ${section}`,
+    collapseSectionAria: (section: string) => `Collapse ${section}`,
   },
 
   // Shared UI primitives
@@ -674,6 +676,8 @@ const id: Catalog = {
     searchEmptyTitle: 'Tidak ada file yang cocok.',
     clearSearch: 'Kosongkan pencarian',
     sectionAria: (title: string, count: string) => `${title}: ${count} file`,
+    expandSectionAria: (section: string) => `Buka ${section}`,
+    collapseSectionAria: (section: string) => `Lipat ${section}`,
   },
 
   // Shared UI primitives

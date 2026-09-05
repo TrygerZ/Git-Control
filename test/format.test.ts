@@ -754,10 +754,11 @@ test('ChangeTree file row gridcells have valid ARIA semantics and no contradicto
     );
   }
 
-  // 2. Treegrid declares aria-colcount={5}
-  assert.match(source, /role=["']treegrid["'][^>]*aria-colcount=\{5\}/);
+  // 2. Treegrid declares aria-colcount={6}
+  assert.match(source, /role=["']treegrid["'][^>]*aria-colcount=\{6\}/);
 
-  // 3. FileRow function body declares contiguous, ordered, unique aria-colindex sequence 2, 3, 4, 5 (col 1 is in parent row checkbox)
+  // 3. FileRow function body declares contiguous, ordered, unique aria-colindex
+  //    sequence 2, 3, 4, 5, 6 (col 1 is in parent row checkbox)
   const fileRowStartIndex = source.indexOf('function FileRow(');
   assert.ok(fileRowStartIndex !== -1, 'FileRow function must exist');
   const fileRowEndIndex = source.indexOf('function TriCheckbox(', fileRowStartIndex);
@@ -767,17 +768,26 @@ test('ChangeTree file row gridcells have valid ARIA semantics and no contradicto
   const colindexRegex = /aria-colindex=\{([0-9]+)\}/g;
   const colindices = Array.from(fileRowBody.matchAll(colindexRegex)).map((m) => parseInt(m[1] as string, 10));
 
-  // FileRow contains col 2 (status), col 3 (file), col 4 (stats/binary), and optionally col 5 (action)
-  // Check that every index is in range [2, 5] and strictly increasing
+  // FileRow contains col 2 (file icon), col 3 (file), col 4 (stats/binary),
+  // col 5 (status letter), and optionally col 6 (action)
+  // 4 appears in ternary branches for binary / churnUnknown / normal stats
   assert.deepEqual(
     colindices,
-    [2, 3, 4, 4, 4, 5], // 4 appears in ternary branches for binary / churnUnknown / normal stats
-    'FileRow gridcells must declare contiguous colindex sequence 2 -> 3 -> 4 -> 5',
+    [2, 3, 4, 4, 4, 5, 6],
+    'FileRow gridcells must declare contiguous colindex sequence 2 -> 3 -> 4 -> 5 -> 6',
   );
 
-  // In each branch of FileRow, the active sequence is [2, 3, 4] or [2, 3, 4, 5]
+  // In each branch of FileRow, the active sequence is [2, 3, 4, 5] or [2, 3, 4, 5, 6]
   const uniqueIndices = Array.from(new Set(colindices));
-  assert.deepEqual(uniqueIndices, [2, 3, 4, 5], 'FileRow must cover columns 2, 3, 4, 5');
+  assert.deepEqual(uniqueIndices, [2, 3, 4, 5, 6], 'FileRow must cover columns 2, 3, 4, 5, 6');
+
+  // The status accessible name lives on the letter cell (col 5), never lost
+  // when the old status box was replaced by the theme file icon.
+  const letterCellMatch = source.match(
+    /aria-colindex=\{5\}[^>]*aria-label=\{strings\.changeTree\.statusAria\(/,
+  );
+  assert.ok(letterCellMatch !== null, 'Status letter gridcell must carry the statusAria label');
+  assert.match(source, /aria-colindex=\{2\}[^>]*className="gc-tree__icon-cell"/, 'col 2 is the theme file icon cell');
 
   // Check row item checkbox has colindex 1
   const rowCheckboxMatch = source.match(/role="gridcell"\s+aria-colindex=\{1\}/);

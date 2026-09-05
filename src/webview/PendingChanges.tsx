@@ -28,6 +28,7 @@ import { groupBySection, stageableFrom, unstageableFrom, type ChangeSection } fr
 import {
   toErrorBody,
   useChangesStore,
+  useIconThemeStore,
   useOperationStore,
   useRepoStore,
   useSettingsStore,
@@ -65,6 +66,7 @@ export function PendingChangesApp(): JSX.Element {
   const conflicts = useChangesStore((s) => s.conflicts);
   const selection = useChangesStore((s) => s.selection);
   const collapsed = useChangesStore((s) => s.collapsed);
+  const collapsedSections = useChangesStore((s) => s.collapsedSections);
   const busy = useChangesStore((s) => s.busy);
   const loading = useChangesStore((s) => s.loading);
   const hasLoaded = useChangesStore((s) => s.hasLoaded);
@@ -73,6 +75,7 @@ export function PendingChangesApp(): JSX.Element {
   const toggle = useChangesStore((s) => s.toggle);
   const toggleFolder = useChangesStore((s) => s.toggleFolder);
   const toggleCollapsed = useChangesStore((s) => s.toggleCollapsed);
+  const toggleSection = useChangesStore((s) => s.toggleSection);
   const selectAll = useChangesStore((s) => s.selectAll);
   const clear = useChangesStore((s) => s.clear);
   const stage = useChangesStore((s) => s.stage);
@@ -89,6 +92,7 @@ export function PendingChangesApp(): JSX.Element {
   const churnTruncated = status?.churnTruncated === true;
   const loadStatus = useRepoStore((s) => s.loadStatus);
   const loadSettings = useSettingsStore((s) => s.load);
+  const loadIconTheme = useIconThemeStore((s) => s.load);
   const language = useSettingsStore((s) => s.language);
   const setLanguage = useSettingsStore((s) => s.setLanguage);
   const pushToast = useOperationStore((s) => s.pushToast);
@@ -108,6 +112,7 @@ export function PendingChangesApp(): JSX.Element {
     useChangesStore.setState({
       selection: new Set(persisted.selectedPaths),
       collapsed: new Set(persisted.collapsedFolders),
+      collapsedSections: new Set(persisted.collapsedSections),
       commitMessage: persisted.commitMessage,
       pushAfterCommit: persisted.pushAfterCommit,
     });
@@ -116,12 +121,15 @@ export function PendingChangesApp(): JSX.Element {
       if (scrollRef.current !== null) scrollRef.current.scrollTop = persisted.scrollTop;
     });
     const off = wireHostEvents('pending');
+    // Icon theme pull must follow `wireHostEvents`: the race is closed by the
+    // webview asking for the snapshot after its listeners exist.
+    void loadIconTheme();
     void loadSettings();
     void load();
     void loadStatus();
     void loadGraph();
     return off;
-  }, [load, loadSettings, loadStatus, loadGraph]);
+  }, [load, loadIconTheme, loadSettings, loadStatus, loadGraph]);
 
   const needle = filter.trim().toLowerCase();
   const visible = useMemo(
@@ -395,48 +403,66 @@ export function PendingChangesApp(): JSX.Element {
                   }
                 };
 
+                const isCollapsed = collapsedSections.has(section);
+
                 return (
                   <section className="gc-section" key={section} aria-label={title}>
                     <div className="gc-section__head">
-                      {/* Bulk action button and count badge live outside the heading so their labels are not included in heading accessible name. */}
+                      {/* Toggle is a real button inside the heading (Enter/Space + aria-expanded come free); the bulk button and count badge stay outside it as siblings, so no button nests in a button and their labels stay out of the heading name. */}
                       <h3 className="gc-section__title">
-                        <span
-                          className={`gc-section__badge gc-section__badge--${badge.tone}`}
-                          aria-hidden="true"
+                        <button
+                          type="button"
+                          className="gc-section__toggle"
+                          aria-expanded={!isCollapsed}
+                          aria-label={isCollapsed ? strings.pending.expandSectionAria(title) : strings.pending.collapseSectionAria(title)}
+                          onClick={() => toggleSection(section)}
                         >
-                          {badge.letter}
-                        </span>
-                        <span className="gc-section__name">{title}</span>
+                          <span className="gc-section__twisty" aria-hidden="true">
+                            <Icon name={isCollapsed ? 'chevron-right' : 'chevron-down'} />
+                          </span>
+                          <span
+                            className={`gc-section__badge gc-section__badge--${badge.tone}`}
+                            aria-hidden="true"
+                          >
+                            {badge.letter}
+                          </span>
+                          <span className="gc-section__name">{title}</span>
+                        </button>
                       </h3>
-                      <button
-                        type="button"
-                        className="gc-icon-button gc-section__bulk"
-                        aria-label={sectionBtnAria}
-                        title={sectionBtnTitle}
-                        disabled={busy || validPaths.length === 0}
-                        onClick={handleSectionBulk}
-                      >
-                        <Icon name={isStagedSection ? 'dash' : 'add'} />
-                      </button>
+                      {/* Bulk staging a section whose rows are folded is an action on unseen files, so the button is not rendered while collapsed. */}
+                      {!isCollapsed && (
+                        <button
+                          type="button"
+                          className="gc-icon-button gc-section__bulk"
+                          aria-label={sectionBtnAria}
+                          title={sectionBtnTitle}
+                          disabled={busy || validPaths.length === 0}
+                          onClick={handleSectionBulk}
+                        >
+                          <Icon name={isStagedSection ? 'dash' : 'add'} />
+                        </button>
+                      )}
                       <span className="gc-section__count">{formatCount(entries.length, language)}</span>
                     </div>
-                    <ChangeTree
-                      entries={entries}
-                      selection={selection}
-                      collapsed={collapsed}
-                      busy={busy}
-                      label={strings.pending.sectionAria(title, formatCount(entries.length, language))}
-                      churnTruncated={churnTruncated}
-                      onToggleFile={toggle}
-                      onToggleFolder={toggleFolder}
-                      onToggleCollapsed={toggleCollapsed}
-                      onOpenDiff={(entry) => void openDiff(entry)}
-                      fileAction={
-                        section === 'staged'
-                          ? { label: strings.changeTree.unstageLabel, icon: 'dash', ariaLabel: (p) => strings.changeTree.unstageFileAria(p), run: (e) => void unstage([e.path]) }
-                          : { label: strings.changeTree.stageLabel, icon: 'add', ariaLabel: (p) => strings.changeTree.stageFileAria(p), run: (e) => void stage([e.path]) }
-                      }
-                    />
+                    {!isCollapsed && (
+                      <ChangeTree
+                        entries={entries}
+                        selection={selection}
+                        collapsed={collapsed}
+                        busy={busy}
+                        label={strings.pending.sectionAria(title, formatCount(entries.length, language))}
+                        churnTruncated={churnTruncated}
+                        onToggleFile={toggle}
+                        onToggleFolder={toggleFolder}
+                        onToggleCollapsed={toggleCollapsed}
+                        onOpenDiff={(entry) => void openDiff(entry)}
+                        fileAction={
+                          section === 'staged'
+                            ? { label: strings.changeTree.unstageLabel, icon: 'dash', ariaLabel: (p) => strings.changeTree.unstageFileAria(p), run: (e) => void unstage([e.path]) }
+                            : { label: strings.changeTree.stageLabel, icon: 'add', ariaLabel: (p) => strings.changeTree.stageFileAria(p), run: (e) => void stage([e.path]) }
+                        }
+                      />
+                    )}
                   </section>
                 );
               })}

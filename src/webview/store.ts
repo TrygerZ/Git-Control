@@ -12,7 +12,7 @@
 import { create } from 'zustand';
 import { BridgeRequestError, bridge, isBridgeError, mutation, saveState } from './bridge';
 import { linkageChangedRepo, sanitizeGitText } from './format';
-import { pruneSelection, toggleNode, togglePath, type TreeNode } from './tree';
+import { pruneSelection, toggleNode, togglePath, type ChangeSection, type TreeNode } from './tree';
 import { activeLang, setActiveLang, t } from './i18n';
 import type {
   ChangeEntry,
@@ -28,6 +28,7 @@ import type {
   RepoGraph,
   RepoStatus,
   SettingsSnapshot,
+  IconThemeSnapshot,
 } from '../messages';
 import { clampZoom, COLUMN_WIDTH, LANE_HEIGHT, partitionUnrequestedHashes } from './viewport';
 
@@ -156,6 +157,7 @@ export interface ChangesState {
   conflicts: ConflictEntry[];
   selection: Set<string>;
   collapsed: Set<string>;
+  collapsedSections: Set<ChangeSection>;
   commitMessage: string;
   pushAfterCommit: boolean;
   busy: boolean;
@@ -170,6 +172,7 @@ export interface ChangesState {
   toggle(path: string): void;
   toggleFolder(node: TreeNode): void;
   toggleCollapsed(prefix: string): void;
+  toggleSection(section: ChangeSection): void;
   selectAll(): void;
   clear(): void;
   setCommitMessage(message: string): void;
@@ -186,6 +189,7 @@ export const useChangesStore = create<ChangesState>((set, get) => ({
   conflicts: [],
   selection: new Set<string>(),
   collapsed: new Set<string>(),
+  collapsedSections: new Set<ChangeSection>(),
   commitMessage: '',
   pushAfterCommit: false,
   busy: false,
@@ -236,6 +240,14 @@ export const useChangesStore = create<ChangesState>((set, get) => ({
     else collapsed.add(prefix);
     set({ collapsed });
     saveState({ collapsedFolders: [...collapsed] });
+  },
+
+  toggleSection(section) {
+    const collapsedSections = new Set(get().collapsedSections);
+    if (collapsedSections.has(section)) collapsedSections.delete(section);
+    else collapsedSections.add(section);
+    set({ collapsedSections });
+    saveState({ collapsedSections: [...collapsedSections] });
   },
 
   selectAll() {
@@ -583,6 +595,36 @@ async function persist(key: string, value: string | number | boolean): Promise<v
   }
 }
 
+// -------------------------------------------------------------- iconThemeStore
+
+/**
+ * Read-only snapshot of the active File Icon Theme. Its own store, not a
+ * `useSettingsStore` field: the value arrives via `event/iconThemeChanged`
+ * (runtime theme switches) and via a `iconTheme/get` PULL on mount — the pull
+ * is what closes the race where the mount-time push fires before this store's
+ * listeners are wired. Never persisted or mutated by the webview; changes on a
+ * different cadence (theme/extension install) than settings. Icons are the
+ * only consumers.
+ */
+export interface IconThemeState {
+  snapshot: IconThemeSnapshot | null;
+  /** Pull the host's snapshot. Called on mount, after `wireHostEvents()`. */
+  load(): Promise<void>;
+}
+
+export const useIconThemeStore = create<IconThemeState>((set) => ({
+  snapshot: null,
+
+  async load() {
+    try {
+      const snapshot = await bridge.request('iconTheme/get', {});
+      set({ snapshot });
+    } catch {
+      // Icons are decorative; generic fallbacks keep the view usable.
+    }
+  },
+}));
+
 // -------------------------------------------------------------- githubStore
 
 export interface GitHubState {
@@ -803,11 +845,16 @@ export function wireHostEvents(mode: 'explorer' | 'pending'): () => void {
     useSettingsStore.getState().setLanguage(language);
   });
 
+  const offIconTheme = bridge.on('event/iconThemeChanged', (snapshot) => {
+    useIconThemeStore.setState({ snapshot });
+  });
+
   return () => {
     offChanged();
     offProgress();
     offToast();
     offSettings();
+    offIconTheme();
     wired = false;
   };
 }
