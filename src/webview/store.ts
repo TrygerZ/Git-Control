@@ -599,17 +599,30 @@ async function persist(key: string, value: string | number | boolean): Promise<v
 
 /**
  * Read-only snapshot of the active File Icon Theme. Its own store, not a
- * `useSettingsStore` field: the value arrives unsolicited via
- * `event/iconThemeChanged`, is never persisted or mutated by the webview, and
- * changes on a different cadence (theme/extension install) than settings. Icons
- * are the only consumers.
+ * `useSettingsStore` field: the value arrives via `event/iconThemeChanged`
+ * (runtime theme switches) and via a `iconTheme/get` PULL on mount — the pull
+ * is what closes the race where the mount-time push fires before this store's
+ * listeners are wired. Never persisted or mutated by the webview; changes on a
+ * different cadence (theme/extension install) than settings. Icons are the
+ * only consumers.
  */
 export interface IconThemeState {
   snapshot: IconThemeSnapshot | null;
+  /** Pull the host's snapshot. Called on mount, after `wireHostEvents()`. */
+  load(): Promise<void>;
 }
 
-export const useIconThemeStore = create<IconThemeState>(() => ({
+export const useIconThemeStore = create<IconThemeState>((set) => ({
   snapshot: null,
+
+  async load() {
+    try {
+      const snapshot = await bridge.request('iconTheme/get', {});
+      set({ snapshot });
+    } catch {
+      // Icons are decorative; generic fallbacks keep the view usable.
+    }
+  },
 }));
 
 // -------------------------------------------------------------- githubStore

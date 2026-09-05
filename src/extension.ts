@@ -29,6 +29,7 @@ import type {
   GitHubLinkage,
   GitHubRepoInfo,
   GitHubRepoPayload,
+  IconThemeSnapshot,
   Lang,
   OpenDiffPayload,
   OpenDiffResult,
@@ -373,8 +374,11 @@ class Controller implements vscode.Disposable {
             });
             view.webview.options = this.webviewOptions();
             view.webview.html = this.html(view.webview, 'pending');
+            // No icon-theme push here: the webview is still loading and would
+            // drop the event. It PULLS `iconTheme/get` once its listeners are
+            // wired; `webviewOptions()` above already carries the active
+            // theme's `localResourceRoots`. Runtime switches push via watchers.
             this.attachBridge(view.webview, view);
-            void this.broadcastIconThemeChanged();
           },
         },
         // The view is cheap to rebuild; state is restored from the host.
@@ -515,8 +519,8 @@ class Controller implements vscode.Disposable {
       dark: vscode.Uri.joinPath(this.context.extensionUri, 'resources', 'graph-dark.svg'),
     };
     panel.webview.html = this.html(panel.webview, 'explorer');
+    // No icon-theme push here either: same pull-on-mount contract as the view.
     this.attachBridge(panel.webview, panel);
-    void this.broadcastIconThemeChanged();
     panel.onDidDispose(() => {
       this.panel = undefined;
     });
@@ -539,7 +543,12 @@ class Controller implements vscode.Disposable {
   }
 
   private attachBridge(webview: vscode.Webview, owner: { onDidDispose?: vscode.Event<void> }): void {
-    const bridge = new MessageBridge(webview as unknown as WebviewLike, this.bridgeHost());
+    const bridge = new MessageBridge(webview as unknown as WebviewLike, {
+      ...this.bridgeHost(),
+      // Bound to THIS webview: `buildIconThemeSnapshot` resolves asset URIs
+      // through `asWebviewUri`, which is per-webview.
+      iconThemeSnapshot: () => this.buildIconThemeSnapshotOrNull(webview),
+    });
     this.bridges.add(bridge);
     const detach = (): void => {
       bridge.dispose();
@@ -547,6 +556,12 @@ class Controller implements vscode.Disposable {
     };
     if (owner.onDidDispose !== undefined) owner.onDidDispose(detach);
     else this.disposables.push({ dispose: detach });
+  }
+
+  /** Snapshot for one webview; `undefined` (no active theme) maps to `null`. */
+  private async buildIconThemeSnapshotOrNull(webview: vscode.Webview): Promise<IconThemeSnapshot | null> {
+    const snapshot = await buildIconThemeSnapshot(webview);
+    return snapshot ?? null;
   }
 
   private bridgeHost(): BridgeHost {

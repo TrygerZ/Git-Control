@@ -28,6 +28,7 @@ import { groupBySection, stageableFrom, unstageableFrom, type ChangeSection } fr
 import {
   toErrorBody,
   useChangesStore,
+  useIconThemeStore,
   useOperationStore,
   useRepoStore,
   useSettingsStore,
@@ -91,6 +92,7 @@ export function PendingChangesApp(): JSX.Element {
   const churnTruncated = status?.churnTruncated === true;
   const loadStatus = useRepoStore((s) => s.loadStatus);
   const loadSettings = useSettingsStore((s) => s.load);
+  const loadIconTheme = useIconThemeStore((s) => s.load);
   const language = useSettingsStore((s) => s.language);
   const setLanguage = useSettingsStore((s) => s.setLanguage);
   const pushToast = useOperationStore((s) => s.pushToast);
@@ -119,12 +121,15 @@ export function PendingChangesApp(): JSX.Element {
       if (scrollRef.current !== null) scrollRef.current.scrollTop = persisted.scrollTop;
     });
     const off = wireHostEvents('pending');
+    // Icon theme pull must follow `wireHostEvents`: the race is closed by the
+    // webview asking for the snapshot after its listeners exist.
+    void loadIconTheme();
     void loadSettings();
     void load();
     void loadStatus();
     void loadGraph();
     return off;
-  }, [load, loadSettings, loadStatus, loadGraph]);
+  }, [load, loadIconTheme, loadSettings, loadStatus, loadGraph]);
 
   const needle = filter.trim().toLowerCase();
   const visible = useMemo(

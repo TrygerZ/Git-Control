@@ -539,6 +539,14 @@ export interface RequestMap {
   'github/linkage': { payload: Record<string, never>; response: GitHubLinkage };
   'settings/get': { payload: SettingsGetPayload; response: SettingsSnapshot };
   'settings/set': { payload: SettingsSetPayload; response: SettingsSnapshot };
+  /**
+   * Pull the active icon-theme snapshot on webview mount. Push
+   * (`event/iconThemeChanged`) still covers runtime theme switches; the pull
+   * closes the mount race where the push fires before the webview's listener
+   * exists. Empty payload by design. `null` = no active theme → the webview
+   * falls back to generic icons, exactly as for the push event.
+   */
+  'iconTheme/get': { payload: Record<string, never>; response: IconThemeSnapshot | null };
 }
 
 export type RequestKind = keyof RequestMap;
