@@ -33,12 +33,14 @@ function defToIcon(snapshot: IconThemeSnapshot, id: string | undefined): Resolve
   if (def.fontCharacter !== undefined && def.fontCharacter.length > 0) {
     // A glyph without its own size inherits the font's declared size ("150%"
     // for Seti), so themes scale their glyphs without per-icon overrides.
-    const font = snapshot.fonts.find((f) => f.id === def.fontId);
+    // If fontId is not set, VS Code spec uses the first font specified in fonts.
+    const fontId = def.fontId ?? snapshot.fonts[0]?.id;
+    const font = snapshot.fonts.find((f) => f.id === fontId);
     return {
       kind: 'glyph',
       char: def.fontCharacter,
       color: def.fontColor,
-      fontId: def.fontId,
+      fontId,
       fontSize: def.fontSize ?? font?.size,
     };
   }

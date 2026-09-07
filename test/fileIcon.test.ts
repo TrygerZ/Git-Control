@@ -148,6 +148,23 @@ test('fontCharacter maps to a glyph with colour and font metadata', () => {
   });
 });
 
+test('fontCharacter falls back to first theme font when fontId is omitted', () => {
+  const snap = snapshot({
+    definitions: {
+      seti: { fontCharacter: '\uE001', fontColor: '#519aba' },
+    },
+    fileExtensions: { ts: 'seti' },
+    fonts: [{ id: 'seti', srcUri: 'https://wv/seti.woff', format: 'woff', size: '150%' }],
+  });
+  assert.deepEqual(resolveFileIcon('a.ts', snap), {
+    kind: 'glyph',
+    char: '\uE001',
+    color: '#519aba',
+    fontId: 'seti',
+    fontSize: '150%',
+  });
+});
+
 test('glyph fontSize falls back to the theme font size', () => {
   const snap = snapshot({
     definitions: { seti: { fontCharacter: '\uE001', fontId: 'seti' } },
