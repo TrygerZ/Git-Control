@@ -5,6 +5,15 @@ All notable changes to the "Git Control" extension will be documented in this fi
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.3.0] - 2026-09-07
+
+### Added
+- Contributor photo avatars in the leaderboard and graph nodes, resolved from GitHub with deterministic colored initials as fallback.
+- Clicking a contributor opens their GitHub profile when verified, otherwise highlights their entry.
+
+### Fixed
+- File icon glyphs now fall back to the first theme font when a definition omits the font identifier, restoring Seti icon rendering.
+
 ## [2.2.0] - 2026-09-07
 
 ### Added
