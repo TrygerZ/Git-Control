@@ -8,6 +8,7 @@ import { parseCommitTimestamp } from '../validation';
 import type {
   ChangeEntry,
   ConflictEntry,
+  ContributorIdentity,
   ErrorBody,
   ErrorCode,
   GitActionRequest,
@@ -312,6 +313,32 @@ export function emailHue(email: string): number {
  */
 export function contributorAvatarColor(email: string): string {
   return `hsl(${emailHue(email)}, 45%, 38%)`;
+}
+
+/**
+ * Resolves avatar image URL for a contributor given an avatar URL and load error state.
+ * Returns the GitHub avatar URL or null if fallback initials should be displayed.
+ */
+export function resolveContributorAvatar(
+  avatarUrl: string | null | undefined,
+  imageFailed: boolean,
+): string | null {
+  if (imageFailed || !avatarUrl) {
+    return null;
+  }
+  return avatarUrl;
+}
+
+/**
+ * Decides whether clicking a contributor opens their GitHub profile or toggles author filter.
+ */
+export function contributorActionKind(
+  email: string | undefined,
+  identity: ContributorIdentity | null | undefined,
+): 'profile' | 'filter' {
+  if (!email || email.trim().length === 0) return 'filter';
+  if (identity !== undefined && !identity?.htmlUrl) return 'filter';
+  return 'profile';
 }
 
 /** `lama → baru` for renames, plain path otherwise. Sanitised: paths come from git. */

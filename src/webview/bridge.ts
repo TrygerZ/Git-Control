@@ -12,6 +12,7 @@
  */
 import type {
   Bridge,
+  ContributorIdentity,
   ContributorInfo,
   ErrorBody,
   EventKind,
@@ -233,6 +234,11 @@ export function mutate<K extends RequestKind>(
 /** Request ranked contributors list from host (empty payload). */
 export function fetchContributors(): Promise<ContributorInfo[]> {
   return bridge.request('repos/contributors', {});
+}
+
+/** Request GitHub user identity for a contributor email from host. */
+export function fetchContributorIdentity(email: string): Promise<ContributorIdentity> {
+  return bridge.request('github/contributorIdentity', { email });
 }
 
 // ------------------------------------------------------------------- state
