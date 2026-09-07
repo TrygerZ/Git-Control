@@ -273,6 +273,47 @@ export function authorInitials(name: string): string {
   return '?';
 }
 
+/**
+ * Two-letter contributor initials for leaderboard avatar rendering.
+ *
+ * Sanitised, taking up to two letters or digits in upper case.
+ * Falls back to '?' when the name has no alphanumeric character.
+ */
+export function contributorInitials(name: string): string {
+  const clean = sanitizeGitText(name).trim();
+  const letters: string[] = [];
+  for (const char of clean) {
+    if (/[\p{L}\p{N}]/u.test(char)) {
+      letters.push(char.toLocaleUpperCase('en-US'));
+      if (letters.length === 2) break;
+    }
+  }
+  return letters.length > 0 ? letters.join('') : '?';
+}
+
+/**
+ * Deterministic hue [0, 359] derived from author email.
+ *
+ * Uses a polynomial hash over lowercased trimmed email string.
+ */
+export function emailHue(email: string): number {
+  let hash = 0;
+  const str = email.trim().toLowerCase();
+  for (let i = 0; i < str.length; i++) {
+    hash = (hash * 31 + str.charCodeAt(i)) >>> 0;
+  }
+  return hash % 360;
+}
+
+/**
+ * Deterministic HSL background color for contributor avatar.
+ *
+ * Fixed saturation (45%) and lightness (38%) tuned for contrast with light text.
+ */
+export function contributorAvatarColor(email: string): string {
+  return `hsl(${emailHue(email)}, 45%, 38%)`;
+}
+
 /** `lama → baru` for renames, plain path otherwise. Sanitised: paths come from git. */
 export function displayPath(entry: ChangeEntry): string {
   const path = sanitizeGitText(entry.path);
