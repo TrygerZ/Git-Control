@@ -15,6 +15,7 @@ import type {
   CommitDetail,
   CommitFileChange,
   ConflictEntry,
+  ContributorInfo,
   GraphNode,
   Lang,
   RefInfo,
@@ -79,6 +80,7 @@ export class RepositoryService {
   private graphCache: RepoGraph | undefined;
   private readonly detailCache = new Map<string, CommitDetail>();
   private repoRootCache: string | undefined;
+  private contributorsCache: ContributorInfo[] | undefined;
 
   constructor(options: RepositoryOptions) {
     this.folderPath = options.folderPath;
@@ -106,6 +108,7 @@ export class RepositoryService {
   invalidate(): void {
     this.statusCache = undefined;
     this.detailCache.clear();
+    this.contributorsCache = undefined;
     // graphCache is deliberately kept: it is the offline fallback (PRD §9).
   }
 
@@ -115,6 +118,14 @@ export class RepositoryService {
     const status = await this.readStatus(opts.includeIgnored === true);
     this.statusCache = status;
     return status;
+  }
+
+  /** Cached contributors list, or a fresh read when the cache was invalidated. */
+  async contributors(): Promise<ContributorInfo[]> {
+    if (this.contributorsCache !== undefined) return this.contributorsCache;
+    const contributors = await this.git.contributors();
+    this.contributorsCache = contributors;
+    return contributors;
   }
 
   /** Working-tree changes plus the derived conflict list. */

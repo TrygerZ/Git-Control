@@ -10,6 +10,7 @@ import { Logger, type LogSink } from '../src/logger';
 import { RepositoryService, type PersistentStore } from '../src/repository';
 import { cleanup, makeFixture } from './repoFixture';
 import type {
+  ContributorInfo,
   HostEvent,
   HostMessage,
   OpenDiffPayload,
@@ -683,6 +684,28 @@ test('repos/remotes parses the host and strips embedded credentials', async (t) 
   const ent = remotes.find((r) => r.name === 'ent');
   assert.equal(ent?.host, 'git.acme.example');
   assert.equal(ent?.isGitHub, false);
+});
+
+test('repos/contributors returns contributor list and validates empty payload', async (t) => {
+  const dir = await makeRepo();
+  t.after(() => cleanup(dir));
+  const repo = new RepositoryService({ folderPath: dir, gitPath: 'git', store: new MemoryStore() });
+  const h = harness(repo);
+  t.after(() => h.bridge.dispose());
+
+  const response = await h.webview.send(req('repos/contributors', {}));
+  assert.equal(response.ok, true);
+  if (!response.ok) return;
+  const list = response.data as ContributorInfo[];
+  assert.equal(list.length, 1);
+  assert.equal(list[0]?.name, 'Test User');
+  assert.equal(list[0]?.email, 'test@example.com');
+  assert.equal(list[0]?.count, 1);
+
+  const invalid = await h.webview.send(req('repos/contributors', { unexpected: true }));
+  assert.equal(invalid.ok, false);
+  if (invalid.ok) return;
+  assert.equal(invalid.error.code, 'VALIDATION_ERROR');
 });
 
 test('actions/openDiff validates its payload before reaching the host callback', async (t) => {

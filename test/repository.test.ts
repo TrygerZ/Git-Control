@@ -411,3 +411,41 @@ test('refs/stash is classified as other, never as a branch (Bug 2)', async (t) =
     if (ref.kind === 'local') assert.ok(ref.refName.startsWith('refs/heads/'), ref.refName);
   }
 });
+
+test('contributors caches results and invalidates on repo invalidate', async (t) => {
+  const dir = await makeRepo();
+  t.after(() => cleanup(dir));
+  const repo = service(dir);
+
+  const initial = await repo.contributors();
+  assert.equal(initial.length, 1);
+  assert.equal(initial[0]?.name, 'Test User');
+  assert.equal(initial[0]?.count, 3);
+
+  // Cache hit returns the identical array instance
+  assert.equal(await repo.contributors(), initial);
+
+  await fs.writeFile(path.join(dir, 'new.txt'), 'content\n', 'utf8');
+  await repo.git.stage(['new.txt']);
+  await repo.git.run([
+    '-c',
+    'user.name=Alice',
+    '-c',
+    'user.email=alice@example.com',
+    'commit',
+    '-m',
+    'add new',
+  ]);
+
+  // Still cached before invalidation
+  assert.equal(await repo.contributors(), initial);
+
+  repo.invalidate();
+
+  const updated = await repo.contributors();
+  assert.notEqual(updated, initial);
+  assert.deepEqual(updated, [
+    { name: 'Test User', email: 'test@example.com', count: 3 },
+    { name: 'Alice', email: 'alice@example.com', count: 1 },
+  ]);
+});

@@ -34,6 +34,7 @@ import type {
   CommitDetailPayload,
   CommitPayload,
   CommitResult,
+  ContributorsResponse,
   ErrorBody,
   ErrorCode,
   EventKind,
@@ -288,6 +289,9 @@ export class MessageBridge {
       case 'repos/remotes':
         validateEmptyPayload(request.payload, this.text().invalid);
         return this.handleRemotes();
+      case 'repos/contributors':
+        validateEmptyPayload(request.payload, this.text().invalid);
+        return this.handleContributors();
       case 'commits/detail':
         return this.handleCommitDetail(request.payload as CommitDetailPayload);
       case 'actions/stage':
@@ -410,6 +414,12 @@ export class MessageBridge {
       };
     });
     return { remotes };
+  }
+
+  /** Author leaderboard ranked by commit count. Readonly; no guard needed. */
+  private async handleContributors(): Promise<ContributorsResponse> {
+    const repo = await this.repository();
+    return repo.contributors();
   }
 
   /**
