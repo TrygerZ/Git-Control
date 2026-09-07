@@ -18,7 +18,13 @@ Git Control replaces flat vertical commit lists with an interactive two-dimensio
 * **Canvas Minimap**: Compact overview map for large repositories.
 * **High-Capacity History**: Loads up to 10,000 commits per view with on-demand pagination for older history.
 
-### 2. Dedicated Pending Changes Panel
+### 2. Contributors Leaderboard Panel
+* **Ranked Contribution Leaderboard**: Ranks contributors by commit count using `git shortlog` with proportional visual bars scaled to the top contributor.
+* **Collapsible Sidebar Panel**: Positioned directly beneath the Inspector in the Explorer sidebar, displaying total repository commits with an expandable toggle for rosters beyond the top 10.
+* **GitHub Profile Navigation**: Clicking an author opens their GitHub profile when verified, or highlights their entry in the leaderboard.
+* **Adaptive Avatar Rendering**: Displays GitHub profile avatars via the GitHub API, with automatic fallback to deterministic color-coded initials when offline or unlinked.
+
+### 3. Dedicated Pending Changes Panel
 
 ![Git Control Pending Changes Panel](screenshots/pending-showcase.png)
 
@@ -27,7 +33,7 @@ Git Control replaces flat vertical commit lists with an interactive two-dimensio
 * **One-Click Commit and Push**: Write commit messages, stage selected items, and optionally push to upstream remotes in a single flow.
 * **Inline File Churn**: Displays added and deleted line counts alongside binary and untracked indicators.
 
-### 3. Node Context Menu and Branch Operations
+### 4. Node Context Menu and Branch Operations
 Right-click any commit node or branch ref to perform standard Git actions:
 * **Checkout**: Switch branches or checkout specific commits into detached HEAD state.
 * **Branch Management**: Create new branches pointing directly to selected commits.
@@ -36,25 +42,26 @@ Right-click any commit node or branch ref to perform standard Git actions:
 * **Reset**: Choose between Soft Reset (moves HEAD, keeps working changes staged) and Hard Reset.
 * **Push Up To**: Fast-forward push repository history up to a selected commit hash.
 
-### 4. Safety Guard and Conflict Resolution
+### 5. Safety Guard and Conflict Resolution
 * **Dirty-Tree Protection**: Prevents accidental checkouts, resets, or merges when unstaged or uncommitted changes are present.
 * **Two-Stage Destructive Confirmation**: Explicit dual-stage review required before executing irreversible actions like Hard Reset.
 * **Remote-Ahead Detection**: Warns when the remote branch contains incoming commits, preventing unintentional non-fast-forward push rejections.
 * **Dedicated Conflict Panel**: Lists conflicted files during merge, rebase, or cherry-pick states with quick shortcuts to the VS Code merge editor.
 
-### 5. Commit Inspector and Diff Viewer
+### 6. Commit Inspector and Diff Viewer
 * **Detailed Commit Metadata**: Displays author, committer, commit date, hash, and parent commits.
 * **Multi-Parent Comparison**: Compare merge commits against any individual parent commit.
 * **Integrated Diffing**: Opens files directly in the native VS Code Diff Editor.
 * **File Changes Breakdown**: Summarizes changed files and line modifications, including binary file identification.
 
-### 6. GitHub Integration
+### 7. GitHub Integration
 * **Token Storage**: Connects directly to GitHub via VS Code SecretStorage without exposing credentials.
 * **Pull Request Visibility**: Displays pull request statuses and numbers associated with branch heads.
 * **External Navigation**: Direct links to view commits and pull requests in the browser.
 * **Rate Limit Monitoring**: Real-time indicator for GitHub REST API quotas and cache status.
+* **Contributor Identity Resolution**: Resolves author email addresses to GitHub profiles and avatars with cached API queries.
 
-### 7. Bilingual Interface
+### 8. Bilingual Interface
 * Full interface support for English and Bahasa Indonesia, configurable via settings or the status bar toggle.
 
 ## Requirements
