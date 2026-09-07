@@ -10,7 +10,7 @@
  *     the host's own 500 ms watcher debounce
  */
 import { create } from 'zustand';
-import { BridgeRequestError, bridge, isBridgeError, mutation, saveState } from './bridge';
+import { BridgeRequestError, bridge, fetchContributors, isBridgeError, mutation, saveState } from './bridge';
 import { linkageChangedRepo, sanitizeGitText } from './format';
 import { pruneSelection, toggleNode, togglePath, type ChangeSection, type TreeNode } from './tree';
 import { activeLang, setActiveLang, t } from './i18n';
@@ -18,6 +18,7 @@ import type {
   ChangeEntry,
   CommitResult,
   ConflictEntry,
+  ContributorInfo,
   ErrorBody,
   GitActionRequest,
   GitHubAuthState,
@@ -72,16 +73,25 @@ export interface RepoState {
   error: ErrorBody | null;
   /** Mirrors `graph.stale`: the payload is a cached snapshot. */
   stale: boolean;
+  contributors: ContributorInfo[];
+  contributorsLoading: boolean;
+  contributorsLoaded: boolean;
+  contributorsExpanded: boolean;
+  authorFilter: string | null;
   loadStatus(): Promise<void>;
   loadGraph(): Promise<void>;
   loadMore(): Promise<void>;
   selectCommit(hash: string | null): void;
+  loadContributors(): Promise<void>;
+  toggleContributorsExpanded(): void;
+  setAuthorFilter(email: string | null): void;
   refresh(): Promise<void>;
 }
 
 // ----------------------------------------------------------------- in-flight coalescing
 let inFlightStatus: Promise<void> | null = null;
 let inFlightChanges: Promise<void> | null = null;
+let inFlightContributors: Promise<void> | null = null;
 
 export const useRepoStore = create<RepoState>((set, get) => ({
   status: null,
@@ -91,6 +101,11 @@ export const useRepoStore = create<RepoState>((set, get) => ({
   paging: false,
   error: null,
   stale: false,
+  contributors: [],
+  contributorsLoading: false,
+  contributorsLoaded: false,
+  contributorsExpanded: true,
+  authorFilter: null,
 
   async loadStatus() {
     if (inFlightStatus !== null) return inFlightStatus;
@@ -145,8 +160,32 @@ export const useRepoStore = create<RepoState>((set, get) => ({
     saveState({ selectedHash: hash });
   },
 
+  toggleContributorsExpanded() {
+    set((state) => ({ contributorsExpanded: !state.contributorsExpanded }));
+  },
+
+  setAuthorFilter(email) {
+    set({ authorFilter: email });
+  },
+
+  async loadContributors() {
+    if (inFlightContributors !== null) return inFlightContributors;
+    inFlightContributors = (async () => {
+      set({ contributorsLoading: true });
+      try {
+        const contributors = await fetchContributors();
+        set({ contributors, contributorsLoading: false, contributorsLoaded: true });
+      } catch {
+        set({ contributors: [], contributorsLoading: false, contributorsLoaded: true });
+      } finally {
+        inFlightContributors = null;
+      }
+    })();
+    return inFlightContributors;
+  },
+
   async refresh() {
-    await Promise.all([get().loadStatus(), get().loadGraph()]);
+    await Promise.all([get().loadStatus(), get().loadGraph(), get().loadContributors()]);
   },
 }));
 

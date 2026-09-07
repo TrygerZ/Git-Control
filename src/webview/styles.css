@@ -3374,6 +3374,173 @@ h3 {
   white-space: nowrap;
 }
 
+/* -------------------------------------------------------------- contributors */
+
+.gc-contributors {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gc-space-2);
+  padding: var(--gc-space-3);
+  border: 1px solid var(--gc-border);
+  border-radius: var(--gc-radius);
+}
+
+.gc-contributors__head {
+  display: flex;
+  align-items: center;
+}
+
+.gc-contributors__toggle {
+  display: flex;
+  align-items: center;
+  gap: var(--gc-space-2);
+  width: 100%;
+  min-height: var(--gc-hit);
+  padding: var(--gc-space-1) var(--gc-space-2);
+  border: none;
+  border-radius: var(--gc-radius-sm);
+  background: transparent;
+  color: var(--vscode-foreground);
+  cursor: pointer;
+  text-align: left;
+  font-family: inherit;
+}
+
+.gc-contributors__toggle:hover {
+  background: var(--vscode-list-hoverBackground);
+}
+
+.gc-contributors__chevron {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--gc-muted);
+}
+
+.gc-contributors__title {
+  font-size: var(--gc-fs-xs);
+  font-weight: var(--gc-weight-strong);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--gc-muted);
+}
+
+.gc-contributors__total {
+  margin-left: auto;
+  font-size: var(--gc-fs-xs);
+  color: var(--gc-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.gc-contributors__content {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gc-space-2);
+}
+
+.gc-contributors__loading,
+.gc-contributors__empty {
+  margin: 0;
+  padding: var(--gc-space-2) var(--gc-space-3);
+  font-size: var(--gc-fs-sm);
+  color: var(--gc-muted);
+}
+
+.gc-contributors__list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gc-space-1);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.gc-contributors__row {
+  display: flex;
+  margin: 0;
+  padding: 0;
+}
+
+.gc-contributors__item {
+  display: flex;
+  align-items: center;
+  gap: var(--gc-space-2);
+  width: 100%;
+  min-height: var(--gc-hit);
+  padding: var(--gc-space-1) var(--gc-space-2);
+  border: 1px solid transparent;
+  border-radius: var(--gc-radius-sm);
+  background: transparent;
+  color: var(--vscode-foreground);
+  cursor: pointer;
+  text-align: left;
+  font-family: inherit;
+}
+
+.gc-contributors__item:hover {
+  background: var(--vscode-list-hoverBackground);
+}
+
+.gc-contributors__item--active {
+  background: var(--vscode-list-activeSelectionBackground);
+  color: var(--vscode-list-activeSelectionForeground);
+  border-color: var(--vscode-focusBorder);
+}
+
+.gc-contributors__avatar {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: var(--gc-radius-pill);
+  font-size: var(--gc-fs-xs);
+  font-weight: var(--gc-weight-strong);
+  color: var(--vscode-editor-background);
+  line-height: 1;
+  user-select: none;
+}
+
+.gc-contributors__name {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--gc-fs-sm);
+}
+
+.gc-contributors__bar-track {
+  flex: 0 0 50px;
+  height: 4px;
+  background: var(--gc-border);
+  border-radius: var(--gc-radius-sm);
+  overflow: hidden;
+}
+
+.gc-contributors__bar {
+  display: block;
+  height: 100%;
+  background: var(--vscode-progressBar-background, var(--gc-accent));
+  border-radius: var(--gc-radius-sm);
+}
+
+.gc-contributors__count {
+  flex-shrink: 0;
+  min-width: 28px;
+  text-align: right;
+  font-size: var(--gc-fs-xs);
+  color: var(--gc-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.gc-contributors__more {
+  align-self: flex-start;
+  margin-top: var(--gc-space-1);
+  font-size: var(--gc-fs-xs);
+}
+
 /* -------------------------------------------------------------------- toasts */
 
 .gc-toasts {
@@ -3567,6 +3734,7 @@ h3 {
   .gc-minimap-wrap,
   .gc-conflicts,
   .gc-github,
+  .gc-contributors,
   .gc-canvas,
   /* Status glyphs are icon-only; border reappears here so the shape survives without colour. */
   .gc-status__box,
@@ -3574,7 +3742,8 @@ h3 {
   .gc-section__toggle,
   .gc-conflicts__badge,
   .gc-inspector__hash-value,
-  .gc-avatar {
+  .gc-avatar,
+  .gc-contributors__avatar {
     border: 1px solid ButtonBorder;
   }
 
