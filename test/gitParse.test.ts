@@ -6,6 +6,7 @@ import {
   parseRemoteList,
   parseRemotes,
   parseRevListCounts,
+  parseShortlog,
   parseShowStat,
   parseStatus,
 } from '../src/gitParse';
@@ -236,4 +237,51 @@ test('parseRemoteList keeps fetch and push URLs apart', () => {
     // A remote listed once uses that URL for both directions.
     { name: 'upstream', fetchUrl: 'https://example.com/b.git', pushUrl: 'https://example.com/b.git' },
   ]);
+});
+
+test('parseShortlog parses standard shortlog output sorted by count', () => {
+  const raw = [
+    '   150\tAda Lovelace <ada@example.com>',
+    '    42\tCharles Babbage <charles@example.com>',
+    '     3\tGrace Hopper <grace@navy.mil>',
+  ].join('\n');
+  assert.deepEqual(parseShortlog(raw), [
+    { name: 'Ada Lovelace', email: 'ada@example.com', count: 150 },
+    { name: 'Charles Babbage', email: 'charles@example.com', count: 42 },
+    { name: 'Grace Hopper', email: 'grace@navy.mil', count: 3 },
+  ]);
+});
+
+test('parseShortlog tolerates CRLF, blank lines, and whitespace', () => {
+  const raw = '\r\n\r\n   10\tAda <ada@example.com>\r\n\r\n   2\tBob <bob@example.com>\r\n   \r\n';
+  assert.deepEqual(parseShortlog(raw), [
+    { name: 'Ada', email: 'ada@example.com', count: 10 },
+    { name: 'Bob', email: 'bob@example.com', count: 2 },
+  ]);
+});
+
+test('parseShortlog handles special characters in names and emails', () => {
+  const raw = [
+    '     5\tBudi Utomo (Joko) čšć <budi.utomo+review@sub-domain.example.co.id>',
+    '     2\t"Coder" O\'Connor <oconnor@example.org>',
+  ].join('\n');
+  assert.deepEqual(parseShortlog(raw), [
+    { name: 'Budi Utomo (Joko) čšć', email: 'budi.utomo+review@sub-domain.example.co.id', count: 5 },
+    { name: '"Coder" O\'Connor', email: 'oconnor@example.org', count: 2 },
+  ]);
+});
+
+test('parseShortlog ignores empty or malformed lines', () => {
+  const raw = [
+    '',
+    '   ',
+    'fatal: ambiguous argument HEAD',
+    '     \tMissing count <user@example.com>',
+    '    10\tMissing angle brackets user@example.com',
+    '     0\tZero count <zero@example.com>',
+    '    -5\tNegative count <neg@example.com>',
+    '     1\t <>',
+  ].join('\n');
+  assert.deepEqual(parseShortlog(raw), []);
+  assert.deepEqual(parseShortlog(''), []);
 });

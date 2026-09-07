@@ -259,3 +259,32 @@ export function parseRemotes(raw: string): Array<{ name: string; url: string }> 
   return [...seen].map(([name, url]) => ({ name, url }));
 }
 
+export interface ParsedContributor {
+  name: string;
+  email: string;
+  count: number;
+}
+
+/**
+ * Parse `git shortlog -sne HEAD` output.
+ * Each line has the format: `<count>\t<name> <<email>>`.
+ * Commit counts are sorted descending by git (`-n`).
+ */
+export function parseShortlog(raw: string): ParsedContributor[] {
+  const entries: ParsedContributor[] = [];
+  for (const line of raw.split(/\r?\n/)) {
+    if (line.trim().length === 0) continue;
+    const match = /^\s*(\d+)\t\s*(.*?)\s*<([^>]*)>\s*$/.exec(line);
+    if (match === null) continue;
+    const [, rawCount, rawName, rawEmail] = match as unknown as [string, string, string, string];
+    const count = Number.parseInt(rawCount, 10);
+    if (!Number.isFinite(count) || count < 1) continue;
+    const name = rawName.trim();
+    const email = rawEmail.trim();
+    if (name.length === 0 && email.length === 0) continue;
+    entries.push({ name, email, count });
+  }
+  return entries;
+}
+
+
