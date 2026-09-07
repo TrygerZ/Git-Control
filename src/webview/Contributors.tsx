@@ -5,15 +5,60 @@
  * contribution bars, and interactive author selection filter.
  */
 import { useEffect, useId, useMemo, useState, type JSX } from 'react';
+import type { ContributorInfo } from '../messages';
 import {
+  contributorActionKind,
   contributorAvatarColor,
   contributorInitials,
   formatCount,
+  resolveContributorAvatar,
   sanitizeGitText,
 } from './format';
 import { useT } from './useT';
-import { useRepoStore, useSettingsStore } from './store';
+import { useGitHubStore, useRepoStore, useSettingsStore } from './store';
 import { Icon, Spinner } from './ui';
+
+interface ContributorAvatarProps {
+  name: string;
+  email: string;
+  avatarUrl: string | null | undefined;
+}
+
+function ContributorAvatar({ name, email, avatarUrl }: ContributorAvatarProps): JSX.Element {
+  const [loadFailed, setLoadFailed] = useState(false);
+  const initials = contributorInitials(name);
+  const avatarColor = contributorAvatarColor(email);
+
+  useEffect(() => {
+    setLoadFailed(false);
+  }, [avatarUrl]);
+
+  const resolvedAvatar = resolveContributorAvatar(avatarUrl, loadFailed);
+
+  if (resolvedAvatar !== null) {
+    return (
+      <span className="gc-contributors__avatar" aria-hidden="true">
+        <img
+          src={resolvedAvatar}
+          alt={name}
+          className="gc-contributors__avatar-img"
+          loading="lazy"
+          onError={() => setLoadFailed(true)}
+        />
+      </span>
+    );
+  }
+
+  return (
+    <span
+      className="gc-contributors__avatar"
+      style={{ backgroundColor: avatarColor }}
+      aria-hidden="true"
+    >
+      {initials}
+    </span>
+  );
+}
 
 export function Contributors(): JSX.Element {
   const strings = useT();
@@ -23,9 +68,12 @@ export function Contributors(): JSX.Element {
   const contributorsLoaded = useRepoStore((s) => s.contributorsLoaded);
   const contributorsExpanded = useRepoStore((s) => s.contributorsExpanded);
   const authorFilter = useRepoStore((s) => s.authorFilter);
+  const contributorIdentities = useRepoStore((s) => s.contributorIdentities);
   const toggleContributorsExpanded = useRepoStore((s) => s.toggleContributorsExpanded);
   const setAuthorFilter = useRepoStore((s) => s.setAuthorFilter);
   const loadContributors = useRepoStore((s) => s.loadContributors);
+  const loadContributorIdentity = useRepoStore((s) => s.loadContributorIdentity);
+  const openUrl = useGitHubStore((s) => s.openUrl);
 
   const [showAll, setShowAll] = useState(false);
   const contentId = useId();
@@ -50,6 +98,33 @@ export function Contributors(): JSX.Element {
     if (showAll || contributors.length <= 10) return contributors;
     return contributors.slice(0, 10);
   }, [contributors, showAll]);
+
+  useEffect(() => {
+    if (!contributorsExpanded) return;
+    for (const c of visibleContributors) {
+      const email = c.email?.trim();
+      if (email && contributorIdentities[email] === undefined) {
+        void loadContributorIdentity(email);
+      }
+    }
+  }, [contributorsExpanded, visibleContributors, contributorIdentities, loadContributorIdentity]);
+
+  const handleContributorClick = async (c: ContributorInfo) => {
+    const email = c.email?.trim();
+    if (!email) {
+      setAuthorFilter(authorFilter === c.email ? null : c.email);
+      return;
+    }
+    let identity = contributorIdentities[email];
+    if (identity === undefined) {
+      identity = (await loadContributorIdentity(email)) ?? undefined;
+    }
+    if (identity?.htmlUrl) {
+      await openUrl(identity.htmlUrl);
+    } else {
+      setAuthorFilter(authorFilter === c.email ? null : c.email);
+    }
+  };
 
   return (
     <section className="gc-contributors" aria-label={strings.contributors.panelAria}>
@@ -89,9 +164,16 @@ export function Contributors(): JSX.Element {
                   const active = authorFilter === c.email;
                   const percent = Math.max(2, Math.round((c.count / maxCount) * 100));
                   const name = sanitizeGitText(c.name);
-                  const initials = contributorInitials(c.name);
-                  const avatarColor = contributorAvatarColor(c.email);
                   const countText = formatCount(c.count, language);
+                  const email = c.email?.trim();
+                  const identity = email ? contributorIdentities[email] : null;
+                  const actionKind = contributorActionKind(c.email, identity);
+                  const ariaLabel =
+                    actionKind === 'profile'
+                      ? strings.contributors.openProfileAria(name)
+                      : active
+                        ? strings.contributors.filterActiveAria(name)
+                        : strings.contributors.filterInactiveAria(name);
                   return (
                     <li key={c.email || c.name} className="gc-contributors__row">
                       <button
@@ -101,21 +183,15 @@ export function Contributors(): JSX.Element {
                             ? 'gc-contributors__item gc-contributors__item--active'
                             : 'gc-contributors__item'
                         }
-                        onClick={() => setAuthorFilter(active ? null : c.email)}
-                        aria-pressed={active}
-                        aria-label={
-                          active
-                            ? strings.contributors.filterActiveAria(name)
-                            : strings.contributors.filterInactiveAria(name)
-                        }
+                        onClick={() => void handleContributorClick(c)}
+                        aria-pressed={actionKind === 'profile' ? undefined : active}
+                        aria-label={ariaLabel}
                       >
-                        <span
-                          className="gc-contributors__avatar"
-                          style={{ backgroundColor: avatarColor }}
-                          aria-hidden="true"
-                        >
-                          {initials}
-                        </span>
+                        <ContributorAvatar
+                          name={name}
+                          email={c.email}
+                          avatarUrl={identity?.avatarUrl}
+                        />
                         <span className="gc-contributors__name" title={name}>
                           {name}
                         </span>

@@ -1,11 +1,15 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
+  contributorActionKind,
   contributorAvatarColor,
   contributorInitials,
   emailHue,
+  resolveContributorAvatar,
 } from '../src/webview/format';
 import { useRepoStore } from '../src/webview/store';
+import { bridge } from '../src/webview/bridge';
+import type { RequestKind, RequestPayload, ResponseData } from '../src/messages';
 
 test('contributorInitials extracts up to two uppercase characters', () => {
   assert.equal(contributorInitials('Alice'), 'AL');
@@ -65,4 +69,97 @@ test('useRepoStore manages contributors state, expansion toggle, and authorFilte
 
   store.setAuthorFilter(null);
   assert.equal(useRepoStore.getState().authorFilter, null);
+});
+
+test('resolveContributorAvatar returns avatarUrl or null on failure/absence', () => {
+  assert.equal(
+    resolveContributorAvatar('https://avatars.githubusercontent.com/u/1', false),
+    'https://avatars.githubusercontent.com/u/1',
+  );
+  assert.equal(
+    resolveContributorAvatar('https://avatars.githubusercontent.com/u/1', true),
+    null,
+  );
+  assert.equal(resolveContributorAvatar(null, false), null);
+  assert.equal(resolveContributorAvatar(undefined, false), null);
+  assert.equal(resolveContributorAvatar('', false), null);
+});
+
+test('contributorActionKind differentiates GitHub profile open from author filter', () => {
+  assert.equal(
+    contributorActionKind('dev@example.com', {
+      login: 'alice',
+      avatarUrl: 'https://avatars.githubusercontent.com/u/1',
+      htmlUrl: 'https://github.com/alice',
+    }),
+    'profile',
+  );
+  assert.equal(
+    contributorActionKind('dev@example.com', {
+      login: null,
+      avatarUrl: null,
+      htmlUrl: null,
+    }),
+    'filter',
+  );
+  assert.equal(contributorActionKind('dev@example.com', null), 'filter');
+  assert.equal(contributorActionKind('dev@example.com', undefined), 'profile');
+  assert.equal(contributorActionKind('', undefined), 'filter');
+  assert.equal(contributorActionKind(undefined, undefined), 'filter');
+  assert.equal(contributorActionKind('   ', undefined), 'filter');
+});
+
+test('useRepoStore handles contributor identity fetching and caching', async (t) => {
+  const originalRequest = bridge.request;
+  const calls: string[] = [];
+  bridge.request = (async <K extends RequestKind>(kind: K, payload: RequestPayload<K>): Promise<ResponseData<K>> => {
+    if (kind === 'github/contributorIdentity') {
+      const email = (payload as { email: string }).email;
+      calls.push(email);
+      if (email === 'user@example.com') {
+        return {
+          login: 'octocat',
+          avatarUrl: 'https://avatars.githubusercontent.com/u/1',
+          htmlUrl: 'https://github.com/octocat',
+        } as ResponseData<K>;
+      }
+      throw new Error('Not found');
+    }
+    return originalRequest(kind, payload);
+  }) as typeof bridge.request;
+
+  t.after(() => {
+    bridge.request = originalRequest;
+  });
+
+  const store = useRepoStore.getState();
+
+  // Empty email returns null without calling bridge
+  const nullResult = await store.loadContributorIdentity('   ');
+  assert.equal(nullResult, null);
+  assert.equal(calls.length, 0);
+
+  // First fetch succeeds
+  const identity = await store.loadContributorIdentity('user@example.com');
+  assert.deepEqual(identity, {
+    login: 'octocat',
+    avatarUrl: 'https://avatars.githubusercontent.com/u/1',
+    htmlUrl: 'https://github.com/octocat',
+  });
+  assert.equal(calls.length, 1);
+
+  // Second fetch hits cache without bridge call
+  const cached = await store.loadContributorIdentity('user@example.com');
+  assert.deepEqual(cached, identity);
+  assert.equal(calls.length, 1);
+
+  // Failed fetch records fallback and returns fallback
+  const failed = await store.loadContributorIdentity('unknown@example.com');
+  assert.deepEqual(failed, { login: null, avatarUrl: null, htmlUrl: null });
+  assert.equal(calls.length, 2);
+
+  // Cached fallback avoids re-fetching
+  const cachedFailed = await store.loadContributorIdentity('unknown@example.com');
+  assert.deepEqual(cachedFailed, { login: null, avatarUrl: null, htmlUrl: null });
+  assert.equal(calls.length, 2);
 });
