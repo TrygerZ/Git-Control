@@ -11,6 +11,7 @@ import {
   validateRemoteName,
   validateRepoRelativePath,
   validateStashMessage,
+  validateEmail,
 } from '../src/validation';
 
 test('PRD mandated self-check asserts', () => {
@@ -238,3 +239,23 @@ test('validateBranchName rejects fully qualified refs unless opted in (Bug 2)', 
   // A branch whose own name merely starts with `ref` is unaffected.
   assert.equal(validateBranchName('refactor/refs'), true);
 });
+
+test('validateEmail accepts valid email strings and rejects invalid ones', () => {
+  assert.equal(validateEmail('author@example.com'), true);
+  assert.equal(validateEmail('dev.lead+git@company.co.uk'), true);
+  assert.equal(validateEmail('user@localhost'), true);
+  assert.equal(validateEmail('  trimmed@example.com  '), true);
+  assert.equal(validateEmail('a'.repeat(240) + '@example.com'), true);
+
+  // Rejections
+  assert.equal(validateEmail(''), false, 'empty string');
+  assert.equal(validateEmail('   '), false, 'whitespace only');
+  assert.equal(validateEmail('a'.repeat(250) + '@example.com'), false, '> 254 characters');
+  assert.equal(validateEmail('user\n@example.com'), false, 'control character newline');
+  assert.equal(validateEmail('user\u0000@example.com'), false, 'null byte');
+  assert.equal(validateEmail(null), false, 'null');
+  assert.equal(validateEmail(undefined), false, 'undefined');
+  assert.equal(validateEmail(12345), false, 'number');
+  assert.equal(validateEmail({ email: 'test@example.com' }), false, 'object');
+});
+

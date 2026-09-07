@@ -16,7 +16,7 @@
  * or any returned value. {@link redact} is applied to everything logged.
  */
 import { redact } from './logger';
-import type { CommitAuthorInfo, ErrorCode, GitHubRateLimit, Lang, PullRequestInfo } from './messages';
+import type { CommitAuthorInfo, ContributorIdentity, ErrorCode, GitHubRateLimit, Lang, PullRequestInfo } from './messages';
 import { hostText } from './hostText';
 import { validateHash } from './validation';
 
@@ -347,6 +347,74 @@ export class GitHubClient {
   }
 
   /**
+   * Contributor identity (login, avatar, and profile URL) for an author email.
+   *
+   * Queries `GET /repos/{owner}/{repo}/commits?author={email}&per_page=1`.
+   * Cached per email under `contributorId:{owner}/{repo}:{email}` with 5-minute TTL.
+   * Failures degrade gracefully to `login: null, avatarUrl: null, htmlUrl: null`.
+   */
+  async contributorIdentity(
+    owner: string,
+    repo: string,
+    email: string,
+  ): Promise<Fetched<ContributorIdentity>> {
+    const trimmed = email.trim();
+    if (trimmed.length === 0) {
+      return {
+        data: { login: null, avatarUrl: null, htmlUrl: null },
+        cached: false,
+        rateLimit: this.rateLimit(false),
+      };
+    }
+
+    const params = new URLSearchParams({
+      author: trimmed,
+      per_page: '1',
+    });
+    const path =
+      `/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/commits` +
+      `?${params.toString()}`;
+
+    try {
+      return await this.get<ContributorIdentity>(
+        path,
+        `contributorId:${owner}/${repo}:${trimmed}`,
+        AUTHOR_TTL_MS,
+        (body) => {
+          if (!Array.isArray(body) || body.length === 0) {
+            return { login: null, avatarUrl: null, htmlUrl: null };
+          }
+          const first = body[0] as
+            | { author?: { login?: unknown; avatar_url?: unknown; html_url?: unknown } | null }
+            | undefined;
+          const author = first?.author;
+          let avatarUrl: string | null = null;
+          if (typeof author?.avatar_url === 'string') {
+            try {
+              const parsedUrl = new URL(author.avatar_url);
+              parsedUrl.searchParams.set('s', '64');
+              avatarUrl = parsedUrl.toString();
+            } catch {
+              avatarUrl = author.avatar_url;
+            }
+          }
+          return {
+            login: typeof author?.login === 'string' ? author.login : null,
+            avatarUrl,
+            htmlUrl: typeof author?.html_url === 'string' ? author.html_url : null,
+          };
+        },
+      );
+    } catch {
+      return {
+        data: { login: null, avatarUrl: null, htmlUrl: null },
+        cached: false,
+        rateLimit: this.rateLimit(false),
+      };
+    }
+  }
+
+  /**
    * Probe that bypasses the breaker and closes it on success. Nothing else can
    * close the breaker, so an open circuit never quietly resumes hammering a
    * failing API.
@@ -416,7 +484,7 @@ export class GitHubClient {
    * ceiling. Insertion-order eviction, matching the idempotency map in `bridge.ts`.
    */
   private setCache(key: string, value: unknown): void {
-    const isAuthor = key.startsWith('commitAuthor:');
+    const isAuthor = key.startsWith('commitAuthor:') || key.startsWith('contributorId:');
     const targetCache = isAuthor ? this.authorCache : this.cache;
     const maxEntries = isAuthor ? AUTHOR_CACHE_MAX_ENTRIES : CACHE_MAX_ENTRIES;
 
@@ -546,7 +614,7 @@ export class GitHubClient {
   }
 
   private readCache<T>(key: string, ttlMs: number): T | undefined {
-    const isAuthor = key.startsWith('commitAuthor:');
+    const isAuthor = key.startsWith('commitAuthor:') || key.startsWith('contributorId:');
     const targetCache = isAuthor ? this.authorCache : this.cache;
     const entry = targetCache.get(key);
     if (entry === undefined) return undefined;

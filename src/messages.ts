@@ -358,6 +358,19 @@ export interface RemoteInfo {
   isGitHub: boolean;
 }
 
+export interface ContributorInfo {
+  name: string;
+  email: string;
+  count: number;
+}
+
+export type ContributorEntry = ContributorInfo;
+
+/** Empty payload by design: contributors list queries HEAD with no user arguments. */
+export type ContributorsPayload = Record<string, never>;
+export type ContributorsRequest = ContributorsPayload;
+export type ContributorsResponse = ContributorInfo[];
+
 export interface ActionResult {
   ok: true;
   operation: OperationState;
@@ -482,6 +495,19 @@ export interface CommitAuthorsResult {
 }
 
 /**
+ * Resolved GitHub identity for a contributor email.
+ */
+export interface ContributorIdentity {
+  login: string | null;
+  avatarUrl: string | null;
+  htmlUrl: string | null;
+}
+
+export interface ContributorIdentityPayload {
+  email: string;
+}
+
+/**
  * GitHub linkage for the active repository's detected remote.
  *
  * `commitUrlTemplate` carries a literal `{hash}` placeholder so the UI can build
@@ -508,6 +534,7 @@ export interface RequestMap {
   'repos/status': { payload: StatusPayload; response: RepoStatus };
   'repos/graph': { payload: GraphPayload; response: RepoGraph };
   'repos/remotes': { payload: Record<string, never>; response: { remotes: RemoteInfo[] } };
+  'repos/contributors': { payload: ContributorsRequest; response: ContributorsResponse };
   'commits/detail': { payload: CommitDetailPayload; response: CommitDetail };
   'actions/stage': { payload: StagePayload; response: ActionResult };
   'actions/commit': { payload: CommitPayload; response: CommitResult };
@@ -536,6 +563,14 @@ export interface RequestMap {
    * GitHub avatars without making direct network calls or managing auth tokens.
    */
   'github/commitAuthors': { payload: CommitAuthorsPayload; response: CommitAuthorsResult };
+  /**
+   * Fetch GitHub user identity (login, avatar URL, profile URL) for a contributor email.
+   * Host-side query so the webview can display contributor profile pictures.
+   */
+  'github/contributorIdentity': {
+    payload: ContributorIdentityPayload;
+    response: ContributorIdentity;
+  };
   'github/linkage': { payload: Record<string, never>; response: GitHubLinkage };
   'settings/get': { payload: SettingsGetPayload; response: SettingsSnapshot };
   'settings/set': { payload: SettingsSetPayload; response: SettingsSnapshot };

@@ -12,6 +12,8 @@
  */
 import type {
   Bridge,
+  ContributorIdentity,
+  ContributorInfo,
   ErrorBody,
   EventKind,
   EventMap,
@@ -136,6 +138,9 @@ class WebviewBridge implements Bridge {
         this.pending.delete(id);
         reject(new BridgeRequestError(timeoutBody(kind)));
       }, REQUEST_TIMEOUT_MS);
+      if (typeof (timer as unknown as { unref?: () => void }).unref === 'function') {
+        (timer as unknown as { unref: () => void }).unref();
+      }
       this.pending.set(id, {
         resolve: (data) => resolve(data as ResponseData<K>),
         reject,
@@ -224,6 +229,16 @@ export function mutate<K extends RequestKind>(
   extra: Partial<MutationMeta> = {},
 ): Promise<ResponseData<K>> {
   return mutation(kind, payload).send(extra);
+}
+
+/** Request ranked contributors list from host (empty payload). */
+export function fetchContributors(): Promise<ContributorInfo[]> {
+  return bridge.request('repos/contributors', {});
+}
+
+/** Request GitHub user identity for a contributor email from host. */
+export function fetchContributorIdentity(email: string): Promise<ContributorIdentity> {
+  return bridge.request('github/contributorIdentity', { email });
 }
 
 // ------------------------------------------------------------------- state

@@ -8,6 +8,7 @@ import { parseCommitTimestamp } from '../validation';
 import type {
   ChangeEntry,
   ConflictEntry,
+  ContributorIdentity,
   ErrorBody,
   ErrorCode,
   GitActionRequest,
@@ -271,6 +272,73 @@ export function authorInitials(name: string): string {
     if (/[\p{L}\p{N}]/u.test(char)) return char.toLocaleUpperCase('en-US');
   }
   return '?';
+}
+
+/**
+ * Two-letter contributor initials for leaderboard avatar rendering.
+ *
+ * Sanitised, taking up to two letters or digits in upper case.
+ * Falls back to '?' when the name has no alphanumeric character.
+ */
+export function contributorInitials(name: string): string {
+  const clean = sanitizeGitText(name).trim();
+  const letters: string[] = [];
+  for (const char of clean) {
+    if (/[\p{L}\p{N}]/u.test(char)) {
+      letters.push(char.toLocaleUpperCase('en-US'));
+      if (letters.length === 2) break;
+    }
+  }
+  return letters.length > 0 ? letters.join('') : '?';
+}
+
+/**
+ * Deterministic hue [0, 359] derived from author email.
+ *
+ * Uses a polynomial hash over lowercased trimmed email string.
+ */
+export function emailHue(email: string): number {
+  let hash = 0;
+  const str = email.trim().toLowerCase();
+  for (let i = 0; i < str.length; i++) {
+    hash = (hash * 31 + str.charCodeAt(i)) >>> 0;
+  }
+  return hash % 360;
+}
+
+/**
+ * Deterministic HSL background color for contributor avatar.
+ *
+ * Fixed saturation (45%) and lightness (38%) tuned for contrast with light text.
+ */
+export function contributorAvatarColor(email: string): string {
+  return `hsl(${emailHue(email)}, 45%, 38%)`;
+}
+
+/**
+ * Resolves avatar image URL for a contributor given an avatar URL and load error state.
+ * Returns the GitHub avatar URL or null if fallback initials should be displayed.
+ */
+export function resolveContributorAvatar(
+  avatarUrl: string | null | undefined,
+  imageFailed: boolean,
+): string | null {
+  if (imageFailed || !avatarUrl) {
+    return null;
+  }
+  return avatarUrl;
+}
+
+/**
+ * Decides whether clicking a contributor opens their GitHub profile or toggles author filter.
+ */
+export function contributorActionKind(
+  email: string | undefined,
+  identity: ContributorIdentity | null | undefined,
+): 'profile' | 'filter' {
+  if (!email || email.trim().length === 0) return 'filter';
+  if (identity !== undefined && !identity?.htmlUrl) return 'filter';
+  return 'profile';
 }
 
 /** `lama → baru` for renames, plain path otherwise. Sanitised: paths come from git. */

@@ -8,6 +8,7 @@ import { GitHubPanel } from './GitHubPanel';
 import { GraphCanvas } from './GraphCanvas';
 import { GuardDialog } from './GuardDialog';
 import { Inspector } from './Inspector';
+import { Contributors } from './Contributors';
 import { PromptDialog } from './PromptDialog';
 import { ToastRegion } from './Toast';
 import { bridge, loadState } from './bridge';
@@ -178,6 +179,7 @@ export function ExplorerApp(): JSX.Element {
             {inspectorOpen && (
               <>
                 <Inspector hash={selectedHash} />
+                <Contributors />
                 <GitHubPanel />
                 {status !== null && status.conflicts.length > 0 && (
                   <ConflictPanel conflicts={status.conflicts} operation={status.operation} />

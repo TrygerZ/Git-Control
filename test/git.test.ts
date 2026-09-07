@@ -285,6 +285,47 @@ test('remoteList reports fetch and push URLs separately', async (t) => {
   ]);
 });
 
+test('contributors returns ranked commit counts per author', async (t) => {
+  const dir = await makeRepo();
+  t.after(() => cleanup(dir));
+  const git = new GitRunner({ gitPath: 'git', cwd: dir });
+
+  const initial = await git.contributors();
+  assert.deepEqual(initial, [
+    { name: 'Test User', email: 'test@example.com', count: 1 },
+  ]);
+
+  await fs.writeFile(path.join(dir, 'c2.txt'), 'two\n', 'utf8');
+  await git.stage(['c2.txt']);
+  await git.run([
+    '-c',
+    'user.name=Budi Utomo (Joko)',
+    '-c',
+    'user.email=budi@example.com',
+    'commit',
+    '-m',
+    'second commit',
+  ]);
+
+  await fs.writeFile(path.join(dir, 'c3.txt'), 'three\n', 'utf8');
+  await git.stage(['c3.txt']);
+  await git.run([
+    '-c',
+    'user.name=Budi Utomo (Joko)',
+    '-c',
+    'user.email=budi@example.com',
+    'commit',
+    '-m',
+    'third commit',
+  ]);
+
+  const ranked = await git.contributors();
+  assert.deepEqual(ranked, [
+    { name: 'Budi Utomo (Joko)', email: 'budi@example.com', count: 2 },
+    { name: 'Test User', email: 'test@example.com', count: 1 },
+  ]);
+});
+
 // ------------------------------------------------------------------- SEC-009
 
 test('run kills git and rejects GIT_OUTPUT_TOO_LARGE past the stdout cap (SEC-009)', async (t) => {

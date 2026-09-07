@@ -175,6 +175,18 @@ export function parseCommitTimestamp(val?: string | number | null): number {
 }
 
 /**
+ * Defends against: empty, oversized, or control-char polluted email strings reaching the GitHub API.
+ * RFC 5321 limits an email address path to 254 octets.
+ */
+export function validateEmail(value: unknown): value is string {
+  if (typeof value !== 'string') return false;
+  const trimmed = value.trim();
+  if (trimmed.length === 0 || trimmed.length > 254) return false;
+  if (CONTROL_CHARS.test(trimmed)) return false;
+  return true;
+}
+
+/**
  * Defends against: unbounded `git log` invocations used as a denial-of-service
  * against the extension host.
  */

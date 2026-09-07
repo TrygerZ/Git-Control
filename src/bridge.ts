@@ -21,6 +21,7 @@ import { parseRemoteUrl, stripCredentials } from './remoteUrl';
 import type { RepositoryService } from './repository';
 import {
   validateBranchName,
+  validateEmail,
   validateHash,
   validateRemoteName,
   validateRepoRelativePath,
@@ -34,6 +35,9 @@ import type {
   CommitDetailPayload,
   CommitPayload,
   CommitResult,
+  ContributorIdentity,
+  ContributorIdentityPayload,
+  ContributorsResponse,
   ErrorBody,
   ErrorCode,
   EventKind,
@@ -101,6 +105,7 @@ export interface BridgeHost {
   githubRepo?(payload: GitHubRepoPayload): Promise<GitHubRepoInfo>;
   githubPullRequests?(payload: PullRequestsPayload): Promise<PullRequestsResult>;
   githubCommitAuthors?(payload: CommitAuthorsPayload): Promise<CommitAuthorsResult>;
+  githubContributorIdentity?(payload: ContributorIdentityPayload): Promise<ContributorIdentity>;
   githubLinkage?(): Promise<GitHubLinkage>;
   /**
    * Snapshot of the active file icon theme for the webview this bridge serves,
@@ -288,6 +293,9 @@ export class MessageBridge {
       case 'repos/remotes':
         validateEmptyPayload(request.payload, this.text().invalid);
         return this.handleRemotes();
+      case 'repos/contributors':
+        validateEmptyPayload(request.payload, this.text().invalid);
+        return this.handleContributors();
       case 'commits/detail':
         return this.handleCommitDetail(request.payload as CommitDetailPayload);
       case 'actions/stage':
@@ -319,6 +327,8 @@ export class MessageBridge {
         return this.handleGitHubPullRequests(request.payload as PullRequestsPayload);
       case 'github/commitAuthors':
         return this.handleGitHubCommitAuthors(request.payload as CommitAuthorsPayload);
+      case 'github/contributorIdentity':
+        return this.handleGitHubContributorIdentity(request.payload as ContributorIdentityPayload);
       case 'github/linkage':
         validateEmptyPayload(request.payload, this.text().invalid);
         return this.handleGitHubLinkage();
@@ -410,6 +420,12 @@ export class MessageBridge {
       };
     });
     return { remotes };
+  }
+
+  /** Author leaderboard ranked by commit count. Readonly; no guard needed. */
+  private async handleContributors(): Promise<ContributorsResponse> {
+    const repo = await this.repository();
+    return repo.contributors();
   }
 
   /**
@@ -576,6 +592,18 @@ export class MessageBridge {
     const authors = this.host.githubCommitAuthors;
     if (authors === undefined) fail(503, 'UNAVAILABLE', this.text().githubPending);
     return authors(payload);
+  }
+
+  private async handleGitHubContributorIdentity(
+    payload: ContributorIdentityPayload,
+  ): Promise<ContributorIdentity> {
+    if (payload === null || typeof payload !== 'object' || !validateEmail(payload.email)) {
+      fail(400, 'VALIDATION_ERROR', this.text().invalid, { detail: 'email' });
+    }
+    const email = payload.email.trim();
+    const identity = this.host.githubContributorIdentity;
+    if (identity === undefined) fail(503, 'UNAVAILABLE', this.text().githubPending);
+    return identity({ email });
   }
 
   private async handleGitHubLinkage(): Promise<GitHubLinkage> {

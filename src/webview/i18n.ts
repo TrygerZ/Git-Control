@@ -635,6 +635,22 @@ const en = {
   bridge: {
     timeout: 'Request timed out.',
   },
+
+  // Contributors leaderboard
+  contributors: {
+    sectionTitle: 'Contributors',
+    totalCommits: (count: string) => `${count} commits`,
+    showAll: (count: number) => `Show all (${count})`,
+    showLess: 'Show less',
+    empty: 'No contributors found.',
+    loading: 'Loading contributors...',
+    filterActiveAria: (name: string) => `Filter by author ${name}, active`,
+    filterInactiveAria: (name: string) => `Filter by author ${name}`,
+    openProfileAria: (name: string) => `Open GitHub profile of ${name}`,
+    panelAria: 'Contributors leaderboard',
+    expandAria: 'Expand contributors',
+    collapseAria: 'Collapse contributors',
+  },
 };
 
 export type Catalog = typeof en;
@@ -1266,6 +1282,22 @@ const id: Catalog = {
   // Bridge transport fallbacks
   bridge: {
     timeout: 'Permintaan melebihi batas waktu.',
+  },
+
+  // Contributors leaderboard
+  contributors: {
+    sectionTitle: 'Kontributor',
+    totalCommits: (count: string) => `${count} commit`,
+    showAll: (count: number) => `Tampilkan semua (${count})`,
+    showLess: 'Tampilkan lebih sedikit',
+    empty: 'Belum ada kontributor.',
+    loading: 'Memuat kontributor...',
+    filterActiveAria: (name: string) => `Filter menurut author ${name}, aktif`,
+    filterInactiveAria: (name: string) => `Filter menurut author ${name}`,
+    openProfileAria: (name: string) => `Buka profil GitHub ${name}`,
+    panelAria: 'Peringkat kontributor',
+    expandAria: 'Buka kontributor',
+    collapseAria: 'Tutup kontributor',
   },
 };
 

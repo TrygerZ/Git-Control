@@ -23,10 +23,12 @@ import {
   parseRemoteList,
   parseRemotes,
   parseRevListCounts,
+  parseShortlog,
   parseShowStat,
   parseStatus,
   type AheadBehind,
   type ParsedCommit,
+  type ParsedContributor,
   type ParsedNumstatEntry,
   type ParsedRef,
   type ParsedStatusEntry,
@@ -591,6 +593,18 @@ export class GitRunner {
   async remoteList(): Promise<Array<{ name: string; fetchUrl: string; pushUrl: string }>> {
     const { stdout } = await this.run(['remote', '-v']);
     return parseRemoteList(stdout);
+  }
+
+  /**
+   * Commit count per author sorted descending by count, via `git shortlog -sne HEAD`.
+   * Returns empty array if repository has no commits (HEAD does not exist).
+   */
+  async contributors(): Promise<ParsedContributor[]> {
+    const { stdout, code } = await this.run(['shortlog', '-sne', 'HEAD'], {
+      allowedExitCodes: [0, 128],
+    });
+    if (code !== 0) return [];
+    return parseShortlog(stdout);
   }
 
   /**

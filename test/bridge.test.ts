@@ -10,6 +10,7 @@ import { Logger, type LogSink } from '../src/logger';
 import { RepositoryService, type PersistentStore } from '../src/repository';
 import { cleanup, makeFixture } from './repoFixture';
 import type {
+  ContributorInfo,
   HostEvent,
   HostMessage,
   OpenDiffPayload,
@@ -685,6 +686,28 @@ test('repos/remotes parses the host and strips embedded credentials', async (t) 
   assert.equal(ent?.isGitHub, false);
 });
 
+test('repos/contributors returns contributor list and validates empty payload', async (t) => {
+  const dir = await makeRepo();
+  t.after(() => cleanup(dir));
+  const repo = new RepositoryService({ folderPath: dir, gitPath: 'git', store: new MemoryStore() });
+  const h = harness(repo);
+  t.after(() => h.bridge.dispose());
+
+  const response = await h.webview.send(req('repos/contributors', {}));
+  assert.equal(response.ok, true);
+  if (!response.ok) return;
+  const list = response.data as ContributorInfo[];
+  assert.equal(list.length, 1);
+  assert.equal(list[0]?.name, 'Test User');
+  assert.equal(list[0]?.email, 'test@example.com');
+  assert.equal(list[0]?.count, 1);
+
+  const invalid = await h.webview.send(req('repos/contributors', { unexpected: true }));
+  assert.equal(invalid.ok, false);
+  if (invalid.ok) return;
+  assert.equal(invalid.error.code, 'VALIDATION_ERROR');
+});
+
 test('actions/openDiff validates its payload before reaching the host callback', async (t) => {
   const dir = await makeRepo();
   t.after(() => cleanup(dir));
@@ -902,6 +925,12 @@ test('github handlers reach the host and report UNAVAILABLE without one', async 
         authors: [{ hash: 'a'.repeat(40), login: 'octocat', avatarUrl: 'https://avatars.githubusercontent.com/u/1' }],
         rateLimit: { limit: 5000, remaining: 4999, resetAt: null, cached: false, offline: false },
       }),
+    githubContributorIdentity: () =>
+      Promise.resolve({
+        login: 'octocat',
+        avatarUrl: 'https://avatars.githubusercontent.com/u/1?s=64',
+        htmlUrl: 'https://github.com/octocat',
+      }),
     githubLinkage: () =>
       Promise.resolve({
         available: true,
@@ -934,6 +963,29 @@ test('github handlers reach the host and report UNAVAILABLE without one', async 
   assert.equal(badAuthors.ok, false);
   if (!badAuthors.ok) assert.equal(badAuthors.error.code, 'VALIDATION_ERROR');
 
+  const identity = await withHost.webview.send(
+    req('github/contributorIdentity', { email: 'octocat@github.com' }),
+  );
+  assert.equal(identity.ok, true);
+  if (!identity.ok) return;
+  assert.deepEqual(identity.data, {
+    login: 'octocat',
+    avatarUrl: 'https://avatars.githubusercontent.com/u/1?s=64',
+    htmlUrl: 'https://github.com/octocat',
+  });
+
+  const badIdentity = await withHost.webview.send(
+    req('github/contributorIdentity', { email: '' }),
+  );
+  assert.equal(badIdentity.ok, false);
+  if (!badIdentity.ok) assert.equal(badIdentity.error.code, 'VALIDATION_ERROR');
+
+  const oversizedIdentity = await withHost.webview.send(
+    req('github/contributorIdentity', { email: 'x'.repeat(255) }),
+  );
+  assert.equal(oversizedIdentity.ok, false);
+  if (!oversizedIdentity.ok) assert.equal(oversizedIdentity.error.code, 'VALIDATION_ERROR');
+
   const linkage = await withHost.webview.send(req('github/linkage', {}));
   assert.equal(linkage.ok, true);
 
@@ -949,6 +1001,13 @@ test('github handlers reach the host and report UNAVAILABLE without one', async 
   assert.equal(stub.ok, false);
   if (stub.ok) return;
   assert.equal(stub.error.status, 503);
+
+  const stubIdentity = await withoutHost.webview.send(
+    req('github/contributorIdentity', { email: 'octocat@github.com' }),
+  );
+  assert.equal(stubIdentity.ok, false);
+  if (stubIdentity.ok) return;
+  assert.equal(stubIdentity.error.status, 503);
 });
 
 test('persisted zoom is normalized to valid range host-side', async (t) => {
