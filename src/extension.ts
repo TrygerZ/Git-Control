@@ -25,6 +25,8 @@ import { RepoWatcher } from './watcher';
 import type {
   CommitAuthorsPayload,
   CommitAuthorsResult,
+  ContributorIdentity,
+  ContributorIdentityPayload,
   GitHubAuthState,
   GitHubLinkage,
   GitHubRepoInfo,
@@ -580,6 +582,7 @@ class Controller implements vscode.Disposable {
       githubRepo: (payload) => this.githubRepo(payload),
       githubPullRequests: (payload) => this.githubPullRequests(payload),
       githubCommitAuthors: (payload) => this.githubCommitAuthors(payload),
+      githubContributorIdentity: (payload) => this.githubContributorIdentity(payload),
       githubLinkage: () => this.githubLinkage(),
     };
   }
@@ -874,6 +877,22 @@ class Controller implements vscode.Disposable {
     const { client } = await this.githubClient();
     const result = await client.commitAuthors(payload.owner, payload.repo, payload.hashes);
     return { authors: result.data, rateLimit: client.rateLimit(result.cached) };
+  }
+
+  private async githubContributorIdentity(
+    payload: ContributorIdentityPayload,
+  ): Promise<ContributorIdentity> {
+    const remote = await this.detectRemote();
+    if (remote === null) {
+      throw new GitHubError({
+        status: 503,
+        code: 'UNAVAILABLE',
+        message: extText().bridge.githubPending,
+      });
+    }
+    const { client } = await this.githubClient();
+    const result = await client.contributorIdentity(remote.owner, remote.repo, payload.email);
+    return result.data;
   }
 
   /** GitHub linkage for the detected remote, used for "Buka di GitHub". */

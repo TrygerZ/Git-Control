@@ -637,3 +637,104 @@ test('commitAuthors handles commit.author === null with avatarUrl: null', async 
     { hash, login: null, avatarUrl: null },
   ]);
 });
+
+test('contributorIdentity returns login, avatarUrl with s=64, and htmlUrl', async () => {
+  const h = client([
+    response(200, [
+      {
+        sha: 'abc1234',
+        author: {
+          login: 'octocat',
+          avatar_url: 'https://avatars.githubusercontent.com/u/583231?v=4',
+          html_url: 'https://github.com/octocat',
+        },
+      },
+    ]),
+  ]);
+  const result = await h.gh.contributorIdentity('owner', 'repo', 'octocat@github.com');
+  assert.equal(result.cached, false);
+  assert.deepEqual(result.data, {
+    login: 'octocat',
+    avatarUrl: 'https://avatars.githubusercontent.com/u/583231?v=4&s=64',
+    htmlUrl: 'https://github.com/octocat',
+  });
+  assert.equal(h.calls.length, 1);
+  assert.equal(
+    h.calls[0]?.url,
+    'https://api.github.com/repos/owner/repo/commits?author=octocat%40github.com&per_page=1',
+  );
+});
+
+test('contributorIdentity serves second identical email from cache without network request', async () => {
+  const h = client([
+    response(200, [
+      {
+        sha: 'abc1234',
+        author: {
+          login: 'octocat',
+          avatar_url: 'https://avatars.githubusercontent.com/u/583231?v=4',
+          html_url: 'https://github.com/octocat',
+        },
+      },
+    ]),
+  ]);
+  const first = await h.gh.contributorIdentity('owner', 'repo', 'octocat@github.com');
+  assert.equal(first.cached, false);
+  assert.equal(h.calls.length, 1);
+
+  const second = await h.gh.contributorIdentity('owner', 'repo', 'octocat@github.com');
+  assert.equal(second.cached, true);
+  assert.equal(h.calls.length, 1, 'served from cache, no network request');
+  assert.deepEqual(second.data, first.data);
+});
+
+test('contributorIdentity handles empty commit array with fallback nulls', async () => {
+  const h = client([response(200, [])]);
+  const result = await h.gh.contributorIdentity('owner', 'repo', 'unknown@example.com');
+  assert.deepEqual(result.data, {
+    login: null,
+    avatarUrl: null,
+    htmlUrl: null,
+  });
+});
+
+test('contributorIdentity handles commit without author or author === null', async () => {
+  const h = client([response(200, [{ sha: 'abc1234', author: null }])]);
+  const result = await h.gh.contributorIdentity('owner', 'repo', 'noauthor@example.com');
+  assert.deepEqual(result.data, {
+    login: null,
+    avatarUrl: null,
+    htmlUrl: null,
+  });
+});
+
+test('contributorIdentity handles API failure gracefully with fallback nulls', async () => {
+  const h = client([response(404, { message: 'Not Found' })]);
+  const result = await h.gh.contributorIdentity('owner', 'repo', 'error@example.com');
+  assert.deepEqual(result.data, {
+    login: null,
+    avatarUrl: null,
+    htmlUrl: null,
+  });
+});
+
+test('contributorIdentity encodes special characters in author email', async () => {
+  const h = client([response(200, [])]);
+  await h.gh.contributorIdentity('owner', 'repo', 'dev+test@example.com');
+  assert.equal(h.calls.length, 1);
+  assert.equal(
+    h.calls[0]?.url,
+    'https://api.github.com/repos/owner/repo/commits?author=dev%2Btest%40example.com&per_page=1',
+  );
+});
+
+test('contributorIdentity handles empty or whitespace email without network request', async () => {
+  const h = client([response(200, [])]);
+  const result = await h.gh.contributorIdentity('owner', 'repo', '   ');
+  assert.deepEqual(result.data, {
+    login: null,
+    avatarUrl: null,
+    htmlUrl: null,
+  });
+  assert.equal(h.calls.length, 0);
+});

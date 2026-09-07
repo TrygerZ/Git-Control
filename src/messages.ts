@@ -495,6 +495,19 @@ export interface CommitAuthorsResult {
 }
 
 /**
+ * Resolved GitHub identity for a contributor email.
+ */
+export interface ContributorIdentity {
+  login: string | null;
+  avatarUrl: string | null;
+  htmlUrl: string | null;
+}
+
+export interface ContributorIdentityPayload {
+  email: string;
+}
+
+/**
  * GitHub linkage for the active repository's detected remote.
  *
  * `commitUrlTemplate` carries a literal `{hash}` placeholder so the UI can build
@@ -550,6 +563,14 @@ export interface RequestMap {
    * GitHub avatars without making direct network calls or managing auth tokens.
    */
   'github/commitAuthors': { payload: CommitAuthorsPayload; response: CommitAuthorsResult };
+  /**
+   * Fetch GitHub user identity (login, avatar URL, profile URL) for a contributor email.
+   * Host-side query so the webview can display contributor profile pictures.
+   */
+  'github/contributorIdentity': {
+    payload: ContributorIdentityPayload;
+    response: ContributorIdentity;
+  };
   'github/linkage': { payload: Record<string, never>; response: GitHubLinkage };
   'settings/get': { payload: SettingsGetPayload; response: SettingsSnapshot };
   'settings/set': { payload: SettingsSetPayload; response: SettingsSnapshot };

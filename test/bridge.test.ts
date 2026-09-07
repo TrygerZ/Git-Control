@@ -925,6 +925,12 @@ test('github handlers reach the host and report UNAVAILABLE without one', async 
         authors: [{ hash: 'a'.repeat(40), login: 'octocat', avatarUrl: 'https://avatars.githubusercontent.com/u/1' }],
         rateLimit: { limit: 5000, remaining: 4999, resetAt: null, cached: false, offline: false },
       }),
+    githubContributorIdentity: () =>
+      Promise.resolve({
+        login: 'octocat',
+        avatarUrl: 'https://avatars.githubusercontent.com/u/1?s=64',
+        htmlUrl: 'https://github.com/octocat',
+      }),
     githubLinkage: () =>
       Promise.resolve({
         available: true,
@@ -957,6 +963,29 @@ test('github handlers reach the host and report UNAVAILABLE without one', async 
   assert.equal(badAuthors.ok, false);
   if (!badAuthors.ok) assert.equal(badAuthors.error.code, 'VALIDATION_ERROR');
 
+  const identity = await withHost.webview.send(
+    req('github/contributorIdentity', { email: 'octocat@github.com' }),
+  );
+  assert.equal(identity.ok, true);
+  if (!identity.ok) return;
+  assert.deepEqual(identity.data, {
+    login: 'octocat',
+    avatarUrl: 'https://avatars.githubusercontent.com/u/1?s=64',
+    htmlUrl: 'https://github.com/octocat',
+  });
+
+  const badIdentity = await withHost.webview.send(
+    req('github/contributorIdentity', { email: '' }),
+  );
+  assert.equal(badIdentity.ok, false);
+  if (!badIdentity.ok) assert.equal(badIdentity.error.code, 'VALIDATION_ERROR');
+
+  const oversizedIdentity = await withHost.webview.send(
+    req('github/contributorIdentity', { email: 'x'.repeat(255) }),
+  );
+  assert.equal(oversizedIdentity.ok, false);
+  if (!oversizedIdentity.ok) assert.equal(oversizedIdentity.error.code, 'VALIDATION_ERROR');
+
   const linkage = await withHost.webview.send(req('github/linkage', {}));
   assert.equal(linkage.ok, true);
 
@@ -972,6 +1001,13 @@ test('github handlers reach the host and report UNAVAILABLE without one', async 
   assert.equal(stub.ok, false);
   if (stub.ok) return;
   assert.equal(stub.error.status, 503);
+
+  const stubIdentity = await withoutHost.webview.send(
+    req('github/contributorIdentity', { email: 'octocat@github.com' }),
+  );
+  assert.equal(stubIdentity.ok, false);
+  if (stubIdentity.ok) return;
+  assert.equal(stubIdentity.error.status, 503);
 });
 
 test('persisted zoom is normalized to valid range host-side', async (t) => {
