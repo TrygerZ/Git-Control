@@ -11,6 +11,7 @@
  */
 import { create } from 'zustand';
 import { BridgeRequestError, bridge, fetchContributorIdentity, fetchContributors, isBridgeError, mutation, saveState } from './bridge';
+import { unknownErrorBody } from '../errorBody';
 import { linkageChangedRepo, sanitizeGitText } from './format';
 import { pruneSelection, toggleNode, togglePath, type ChangeSection, type TreeNode } from './tree';
 import { activeLang, setActiveLang, t } from './i18n';
@@ -44,11 +45,7 @@ const SEARCH_MAX = 100;
 /** Any thrown value → an `ErrorBody` the UI can render. */
 export function toErrorBody(err: unknown): ErrorBody {
   if (isBridgeError(err)) return err.body;
-  return {
-    status: 500,
-    code: 'SERVER_ERROR',
-    message: err instanceof Error ? err.message : String(err),
-  };
+  return unknownErrorBody(err);
 }
 
 // ------------------------------------------------------------------- toasts
@@ -119,7 +116,8 @@ export const useRepoStore = create<RepoState>((set, get) => ({
         const status = await bridge.request('repos/status', {});
         set({ status, error: null });
       } catch (err) {
-        set({ error: toErrorBody(err) });
+        const body = toErrorBody(err);
+        set({ error: body });
       } finally {
         inFlightStatus = null;
       }
@@ -136,7 +134,8 @@ export const useRepoStore = create<RepoState>((set, get) => ({
       });
       set({ graph, stale: graph.stale, loading: false, error: null });
     } catch (err) {
-      set({ loading: false, error: toErrorBody(err) });
+      const body = toErrorBody(err);
+      set({ loading: false, error: body });
     }
   },
 
@@ -156,7 +155,8 @@ export const useRepoStore = create<RepoState>((set, get) => ({
       });
       set({ graph: page, stale: page.stale, paging: false, error: null });
     } catch (err) {
-      set({ paging: false, error: toErrorBody(err) });
+      const body = toErrorBody(err);
+      set({ paging: false, error: body });
     }
   },
 
@@ -297,7 +297,8 @@ export const useChangesStore = create<ChangesState>((set, get) => ({
           error: null,
         });
       } catch (err) {
-        set({ loading: false, error: toErrorBody(err) });
+        const body = toErrorBody(err);
+        set({ loading: false, error: body });
       } finally {
         inFlightChanges = null;
       }
@@ -775,7 +776,8 @@ export const useGitHubStore = create<GitHubState>((set, get) => ({
       set({ auth, linkage, loading: false, error: null });
       if (linkage.available) await get().loadPullRequests();
     } catch (err) {
-      set({ loading: false, error: toErrorBody(err) });
+      const body = toErrorBody(err);
+      set({ loading: false, error: body });
     }
   },
 
@@ -791,7 +793,8 @@ export const useGitHubStore = create<GitHubState>((set, get) => ({
       set({ pullRequests: result.pullRequests, rateLimit: result.rateLimit, error: null });
     } catch (err) {
       // Keep the previous list: stale PR chips beat an empty panel.
-      set({ error: toErrorBody(err) });
+      const body = toErrorBody(err);
+      set({ error: body });
     }
   },
 
@@ -824,7 +827,8 @@ export const useGitHubStore = create<GitHubState>((set, get) => ({
         } catch (err) {
           // An avatar is decoration. Record it like a failed PR read and keep whatever faces
           // already arrived; nothing here is worth a toast.
-          set({ error: toErrorBody(err) });
+          const body = toErrorBody(err);
+          set({ error: body });
         }
       }),
     );
@@ -842,7 +846,8 @@ export const useGitHubStore = create<GitHubState>((set, get) => ({
       }
       await get().load();
     } catch (err) {
-      set({ error: toErrorBody(err) });
+      const body = toErrorBody(err);
+      set({ error: body });
     }
   },
 
@@ -853,7 +858,8 @@ export const useGitHubStore = create<GitHubState>((set, get) => ({
       set({ auth, pullRequests: [], rateLimit: null, error: null });
 
     } catch (err) {
-      set({ error: toErrorBody(err) });
+      const body = toErrorBody(err);
+      set({ error: body });
     }
   },
 

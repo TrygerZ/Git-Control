@@ -14,6 +14,7 @@
  */
 import { GitError } from './git';
 import { GitHubError } from './github';
+import { unknownErrorBody } from './errorBody';
 import { SafetyGuard, DEFAULT_STALENESS_MS, type GuardAction, type GuardSnapshot, type GuardVerdict } from './guard';
 import { hostText } from './hostText';
 import { redact, type Logger } from './logger';
@@ -1171,7 +1172,7 @@ export function toErrorBody(err: unknown, lang: Lang = 'en'): ErrorBody {
   if (err instanceof BridgeError) return err.body;
   if (err instanceof GitError) return fromGitError(err, lang);
   if (err instanceof GitHubError) return fromGitHubError(err);
-  return { status: 500, code: 'SERVER_ERROR', message: messageOf(err) };
+  return unknownErrorBody(err);
 }
 
 /**
