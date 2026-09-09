@@ -208,3 +208,30 @@ export function sanitizeRefArg(value: string): string {
   }
   return value;
 }
+
+/** Shared assertion boundaries preserve each caller's existing error type and message. */
+export function assertValidBranchName(value: string, onInvalid: () => never): void {
+  if (!validateBranchName(value)) onInvalid();
+}
+
+export function assertValidHash(value: string, onInvalid: () => never): void {
+  if (!validateHash(value)) onInvalid();
+}
+
+export function assertValidRepoPaths(paths: string[], onInvalid: (path?: string) => never): string[] {
+  if (paths.length === 0) onInvalid();
+  for (const path of paths) {
+    if (!validateRepoRelativePath(path)) onInvalid(path);
+  }
+  return paths;
+}
+
+/** Build literal root-anchored pathspecs after shared path validation. */
+export function buildRepoPathspecs(
+  paths: string[],
+  onInvalid: (path?: string) => never,
+): string[] {
+  return assertValidRepoPaths(paths, onInvalid).map((path) => `:(top,literal)${path.replace(/\\/g, '/')}`);
+}
+
+/** Shared assertion primitives for callers that must preserve their own error type. */

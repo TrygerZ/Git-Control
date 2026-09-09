@@ -34,6 +34,10 @@ import {
   type ParsedStatusEntry,
 } from './gitParse';
 import {
+  assertValidBranchName,
+  assertValidHash,
+  assertValidRepoPaths,
+  buildRepoPathspecs,
   sanitizeRefArg,
   validateBranchName,
   validateCommitMessage,
@@ -940,27 +944,24 @@ export class GitRunner {
   // ------------------------------------------------------------- guards
 
   private assertBranch(name: string): void {
-    if (!validateBranchName(name)) {
+    assertValidBranchName(name, () => {
       throw new GitError({ code: 'VALIDATION_ERROR', message: `Invalid branch name: ${name}` });
-    }
+    });
   }
 
   private assertHash(hash: string): void {
-    if (!validateHash(hash)) {
+    assertValidHash(hash, () => {
       throw new GitError({ code: 'VALIDATION_ERROR', message: `Invalid commit hash: ${hash}` });
-    }
+    });
   }
 
-  private assertPaths(paths: string[]): string[] {
-    if (paths.length === 0) {
-      throw new GitError({ code: 'VALIDATION_ERROR', message: 'No paths supplied.' });
-    }
-    for (const p of paths) {
-      if (!validateRepoRelativePath(p)) {
-        throw new GitError({ code: 'VALIDATION_ERROR', message: `Invalid repository path: ${p}` });
+  private pathspecs(paths: string[]): string[] {
+    return buildRepoPathspecs(paths, (path) => {
+      if (path === undefined) {
+        throw new GitError({ code: 'VALIDATION_ERROR', message: 'No paths supplied.' });
       }
-    }
-    return paths;
+      throw new GitError({ code: 'VALIDATION_ERROR', message: `Invalid repository path: ${path}` });
+    });
   }
 
   /**
@@ -982,10 +983,6 @@ export class GitRunner {
    *
    * Both magics need git 1.9+ (2013); the extension already requires far newer.
    */
-  private pathspecs(paths: string[]): string[] {
-    // Forward slashes only: pathspecs use git's own syntax, not the platform's.
-    return this.assertPaths(paths).map((p) => `:(top,literal)${p.replace(/\\/g, '/')}`);
-  }
 }
 
 /** `fs.access` wrapper: existence check without throwing. */
