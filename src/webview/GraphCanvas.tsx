@@ -50,6 +50,8 @@ import {
 } from './format';
 import { useT } from './useT';
 import { useGitHubStore, useRepoStore, useSettingsStore } from './store';
+import { chipsFor, computeStaggerMap, lanesForFilter, matchesSearch } from './graphQuery';
+import { computeBranchRibbons, edgePath, RIBBON_HALF_HEIGHT } from './ribbon';
 import {
   COLUMN_WIDTH,
   DAY_GAP,
@@ -72,37 +74,12 @@ import {
   stepZoom,
   visibleColumnRange,
   visibleWorldBand,
-  segmentIntersectsBand,
   worldHeight,
   worldWidth,
 } from './viewport';
 import type { DateBucket, GraphEdge, GraphNode, RefInfo, RepoGraph, RepoStatus } from '../messages';
-
-/** Pre-pass to compute label position (below vs above) to prevent collisions of neighbouring nodes in the same lane. */
-export function computeStaggerMap(nodes: readonly GraphNode[]): Map<string, 'above' | 'below'> {
-  const map = new Map<string, 'above' | 'below'>();
-  // Group nodes by lane
-  const laneMap = new Map<number, GraphNode[]>();
-  for (const node of nodes) {
-    let list = laneMap.get(node.lane);
-    if (!list) {
-      list = [];
-      laneMap.set(node.lane, list);
-    }
-    list.push(node);
-  }
-
-  // Sort each lane by X coordinate and assign alternating placement to adjacent x-neighbours
-  for (const laneNodes of laneMap.values()) {
-    laneNodes.sort((a, b) => a.x - b.x);
-    for (let i = 0; i < laneNodes.length; i += 1) {
-      const node = laneNodes[i] as GraphNode;
-      const placement = i % 2 === 1 ? 'above' : 'below';
-      map.set(node.hash, placement);
-    }
-  }
-  return map;
-}
+export { chipsFor, computeStaggerMap, lanesForFilter, matchesSearch } from './graphQuery';
+export { computeBranchRibbons, edgePath, RIBBON_HALF_HEIGHT } from './ribbon';
 const MINIMAP_HEIGHT = 160;
 
 /**
@@ -135,70 +112,6 @@ interface Props {
   onOpenInspector(hash: string): void;
 }
 
-/** Ref chip kinds, in the order they should appear next to a commit. */
-type ChipKind = 'current' | 'local' | 'remote' | 'tag';
-
-interface Chip {
-  kind: ChipKind;
-  icon: IconName;
-  prefix: string;
-  name: string;
-}
-
-const CHIP_ICON: Record<ChipKind, IconName> = {
-  current: 'git-branch',
-  local: 'circle-filled',
-  remote: 'cloud',
-  tag: 'tag',
-};
-
-/**
- * Turn raw `refNames` into display chips. Remote refs are distinguished by a
- * glyph plus a `remote/` text prefix, so the difference survives a monochrome
- * high-contrast theme.
- *
- * Ref names come from git, so `name` is sanitised for display. Comparisons —
- * "is this the current branch?" — run on the raw value, because the raw value is
- * what the host will act on.
- */
-export function chipsFor(refNames: readonly string[], currentBranch: string | null): Chip[] {
-  const chips: Chip[] = [];
-  for (const raw of refNames) {
-    const name = raw.trim();
-    if (name.length === 0 || name === 'HEAD') continue;
-    if (name.startsWith('tag: ')) {
-      chips.push({
-        kind: 'tag',
-        icon: CHIP_ICON.tag,
-        prefix: 'tag ',
-        name: sanitizeGitText(name.slice(5)),
-      });
-      continue;
-    }
-    const isRemote = name.includes('/') && !name.startsWith('refs/heads/');
-    const short = name.replace('refs/heads/', '').replace('refs/remotes/', '');
-    if (isRemote) {
-      chips.push({
-        kind: 'remote',
-        icon: CHIP_ICON.remote,
-        prefix: 'remote ',
-        name: sanitizeGitText(short),
-      });
-      continue;
-    }
-    const isCurrent = currentBranch !== null && short === currentBranch;
-    chips.push({
-      kind: isCurrent ? 'current' : 'local',
-      icon: isCurrent ? CHIP_ICON.current : CHIP_ICON.local,
-      prefix: '',
-      name: sanitizeGitText(short),
-    });
-  }
-  // Current branch first, then locals, remotes, tags.
-  const order: Record<ChipKind, number> = { current: 0, local: 1, remote: 2, tag: 3 };
-  return chips.sort((a, b) => order[a.kind] - order[b.kind]);
-}
-
 /**
  * Accessible name for a commit row.
  *
@@ -206,29 +119,6 @@ export function chipsFor(refNames: readonly string[], currentBranch: string | nu
  * can assert it without a DOM, and so this file has exactly one source for it.
  */
 export { rowLabel };
-
-/** Case-insensitive match over hash, subject, and author. */
-export function matchesSearch(node: GraphNode, needle: string): boolean {
-  if (needle.length === 0) return true;
-  const q = needle.toLowerCase();
-  return (
-    node.hash.toLowerCase().includes(q) ||
-    node.subject.toLowerCase().includes(q) ||
-    node.authorName.toLowerCase().includes(q)
-  );
-}
-
-/** Lane indices to keep for a branch filter, or `null` for "keep everything". */
-export function lanesForFilter(graph: RepoGraph, filter: string): Set<number> | null {
-  const needle = filter.trim().toLowerCase();
-  if (needle.length === 0) return null;
-  const keep = new Set<number>();
-  for (const lane of graph.lanes) {
-    if (lane.ref === undefined) continue;
-    if (lane.ref.toLowerCase().includes(needle)) keep.add(lane.index);
-  }
-  return keep.size === 0 ? null : keep;
-}
 
 export function GraphCanvas({
   graph,
@@ -467,7 +357,12 @@ export function GraphCanvas({
   // Compute branch ribbons per branch name following first-parent branch chains
   const visibleRibbons = useMemo(() => {
     if (graph === null || rows.length === 0) return [];
-    return computeBranchRibbons(rows, graph.edges, band);
+    return computeBranchRibbons(rows, graph.edges, band, {
+      laneHeight: LANE_HEIGHT,
+      rulerHeight: RULER_HEIGHT,
+      capPad: COLUMN_WIDTH / 2,
+      halfHeight: RIBBON_HALF_HEIGHT,
+    });
   }, [graph, rows, band.left, band.right]);
 
   const laneColor = useCallback(
@@ -929,7 +824,7 @@ export function GraphCanvas({
                       className={
                         edge.kind === 'merge' ? 'gc-edge gc-edge--merge' : 'gc-edge gc-edge--direct'
                       }
-                      d={edgePath(edge, fromX, toX)}
+                      d={edgePath(edge, fromX, toX, LANE_HEIGHT, RULER_HEIGHT)}
                       stroke={laneColor(edge.kind === 'merge' ? edge.toLane : edge.fromLane)}
                     />
                   ))}
@@ -1212,216 +1107,6 @@ export function GraphCanvas({
 }
 
 // -------------------------------------------------------------------- pieces
-
-export interface BranchRibbonSegment {
-  key: string;
-  color: string;
-  startX: number;
-  endX: number;
-  trackD: string;
-  topD: string;
-  bottomD: string;
-}
-
-// Half-height of 4px yields an 8px total ribbon height (~1/3 of the 28px node diameter),
-// keeping the ribbon readable as a subtle visual trail without engulfing commit nodes.
-export const RIBBON_HALF_HEIGHT = 4;
-const RIBBON_CAP_PAD = COLUMN_WIDTH / 2;
-
-/**
- * Compute branch ribbon paths along first-parent commit chains.
- * Follows true branch attribution, connecting commits with horizontal or cubic bezier geometry.
- */
-export function computeBranchRibbons(
-  nodes: readonly GraphNode[],
-  edges: readonly GraphEdge[],
-  band: { left: number; right: number },
-  laneHeight: number = LANE_HEIGHT,
-  rulerHeight: number = RULER_HEIGHT,
-): BranchRibbonSegment[] {
-  if (nodes.length === 0) return [];
-
-  const nodeMap = new Map<string, GraphNode>();
-  for (const n of nodes) {
-    nodeMap.set(n.hash, n);
-  }
-
-  // Find direct (first-parent) edges within each branch
-  // child (from) -> parent (to)
-  const firstParentMap = new Map<string, string>();
-  for (const edge of edges) {
-    if (edge.kind !== 'direct') continue;
-    const child = nodeMap.get(edge.from);
-    const parent = nodeMap.get(edge.to);
-    if (!child || !parent) continue;
-    if (child.branchName && child.branchName === parent.branchName) {
-      firstParentMap.set(child.hash, parent.hash);
-    }
-  }
-
-  // Group nodes by branchName and build hash lookup for fast search
-  const branchNodesMap = new Map<string, GraphNode[]>();
-  for (const n of nodes) {
-    if (!n.branchName) continue;
-    let list = branchNodesMap.get(n.branchName);
-    if (!list) {
-      list = [];
-      branchNodesMap.set(n.branchName, list);
-    }
-    list.push(n);
-  }
-
-  const ribbons: BranchRibbonSegment[] = [];
-
-  for (const [branchName, bNodes] of branchNodesMap.entries()) {
-    // Collect all links (pairs) between child and its first parent in this branch
-    const hasOutgoingLink = new Set<string>();
-    const hasIncomingLink = new Set<string>();
-
-    for (const child of bNodes) {
-      const parentHash = firstParentMap.get(child.hash);
-      if (parentHash && nodeMap.has(parentHash)) {
-        const parent = nodeMap.get(parentHash)!;
-        hasOutgoingLink.add(child.hash);
-        hasIncomingLink.add(parent.hash);
-
-        // Compute geometry for this link
-        // child is newer (larger x or chronological order), parent is older (smaller x)
-        // Left node is smaller x, right node is larger x
-        const leftNode = child.x <= parent.x ? child : parent;
-        const rightNode = child.x <= parent.x ? parent : child;
-
-        const startX = leftNode.x;
-        const endX = rightNode.x;
-        const minX = Math.max(0, startX - RIBBON_CAP_PAD);
-        const maxX = endX + RIBBON_CAP_PAD;
-
-        if (segmentIntersectsBand(minX, maxX, band)) {
-          const color = child.branchColor ?? 'var(--vscode-focusBorder)';
-          const y1 = laneY(leftNode.lane, laneHeight, rulerHeight);
-          const y2 = laneY(rightNode.lane, laneHeight, rulerHeight);
-
-          if (y1 === y2) {
-            // Horizontal segment
-            const topD = `M${startX} ${y1 - RIBBON_HALF_HEIGHT}L${endX} ${y2 - RIBBON_HALF_HEIGHT}`;
-            const bottomD = `M${startX} ${y1 + RIBBON_HALF_HEIGHT}L${endX} ${y2 + RIBBON_HALF_HEIGHT}`;
-            const trackD = `M${startX} ${y1 - RIBBON_HALF_HEIGHT}L${endX} ${y2 - RIBBON_HALF_HEIGHT}L${endX} ${y2 + RIBBON_HALF_HEIGHT}L${startX} ${y1 + RIBBON_HALF_HEIGHT}Z`;
-
-            ribbons.push({
-              key: `${branchName}-link-${leftNode.hash}-${rightNode.hash}`,
-              color,
-              startX,
-              endX,
-              trackD,
-              topD,
-              bottomD,
-            });
-          } else {
-            // Curved bezier transition
-            const mid = (startX + endX) / 2;
-            const topD = `M${startX} ${y1 - RIBBON_HALF_HEIGHT}C${mid} ${y1 - RIBBON_HALF_HEIGHT} ${mid} ${y2 - RIBBON_HALF_HEIGHT} ${endX} ${y2 - RIBBON_HALF_HEIGHT}`;
-            const bottomD = `M${startX} ${y1 + RIBBON_HALF_HEIGHT}C${mid} ${y1 + RIBBON_HALF_HEIGHT} ${mid} ${y2 + RIBBON_HALF_HEIGHT} ${endX} ${y2 + RIBBON_HALF_HEIGHT}`;
-            const trackD = `M${startX} ${y1 - RIBBON_HALF_HEIGHT}C${mid} ${y1 - RIBBON_HALF_HEIGHT} ${mid} ${y2 - RIBBON_HALF_HEIGHT} ${endX} ${y2 - RIBBON_HALF_HEIGHT}L${endX} ${y2 + RIBBON_HALF_HEIGHT}C${mid} ${y2 + RIBBON_HALF_HEIGHT} ${mid} ${y1 + RIBBON_HALF_HEIGHT} ${startX} ${y1 + RIBBON_HALF_HEIGHT}Z`;
-
-            ribbons.push({
-              key: `${branchName}-link-${leftNode.hash}-${rightNode.hash}`,
-              color,
-              startX,
-              endX,
-              trackD,
-              topD,
-              bottomD,
-            });
-          }
-        }
-      }
-    }
-
-    // End caps for tips/roots and isolated nodes
-    for (const node of bNodes) {
-      // In chronological horizontal layout (parent on left / smaller x, child on right / larger x):
-      // node is tip if no child calls it parent (hasIncomingLink = false)
-      // node is root if it does not have a parent in this branch (hasOutgoingLink = false)
-      const isTip = !hasIncomingLink.has(node.hash);
-      const isRoot = !hasOutgoingLink.has(node.hash);
-
-      const y = laneY(node.lane, laneHeight, rulerHeight);
-      const color = node.branchColor ?? 'var(--vscode-focusBorder)';
-
-      if (isTip && isRoot) {
-        // Isolated single-node branch
-        const startX = Math.max(0, node.x - RIBBON_CAP_PAD);
-        const endX = node.x + RIBBON_CAP_PAD;
-        if (segmentIntersectsBand(startX, endX, band)) {
-          const topD = `M${startX} ${y - RIBBON_HALF_HEIGHT}L${endX} ${y - RIBBON_HALF_HEIGHT}`;
-          const bottomD = `M${startX} ${y + RIBBON_HALF_HEIGHT}L${endX} ${y + RIBBON_HALF_HEIGHT}`;
-          const trackD = `M${startX} ${y - RIBBON_HALF_HEIGHT}L${endX} ${y - RIBBON_HALF_HEIGHT}L${endX} ${y + RIBBON_HALF_HEIGHT}L${startX} ${y + RIBBON_HALF_HEIGHT}Z`;
-          ribbons.push({
-            key: `${branchName}-iso-${node.hash}`,
-            color,
-            startX,
-            endX,
-            trackD,
-            topD,
-            bottomD,
-          });
-        }
-      } else {
-        if (isTip) {
-          // Cap on right side of tip node (or whichever direction if inverted, but node.x + pad covers the tip side)
-          const startX = node.x;
-          const endX = node.x + RIBBON_CAP_PAD;
-          if (segmentIntersectsBand(startX, endX, band)) {
-            const topD = `M${startX} ${y - RIBBON_HALF_HEIGHT}L${endX} ${y - RIBBON_HALF_HEIGHT}`;
-            const bottomD = `M${startX} ${y + RIBBON_HALF_HEIGHT}L${endX} ${y + RIBBON_HALF_HEIGHT}`;
-            const trackD = `M${startX} ${y - RIBBON_HALF_HEIGHT}L${endX} ${y - RIBBON_HALF_HEIGHT}L${endX} ${y + RIBBON_HALF_HEIGHT}L${startX} ${y + RIBBON_HALF_HEIGHT}Z`;
-            ribbons.push({
-              key: `${branchName}-tip-${node.hash}`,
-              color,
-              startX,
-              endX,
-              trackD,
-              topD,
-              bottomD,
-            });
-          }
-        }
-        if (isRoot) {
-          // Cap on left side of root node
-          const startX = Math.max(0, node.x - RIBBON_CAP_PAD);
-          const endX = node.x;
-          if (segmentIntersectsBand(startX, endX, band)) {
-            const topD = `M${startX} ${y - RIBBON_HALF_HEIGHT}L${endX} ${y - RIBBON_HALF_HEIGHT}`;
-            const bottomD = `M${startX} ${y + RIBBON_HALF_HEIGHT}L${endX} ${y + RIBBON_HALF_HEIGHT}`;
-            const trackD = `M${startX} ${y - RIBBON_HALF_HEIGHT}L${endX} ${y - RIBBON_HALF_HEIGHT}L${endX} ${y + RIBBON_HALF_HEIGHT}L${startX} ${y + RIBBON_HALF_HEIGHT}Z`;
-            ribbons.push({
-              key: `${branchName}-root-${node.hash}`,
-              color,
-              startX,
-              endX,
-              trackD,
-              topD,
-              bottomD,
-            });
-          }
-        }
-      }
-    }
-  }
-
-  return ribbons;
-}
-
-/**
- * Edge geometry in horizontal layout: fromX/toX horizontal span, fromY/toY vertical lane centres.
- */
-export function edgePath(edge: GraphEdge, fromX: number, toX: number): string {
-  const y1 = laneY(edge.fromLane, LANE_HEIGHT, RULER_HEIGHT);
-  const y2 = laneY(edge.toLane, LANE_HEIGHT, RULER_HEIGHT);
-  if (y1 === y2) return `M${fromX} ${y1}L${toX} ${y2}`;
-  const mid = (fromX + toX) / 2;
-  return `M${fromX} ${y1}C${mid} ${y1} ${mid} ${y2} ${toX} ${y2}`;
-}
 
 function NodeMark({
   node,

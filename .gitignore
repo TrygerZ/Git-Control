@@ -10,4 +10,3 @@ dist/
 .vscode-test/
 .playwright-mcp/
 scripts/
-.codegraph/

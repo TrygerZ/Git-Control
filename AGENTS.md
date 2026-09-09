@@ -124,11 +124,14 @@ Encodes module purity boundaries (pure logic vs I/O) and execution trust boundar
 |---|---|
 | `src/extension.ts` | Extension lifecycle, command registrations, secret management, webview provider |
 | `src/git.ts` | Git execution engine, process spawning (`shell: false`), mutex locks, output parsing |
+| `src/gitExec.ts` | Process execution layer for GitRunner: spawn (`shell: false`), executable resolution, output caps, timeout, stderr streaming, and per-runner mutex |
 | `src/gitParse.ts` | Parsers for git log, numstat, status, refs, and diff outputs |
 | `src/validation.ts` | Pure input sanitizers for hashes, branch names, paths, and remote names |
 | `src/guard.ts` | Pure safety policy engine checking dirty/conflict/stale states before execution |
 | `src/bridge.ts` | Host-side message router, error mapping, idempotency cache, guard enforcement |
+| `src/bridgePure.ts` | Pure request parsing and validation helpers for bridge (`parseRequest`, `idempotencyKeyOf`, `shouldRemember`, `validateAction`, primitive type guards) |
 | `src/messages.ts` | Type definitions for RPC messages, DTOs, and error codes |
+| `src/errorBody.ts` | Pure shared transport fallback (`unknownErrorBody`) for host and webview without coupling typed error handling |
 | `src/repository.ts` | Repository state cache, commit graph layout invocation, commit pagination |
 | `src/watcher.ts` | Dual-source file watcher (`vscode.workspace` + `fs.watch` for `.git`) with 500ms debounce |
 | `src/logger.ts` | Diagnostic logger with regex credential redaction |
@@ -141,9 +144,13 @@ Encodes module purity boundaries (pure logic vs I/O) and execution trust boundar
 | `src/webview/main.tsx` | Webview entry point and React root mount |
 | `src/webview/store.ts` | Zustand store managing graph state, pending changes, selections, and modals |
 | `src/webview/bridge.ts` | Webview-side RPC client dispatching requests to VS Code host |
-| `src/webview/i18n.ts` | BCP-47 catalog (`en` and `id`) for webview localization |
+| `src/webview/i18n.ts` | Webview localization index exporting `Catalog` type, `catalogs`, `t`, `activeLang`, and `setActiveLang` |
+| `src/webview/i18n.en.ts` | English localization catalog and compile-time source of truth for the `Catalog` type |
+| `src/webview/i18n.id.ts` | Indonesian localization catalog implementing the `Catalog` type |
 | `src/webview/format.ts` | Pure presentation helpers and formatting functions (strings sourced from i18n catalog) |
 | `src/webview/viewport.ts` | Pure viewport and virtualization maths for canvas (world vs screen coordinate spaces) |
+| `src/webview/graphQuery.ts` | Pure graph query helpers extracted from GraphCanvas (`computeStaggerMap`, `chipsFor`, `matchesSearch`, `lanesForFilter`) |
+| `src/webview/ribbon.ts` | Pure branch ribbon geometry and edge path generation (`computeBranchRibbons`, `edgePath`) consumed by GraphCanvas |
 | `src/webview/tree.ts` | Pure flat change paths to collapsible tree and tri-state selection maths |
 | `src/webview/iconFontStyles.ts` | Nonce-bearing `<style>` / adopted stylesheet `@font-face` injector (strict CSP compliant) |
 | `src/webview/ui.tsx` | Shared webview UI primitives (skeletons, banners, icons, error boundary) |

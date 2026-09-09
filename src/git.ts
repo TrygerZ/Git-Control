@@ -11,10 +11,16 @@
  *  - No `vscode` import: the git executable path is injected so this module
  *    stays unit-testable.
  */
-import { spawn } from 'node:child_process';
-import * as fsSync from 'node:fs';
-import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
+import {
+  GitExecutionLayer,
+  GitError,
+  type GitResult,
+  type GitRunnerOptions,
+  type RunOptions,
+  pathExists,
+  resolveGitExecutable,
+} from './gitExec';
 import {
   LOG_FORMAT,
   REFS_FORMAT,
@@ -34,6 +40,10 @@ import {
   type ParsedStatusEntry,
 } from './gitParse';
 import {
+  assertValidBranchName,
+  assertValidHash,
+  assertValidRepoPaths,
+  buildRepoPathspecs,
   sanitizeRefArg,
   validateBranchName,
   validateCommitMessage,
@@ -45,153 +55,11 @@ import {
   validateStashMessage,
 } from './validation';
 
-export type GitErrorCode =
-  | 'GIT_FAILED'
-  | 'GIT_TIMEOUT'
-  | 'GIT_SPAWN_FAILED'
-  | 'GIT_OUTPUT_TOO_LARGE'
-  | 'REPOSITORY_LOCKED'
-  | 'VALIDATION_ERROR';
+export type { GitErrorCode, GitResult, GitRunnerOptions, RunOptions } from './gitExec';
+export { GitError, resolveGitExecutable } from './gitExec';
 
 export type OperationState = 'idle' | 'merge' | 'rebase' | 'cherry-pick' | 'revert' | 'bisect';
 
-export interface GitResult {
-  stdout: string;
-  stderr: string;
-  code: number;
-  /**
-   * `true` when stdout was cut off at `maxStdoutBytes` because the caller opted
-   * into truncation. Never `true` unless `truncateStdout` was requested.
-   */
-  truncated?: boolean;
-}
-
-export interface RunOptions {
-  input?: string;
-  timeoutMs?: number;
-  allowedExitCodes?: number[];
-  /** Called with each complete stderr line. Git reports progress on stderr. */
-  onStderrLine?: (line: string) => void;
-  /**
-   * Stop accumulating stdout past this many bytes. Defaults to
-   * {@link DEFAULT_MAX_STDOUT_BYTES}.
-   */
-  maxStdoutBytes?: number;
-  /**
-   * What to do at the cap. `false` (the default) kills git and rejects with
-   * `GIT_OUTPUT_TOO_LARGE`, because a caller that asked for a file's content
-   * cannot use half of it — a truncated blob would be shown to the user as if it
-   * were the file. `true` resolves with what arrived plus `truncated: true`, which
-   * is only safe where the output is a record-per-line summary the caller already
-   * treats as possibly-partial, e.g. `--numstat`.
-   */
-  truncateStdout?: boolean;
-}
-
-/**
- * Cached absolute path to git resolved from PATH so lookup occurs once.
- * Map keyed by PATH string so tests manipulating PATH get correct resolution.
- */
-const resolvedGitPathCache = new Map<string, string | null>();
-
-/**
- * Resolve the git executable to an absolute path.
- *
- * Requirements:
- * - If candidate is non-empty, it MUST be an absolute path; relative paths are rejected.
- * - If candidate is empty, search system PATH for git executable.
- * - On Windows: respect PATHEXT and NEVER include relative paths or '.' / CWD.
- * - On POSIX: resolve via PATH and reject relative candidates.
- */
-export function resolveGitExecutable(candidate?: string, env: { PATH?: string; PATHEXT?: string } = process.env): string | null {
-  if (typeof candidate === 'string' && candidate.trim().length > 0) {
-    const trimmed = candidate.trim();
-    if (trimmed !== 'git') {
-      if (!path.isAbsolute(trimmed)) {
-        return null;
-      }
-      try {
-        if (fsSync.existsSync(trimmed) && fsSync.statSync(trimmed).isFile()) {
-          return trimmed;
-        }
-      } catch {
-        // Not accessible or not a file.
-      }
-      return null;
-    }
-  }
-
-  const isWindows = process.platform === 'win32';
-  const pathEnv = env.PATH ?? '';
-  const cacheKey = `${isWindows ? 'win32' : 'posix'}|${pathEnv}|${env.PATHEXT ?? ''}`;
-  if (resolvedGitPathCache.has(cacheKey)) {
-    return resolvedGitPathCache.get(cacheKey)!;
-  }
-
-  const rawEntries = pathEnv.split(isWindows ? ';' : ':');
-  const extensions = isWindows
-    ? (env.PATHEXT ?? '.COM;.EXE;.BAT;.CMD').split(';').map((e) => e.trim().toLowerCase()).filter(Boolean)
-    : [''];
-
-  for (const raw of rawEntries) {
-    const entry = raw.trim();
-    if (!entry || !path.isAbsolute(entry)) continue;
-
-    if (isWindows) {
-      for (const ext of extensions) {
-        const full = path.join(entry, `git${ext}`);
-        try {
-          if (fsSync.existsSync(full) && fsSync.statSync(full).isFile()) {
-            resolvedGitPathCache.set(cacheKey, full);
-            return full;
-          }
-        } catch {}
-      }
-    } else {
-      const full = path.join(entry, 'git');
-      try {
-        if (fsSync.existsSync(full) && fsSync.statSync(full).isFile()) {
-          resolvedGitPathCache.set(cacheKey, full);
-          return full;
-        }
-      } catch {}
-    }
-  }
-
-  resolvedGitPathCache.set(cacheKey, null);
-  return null;
-}
-
-export interface GitRunnerOptions {
-  gitPath: string;
-  cwd: string;
-  logger?: (line: string) => void;
-}
-
-/** Typed failure carrying enough context for the UI to render an actionable error. */
-export class GitError extends Error {
-  readonly code: GitErrorCode;
-  readonly exitCode: number | null;
-  readonly stderr: string;
-  readonly args: readonly string[];
-
-  constructor(params: {
-    code: GitErrorCode;
-    message: string;
-    exitCode?: number | null;
-    stderr?: string;
-    args?: readonly string[];
-  }) {
-    super(params.message);
-    this.name = 'GitError';
-    this.code = params.code;
-    this.exitCode = params.exitCode ?? null;
-    this.stderr = params.stderr ?? '';
-    this.args = params.args ?? [];
-  }
-}
-
-const DEFAULT_TIMEOUT_MS = 60_000;
 /**
  * Cap on accumulated stdout per invocation, 64 MiB.
  *
@@ -226,172 +94,16 @@ export const MAX_BLOB_BYTES = 5 * 1024 * 1024;
 export const MAX_NUMSTAT_BYTES = 16 * 1024 * 1024;
 
 export class GitRunner {
-  private readonly gitPath: string;
-  private readonly cwd: string;
-  private readonly logger: (line: string) => void;
-  /** Promise chain acting as a mutex so only one mutation runs at a time. */
-  private mutationQueue: Promise<unknown> = Promise.resolve();
+  private readonly exec: GitExecutionLayer;
   private gitDirCache: string | undefined;
-  /** Number of queued-or-running exclusive operations. */
-  private pending = 0;
-  private readonly busyListeners = new Set<(busy: boolean) => void>();
 
   constructor(options: GitRunnerOptions) {
-    const candidate = options.gitPath.trim();
-    if (candidate.length > 0) {
-      this.gitPath = resolveGitExecutable(candidate) ?? candidate;
-    } else {
-      this.gitPath = resolveGitExecutable() ?? 'git';
-    }
-    this.cwd = options.cwd;
-    this.logger = options.logger ?? ((): void => undefined);
+    this.exec = new GitExecutionLayer(options);
   }
 
   /** Spawn git. Reads may run concurrently; use {@link runExclusive} to mutate. */
-  async run(args: string[], opts: RunOptions = {}): Promise<GitResult> {
-    const timeoutMs = opts.timeoutMs ?? DEFAULT_TIMEOUT_MS;
-    const allowed = opts.allowedExitCodes ?? [0];
-    const maxStdout = opts.maxStdoutBytes ?? DEFAULT_MAX_STDOUT_BYTES;
-    const truncateStdout = opts.truncateStdout === true;
-    this.logger(`git ${args.join(' ')}`);
-
-    if (!path.isAbsolute(this.gitPath)) {
-      throw new GitError({
-        code: 'GIT_SPAWN_FAILED',
-        message: `Git executable path must be absolute to prevent CWD hijacking: ${this.gitPath}`,
-        args,
-      });
-    }
-
-    return new Promise<GitResult>((resolve, reject) => {
-      const child = spawn(this.gitPath, args, {
-        cwd: this.cwd,
-        shell: false,
-        windowsHide: true,
-        env: {
-          ...process.env,
-          GIT_OPTIONAL_LOCKS: '0',
-          LC_ALL: 'C',
-          NoDefaultCurrentDirectoryInExePath: '1',
-        },
-      });
-
-      let stdout = '';
-      let stderr = '';
-      let timedOut = false;
-      let stdoutBytes = 0;
-      let stderrBytes = 0;
-      /** Set once stdout hit the cap; further chunks are dropped. */
-      let overflowed = false;
-
-      const timer = setTimeout(() => {
-        timedOut = true;
-        // On Windows `kill` terminates the process; git children are short-lived.
-        child.kill('SIGKILL');
-      }, timeoutMs);
-
-      child.stdout.setEncoding('utf8');
-      child.stderr.setEncoding('utf8');
-      child.stdout.on('data', (chunk: string) => {
-        if (overflowed) return;
-        const bytes = Buffer.byteLength(chunk, 'utf8');
-        if (stdoutBytes + bytes > maxStdout) {
-          overflowed = true;
-          if (truncateStdout) {
-            // Keep the prefix that fits. Sliced on a byte boundary, so the final
-            // character may be cut in half — harmless for the only truncatable
-            // caller, `--numstat`, whose parser discards an incomplete last line.
-            const room = maxStdout - stdoutBytes;
-            if (room > 0) {
-              stdout += Buffer.from(chunk, 'utf8').subarray(0, room).toString('utf8');
-            }
-          }
-          // Kill rather than keep buffering: continuing to accumulate is exactly
-          // the DoS, and the remainder cannot help either caller.
-          child.kill('SIGKILL');
-          return;
-        }
-        stdoutBytes += bytes;
-        stdout += chunk;
-      });
-      // Git writes progress to stderr; forward complete lines as they arrive.
-      let stderrPending = '';
-      child.stderr.on('data', (chunk: string) => {
-        stderrBytes += Buffer.byteLength(chunk, 'utf8');
-        // Keep the head: the first lines carry the reason, the tail is progress.
-        if (stderrBytes <= MAX_STDERR_BYTES) stderr += chunk;
-        if (opts.onStderrLine === undefined) return;
-        stderrPending += chunk;
-        const lines = stderrPending.split(/\r?\n|\r/);
-        stderrPending = lines.pop() ?? '';
-        for (const line of lines) {
-          if (line.trim().length > 0) opts.onStderrLine(line.trim());
-        }
-      });
-
-      child.on('error', (err) => {
-        clearTimeout(timer);
-        reject(
-          new GitError({
-            code: 'GIT_SPAWN_FAILED',
-            message: `Failed to start git: ${err.message}`,
-            args,
-          }),
-        );
-      });
-
-      child.on('close', (code) => {
-        clearTimeout(timer);
-        // Overflow is checked before the timeout and the exit code: the SIGKILL
-        // that produced them is our own, so its exit status says nothing.
-        if (overflowed && !truncateStdout) {
-          reject(
-            new GitError({
-              code: 'GIT_OUTPUT_TOO_LARGE',
-              message: `git produced more than ${maxStdout} bytes on stdout`,
-              stderr,
-              args,
-            }),
-          );
-          return;
-        }
-        if (overflowed) {
-          resolve({ stdout, stderr, code: 0, truncated: true });
-          return;
-        }
-        if (timedOut) {
-          reject(
-            new GitError({
-              code: 'GIT_TIMEOUT',
-              message: `git timed out after ${timeoutMs}ms`,
-              stderr,
-              args,
-            }),
-          );
-          return;
-        }
-        const exitCode = code ?? -1;
-        if (!allowed.includes(exitCode)) {
-          reject(
-            new GitError({
-              code: 'GIT_FAILED',
-              message: stderr.trim().length > 0 ? stderr.trim() : `git exited with code ${exitCode}`,
-              exitCode,
-              stderr,
-              args,
-            }),
-          );
-          return;
-        }
-        resolve({ stdout, stderr, code: exitCode });
-      });
-
-      if (opts.input !== undefined) {
-        child.stdin.end(opts.input, 'utf8');
-      } else {
-        child.stdin.end();
-      }
-    });
+  run(args: string[], opts: RunOptions = {}): Promise<GitResult> {
+    return this.exec.run(args, opts);
   }
 
   /**
@@ -409,16 +121,7 @@ export class GitRunner {
    * are safe — they never take the lock.
    */
   async runExclusive<T>(fn: () => Promise<T>, opts: { precheck?: () => Promise<void> } = {}): Promise<T> {
-    this.enter();
-    const guarded = async (): Promise<T> => {
-      await this.assertNotLocked();
-      if (opts.precheck !== undefined) await opts.precheck();
-      return fn();
-    };
-    const run = this.mutationQueue.then(guarded, guarded);
-    // Keep the chain alive even when a mutation rejects.
-    this.mutationQueue = run.catch(() => undefined);
-    return run.finally(() => this.leave());
+    return this.exec.runExclusive(fn, () => this.assertNotLocked(), opts.precheck);
   }
 
   /**
@@ -427,34 +130,11 @@ export class GitRunner {
    * @returns unsubscribe function
    */
   onBusyChange(listener: (busy: boolean) => void): () => void {
-    this.busyListeners.add(listener);
-    return () => {
-      this.busyListeners.delete(listener);
-    };
+    return this.exec.onBusyChange(listener);
   }
 
   get busy(): boolean {
-    return this.pending > 0;
-  }
-
-  private enter(): void {
-    this.pending += 1;
-    if (this.pending === 1) this.emitBusy(true);
-  }
-
-  private leave(): void {
-    this.pending -= 1;
-    if (this.pending === 0) this.emitBusy(false);
-  }
-
-  private emitBusy(busy: boolean): void {
-    for (const listener of this.busyListeners) {
-      try {
-        listener(busy);
-      } catch {
-        // A misbehaving listener must not break the mutation queue.
-      }
-    }
+    return this.exec.busy;
   }
 
   /** Throw REPOSITORY_LOCKED when another git process holds the index. */
@@ -940,27 +620,24 @@ export class GitRunner {
   // ------------------------------------------------------------- guards
 
   private assertBranch(name: string): void {
-    if (!validateBranchName(name)) {
+    assertValidBranchName(name, () => {
       throw new GitError({ code: 'VALIDATION_ERROR', message: `Invalid branch name: ${name}` });
-    }
+    });
   }
 
   private assertHash(hash: string): void {
-    if (!validateHash(hash)) {
+    assertValidHash(hash, () => {
       throw new GitError({ code: 'VALIDATION_ERROR', message: `Invalid commit hash: ${hash}` });
-    }
+    });
   }
 
-  private assertPaths(paths: string[]): string[] {
-    if (paths.length === 0) {
-      throw new GitError({ code: 'VALIDATION_ERROR', message: 'No paths supplied.' });
-    }
-    for (const p of paths) {
-      if (!validateRepoRelativePath(p)) {
-        throw new GitError({ code: 'VALIDATION_ERROR', message: `Invalid repository path: ${p}` });
+  private pathspecs(paths: string[]): string[] {
+    return buildRepoPathspecs(paths, (path) => {
+      if (path === undefined) {
+        throw new GitError({ code: 'VALIDATION_ERROR', message: 'No paths supplied.' });
       }
-    }
-    return paths;
+      throw new GitError({ code: 'VALIDATION_ERROR', message: `Invalid repository path: ${path}` });
+    });
   }
 
   /**
@@ -982,18 +659,5 @@ export class GitRunner {
    *
    * Both magics need git 1.9+ (2013); the extension already requires far newer.
    */
-  private pathspecs(paths: string[]): string[] {
-    // Forward slashes only: pathspecs use git's own syntax, not the platform's.
-    return this.assertPaths(paths).map((p) => `:(top,literal)${p.replace(/\\/g, '/')}`);
-  }
 }
 
-/** `fs.access` wrapper: existence check without throwing. */
-async function pathExists(target: string): Promise<boolean> {
-  try {
-    await fs.stat(target);
-    return true;
-  } catch {
-    return false;
-  }
-}
