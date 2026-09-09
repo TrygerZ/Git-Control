@@ -714,7 +714,7 @@ export function gitCommandOf(action: GitActionRequest): string {
       return `git merge ${action.noFf === true ? '--no-ff ' : ''}${s(action.branch)}`;
     case 'merge-into': {
       const formattedSource = refOrShortHash(action.source);
-      return `git switch ${s(action.target)} && git merge ${formattedSource}`;
+      return `git switch ${s(action.target)} && git merge ${action.noFf === true ? '--no-ff ' : ''}${formattedSource}`;
     }
     case 'revert':
       return `git revert --no-edit ${shortHash(action.hash)}`;

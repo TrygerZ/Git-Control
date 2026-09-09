@@ -31,6 +31,20 @@ export function mergeActionPayload(
   };
 }
 
+/** Pure helper calculating git merge-into action payload. */
+export function mergeIntoActionPayload(
+  target: string,
+  source: string,
+  noFf: boolean,
+): { action: 'merge-into'; target: string; source: string; noFf?: boolean } {
+  return {
+    action: 'merge-into',
+    target,
+    source,
+    ...(noFf ? { noFf: true } : {}),
+  };
+}
+
 export function MergeDialog({
   branch,
   currentBranch,

@@ -556,3 +556,25 @@ test('GitRunner rejects relative gitPath and passes NoDefaultCurrentDirectoryInE
   );
 });
 
+test('mergeInto creates a merge commit when noFf is true', async (t) => {
+  const dir = await makeRepo();
+  t.after(() => cleanup(dir));
+  const git = new GitRunner({ gitPath: 'git', cwd: dir });
+
+  await git.createBranch('side', 'main');
+  await fs.writeFile(path.join(dir, 'side.txt'), 'side\n', 'utf8');
+  await git.stage(['side.txt']);
+  const sideCommit = await git.commit('side commit');
+
+  await git.mergeInto('main', 'side', { noFf: true });
+
+  const { branch } = await git.currentBranch();
+  assert.equal(branch, 'main');
+
+  const head = await git.headHash();
+  assert.ok(head !== null);
+  const meta = await git.commitMeta(head);
+  assert.equal(meta?.parents.length, 2, 'must have two parents');
+  assert.ok(meta?.parents.includes(sideCommit as string));
+});
+

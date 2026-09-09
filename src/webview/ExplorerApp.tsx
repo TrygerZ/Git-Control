@@ -9,7 +9,7 @@ import { GraphCanvas } from './GraphCanvas';
 import { GuardDialog } from './GuardDialog';
 import { Inspector } from './Inspector';
 import { Contributors } from './Contributors';
-import { MergeDialog, mergeActionPayload } from './MergeDialog';
+import { MergeDialog, mergeActionPayload, mergeIntoActionPayload } from './MergeDialog';
 import { PromptDialog } from './PromptDialog';
 import { ToastRegion } from './Toast';
 import { bridge, loadState } from './bridge';
@@ -239,14 +239,12 @@ export function ExplorerApp(): JSX.Element {
           cancelLabel={strings.guard.cancelButton}
           options={mergeIntoTarget.targets}
           initialValue={mergeIntoTarget.targets[0]}
-          onSubmit={(target) => {
+          checkboxLabel={strings.mergeDialog.noFfLabel}
+          checkboxHint={strings.mergeDialog.noFfHint}
+          onSubmit={(target, noFf) => {
             const { source } = mergeIntoTarget;
             setMergeIntoTarget(null);
-            void runAction({
-              action: 'merge-into',
-              target,
-              source,
-            });
+            void runAction(mergeIntoActionPayload(target, source, !!noFf));
           }}
           onCancel={() => setMergeIntoTarget(null)}
         />

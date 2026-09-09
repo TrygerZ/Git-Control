@@ -2,7 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { mergeActionPayload } from '../src/webview/MergeDialog';
+import { mergeActionPayload, mergeIntoActionPayload } from '../src/webview/MergeDialog';
+import { gitCommandOf } from '../src/webview/format';
 import { t } from '../src/webview/i18n';
 
 test('mergeActionPayload: unchecked produces default fast-forward payload without noFf', () => {
@@ -66,4 +67,45 @@ test('MergeDialog source contract: implements required modal accessibility attri
   assert.ok(dialogSource.includes("event.key === 'Escape'"), 'must handle Escape to cancel');
   assert.ok(!dialogSource.includes('\u2014'), 'zero em-dash in source');
   assert.ok(!dialogSource.includes('\u2013'), 'zero en-dash in source');
+});
+
+test('mergeIntoActionPayload: unchecked produces default fast-forward payload without noFf', () => {
+  const payload = mergeIntoActionPayload('main', 'feature', false);
+  assert.deepEqual(payload, { action: 'merge-into', target: 'main', source: 'feature' });
+  assert.equal('noFf' in payload, false);
+});
+
+test('mergeIntoActionPayload: checked produces payload with noFf: true', () => {
+  const payload = mergeIntoActionPayload('main', 'feature', true);
+  assert.deepEqual(payload, { action: 'merge-into', target: 'main', source: 'feature', noFf: true });
+});
+
+test('gitCommandOf: merge-into renders --no-ff flag when noFf is true', () => {
+  const unchecked = gitCommandOf({ action: 'merge-into', target: 'main', source: 'feature' });
+  assert.equal(unchecked, 'git switch main && git merge feature');
+
+  const checked = gitCommandOf({ action: 'merge-into', target: 'main', source: 'feature', noFf: true });
+  assert.equal(checked, 'git switch main && git merge --no-ff feature');
+
+  const hashSource = gitCommandOf({
+    action: 'merge-into',
+    target: 'main',
+    source: '1234567890abcdef1234567890abcdef12345678',
+    noFf: true,
+  });
+  assert.equal(hashSource, 'git switch main && git merge --no-ff 1234567');
+});
+
+test('PromptDialog source contract: implements optional checkbox with accessibility attributes', () => {
+  const promptSource = fs.readFileSync(
+    path.join(__dirname, '..', '..', 'src', 'webview', 'PromptDialog.tsx'),
+    'utf8',
+  );
+
+  assert.ok(promptSource.includes('role="dialog"'), 'must declare role="dialog"');
+  assert.ok(promptSource.includes('aria-modal="true"'), 'must declare aria-modal="true"');
+  assert.ok(promptSource.includes('type="checkbox"'), 'must contain merge commit checkbox');
+  assert.ok(promptSource.includes('gc-checkbox'), 'must use standard checkbox class');
+  assert.ok(!promptSource.includes('\u2014'), 'zero em-dash in source');
+  assert.ok(!promptSource.includes('\u2013'), 'zero en-dash in source');
 });
