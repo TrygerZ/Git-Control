@@ -19,6 +19,17 @@ import { SafetyGuard, DEFAULT_STALENESS_MS, type GuardAction, type GuardSnapshot
 import { hostText } from './hostText';
 import { redact, type Logger } from './logger';
 import { parseRemoteUrl, stripCredentials } from './remoteUrl';
+import {
+  idempotencyKeyOf,
+  isNonNegativeInt,
+  isPositiveInt,
+  isSlug,
+  messageOf,
+  parseRequest,
+  shouldRemember,
+  validateAction as validateActionPure,
+  validateEmptyPayload as validateEmptyPayloadPure,
+} from './bridgePure';
 import type { RepositoryService } from './repository';
 import {
   validateBranchName,
@@ -1047,21 +1058,8 @@ function stamp(id: string, outcome: Outcome): Response {
 }
 
 /** Structurally validate the envelope. Payload shape is checked per handler. */
-function parseRequest(raw: unknown): Request | null {
-  if (typeof raw !== 'object' || raw === null) return null;
-  const candidate = raw as { id?: unknown; kind?: unknown; payload?: unknown };
-  if (typeof candidate.id !== 'string' || candidate.id.length === 0) return null;
-  if (typeof candidate.kind !== 'string') return null;
-  if (typeof candidate.payload !== 'object' || candidate.payload === null) return null;
-  return {
-    id: candidate.id,
-    kind: candidate.kind as RequestKind,
-    payload: candidate.payload as Request['payload'],
-  };
-}
-
 function validateEmptyPayload(payload: object, msg: string = 'Invalid request.'): void {
-  if (Object.keys(payload).length > 0) fail(400, 'VALIDATION_ERROR', msg, { detail: 'payload' });
+  validateEmptyPayloadPure(payload, (detail) => fail(400, 'VALIDATION_ERROR', msg, { detail }));
 }
 
 const MUTATION_KINDS = new Set<string>(['actions/stage', 'actions/commit', 'actions/git']);
@@ -1078,7 +1076,6 @@ const MUTATION_KINDS = new Set<string>(['actions/stage', 'actions/commit', 'acti
  * not remembered; the guard re-runs on every attempt, which is also the only way it
  * can see the repository as it is at that moment.
  */
-const RETRYABLE_CODES = new Set<ErrorCode>(['CONFIRMATION_REQUIRED', 'DIRTY_TREE', 'STALE_STATUS']);
 
 /**
  * Whether an outcome may be replayed for a repeated idempotency key.
@@ -1090,67 +1087,9 @@ const RETRYABLE_CODES = new Set<ErrorCode>(['CONFIRMATION_REQUIRED', 'DIRTY_TREE
  * excluded, because they are answers to an incomplete request rather than outcomes
  * of an attempt.
  */
-function shouldRemember(outcome: Outcome): boolean {
-  if (outcome.ok) return true;
-  return !RETRYABLE_CODES.has(outcome.error.code);
-}
-
-/** Idempotency applies to mutations only; reads are cheap and always fresh. */
-function idempotencyKeyOf(request: Request): string | null {
-  if (!MUTATION_KINDS.has(request.kind)) return null;
-  const payload = request.payload as { idempotencyKey?: unknown };
-  if (typeof payload.idempotencyKey !== 'string' || payload.idempotencyKey.length === 0) return null;
-  return `${request.kind}:${payload.idempotencyKey}`;
-}
-
 /** Per-action argument validation before anything reaches git. */
 function validateAction(action: GitActionPayload, msg: string = 'Invalid request.'): void {
-  const bad = (detail: string): never =>
-    fail(400, 'VALIDATION_ERROR', msg, { detail });
-
-  switch (action.action) {
-    case 'checkout-branch':
-      if (!validateBranchName(action.branch)) bad('branch');
-      return;
-    case 'checkout-commit':
-    case 'revert':
-    case 'reset-soft':
-    case 'reset-hard':
-      if (!validateHash(action.hash)) bad('hash');
-      return;
-    case 'create-branch':
-      if (!validateBranchName(action.name)) bad('name');
-      if (!validateBranchName(action.startPoint) && !validateHash(action.startPoint)) bad('startPoint');
-      return;
-    case 'merge':
-      if (!validateBranchName(action.branch)) bad('branch');
-      return;
-    case 'merge-into':
-      if (!validateBranchName(action.target)) bad('target');
-      if (!validateBranchName(action.source) && !validateHash(action.source)) bad('source');
-      return;
-    case 'push':
-      if (!validateRemoteName(action.remote)) bad('remote');
-      if (!validateBranchName(action.branch)) bad('branch');
-      return;
-    case 'push-up-to':
-      if (!validateRemoteName(action.remote)) bad('remote');
-      if (!validateBranchName(action.branch)) bad('branch');
-      if (!validateHash(action.hash)) bad('hash');
-      return;
-    case 'fetch':
-      if (action.remote !== undefined && !validateRemoteName(action.remote)) bad('remote');
-      return;
-    case 'stash':
-      if (typeof action.message !== 'string') bad('message');
-      return;
-    case 'stash-pop':
-    case 'merge-continue':
-    case 'merge-abort':
-      return;
-    default:
-      bad('action');
-  }
+  validateActionPure(action, (detail) => fail(400, 'VALIDATION_ERROR', msg, { detail }));
 }
 
 // ------------------------------------------------------------ error mapping
@@ -1269,20 +1208,4 @@ function fromGitFailure(err: GitError, lang: Lang = 'en'): ErrorBody {
   return { status: 500, code: 'SERVER_ERROR', message: redact(err.message), detail: stderr.trim() };
 }
 
-function messageOf(err: unknown): string {
-  return err instanceof Error ? err.message : String(err);
-}
-
-function isPositiveInt(value: unknown): boolean {
-  return typeof value === 'number' && Number.isInteger(value) && value > 0;
-}
-
-function isNonNegativeInt(value: unknown): boolean {
-  return typeof value === 'number' && Number.isInteger(value) && value >= 0;
-}
-
-/** GitHub owner/repo segment: no slashes, no dots-only, no option-like prefix. */
-function isSlug(value: unknown): boolean {
-  return typeof value === 'string' && value.length > 0 && value.length <= 100 && /^[A-Za-z0-9._-]+$/.test(value);
-}
 
