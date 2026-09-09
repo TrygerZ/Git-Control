@@ -808,7 +808,9 @@ export class MessageBridge {
           ...(action.noFf === undefined ? {} : { noFf: action.noFf }),
         });
       case 'merge-into':
-        return git.mergeInto(action.target, action.source);
+        return git.mergeInto(action.target, action.source, {
+          ...(action.noFf === undefined ? {} : { noFf: action.noFf }),
+        });
       case 'revert':
         return git.revert(action.hash);
       case 'reset-soft':

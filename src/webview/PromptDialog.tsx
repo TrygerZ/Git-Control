@@ -26,8 +26,10 @@ export interface PromptDialogProps {
   placeholder?: string;
   hint?: string;
   options?: readonly string[];
+  checkboxLabel?: string;
+  checkboxHint?: string;
   validate?: (value: string) => string | null;
-  onSubmit: (value: string) => void;
+  onSubmit: (value: string, checkboxChecked?: boolean) => void;
   onCancel: () => void;
 }
 
@@ -40,11 +42,14 @@ export function PromptDialog({
   placeholder,
   hint,
   options,
+  checkboxLabel,
+  checkboxHint,
   validate,
   onSubmit,
   onCancel,
 }: PromptDialogProps): JSX.Element {
   const [value, setValue] = useState(initialValue);
+  const [checkboxChecked, setCheckboxChecked] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const dialogRef = useRef<HTMLDivElement>(null);
   const controlRef = useRef<HTMLInputElement | HTMLSelectElement | null>(null);
@@ -99,7 +104,7 @@ export function PromptDialog({
         return;
       }
     }
-    onSubmit(trimmed);
+    onSubmit(trimmed, checkboxChecked);
   };
 
   const describedBy = [
@@ -175,6 +180,22 @@ export function PromptDialog({
               <span aria-hidden="true">!</span>
               <span>{error}</span>
             </p>
+          )}
+
+          {checkboxLabel !== undefined && (
+            <label className="gc-checkbox">
+              <input
+                type="checkbox"
+                checked={checkboxChecked}
+                onChange={(e) => setCheckboxChecked(e.target.checked)}
+              />
+              <span className="gc-checkbox__text">
+                <span>{checkboxLabel}</span>
+                {checkboxHint !== undefined && (
+                  <span className="gc-checkbox__hint">{checkboxHint}</span>
+                )}
+              </span>
+            </label>
           )}
 
           <div className="gc-modal__actions">

@@ -560,14 +560,17 @@ export class GitRunner {
    * Switch to `target` branch and merge `source` (branch or commit hash) into it.
    * Both commands execute in a single exclusive lock so no other git process intervenes.
    */
-  async mergeInto(target: string, source: string): Promise<void> {
+  async mergeInto(target: string, source: string, opts: { noFf?: boolean } = {}): Promise<void> {
     this.assertBranch(target);
     if (!validateHash(source) && !validateBranchName(source)) {
       throw new GitError({ code: 'VALIDATION_ERROR', message: `Invalid source: ${source}` });
     }
+    const mergeArgs = ['merge'];
+    if (opts.noFf === true) mergeArgs.push('--no-ff');
+    mergeArgs.push(sanitizeRefArg(source));
     await this.runExclusive(async () => {
       await this.run(['switch', '--', sanitizeRefArg(target)]);
-      await this.run(['merge', sanitizeRefArg(source)]);
+      await this.run(mergeArgs);
     });
   }
 

@@ -1690,6 +1690,48 @@ test('merge-into performs switch then merge and stays on target branch', async (
   assert.ok(logOnMain.stdout.includes(sideCommit));
 });
 
+test('merge-into with noFf creates a dedicated merge commit', async (t) => {
+  const dir = await makeRepo();
+  t.after(() => cleanup(dir));
+  const repo = new RepositoryService({ folderPath: dir, gitPath: 'git', store: new MemoryStore() });
+  const h = harness(repo);
+  t.after(() => h.bridge.dispose());
+
+  // Create side branch off main with a unique commit
+  await repo.git.createBranch('side', 'main');
+  await fs.writeFile(path.join(dir, 'side.txt'), 'side content\n', 'utf8');
+  await repo.git.stage(['side.txt']);
+  const sideCommit = await repo.git.commit('side commit');
+  await repo.git.switchBranch('side'); // currently on side branch
+
+  repo.invalidate();
+  const token = (await repo.status()).statusToken;
+
+  const response = await h.webview.send(
+    req('actions/git', {
+      action: 'merge-into',
+      target: 'main',
+      source: 'side',
+      noFf: true,
+      confirm: true,
+      statusToken: token,
+      idempotencyKey: 'merge-into-noff-1',
+    }),
+  );
+  assert.equal(response.ok, true);
+
+  // Verify real git repository state
+  const current = await repo.git.currentBranch();
+  assert.equal(current.branch, 'main');
+
+  // Verify head commit is a merge commit with 2 parents because of --no-ff
+  const head = await repo.git.headHash();
+  assert.ok(head !== null);
+  const meta = await repo.git.commitMeta(head);
+  assert.equal(meta?.parents.length, 2, 'must be a merge commit with two parents');
+  assert.ok(meta?.parents.includes(sideCommit as string));
+});
+
 test('merge-into rejects invalid target with VALIDATION_ERROR before touching git', async (t) => {
   const dir = await makeRepo();
   t.after(() => cleanup(dir));

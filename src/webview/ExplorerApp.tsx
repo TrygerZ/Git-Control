@@ -9,6 +9,7 @@ import { GraphCanvas } from './GraphCanvas';
 import { GuardDialog } from './GuardDialog';
 import { Inspector } from './Inspector';
 import { Contributors } from './Contributors';
+import { MergeDialog, mergeActionPayload, mergeIntoActionPayload } from './MergeDialog';
 import { PromptDialog } from './PromptDialog';
 import { ToastRegion } from './Toast';
 import { bridge, loadState } from './bridge';
@@ -50,6 +51,9 @@ export function ExplorerApp(): JSX.Element {
     source: string;
     targets: readonly string[];
   } | null>(null);
+  const [mergeTarget, setMergeTarget] = useState<{
+    branch: string;
+  } | null>(null);
 
   const [githubUrl, setGithubUrl] = useState<string | null>(null);
   const [inspectorOpen, setInspectorOpen] = useState(true);
@@ -80,6 +84,10 @@ export function ExplorerApp(): JSX.Element {
       const command = item.command;
       switch (command.kind) {
         case 'action':
+          if (command.request.action === 'merge') {
+            setMergeTarget({ branch: command.request.branch });
+            return;
+          }
           void runAction(command.request);
           return;
         case 'copy':
@@ -231,16 +239,26 @@ export function ExplorerApp(): JSX.Element {
           cancelLabel={strings.guard.cancelButton}
           options={mergeIntoTarget.targets}
           initialValue={mergeIntoTarget.targets[0]}
-          onSubmit={(target) => {
+          checkboxLabel={strings.mergeDialog.noFfLabel}
+          checkboxHint={strings.mergeDialog.noFfHint}
+          onSubmit={(target, noFf) => {
             const { source } = mergeIntoTarget;
             setMergeIntoTarget(null);
-            void runAction({
-              action: 'merge-into',
-              target,
-              source,
-            });
+            void runAction(mergeIntoActionPayload(target, source, !!noFf));
           }}
           onCancel={() => setMergeIntoTarget(null)}
+        />
+      )}
+      {mergeTarget !== null && (
+        <MergeDialog
+          branch={mergeTarget.branch}
+          currentBranch={status?.branch ?? null}
+          onSubmit={(noFf) => {
+            const { branch } = mergeTarget;
+            setMergeTarget(null);
+            void runAction(mergeActionPayload(branch, noFf));
+          }}
+          onCancel={() => setMergeTarget(null)}
         />
       )}
       <ToastRegion />
