@@ -526,6 +526,17 @@ const en = {
     riskyAria: (label: string, hint: string) => `${label}: risky. ${hint}`.trim(),
   },
 
+  // Merge confirmation dialog
+  mergeDialog: {
+    title: 'Merge branch',
+    prompt: (branch: string, current?: string) =>
+      current ? `Merge ${branch} into ${current}?` : `Merge ${branch} into current branch?`,
+    noFfLabel: 'Create a merge commit',
+    noFfHint: 'Keeps a record that these branches merged.',
+    submitButton: 'Merge',
+    cancelButton: 'Cancel',
+  },
+
   // Guard dialog
   guard: {
     permanentBadge: 'Permanent',

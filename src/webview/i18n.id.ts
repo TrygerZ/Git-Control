@@ -522,6 +522,17 @@ const id: Catalog = {
     riskyAria: (label: string, hint: string) => `${label}: berisiko. ${hint}`.trim(),
   },
 
+  // Merge confirmation dialog
+  mergeDialog: {
+    title: 'Gabungkan branch',
+    prompt: (branch: string, current?: string) =>
+      current ? `Gabungkan ${branch} ke ${current}?` : `Gabungkan ${branch} ke branch aktif?`,
+    noFfLabel: 'Buat commit gabungan',
+    noFfHint: 'Mencatat jejak bahwa branch ini digabung.',
+    submitButton: 'Gabungkan',
+    cancelButton: 'Batal',
+  },
+
   // Guard dialog
   guard: {
     permanentBadge: 'Permanen',
