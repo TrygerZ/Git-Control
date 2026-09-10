@@ -224,6 +224,7 @@ export type GitActionRequest =
   | { action: 'revert'; hash: string }
   | { action: 'reset-soft'; hash: string }
   | { action: 'reset-hard'; hash: string }
+  | { action: 'discard-file'; path: string }
   | { action: 'push'; remote: string; branch: string; setUpstream?: boolean }
   | { action: 'push-up-to'; remote: string; branch: string; hash: string }
   | { action: 'fetch'; remote?: string; prune?: boolean }
