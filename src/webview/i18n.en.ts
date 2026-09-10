@@ -241,6 +241,8 @@ const en = {
       revert: 'Create a new commit undoing changes from that commit. History remains intact.',
       resetSoft: 'Move branch pointer to that commit. Changes remain in staging area.',
       resetHard: 'Move branch pointer AND discard all changes after that commit. Cannot be undone.',
+      discardFile: (path: string) =>
+        `Discard local changes in ${path}. Local modifications will be permanently lost.`,
       push: (branch: string, remote: string) => `Send branch ${branch} to ${remote}.`,
       pushUpTo: (hash: string, remote: string, branch: string) => `Send history up to ${hash} to ${remote}/${branch}.`,
       fetch: 'Fetch latest data from remote. Working directory is not modified.',
@@ -260,6 +262,7 @@ const en = {
       revert: (hash: string) => `Revert ${hash}`,
       resetSoft: (hash: string) => `Reset soft to ${hash}`,
       resetHard: (hash: string) => `Reset hard to ${hash}`,
+      discardFile: (path: string) => `Discard changes in ${path}`,
       push: (branch: string) => `Push ${branch}`,
       pushUpTo: (hash: string) => `Push up to ${hash}`,
       fetch: 'Fetch',
@@ -374,6 +377,8 @@ const en = {
     unstageLabel: 'Unstage',
     stageFileAria: (path: string) => `Stage ${path}`,
     unstageFileAria: (path: string) => `Unstage ${path}`,
+    discardLabel: 'Discard',
+    discardFileAria: (path: string) => `Discard changes in ${path}`,
   },
 
   // Commit form component
