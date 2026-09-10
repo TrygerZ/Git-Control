@@ -248,6 +248,9 @@ const en = {
       stashPop: 'Restore changes from newest stash.',
       mergeContinue: 'Continue merge after all conflicts are resolved.',
       mergeAbort: 'Abort merge and return to state before merge.',
+      cherryPick: (hash: string) => `Apply changes from ${hash} onto active branch. Conflicts may arise.`,
+      cherryPickContinue: 'Continue cherry-pick after all conflicts are resolved.',
+      cherryPickAbort: 'Abort cherry-pick and return to state before cherry-pick.',
       defaultAction: 'Run git command.',
     },
 
@@ -267,6 +270,9 @@ const en = {
       stashPop: 'Stash pop',
       mergeContinue: 'Continue merge',
       mergeAbort: 'Abort merge',
+      cherryPick: (hash: string) => `Cherry-pick ${hash}`,
+      cherryPickContinue: 'Continue cherry-pick',
+      cherryPickAbort: 'Abort cherry-pick',
       defaultAction: 'Git action',
     },
 
@@ -414,6 +420,11 @@ const en = {
     abortMergeTitle:
       'Restore repository to the state before merge started. Already committed changes will not be lost.',
     abortMerge: 'Abort merge',
+    continueCherryPickTitle: 'Commit cherry-pick to complete operation.',
+    continueCherryPick: 'Continue cherry-pick',
+    abortCherryPickTitle:
+      'Restore repository to the state before cherry-pick started. Already committed changes will not be lost.',
+    abortCherryPick: 'Abort cherry-pick',
     resolveAllFirst: 'Resolve all conflicted files first.',
     emptyTitle: 'No conflicts.',
     emptyHintIdle: 'All changes can be merged automatically.',
@@ -508,6 +519,8 @@ const en = {
     merge: (branch: string, current: string) => `Merge ${branch} into ${current}`,
     mergeInto: 'Merge to...',
     mergeIntoHint: 'Switch to target branch and merge this node into it.',
+    cherryPick: 'Cherry-pick this commit',
+    cherryPickHint: 'Apply changes from this commit onto active branch.',
     revert: 'Revert this commit',
     revertHint: 'Revert changes with a new commit; history remains intact.',
     resetSoft: 'Reset soft to here',

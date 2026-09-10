@@ -736,6 +736,12 @@ export function gitCommandOf(action: GitActionRequest): string {
       return 'git merge --continue';
     case 'merge-abort':
       return 'git merge --abort';
+    case 'cherry-pick':
+      return `git cherry-pick ${shortHash(action.hash)}`;
+    case 'cherry-pick-continue':
+      return 'git cherry-pick --continue';
+    case 'cherry-pick-abort':
+      return 'git cherry-pick --abort';
     default:
       return 'git';
   }
@@ -778,6 +784,12 @@ export function consequenceOf(action: GitActionRequest, lang: Lang = 'en'): stri
       return strings.mergeContinue;
     case 'merge-abort':
       return strings.mergeAbort;
+    case 'cherry-pick':
+      return strings.cherryPick(shortHash(action.hash));
+    case 'cherry-pick-continue':
+      return strings.cherryPickContinue;
+    case 'cherry-pick-abort':
+      return strings.cherryPickAbort;
     default:
       return strings.defaultAction;
   }
@@ -820,6 +832,12 @@ export function actionTitle(action: GitActionRequest, lang: Lang = 'en'): string
       return strings.mergeContinue;
     case 'merge-abort':
       return strings.mergeAbort;
+    case 'cherry-pick':
+      return strings.cherryPick(shortHash(action.hash));
+    case 'cherry-pick-continue':
+      return strings.cherryPickContinue;
+    case 'cherry-pick-abort':
+      return strings.cherryPickAbort;
     default:
       return strings.defaultAction;
   }
