@@ -578,3 +578,58 @@ test('mergeInto creates a merge commit when noFf is true', async (t) => {
   assert.ok(meta?.parents.includes(sideCommit as string));
 });
 
+test('stashList returns entries latest-first; stashApply keeps entry; stashDrop deletes entry', async (t) => {
+  const dir = await makeRepo();
+  t.after(() => cleanup(dir));
+  const git = new GitRunner({ gitPath: 'git', cwd: dir });
+
+  // Initially empty
+  const empty = await git.stashList();
+  assert.deepEqual(empty, []);
+
+  // Create first stash
+  await fs.writeFile(path.join(dir, 'file1.txt'), 'content 1\n', 'utf8');
+  await git.stashPush('stash one', { includeUntracked: true });
+
+  // Create second stash
+  await fs.writeFile(path.join(dir, 'file2.txt'), 'content 2\n', 'utf8');
+  await git.stashPush('stash two', { includeUntracked: true });
+
+  // Verify stashList returns newest first
+  const list = await git.stashList();
+  assert.equal(list.length, 2);
+  assert.equal(list[0]?.ref, 'stash@{0}');
+  assert.ok(list[0]?.subject.includes('stash two'));
+  assert.equal(list[1]?.ref, 'stash@{1}');
+  assert.ok(list[1]?.subject.includes('stash one'));
+
+  // Test invalid index validation
+  await assert.rejects(() => git.stashApply(-1), (err: unknown) => {
+    assert.ok(err instanceof GitError);
+    assert.equal(err.code, 'VALIDATION_ERROR');
+    return true;
+  });
+  await assert.rejects(() => git.stashDrop(-1), (err: unknown) => {
+    assert.ok(err instanceof GitError);
+    assert.equal(err.code, 'VALIDATION_ERROR');
+    return true;
+  });
+
+  // Apply stash@{1} (content 1): working tree gains file1.txt, but stash@{1} remains in list
+  await git.stashApply(1);
+  const file1Content = await fs.readFile(path.join(dir, 'file1.txt'), 'utf8');
+  assert.equal(file1Content.replace(/\r\n/g, '\n'), 'content 1\n');
+  const afterApply = await git.stashList();
+  assert.equal(afterApply.length, 2);
+
+  // Clean worktree before dropping
+  await fs.rm(path.join(dir, 'file1.txt'), { force: true });
+
+  // Drop stash@{0} (stash two)
+  await git.stashDrop(0);
+  const afterDrop = await git.stashList();
+  assert.equal(afterDrop.length, 1);
+  assert.equal(afterDrop[0]?.ref, 'stash@{0}');
+  assert.ok(afterDrop[0]?.subject.includes('stash one'));
+});
+

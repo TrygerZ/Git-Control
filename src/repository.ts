@@ -21,6 +21,7 @@ import type {
   RefInfo,
   RepoGraph,
   RepoStatus,
+  StashEntry,
 } from './messages';
 import type { ParsedCommit, ParsedNumstatEntry, ParsedRef, ParsedStatusEntry } from './gitParse';
 
@@ -126,6 +127,11 @@ export class RepositoryService {
     const contributors = await this.git.contributors();
     this.contributorsCache = contributors;
     return contributors;
+  }
+
+  /** Read stash list on-demand without mutation lock or dedicated cache. */
+  async stashList(): Promise<StashEntry[]> {
+    return this.git.stashList();
   }
 
   /** Working-tree changes plus the derived conflict list. */

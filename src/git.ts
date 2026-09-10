@@ -31,12 +31,14 @@ import {
   parseRevListCounts,
   parseShortlog,
   parseShowStat,
+  parseStashList,
   parseStatus,
   type AheadBehind,
   type ParsedCommit,
   type ParsedContributor,
   type ParsedNumstatEntry,
   type ParsedRef,
+  type ParsedStashEntry,
   type ParsedStatusEntry,
 } from './gitParse';
 import {
@@ -52,6 +54,7 @@ import {
   validateLimit,
   validateRemoteName,
   validateRepoRelativePath,
+  validateStashIndex,
   validateStashMessage,
 } from './validation';
 
@@ -610,6 +613,39 @@ export class GitRunner {
 
   async stashPop(): Promise<void> {
     await this.runExclusive(() => this.run(['stash', 'pop']));
+  }
+
+  /**
+   * Query stash list without taking mutation mutex.
+   * Delimiter is NUL bytes to avoid collision with commit subjects.
+   */
+  async stashList(): Promise<ParsedStashEntry[]> {
+    const { stdout } = await this.run(['stash', 'list', '--format=%gd%x00%H%x00%gs']);
+    return parseStashList(stdout);
+  }
+
+  /**
+   * Apply a specific stash entry by validated non-negative index. Entry remains in stash stack.
+   * Refspec `stash@{n}` is constructed internally after validation, never from user ref strings.
+   */
+  async stashApply(index: number): Promise<void> {
+    if (!validateStashIndex(index)) {
+      throw new GitError({ code: 'VALIDATION_ERROR', message: `Invalid stash index: ${index}` });
+    }
+    const ref = sanitizeRefArg(`stash@{${index}}`);
+    await this.runExclusive(() => this.run(['stash', 'apply', ref]));
+  }
+
+  /**
+   * Drop a specific stash entry by validated non-negative index. Permanent deletion.
+   * Refspec `stash@{n}` is constructed internally after validation, never from user ref strings.
+   */
+  async stashDrop(index: number): Promise<void> {
+    if (!validateStashIndex(index)) {
+      throw new GitError({ code: 'VALIDATION_ERROR', message: `Invalid stash index: ${index}` });
+    }
+    const ref = sanitizeRefArg(`stash@{${index}}`);
+    await this.runExclusive(() => this.run(['stash', 'drop', ref]));
   }
 
   async mergeContinue(): Promise<void> {
