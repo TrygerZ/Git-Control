@@ -732,6 +732,10 @@ export function gitCommandOf(action: GitActionRequest): string {
       return `git stash push${action.includeUntracked === true ? ' -u' : ''} -m "${s(action.message)}"`;
     case 'stash-pop':
       return 'git stash pop';
+    case 'stash-apply':
+      return `git stash apply stash@{${action.index}}`;
+    case 'stash-drop':
+      return `git stash drop stash@{${action.index}}`;
     case 'merge-continue':
       return 'git merge --continue';
     case 'merge-abort':
@@ -774,6 +778,10 @@ export function consequenceOf(action: GitActionRequest, lang: Lang = 'en'): stri
       return strings.stash;
     case 'stash-pop':
       return strings.stashPop;
+    case 'stash-apply':
+      return strings.stashApply(action.index);
+    case 'stash-drop':
+      return strings.stashDrop(action.index);
     case 'merge-continue':
       return strings.mergeContinue;
     case 'merge-abort':
@@ -816,6 +824,10 @@ export function actionTitle(action: GitActionRequest, lang: Lang = 'en'): string
       return strings.stash;
     case 'stash-pop':
       return strings.stashPop;
+    case 'stash-apply':
+      return strings.stashApply(action.index);
+    case 'stash-drop':
+      return strings.stashDrop(action.index);
     case 'merge-continue':
       return strings.mergeContinue;
     case 'merge-abort':
@@ -828,6 +840,7 @@ export function actionTitle(action: GitActionRequest, lang: Lang = 'en'): string
 /** Target the action operates on, shown as the dialog's subject line. Sanitised. */
 export function actionTarget(action: GitActionRequest): string {
   if (action.action === 'merge-into') return sanitizeGitText(action.target);
+  if (action.action === 'stash-apply' || action.action === 'stash-drop') return `stash@{${action.index}}`;
   if ('branch' in action && typeof action.branch === 'string') return sanitizeGitText(action.branch);
   if ('name' in action) return sanitizeGitText(action.name);
   if ('hash' in action) return shortHash(action.hash);

@@ -22,7 +22,7 @@ import { ConflictPanel, OperationBanner } from './ConflictPanel';
 import { GuardDialog } from './GuardDialog';
 import { ToastRegion } from './Toast';
 import { bridge, loadState, saveState } from './bridge';
-import { formatCount, sanitizeGitText, UNKNOWN_CHURN } from './format';
+import { formatCount, sanitizeGitText, shortHash, UNKNOWN_CHURN } from './format';
 import { useT } from './useT';
 import { groupBySection, isSectionBulkDisabled, stageableFrom, unstageableFrom, type ChangeSection } from './tree';
 import {
@@ -35,7 +35,7 @@ import {
   wireHostEvents,
 } from './store';
 import { ContextBar, EmptyState, ErrorBanner, FileListSkeleton, Icon, InfoBanner } from './ui';
-import type { ChangeEntry } from '../messages';
+import type { ChangeEntry, Lang, StashEntry } from '../messages';
 
 /**
  * Letter badge per section, mirroring the Unity reference's `C` / `D` / `A` boxes.
@@ -80,6 +80,11 @@ export function PendingChangesApp(): JSX.Element {
   const clear = useChangesStore((s) => s.clear);
   const stage = useChangesStore((s) => s.stage);
   const unstage = useChangesStore((s) => s.unstage);
+  const stashes = useChangesStore((s) => s.stashes);
+  const stashesCollapsed = useChangesStore((s) => s.stashesCollapsed);
+  const toggleStashesCollapsed = useChangesStore((s) => s.toggleStashesCollapsed);
+  const applyStash = useChangesStore((s) => s.applyStash);
+  const dropStash = useChangesStore((s) => s.dropStash);
 
   const status = useRepoStore((s) => s.status);
   const graph = useRepoStore((s) => s.graph);
@@ -302,10 +307,23 @@ export function PendingChangesApp(): JSX.Element {
       {!hasLoaded && loading && changes.length === 0 ? (
         <FileListSkeleton rows={8} />
       ) : changes.length === 0 ? (
-        <EmptyState
-          title={strings.pending.emptyTitle}
-          hint={strings.pending.emptyHint}
-        />
+        <>
+          <EmptyState
+            title={strings.pending.emptyTitle}
+            hint={strings.pending.emptyHint}
+          />
+          <div className="gc-pending__sections" ref={scrollRef}>
+            <StashSection
+              stashes={stashes}
+              isCollapsed={stashesCollapsed}
+              busy={busy}
+              language={language}
+              onToggle={toggleStashesCollapsed}
+              onApply={(i) => void applyStash(i)}
+              onDrop={(i) => void dropStash(i)}
+            />
+          </div>
+        </>
       ) : (
         <>
           {/*
@@ -464,6 +482,15 @@ export function PendingChangesApp(): JSX.Element {
                   </section>
                 );
               })}
+              <StashSection
+                stashes={stashes}
+                isCollapsed={stashesCollapsed}
+                busy={busy}
+                language={language}
+                onToggle={toggleStashesCollapsed}
+                onApply={(i) => void applyStash(i)}
+                onDrop={(i) => void dropStash(i)}
+              />
             </div>
           )}
         </>
@@ -472,5 +499,132 @@ export function PendingChangesApp(): JSX.Element {
       <GuardDialog />
       <ToastRegion />
     </div>
+  );
+}
+
+function parseStashIndex(ref: string): number | null {
+  const match = /^stash@\{(\d+)\}$/.exec(ref);
+  return match !== null && match[1] !== undefined ? parseInt(match[1], 10) : null;
+}
+
+function StashSection({
+  stashes,
+  isCollapsed,
+  busy,
+  language,
+  onToggle,
+  onApply,
+  onDrop,
+}: {
+  stashes: readonly StashEntry[];
+  isCollapsed: boolean;
+  busy: boolean;
+  language: Lang;
+  onToggle(): void;
+  onApply(index: number): void;
+  onDrop(index: number): void;
+}): JSX.Element {
+  const strings = useT();
+  const title = strings.pending.stashesHeader;
+  const toggleAria = isCollapsed
+    ? strings.pending.expandSectionAria(title)
+    : strings.pending.collapseSectionAria(title);
+
+  return (
+    <section className="gc-section" aria-label={title}>
+      <div className="gc-section__head">
+        <h3 className="gc-section__title">
+          <button
+            type="button"
+            className="gc-section__toggle"
+            aria-expanded={!isCollapsed}
+            aria-label={toggleAria}
+            onClick={onToggle}
+          >
+            <span className="gc-section__twisty" aria-hidden="true">
+              <Icon name={isCollapsed ? 'chevron-right' : 'chevron-down'} />
+            </span>
+            <span
+              className="gc-section__badge gc-section__badge--changed"
+              aria-hidden="true"
+            >
+              $
+            </span>
+            <span className="gc-section__name">{title}</span>
+          </button>
+        </h3>
+        <span className="gc-section__count">{formatCount(stashes.length, language)}</span>
+      </div>
+      {!isCollapsed && (
+        <StashList
+          stashes={stashes}
+          busy={busy}
+          onApply={onApply}
+          onDrop={onDrop}
+        />
+      )}
+    </section>
+  );
+}
+
+function StashList({
+  stashes,
+  busy,
+  onApply,
+  onDrop,
+}: {
+  stashes: readonly StashEntry[];
+  busy: boolean;
+  onApply(index: number): void;
+  onDrop(index: number): void;
+}): JSX.Element {
+  const strings = useT();
+  if (stashes.length === 0) {
+    return (
+      <div className="gc-stash__empty">
+        <p className="gc-help-text">{strings.pending.stashesEmptyHint}</p>
+      </div>
+    );
+  }
+
+  return (
+    <ul className="gc-tree gc-stash-list" role="list">
+      {stashes.map((stash, index) => {
+        const parsedIndex = parseStashIndex(stash.ref) ?? index;
+        return (
+          <li key={stash.ref} className="gc-tree__row gc-stash-item" role="listitem">
+            <span className="gc-stash-item__ref">{stash.ref}</span>
+            <span className="gc-stash-item__hash" title={stash.hash}>
+              {shortHash(stash.hash)}
+            </span>
+            <span className="gc-stash-item__subject" title={sanitizeGitText(stash.subject)}>
+              {sanitizeGitText(stash.subject)}
+            </span>
+            <div className="gc-stash-item__actions">
+              <button
+                type="button"
+                className="gc-button gc-button--quiet"
+                aria-label={strings.pending.stashApplyAria(stash.ref)}
+                title={strings.pending.stashApplyTitle}
+                disabled={busy}
+                onClick={() => onApply(parsedIndex)}
+              >
+                {strings.pending.stashApplyLabel}
+              </button>
+              <button
+                type="button"
+                className="gc-button gc-button--quiet gc-button--danger"
+                aria-label={strings.pending.stashDropAria(stash.ref)}
+                title={strings.pending.stashDropTitle}
+                disabled={busy}
+                onClick={() => onDrop(parsedIndex)}
+              >
+                {strings.pending.stashDropLabel}
+              </button>
+            </div>
+          </li>
+        );
+      })}
+    </ul>
   );
 }

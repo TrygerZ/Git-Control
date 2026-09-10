@@ -591,6 +591,8 @@ const ACTIONS: GitActionRequest[] = [
   { action: 'fetch', prune: true },
   { action: 'stash', message: 'wip' },
   { action: 'stash-pop' },
+  { action: 'stash-apply', index: 0 },
+  { action: 'stash-drop', index: 0 },
   { action: 'merge-continue' },
   { action: 'merge-abort' },
 ];
@@ -632,6 +634,8 @@ test('actionTarget picks the branch, name, hash, or remote', () => {
   assert.equal(actionTarget({ action: 'revert', hash: HASH }), 'abc1234');
   assert.equal(actionTarget({ action: 'fetch', remote: 'origin' }), 'origin');
   assert.equal(actionTarget({ action: 'stash-pop' }), '?');
+  assert.equal(actionTarget({ action: 'stash-apply', index: 0 }), 'stash@{0}');
+  assert.equal(actionTarget({ action: 'stash-drop', index: 1 }), 'stash@{1}');
 });
 
 // ------------------------------------------------------------------ numbers

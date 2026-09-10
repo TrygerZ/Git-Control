@@ -31,6 +31,7 @@ import type {
   RepoGraph,
   RepoStatus,
   SettingsSnapshot,
+  StashEntry,
   IconThemeSnapshot,
 } from '../messages';
 import { clampZoom, COLUMN_WIDTH, LANE_HEIGHT, partitionUnrequestedHashes } from './viewport';
@@ -235,6 +236,9 @@ export const useRepoStore = create<RepoState>((set, get) => ({
 export interface ChangesState {
   changes: ChangeEntry[];
   conflicts: ConflictEntry[];
+  stashes: StashEntry[];
+  stashesLoading: boolean;
+  stashesCollapsed: boolean;
   selection: Set<string>;
   collapsed: Set<string>;
   collapsedSections: Set<ChangeSection>;
@@ -251,6 +255,10 @@ export interface ChangesState {
   /** Set when a commit landed but its push failed, so retry can reuse the key. */
   retryPush: (() => Promise<void>) | null;
   load(): Promise<void>;
+  loadStashes(): Promise<void>;
+  toggleStashesCollapsed(): void;
+  applyStash(index: number): Promise<boolean>;
+  dropStash(index: number): Promise<boolean>;
   toggle(path: string): void;
   toggleFolder(node: TreeNode): void;
   toggleCollapsed(prefix: string): void;
@@ -269,6 +277,9 @@ export const COMMIT_MESSAGE_MIN = 3;
 export const useChangesStore = create<ChangesState>((set, get) => ({
   changes: [],
   conflicts: [],
+  stashes: [],
+  stashesLoading: false,
+  stashesCollapsed: false,
   selection: new Set<string>(),
   collapsed: new Set<string>(),
   collapsedSections: new Set<ChangeSection>(),
@@ -287,10 +298,14 @@ export const useChangesStore = create<ChangesState>((set, get) => ({
     set({ loading: true });
     inFlightChanges = (async () => {
       try {
-        const status = await bridge.request('repos/status', {});
+        const [status, stashes] = await Promise.all([
+          bridge.request('repos/status', {}),
+          bridge.request('stash/list', {}).catch(() => [] as StashEntry[]),
+        ]);
         set({
           changes: status.changes,
           conflicts: status.conflicts,
+          stashes,
           selection: pruneSelection(get().selection, status.changes),
           loading: false,
           hasLoaded: true,
@@ -304,6 +319,28 @@ export const useChangesStore = create<ChangesState>((set, get) => ({
       }
     })();
     return inFlightChanges;
+  },
+
+  async loadStashes() {
+    set({ stashesLoading: true });
+    try {
+      const stashes = await bridge.request('stash/list', {});
+      set({ stashes, stashesLoading: false });
+    } catch {
+      set({ stashesLoading: false });
+    }
+  },
+
+  toggleStashesCollapsed() {
+    set({ stashesCollapsed: !get().stashesCollapsed });
+  },
+
+  async applyStash(index: number) {
+    return useOperationStore.getState().runAction({ action: 'stash-apply', index });
+  },
+
+  async dropStash(index: number) {
+    return useOperationStore.getState().runAction({ action: 'stash-drop', index });
   },
 
   toggle(path) {
