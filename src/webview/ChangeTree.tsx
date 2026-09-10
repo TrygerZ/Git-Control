@@ -29,6 +29,7 @@ import {
 import { useT } from './useT';
 import { useSettingsStore } from './store';
 import { FileIcon, Icon } from './ui';
+import type { IconName } from './icons';
 import { buildTree, collectPaths, flattenTree, triState, type FolderNode, type TreeNode } from './tree';
 import type { ChangeEntry } from '../messages';
 
@@ -50,6 +51,8 @@ interface Props {
   onOpenDiff(entry: ChangeEntry): void;
   /** Per-file primary action, e.g. stage or unstage depending on the section. */
   fileAction: { label: string; icon: 'add' | 'dash'; ariaLabel(path: string): string; run(entry: ChangeEntry): void } | null;
+  /** Per-file discard action, provided for unstaged modified files. */
+  discardAction?: { label: string; icon: IconName; ariaLabel(path: string): string; run(entry: ChangeEntry): void } | null;
 }
 
 export function ChangeTree({
@@ -64,6 +67,7 @@ export function ChangeTree({
   onToggleCollapsed,
   onOpenDiff,
   fileAction,
+  discardAction,
 }: Props): JSX.Element {
   const strings = useT();
   const language = useSettingsStore((x) => x.language);
@@ -223,6 +227,7 @@ export function ChangeTree({
                 entry={node.entry}
                 onOpenDiff={onOpenDiff}
                 fileAction={fileAction}
+                discardAction={discardAction}
                 busy={busy}
                 churnTruncated={churnTruncated}
               />
@@ -238,12 +243,14 @@ function FileRow({
   entry,
   onOpenDiff,
   fileAction,
+  discardAction,
   busy,
   churnTruncated,
 }: {
   entry: ChangeEntry;
   onOpenDiff(entry: ChangeEntry): void;
   fileAction: { label: string; icon: 'add' | 'dash'; ariaLabel(path: string): string; run(entry: ChangeEntry): void } | null;
+  discardAction?: { label: string; icon: IconName; ariaLabel(path: string): string; run(entry: ChangeEntry): void } | null;
   busy: boolean;
   churnTruncated: boolean;
 }): JSX.Element {
@@ -328,18 +335,32 @@ function FileRow({
       >
         <span aria-hidden="true">{status.code}</span>
       </span>
-      {fileAction !== null && (
+      {(fileAction !== null || (discardAction !== undefined && discardAction !== null)) && (
         <span role="gridcell" aria-colindex={6} className="gc-tree__action-cell">
-          <button
-            type="button"
-            className="gc-icon-button gc-tree__action"
-            aria-label={fileAction.ariaLabel(sanitizeGitText(entry.path))}
-            title={fileAction.label}
-            disabled={busy}
-            onClick={() => fileAction.run(entry)}
-          >
-            <Icon name={fileAction.icon} />
-          </button>
+          {discardAction !== undefined && discardAction !== null && (
+            <button
+              type="button"
+              className="gc-icon-button gc-tree__action"
+              aria-label={discardAction.ariaLabel(sanitizeGitText(entry.path))}
+              title={discardAction.label}
+              disabled={busy}
+              onClick={() => discardAction.run(entry)}
+            >
+              <Icon name={discardAction.icon} />
+            </button>
+          )}
+          {fileAction !== null && (
+            <button
+              type="button"
+              className="gc-icon-button gc-tree__action"
+              aria-label={fileAction.ariaLabel(sanitizeGitText(entry.path))}
+              title={fileAction.label}
+              disabled={busy}
+              onClick={() => fileAction.run(entry)}
+            >
+              <Icon name={fileAction.icon} />
+            </button>
+          )}
         </span>
       )}
     </>
