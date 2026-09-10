@@ -620,6 +620,30 @@ export class GitRunner {
     await this.runExclusive(() => this.run(['merge', '--abort']));
   }
 
+  /**
+   * Apply changes from a commit onto HEAD.
+   * Runs in an exclusive lock so no concurrent git operation mutates the tree.
+   */
+  async cherryPick(hash: string): Promise<void> {
+    this.assertHash(hash);
+    await this.runExclusive(() => this.run(['cherry-pick', sanitizeRefArg(hash)]));
+  }
+
+  /**
+   * Resume an in-progress cherry-pick sequence after conflicts are resolved.
+   * Non-interactive core.editor prevents hanging when git prompts for a commit message.
+   */
+  async cherryPickContinue(): Promise<void> {
+    await this.runExclusive(() => this.run(['-c', 'core.editor=true', 'cherry-pick', '--continue'], { input: '' }));
+  }
+
+  /**
+   * Abort an in-progress cherry-pick sequence and restore pre-cherry-pick state.
+   */
+  async cherryPickAbort(): Promise<void> {
+    await this.runExclusive(() => this.run(['cherry-pick', '--abort']));
+  }
+
   // ------------------------------------------------------------- guards
 
   private assertBranch(name: string): void {
