@@ -633,3 +633,39 @@ test('stashList returns entries latest-first; stashApply keeps entry; stashDrop 
   assert.ok(afterDrop[0]?.subject.includes('stash one'));
 });
 
+test('stashShow returns files with line churn for text and null churn for binary', async (t) => {
+  const dir = await makeRepo();
+  t.after(() => cleanup(dir));
+  const git = new GitRunner({ gitPath: 'git', cwd: dir });
+
+  // Invalid index validation rejects before executing git
+  await assert.rejects(() => git.stashShow(-1), (err: unknown) => {
+    assert.ok(err instanceof GitError);
+    assert.equal(err.code, 'VALIDATION_ERROR');
+    return true;
+  });
+  await assert.rejects(() => git.stashShow(1000), (err: unknown) => {
+    assert.ok(err instanceof GitError);
+    assert.equal(err.code, 'VALIDATION_ERROR');
+    return true;
+  });
+
+  // Create text file and binary file in worktree
+  await fs.writeFile(path.join(dir, 'notes.txt'), 'line 1\nline 2\nline 3\n', 'utf8');
+  await fs.writeFile(path.join(dir, 'blob.bin'), Buffer.from([0, 1, 2, 255, 0, 4]));
+  await git.stashPush('stash show test', { includeUntracked: true });
+
+  const files = await git.stashShow(0);
+  assert.equal(files.length, 2);
+
+  const textFile = files.find((f) => f.path === 'notes.txt');
+  assert.ok(textFile !== undefined);
+  assert.equal(textFile.additions, 3);
+  assert.equal(textFile.deletions, 0);
+
+  const binFile = files.find((f) => f.path === 'blob.bin');
+  assert.ok(binFile !== undefined);
+  assert.equal(binFile.additions, null);
+  assert.equal(binFile.deletions, null);
+});
+

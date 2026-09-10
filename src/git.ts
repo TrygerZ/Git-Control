@@ -12,6 +12,7 @@
  *    stays unit-testable.
  */
 import * as path from 'node:path';
+import type { StashFile } from './messages';
 import {
   GitExecutionLayer,
   GitError,
@@ -622,6 +623,30 @@ export class GitRunner {
   async stashList(): Promise<ParsedStashEntry[]> {
     const { stdout } = await this.run(['stash', 'list', '--format=%gd%x00%H%x00%gs']);
     return parseStashList(stdout);
+  }
+
+  /**
+   * Query file changes in a stash entry. Read-only without mutation mutex.
+   * Refspec `stash@{n}` is constructed internally after validation, never from user ref strings.
+   */
+  async stashShow(index: number): Promise<StashFile[]> {
+    if (!validateStashIndex(index)) {
+      throw new GitError({ code: 'VALIDATION_ERROR', message: `Invalid stash index: ${index}` });
+    }
+    const ref = sanitizeRefArg(`stash@{${index}}`);
+    let stdout: string;
+    try {
+      const res = await this.run(['stash', 'show', '--include-untracked', '--numstat', ref]);
+      stdout = res.stdout;
+    } catch {
+      const res = await this.run(['stash', 'show', '--numstat', ref]);
+      stdout = res.stdout;
+    }
+    return parseShowStat(stdout).map((entry) => ({
+      path: entry.path,
+      additions: entry.additions,
+      deletions: entry.deletions,
+    }));
   }
 
   /**

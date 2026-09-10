@@ -379,6 +379,16 @@ export interface StashEntry {
   subject: string;
 }
 
+export interface StashFile {
+  path: string;
+  additions: number | null;
+  deletions: number | null;
+}
+
+export interface StashShowPayload {
+  index: number;
+}
+
 export interface ActionResult {
   ok: true;
   operation: OperationState;
@@ -544,6 +554,7 @@ export interface RequestMap {
   'repos/remotes': { payload: Record<string, never>; response: { remotes: RemoteInfo[] } };
   'repos/contributors': { payload: ContributorsRequest; response: ContributorsResponse };
   'stash/list': { payload: Record<string, never>; response: StashEntry[] };
+  'stash/show': { payload: StashShowPayload; response: StashFile[] };
   'commits/detail': { payload: CommitDetailPayload; response: CommitDetail };
   'actions/stage': { payload: StagePayload; response: ActionResult };
   'actions/commit': { payload: CommitPayload; response: CommitResult };
