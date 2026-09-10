@@ -50,6 +50,7 @@ test('dirty tree blocks checkout and merge', () => {
     { action: 'checkout-commit', hash: 'abcdef1' },
     { action: 'merge', branch: 'feature' },
     { action: 'merge-into', target: 'main', source: 'feature' },
+    { action: 'pull' },
   ];
   for (const action of blocked) {
     const resId = verdict(action, { dirty: true }, 'id');
@@ -256,6 +257,7 @@ test('push-up-to, revert, and reset-soft demand a level 1 confirmation', () => {
     { action: 'revert', hash: 'abcdef1' },
     { action: 'reset-soft', hash: 'abcdef1' },
     { action: 'merge-into', target: 'main', source: 'feature' },
+    { action: 'pull' },
   ];
   for (const action of actions) {
     const resId = verdict(action, {}, 'id');
@@ -315,4 +317,19 @@ test('evaluate never mutates the snapshot it is given', () => {
   const copy = { ...input };
   SafetyGuard.evaluate({ action: 'merge', branch: 'x' }, input);
   assert.deepEqual(input, copy);
+});
+
+test('pull is blocked on dirty tree and requires level 1 confirmation when clean', () => {
+  const dirtyRes = verdict({ action: 'pull' }, { dirty: true }, 'en');
+  assert.equal(dirtyRes.allow, false);
+  if (dirtyRes.allow) return;
+  assert.equal(dirtyRes.code, 'DIRTY_TREE');
+  assert.deepEqual(dirtyRes.remedies, ['commit', 'stash', 'cancel']);
+
+  const cleanRes = verdict({ action: 'pull' }, { dirty: false }, 'en');
+  assert.equal(cleanRes.allow, false);
+  if (cleanRes.allow) return;
+  assert.equal(cleanRes.code, 'CONFIRMATION_REQUIRED');
+  assert.equal(cleanRes.confirmationLevel, 1);
+  assert.deepEqual(cleanRes.remedies, ['confirm', 'cancel']);
 });
