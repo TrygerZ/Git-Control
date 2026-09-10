@@ -593,6 +593,9 @@ const ACTIONS: GitActionRequest[] = [
   { action: 'stash-pop' },
   { action: 'merge-continue' },
   { action: 'merge-abort' },
+  { action: 'cherry-pick', hash: HASH },
+  { action: 'cherry-pick-continue' },
+  { action: 'cherry-pick-abort' },
 ];
 
 test('gitCommandOf renders a runnable command for every action', () => {

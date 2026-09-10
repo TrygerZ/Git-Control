@@ -630,7 +630,7 @@ test('only non-obvious or destructive menu items carry a hint', () => {
   const withHint = items.filter((i) => i.hint !== undefined).map((i) => i.id);
   assert.deepEqual(
     withHint.sort(),
-    ['checkout-commit', 'merge-into', 'push-up-to', 'reset-hard', 'reset-soft', 'revert'].sort(),
+    ['checkout-commit', 'cherry-pick', 'merge-into', 'push-up-to', 'reset-hard', 'reset-soft', 'revert'].sort(),
   );
   for (const item of items) {
     if (item.hint !== undefined) {
@@ -648,7 +648,7 @@ test('the destructive items are the ones marked risky, and they say what is lost
     'id',
   );
   const risky = new Set(items.filter((i) => i.risky === true).map((i) => i.id));
-  for (const id of ['reset-hard', 'reset-soft', 'revert', 'checkout-commit', 'merge-into']) {
+  for (const id of ['reset-hard', 'reset-soft', 'revert', 'checkout-commit', 'merge-into', 'cherry-pick']) {
     assert.ok(risky.has(id), `${id} is marked risky`);
   }
   const hard = items.find((i) => i.id === 'reset-hard');
