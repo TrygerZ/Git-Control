@@ -32,7 +32,7 @@ export function validateEmptyPayload(payload: object, fail: (detail: string) => 
 export function validateAction(action: GitActionPayload, fail: (detail: string) => never): void {
   switch (action.action) {
     case 'checkout-branch': if (!validateBranchName(action.branch)) fail('branch'); return;
-    case 'checkout-commit': case 'revert': case 'reset-soft': case 'reset-hard':
+    case 'checkout-commit': case 'revert': case 'reset-soft': case 'reset-hard': case 'cherry-pick':
       if (!validateHash(action.hash)) fail('hash'); return;
     case 'create-branch':
       if (!validateBranchName(action.name)) fail('name');
@@ -50,7 +50,7 @@ export function validateAction(action: GitActionPayload, fail: (detail: string) 
       if (!validateHash(action.hash)) fail('hash'); return;
     case 'fetch': if (action.remote !== undefined && !validateRemoteName(action.remote)) fail('remote'); return;
     case 'stash': if (typeof action.message !== 'string') fail('message'); return;
-    case 'stash-pop': case 'merge-continue': case 'merge-abort': return;
+    case 'stash-pop': case 'merge-continue': case 'merge-abort': case 'cherry-pick-continue': case 'cherry-pick-abort': return;
     default: fail('action');
   }
 }
