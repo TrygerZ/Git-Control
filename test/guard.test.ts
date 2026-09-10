@@ -50,6 +50,7 @@ test('dirty tree blocks checkout and merge', () => {
     { action: 'checkout-commit', hash: 'abcdef1' },
     { action: 'merge', branch: 'feature' },
     { action: 'merge-into', target: 'main', source: 'feature' },
+    { action: 'stash-apply', index: 0 },
   ];
   for (const action of blocked) {
     const resId = verdict(action, { dirty: true }, 'id');
@@ -250,12 +251,32 @@ test('reset-hard demands a level 2 confirmation and is high risk', () => {
   assert.equal(resEn.message, 'Hard reset discards changes permanently.');
 });
 
+test('stash-drop demands a level 2 confirmation, is high risk, and is not dirty-blocked', () => {
+  const resId = verdict({ action: 'stash-drop', index: 0 }, { dirty: true }, 'id');
+  assert.equal(resId.allow, false);
+  if (resId.allow) return;
+  assert.equal(resId.code, 'CONFIRMATION_REQUIRED');
+  assert.equal(resId.message, 'Drop stash membuang perubahan permanen.');
+  assert.equal(resId.requiresConfirmation, true);
+  assert.equal(resId.confirmationLevel, 2);
+  assert.equal(resId.risk, 'high');
+  assert.deepEqual(resId.remedies, ['confirm', 'cancel']);
+
+  const resEn = verdict({ action: 'stash-drop', index: 0 }, { dirty: true }, 'en');
+  assert.equal(resEn.allow, false);
+  if (resEn.allow) return;
+  assert.equal(resEn.message, 'Stash drop discards changes permanently.');
+  assert.equal(resEn.confirmationLevel, 2);
+  assert.equal(resEn.risk, 'high');
+});
+
 test('push-up-to, revert, and reset-soft demand a level 1 confirmation', () => {
   const actions: GuardAction[] = [
     { action: 'push-up-to', remote: 'origin', branch: 'main', hash: 'abcdef1' },
     { action: 'revert', hash: 'abcdef1' },
     { action: 'reset-soft', hash: 'abcdef1' },
     { action: 'merge-into', target: 'main', source: 'feature' },
+    { action: 'stash-apply', index: 0 },
   ];
   for (const action of actions) {
     const resId = verdict(action, {}, 'id');
@@ -305,9 +326,11 @@ test('exported messages match the PRD wording verbatim', () => {
   assert.equal(idGuard.stale, 'Status remote kedaluwarsa.');
   assert.equal(idGuard.remoteAhead, 'Remote memiliki histori berbeda.');
   assert.equal(idGuard.resetHard, 'Hard reset membuang perubahan permanen.');
+  assert.equal(idGuard.stashDrop, 'Drop stash membuang perubahan permanen.');
   const enGuard = hostText('en').guard;
   assert.equal(enGuard.dirty, 'Commit or stash changes before checkout.');
   assert.equal(enGuard.resetHard, 'Hard reset discards changes permanently.');
+  assert.equal(enGuard.stashDrop, 'Stash drop discards changes permanently.');
 });
 
 test('evaluate never mutates the snapshot it is given', () => {

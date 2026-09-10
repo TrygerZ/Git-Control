@@ -68,6 +68,7 @@ const DIRTY_BLOCKED = new Set<GuardAction['action']>([
   'checkout-commit',
   'merge',
   'merge-into',
+  'stash-apply',
 ]);
 
 /**
@@ -80,6 +81,7 @@ const CONFIRM_LEVEL_1 = new Set<GuardAction['action']>([
   'revert',
   'reset-soft',
   'merge-into',
+  'stash-apply',
 ]);
 
 /**
@@ -154,6 +156,18 @@ export function evaluate(action: GuardAction, snapshot: GuardSnapshot, lang: Lan
       allow: false,
       code: 'CONFIRMATION_REQUIRED',
       message: text.resetHard,
+      remedies: ['confirm', 'cancel'],
+      requiresConfirmation: true,
+      confirmationLevel: 2,
+      risk: 'high',
+    };
+  }
+
+  if (action.action === 'stash-drop') {
+    return {
+      allow: false,
+      code: 'CONFIRMATION_REQUIRED',
+      message: text.stashDrop,
       remedies: ['confirm', 'cancel'],
       requiresConfirmation: true,
       confirmationLevel: 2,
