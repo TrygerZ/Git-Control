@@ -30,6 +30,14 @@ export function shortHash(hash: string, length: number = SHORT_HASH_LENGTH): str
   return hash.slice(0, Math.max(1, length));
 }
 
+/**
+ * Localized label for a stash entry: "Stash N from".
+ * `index` is 0-based; presentation is 1-based (stash@{0} maps to "Stash 1 from").
+ */
+export function formatStashLabel(index: number, lang: Lang = 'en'): string {
+  return t(lang).pending.stashEntryLabel(index + 1);
+}
+
 // merge-into.source can be a branch name or a 40-character hash; only shorten hashes,
 // because shortHash would make a branch name unreadable.
 function refOrShortHash(source: string): string {

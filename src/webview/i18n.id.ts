@@ -50,6 +50,13 @@ const id: Catalog = {
     stashDropLabel: 'Hapus',
     stashDropAria: (ref: string) => `Hapus stash ${ref}`,
     stashDropTitle: 'Hapus permanen entri stash.',
+    stashEntryLabel: (n: number) => `Stash ${n} dari`,
+    stashCopyHashAria: 'Salin full hash',
+    stashToastCopied: 'Tersalin',
+    stashExpandAria: (n: number) => `Buka stash ${n}`,
+    stashCollapseAria: (n: number) => `Lipat stash ${n}`,
+    stashFilesLoading: 'Memuat isi stash...',
+    stashFilesEmpty: 'Tidak ada file dalam stash.',
   },
 
   // Shared UI primitives

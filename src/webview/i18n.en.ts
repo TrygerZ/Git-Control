@@ -54,6 +54,13 @@ const en = {
     stashDropLabel: 'Drop',
     stashDropAria: (ref: string) => `Drop stash ${ref}`,
     stashDropTitle: 'Permanently delete stash entry.',
+    stashEntryLabel: (n: number) => `Stash ${n} from`,
+    stashCopyHashAria: 'Copy full hash',
+    stashToastCopied: 'Copied',
+    stashExpandAria: (n: number) => `Expand stash ${n}`,
+    stashCollapseAria: (n: number) => `Collapse stash ${n}`,
+    stashFilesLoading: 'Loading stash contents...',
+    stashFilesEmpty: 'No files in stash.',
   },
 
   // Shared UI primitives

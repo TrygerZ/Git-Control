@@ -32,6 +32,7 @@ import type {
   RepoStatus,
   SettingsSnapshot,
   StashEntry,
+  StashFile,
   IconThemeSnapshot,
 } from '../messages';
 import { clampZoom, COLUMN_WIDTH, LANE_HEIGHT, partitionUnrequestedHashes } from './viewport';
@@ -239,6 +240,9 @@ export interface ChangesState {
   stashes: StashEntry[];
   stashesLoading: boolean;
   stashesCollapsed: boolean;
+  stashesExpanded: Set<number>;
+  stashContents: Record<number, StashFile[]>;
+  stashContentsLoading: Set<number>;
   selection: Set<string>;
   collapsed: Set<string>;
   collapsedSections: Set<ChangeSection>;
@@ -257,6 +261,7 @@ export interface ChangesState {
   load(): Promise<void>;
   loadStashes(): Promise<void>;
   toggleStashesCollapsed(): void;
+  toggleStashExpanded(index: number): Promise<void>;
   applyStash(index: number): Promise<boolean>;
   dropStash(index: number): Promise<boolean>;
   toggle(path: string): void;
@@ -274,12 +279,30 @@ export interface ChangesState {
 
 export const COMMIT_MESSAGE_MIN = 3;
 
+/** Drop stash content cache entries whose index is no longer within bounds. */
+export function pruneStashCache(
+  contents: Record<number, StashFile[]>,
+  stashCount: number,
+): Record<number, StashFile[]> {
+  const next: Record<number, StashFile[]> = {};
+  for (const [k, v] of Object.entries(contents)) {
+    const idx = Number(k);
+    if (idx >= 0 && idx < stashCount && v !== undefined) {
+      next[idx] = v;
+    }
+  }
+  return next;
+}
+
 export const useChangesStore = create<ChangesState>((set, get) => ({
   changes: [],
   conflicts: [],
   stashes: [],
   stashesLoading: false,
   stashesCollapsed: false,
+  stashesExpanded: new Set<number>(),
+  stashContents: {},
+  stashContentsLoading: new Set<number>(),
   selection: new Set<string>(),
   collapsed: new Set<string>(),
   collapsedSections: new Set<ChangeSection>(),
@@ -302,10 +325,19 @@ export const useChangesStore = create<ChangesState>((set, get) => ({
           bridge.request('repos/status', {}),
           bridge.request('stash/list', {}).catch(() => [] as StashEntry[]),
         ]);
+        const prevStashes = get().stashes;
+        const stashesChanged =
+          prevStashes.length !== stashes.length ||
+          prevStashes.some((s, i) => s.ref !== stashes[i]?.ref || s.hash !== stashes[i]?.hash);
+        const nextContents = stashesChanged
+          ? pruneStashCache(get().stashContents, stashes.length)
+          : get().stashContents;
         set({
           changes: status.changes,
           conflicts: status.conflicts,
           stashes,
+          ...(stashesChanged ? { stashesExpanded: new Set<number>() } : {}),
+          stashContents: nextContents,
           selection: pruneSelection(get().selection, status.changes),
           loading: false,
           hasLoaded: true,
@@ -325,7 +357,19 @@ export const useChangesStore = create<ChangesState>((set, get) => ({
     set({ stashesLoading: true });
     try {
       const stashes = await bridge.request('stash/list', {});
-      set({ stashes, stashesLoading: false });
+      const prevStashes = get().stashes;
+      const stashesChanged =
+        prevStashes.length !== stashes.length ||
+        prevStashes.some((s, i) => s.ref !== stashes[i]?.ref || s.hash !== stashes[i]?.hash);
+      const nextContents = stashesChanged
+        ? pruneStashCache(get().stashContents, stashes.length)
+        : get().stashContents;
+      set({
+        stashes,
+        stashesLoading: false,
+        ...(stashesChanged ? { stashesExpanded: new Set<number>() } : {}),
+        stashContents: nextContents,
+      });
     } catch {
       set({ stashesLoading: false });
     }
@@ -333,6 +377,42 @@ export const useChangesStore = create<ChangesState>((set, get) => ({
 
   toggleStashesCollapsed() {
     set({ stashesCollapsed: !get().stashesCollapsed });
+  },
+
+  async toggleStashExpanded(index: number) {
+    const expanded = new Set(get().stashesExpanded);
+    if (expanded.has(index)) {
+      expanded.delete(index);
+      set({ stashesExpanded: expanded });
+      return;
+    }
+    expanded.add(index);
+    set({ stashesExpanded: expanded });
+
+    if (get().stashContents[index] !== undefined || get().stashContentsLoading.has(index)) {
+      return;
+    }
+
+    const loadingSet = new Set(get().stashContentsLoading);
+    loadingSet.add(index);
+    set({ stashContentsLoading: loadingSet });
+
+    try {
+      const files = await bridge.request('stash/show', { index });
+      const nextLoading = new Set(get().stashContentsLoading);
+      nextLoading.delete(index);
+      set({
+        stashContents: { ...get().stashContents, [index]: files },
+        stashContentsLoading: nextLoading,
+      });
+    } catch {
+      const nextLoading = new Set(get().stashContentsLoading);
+      nextLoading.delete(index);
+      set({
+        stashContents: { ...get().stashContents, [index]: [] },
+        stashContentsLoading: nextLoading,
+      });
+    }
   },
 
   async applyStash(index: number) {

@@ -14,6 +14,7 @@ import {
   entryStatus,
   formatCount,
   formatDateLabel,
+  formatStashLabel,
   gitCommandOf,
   githubConnectionLabel,
   linkageChangedRepo,
@@ -53,6 +54,13 @@ test('shortHash takes seven characters by default', () => {
   assert.equal(shortHash(HASH), 'abc1234');
   assert.equal(shortHash(HASH, 10), 'abc1234def');
   assert.equal(shortHash('ab'), 'ab');
+});
+
+test('formatStashLabel maps 0-based index to 1-based localized label', () => {
+  assert.equal(formatStashLabel(0, 'en'), 'Stash 1 from');
+  assert.equal(formatStashLabel(0, 'id'), 'Stash 1 dari');
+  assert.equal(formatStashLabel(4, 'en'), 'Stash 5 from');
+  assert.equal(formatStashLabel(4, 'id'), 'Stash 5 dari');
 });
 
 test('formatDateLabel formats timestamp into Indonesian date without em-dash', () => {
