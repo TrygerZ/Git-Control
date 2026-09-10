@@ -54,6 +54,8 @@ export const DEFAULT_STALENESS_MS = 300_000;
 const RESOLUTION_ACTIONS = new Set<GuardAction['action']>([
   'merge-continue',
   'merge-abort',
+  'cherry-pick-continue',
+  'cherry-pick-abort',
   'stage',
   'commit',
 ]);
@@ -68,6 +70,7 @@ const DIRTY_BLOCKED = new Set<GuardAction['action']>([
   'checkout-commit',
   'merge',
   'merge-into',
+  'cherry-pick',
 ]);
 
 /**
@@ -80,6 +83,7 @@ const CONFIRM_LEVEL_1 = new Set<GuardAction['action']>([
   'revert',
   'reset-soft',
   'merge-into',
+  'cherry-pick',
 ]);
 
 /**

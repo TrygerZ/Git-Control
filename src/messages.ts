@@ -230,7 +230,10 @@ export type GitActionRequest =
   | { action: 'stash'; message: string; includeUntracked?: boolean }
   | { action: 'stash-pop' }
   | { action: 'merge-continue' }
-  | { action: 'merge-abort' };
+  | { action: 'merge-abort' }
+  | { action: 'cherry-pick'; hash: string }
+  | { action: 'cherry-pick-continue' }
+  | { action: 'cherry-pick-abort' };
 
 // ---------------------------------------------------------------- payloads
 

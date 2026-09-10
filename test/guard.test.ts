@@ -50,6 +50,7 @@ test('dirty tree blocks checkout and merge', () => {
     { action: 'checkout-commit', hash: 'abcdef1' },
     { action: 'merge', branch: 'feature' },
     { action: 'merge-into', target: 'main', source: 'feature' },
+    { action: 'cherry-pick', hash: 'abcdef1' },
   ];
   for (const action of blocked) {
     const resId = verdict(action, { dirty: true }, 'id');
@@ -119,6 +120,25 @@ test('resolution actions are allowed during a merge', () => {
     { action: 'stage' },
   ] satisfies GuardAction[]) {
     assert.deepEqual(verdict(action, { operation: 'merge' }), { allow: true }, action.action);
+  }
+});
+
+test('cherry-pick resolution actions are allowed during active cherry-pick', () => {
+  for (const action of [
+    { action: 'cherry-pick-continue' },
+    { action: 'cherry-pick-abort' },
+    { action: 'stage' },
+  ] satisfies GuardAction[]) {
+    assert.deepEqual(verdict(action, { operation: 'cherry-pick' }), { allow: true }, action.action);
+  }
+});
+
+test('cherry-pick is blocked when an operation is in progress', () => {
+  const res = verdict({ action: 'cherry-pick', hash: 'abcdef1' }, { operation: 'merge' });
+  assert.equal(res.allow, false);
+  if (!res.allow) {
+    assert.equal(res.code, 'CONFLICT');
+    assert.deepEqual(res.remedies, ['resolve-conflicts', 'cancel']);
   }
 });
 
@@ -256,6 +276,7 @@ test('push-up-to, revert, and reset-soft demand a level 1 confirmation', () => {
     { action: 'revert', hash: 'abcdef1' },
     { action: 'reset-soft', hash: 'abcdef1' },
     { action: 'merge-into', target: 'main', source: 'feature' },
+    { action: 'cherry-pick', hash: 'abcdef1' },
   ];
   for (const action of actions) {
     const resId = verdict(action, {}, 'id');
