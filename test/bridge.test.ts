@@ -357,6 +357,155 @@ test('reset-hard needs confirm plus forceAcknowledgement, enforced host-side', a
   assert.equal(full.ok, true);
 });
 
+test('discard-file needs confirm plus forceAcknowledgement, enforced host-side', async (t) => {
+  const dir = await makeRepo();
+  t.after(() => cleanup(dir));
+  const repo = new RepositoryService({ folderPath: dir, gitPath: 'git', store: new MemoryStore() });
+  const hId = harness(repo, { settings: () => ({ ...SETTINGS, language: 'id' }) });
+  t.after(() => hId.bridge.dispose());
+
+  // No flags: blocked, level 2, high risk
+  const bareId = await hId.webview.send(
+    req('actions/git', { action: 'discard-file', path: 'a.txt', idempotencyKey: 'df1' }),
+  );
+  assert.equal(bareId.ok, false);
+  if (bareId.ok) return;
+  assert.equal(bareId.error.code, 'CONFIRMATION_REQUIRED');
+  assert.equal(bareId.error.confirmationLevel, 2);
+  assert.equal(bareId.error.risk, 'high');
+  assert.equal(bareId.error.message, 'Membuang perubahan lokal bersifat permanen.');
+
+  const hEn = harness(repo, { settings: () => ({ ...SETTINGS, language: 'en' }) });
+  t.after(() => hEn.bridge.dispose());
+  const bareEn = await hEn.webview.send(
+    req('actions/git', { action: 'discard-file', path: 'a.txt', idempotencyKey: 'df1-en' }),
+  );
+  assert.equal(bareEn.ok, false);
+  if (bareEn.ok) return;
+  assert.equal(bareEn.error.message, 'Discarding local changes is permanent.');
+
+  // confirm alone is not enough at level 2
+  const half = await hId.webview.send(
+    req('actions/git', { action: 'discard-file', path: 'a.txt', confirm: true, idempotencyKey: 'df2' }),
+  );
+  assert.equal(half.ok, false);
+});
+
+test('discard-file restores local file content back to HEAD when confirmed', async (t) => {
+  const dir = await makeRepo();
+  t.after(() => cleanup(dir));
+  const repo = new RepositoryService({ folderPath: dir, gitPath: 'git', store: new MemoryStore() });
+  const h = harness(repo);
+  t.after(() => h.bridge.dispose());
+
+  const original = (await fs.readFile(path.join(dir, 'a.txt'), 'utf8')).replace(/\r\n/g, '\n');
+  await fs.writeFile(path.join(dir, 'a.txt'), 'modified locally\n', 'utf8');
+
+  const res = await h.webview.send(
+    req('actions/git', {
+      action: 'discard-file',
+      path: 'a.txt',
+      confirm: true,
+      forceAcknowledgement: true,
+      idempotencyKey: 'df-restore',
+    }),
+  );
+  assert.equal(res.ok, true);
+
+  const after = (await fs.readFile(path.join(dir, 'a.txt'), 'utf8')).replace(/\r\n/g, '\n');
+  assert.equal(after, original);
+
+  const status = await repo.status();
+  assert.equal(status.changes.some((c) => c.path === 'a.txt' && c.unstaged), false);
+});
+
+test('discard-file rejects invalid path with 400 validation error before touching git', async (t) => {
+  const dir = await makeRepo();
+  t.after(() => cleanup(dir));
+  const repo = new RepositoryService({ folderPath: dir, gitPath: 'git', store: new MemoryStore() });
+  const h = harness(repo);
+  t.after(() => h.bridge.dispose());
+
+  // Traversal path
+  const traversal = await h.webview.send(
+    req('actions/git', {
+      action: 'discard-file',
+      path: '../outside.txt',
+      confirm: true,
+      forceAcknowledgement: true,
+      idempotencyKey: 'df-traversal',
+    }),
+  );
+  assert.equal(traversal.ok, false);
+  if (traversal.ok) return;
+  assert.equal(traversal.error.code, 'VALIDATION_ERROR');
+
+  // Absolute path
+  const absolute = await h.webview.send(
+    req('actions/git', {
+      action: 'discard-file',
+      path: '/etc/passwd',
+      confirm: true,
+      forceAcknowledgement: true,
+      idempotencyKey: 'df-abs',
+    }),
+  );
+  assert.equal(absolute.ok, false);
+  if (absolute.ok) return;
+  assert.equal(absolute.error.code, 'VALIDATION_ERROR');
+});
+
+test('discard-file rejects mismatched statusToken with 409', async (t) => {
+  const dir = await makeRepo();
+  t.after(() => cleanup(dir));
+  const repo = new RepositoryService({ folderPath: dir, gitPath: 'git', store: new MemoryStore() });
+  const h = harness(repo);
+  t.after(() => h.bridge.dispose());
+
+  const res = await h.webview.send(
+    req('actions/git', {
+      action: 'discard-file',
+      path: 'a.txt',
+      confirm: true,
+      forceAcknowledgement: true,
+      statusToken: 'stale-token-12345',
+      idempotencyKey: 'df-stale',
+    }),
+  );
+  assert.equal(res.ok, false);
+  if (res.ok) return;
+  assert.equal(res.error.status, 409);
+  assert.equal(res.error.code, 'CONFLICT');
+  assert.equal(res.error.message, hostText('en').bridge.staleToken);
+});
+
+test('discard-file leaves staged-only changes in index intact', async (t) => {
+  const dir = await makeRepo();
+  t.after(() => cleanup(dir));
+  const repo = new RepositoryService({ folderPath: dir, gitPath: 'git', store: new MemoryStore() });
+  const h = harness(repo);
+  t.after(() => h.bridge.dispose());
+
+  await fs.writeFile(path.join(dir, 'a.txt'), 'staged content\n', 'utf8');
+  await repo.git.stage(['a.txt']);
+  const stagedStatus = await repo.status();
+  assert.equal(stagedStatus.changes.some((c) => c.path === 'a.txt' && c.staged), true);
+
+  const res = await h.webview.send(
+    req('actions/git', {
+      action: 'discard-file',
+      path: 'a.txt',
+      confirm: true,
+      forceAcknowledgement: true,
+      idempotencyKey: 'df-staged',
+    }),
+  );
+  assert.equal(res.ok, true);
+
+  const afterStatus = await repo.status();
+  assert.equal(afterStatus.changes.some((c) => c.path === 'a.txt' && c.staged), true);
+});
+
 test('create-branch creates and switches to new branch via bridge', async (t) => {
   const dir = await makeRepo();
   t.after(() => cleanup(dir));

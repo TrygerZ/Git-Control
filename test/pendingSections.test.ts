@@ -236,3 +236,15 @@ test('commit form progress spinner renders inside gc-commit__status outside acti
     'fallback spinner label must use the generic operationInProgress key',
   );
 });
+
+test('discard action is scoped strictly to unstaged changes section', () => {
+  const src = fs.readFileSync(
+    path.join(__dirname, '..', '..', 'src', 'webview', 'PendingChanges.tsx'),
+    'utf8',
+  );
+  assert.match(
+    src,
+    /discardAction=\{\s*section === 'unstaged'\s*\?/,
+    'discard action must be conditionally provided only for unstaged section',
+  );
+});

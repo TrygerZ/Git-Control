@@ -586,6 +586,7 @@ const ACTIONS: GitActionRequest[] = [
   { action: 'revert', hash: HASH },
   { action: 'reset-soft', hash: HASH },
   { action: 'reset-hard', hash: HASH },
+  { action: 'discard-file', path: 'file.txt' },
   { action: 'push', remote: 'origin', branch: 'main' },
   { action: 'push-up-to', remote: 'origin', branch: 'main', hash: HASH },
   { action: 'fetch', prune: true },
