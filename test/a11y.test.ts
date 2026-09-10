@@ -1165,3 +1165,28 @@ test('BranchSelector: accessibility attributes (aria-label, title) are defined a
     assert.ok(strings.graph.checkoutBranchCurrent('main').includes('main'));
   }
 });
+
+test('ConflictPanel and OperationBanner: continue action buttons unify on primary tier', () => {
+  const panelSource = fs.readFileSync(
+    path.join(__dirname, '..', '..', 'src', 'webview', 'ConflictPanel.tsx'),
+    'utf8',
+  );
+
+  // Both OperationBanner and ConflictPanel continue buttons must be primary tier
+  const continueMatches = [
+    ...panelSource.matchAll(/<button[^>]*className="([^"]*gc-button[^"]*)"[^>]*title=\{[^}]*continue[^}]*\}/gi),
+  ];
+  assert.equal(continueMatches.length, 2, 'two continue buttons found in ConflictPanel.tsx');
+  for (const match of continueMatches) {
+    assert.ok(match[1]?.includes('gc-button--primary'), 'continue button must use primary tier');
+  }
+
+  // Both abort buttons remain neutral tier
+  const abortMatches = [
+    ...panelSource.matchAll(/<button[^>]*className="([^"]*gc-button[^"]*)"[^>]*title=\{[^}]*abort[^}]*\}/gi),
+  ];
+  assert.equal(abortMatches.length, 2, 'two abort buttons found in ConflictPanel.tsx');
+  for (const match of abortMatches) {
+    assert.equal(match[1], 'gc-button', 'abort button must use neutral tier');
+  }
+});

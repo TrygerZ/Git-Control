@@ -550,6 +550,10 @@ h3 {
   margin-left: auto;
 }
 
+.gc-banner .gc-help-text {
+  flex-basis: 100%;
+}
+
 /* ------------------------------------------------------------------ skeleton */
 
 /*
@@ -3233,10 +3237,15 @@ h3 {
 .gc-conflicts__footer {
   display: flex;
   flex-wrap: wrap;
+  align-items: center;
   gap: var(--gc-space-2);
   margin-top: var(--gc-space-3);
   padding-top: var(--gc-space-3);
   border-top: 1px solid var(--gc-border);
+}
+
+.gc-conflicts__footer .gc-help-text {
+  flex-basis: 100%;
 }
 
 /* -------------------------------------------------------------------- github */

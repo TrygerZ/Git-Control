@@ -172,14 +172,12 @@ export function ConflictPanel({ conflicts, operation }: Props): JSX.Element {
       </ul>
       <div className="gc-conflicts__footer">
         {/*
-          Tier deliberately NOT `--primary`: this button is permanently disabled and
-          the live continue button lives in `OperationBanner` above. Two loud buttons
-          with the same word, one of which never works, is worse than one — so this one
-          keeps the neutral tier and exists only to state the gate that is blocking it.
+          Positive/primary tier matches OperationBanner for visual consistency.
+          Disabled state remains while conflicted files are unresolved.
         */}
         <button
           type="button"
-          className="gc-button"
+          className="gc-button gc-button--primary"
           disabled
           aria-describedby={blockedId}
           title={strings.conflict.continueLockedTitle}
