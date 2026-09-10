@@ -133,14 +133,14 @@ export const ICON_PATHS: Record<IconName, () => JSX.Element> = {
   discard: () => (
     <>
       <path
-        d="M12.5 11A5.5 5.5 0 1 0 2.75 7.5"
+        d="M3 6.5h6a4 4 0 0 1 4 4v2"
         stroke="currentColor"
         strokeWidth="1.5"
         strokeLinecap="round"
         fill="none"
       />
       <path
-        d="M2.5 3.5v4.25h4.25"
+        d="M6 3L2.5 6.5 6 10"
         stroke="currentColor"
         strokeWidth="1.5"
         strokeLinecap="round"
