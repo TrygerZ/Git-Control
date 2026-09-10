@@ -8,6 +8,7 @@ import {
   validateFullHash,
   validateHash,
   validateLimit,
+  validateMainline,
   validateRemoteName,
   validateRepoRelativePath,
   validateStashMessage,
@@ -258,4 +259,23 @@ test('validateEmail accepts valid email strings and rejects invalid ones', () =>
   assert.equal(validateEmail(12345), false, 'number');
   assert.equal(validateEmail({ email: 'test@example.com' }), false, 'object');
 });
+
+test('validateMainline accepts positive integers and rejects everything else', () => {
+  assert.equal(validateMainline(1), true);
+  assert.equal(validateMainline(2), true);
+  assert.equal(validateMainline(100), true);
+
+  // Rejections
+  assert.equal(validateMainline(0), false, 'zero is not 1-based');
+  assert.equal(validateMainline(-1), false, 'negative integer');
+  assert.equal(validateMainline(1.5), false, 'float');
+  assert.equal(validateMainline(Number.NaN), false, 'NaN');
+  assert.equal(validateMainline(Number.POSITIVE_INFINITY), false, 'Infinity');
+  assert.equal(validateMainline('1'), false, 'string representation');
+  assert.equal(validateMainline(null), false, 'null');
+  assert.equal(validateMainline(undefined), false, 'undefined');
+  assert.equal(validateMainline({}), false, 'object');
+  assert.equal(validateMainline([]), false, 'array');
+});
+
 

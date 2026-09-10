@@ -189,6 +189,17 @@ export function parseRevListCounts(raw: string): AheadBehind {
   };
 }
 
+/**
+ * Parse output of `git rev-list --parents -n 1 <hash>`.
+ * The first token is the commit hash itself; following tokens are its parents.
+ */
+export function parseRevListParents(raw: string): string[] {
+  const line = raw.trim().split(/[\r\n]+/)[0]?.trim();
+  if (!line) return [];
+  const tokens = line.split(/\s+/).filter((t) => t.length > 0);
+  return tokens.slice(1);
+}
+
 /** Field order of {@link REFS_FORMAT}. */
 export const REFS_FORMAT = '%(refname)%1f%(objectname)%1f%(upstream)%1f%(upstream:track)%1f%(HEAD)';
 

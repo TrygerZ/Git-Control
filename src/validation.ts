@@ -196,6 +196,16 @@ export function validateLimit(value: unknown, max = 10000): boolean {
 }
 
 /**
+ * Defends against: non-positive, non-integer, or out-of-range parent selectors
+ * when reverting merge commits via `-m <mainline>`. Parent indexes in Git are
+ * 1-based integers (usually 1 or 2).
+ */
+export function validateMainline(value: unknown): value is number {
+  if (typeof value !== 'number' || !Number.isInteger(value)) return false;
+  return value >= 1 && Number.isSafeInteger(value);
+}
+
+/**
  * Defends against: argument injection. `shell: false` stops shell metacharacter
  * attacks but git still interprets a leading `-` as an option, which would let
  * a crafted ref enable things like `--force` or `--upload-pack`.

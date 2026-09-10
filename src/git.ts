@@ -29,6 +29,7 @@ import {
   parseRemoteList,
   parseRemotes,
   parseRevListCounts,
+  parseRevListParents,
   parseShortlog,
   parseShowStat,
   parseStatus,
@@ -50,6 +51,7 @@ import {
   validateFullHash,
   validateHash,
   validateLimit,
+  validateMainline,
   validateRemoteName,
   validateRepoRelativePath,
   validateStashMessage,
@@ -183,6 +185,20 @@ export class GitRunner {
     );
     if (code !== 0) return null;
     return parseLog(stdout)[0] ?? null;
+  }
+
+  /**
+   * Parent hashes for a commit, or an empty array when the object has no
+   * parents or does not exist.
+   */
+  async parents(hash: string): Promise<string[]> {
+    this.assertHash(hash);
+    const { stdout, code } = await this.run(
+      ['rev-list', '--parents', '-n', '1', sanitizeRefArg(hash)],
+      { allowedExitCodes: [0, 128] },
+    );
+    if (code !== 0) return [];
+    return parseRevListParents(stdout);
   }
 
   /**
@@ -574,9 +590,17 @@ export class GitRunner {
     });
   }
 
-  async revert(hash: string): Promise<void> {
+  async revert(hash: string, opts: { mainline?: number } = {}): Promise<void> {
     this.assertHash(hash);
-    await this.runExclusive(() => this.run(['revert', '--no-edit', sanitizeRefArg(hash)]));
+    const args = ['revert', '--no-edit'];
+    if (opts.mainline !== undefined) {
+      if (!validateMainline(opts.mainline)) {
+        throw new GitError({ code: 'VALIDATION_ERROR', message: `Invalid mainline: ${opts.mainline}` });
+      }
+      args.push('-m', String(opts.mainline));
+    }
+    args.push(sanitizeRefArg(hash));
+    await this.runExclusive(() => this.run(args));
   }
 
   async resetSoft(hash: string): Promise<void> {
