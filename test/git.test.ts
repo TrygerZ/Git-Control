@@ -4,7 +4,7 @@ import * as fs from 'node:fs/promises';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { GitError, GitRunner, MAX_STDERR_BYTES, resolveGitExecutable } from '../src/git';
-import { cleanup, makeFixture } from './repoFixture';
+import { advanceRemote, cleanup, makeFixture } from './repoFixture';
 
 /** Throwaway repository with one commit. Copied from a per-process template. */
 function makeRepo(): Promise<string> {
@@ -576,5 +576,37 @@ test('mergeInto creates a merge commit when noFf is true', async (t) => {
   const meta = await git.commitMeta(head);
   assert.equal(meta?.parents.length, 2, 'must have two parents');
   assert.ok(meta?.parents.includes(sideCommit as string));
+});
+
+test('pull synchronizes active branch with upstream using --no-rebase', async (t) => {
+  const dir = await makeFixture('remote');
+  t.after(() => cleanup(dir));
+  const git = new GitRunner({ gitPath: 'git', cwd: dir });
+
+  const headBefore = await git.headHash();
+  const upstreamHash = await advanceRemote(dir, 'upstream.txt', 'hello from upstream\n');
+
+  await git.pull();
+
+  const headAfter = await git.headHash();
+  assert.equal(headAfter, upstreamHash);
+  assert.notEqual(headBefore, headAfter);
+  assert.match(await fs.readFile(path.join(dir, 'upstream.txt'), 'utf8'), /^hello from upstream\r?\n$/);
+});
+
+test('pull rejects invalid remote or branch names before running git', async (t) => {
+  const dir = await makeFixture('remote');
+  t.after(() => cleanup(dir));
+  const git = new GitRunner({ gitPath: 'git', cwd: dir });
+
+  await assert.rejects(
+    () => git.pull({ remote: '-bad-remote' }),
+    (err: unknown) => err instanceof GitError && err.code === 'VALIDATION_ERROR',
+  );
+
+  await assert.rejects(
+    () => git.pull({ branch: '-bad-branch' }),
+    (err: unknown) => err instanceof GitError && err.code === 'VALIDATION_ERROR',
+  );
 });
 

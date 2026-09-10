@@ -226,6 +226,7 @@ export type GitActionRequest =
   | { action: 'reset-hard'; hash: string }
   | { action: 'push'; remote: string; branch: string; setUpstream?: boolean }
   | { action: 'push-up-to'; remote: string; branch: string; hash: string }
+  | { action: 'pull'; remote?: string; branch?: string }
   | { action: 'fetch'; remote?: string; prune?: boolean }
   | { action: 'stash'; message: string; includeUntracked?: boolean }
   | { action: 'stash-pop' }
