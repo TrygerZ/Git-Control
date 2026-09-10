@@ -187,13 +187,15 @@ function GuardDialogBody({ guard }: { guard: PendingGuard }): JSX.Element {
   const ackHintId = 'gc-guard-ack-hint';
   const detailId = useId();
   const command = gitCommandOf(request);
+  const isDiscardFile = request.action === 'discard-file';
   /**
    * Level 2 is the only case where a mistake cannot be undone by git itself, so it
    * gets a visual tier of its own rather than one more paragraph. Level 1 keeps the
    * plain frame: making every guard look catastrophic teaches the user to ignore the
-   * frame, which costs exactly the warning that mattered.
+   * frame, which costs exactly the warning that mattered. Single-file discard keeps
+   * the standard frame since only one file's uncommitted changes are discarded.
    */
-  const severe = level === 2;
+  const severe = level === 2 && !isDiscardFile;
   /**
    * Buttons in safety order, not host order: see `orderedRemedies`. The confirmation
    * moves off the bottom-right corner so a reflex press lands on `Batal` instead.
@@ -240,11 +242,13 @@ function GuardDialogBody({ guard }: { guard: PendingGuard }): JSX.Element {
           {risk !== undefined && (
             <>
               <dt>{strings.guard.riskLevelLabel}</dt>
-              <dd className="gc-risk">
-                <span className="gc-risk__glyph" aria-hidden="true">
-                  <Icon name="warning" />
-                </span>
-                <span>{riskLabel(risk, language)}</span>
+              <dd className={isDiscardFile ? 'gc-risk gc-risk--neutral' : 'gc-risk'}>
+                {!isDiscardFile && (
+                  <span className="gc-risk__glyph" aria-hidden="true">
+                    <Icon name="warning" />
+                  </span>
+                )}
+                <span>{isDiscardFile ? strings.guard.discardRiskLabel : riskLabel(risk, language)}</span>
               </dd>
             </>
           )}
@@ -257,17 +261,23 @@ function GuardDialogBody({ guard }: { guard: PendingGuard }): JSX.Element {
         </dl>
 
         <div className="gc-modal__body" id={descId}>
-          <p>{view.explanation}</p>
-          {/* The consequence is the sentence that must not be skimmed, so it is
-              set apart rather than run in with the explanation. */}
-          <p className="gc-modal__consequence">{consequenceOf(request, language)}</p>
-          {stage === 2 && (
-            <p className="gc-modal__warning">
-              <Icon name="warning" />
-              <span>
-                {strings.guard.stage2Warning}
-              </span>
-            </p>
+          {isDiscardFile ? (
+            <p className="gc-modal__consequence">{consequenceOf(request, language)}</p>
+          ) : (
+            <>
+              <p>{view.explanation}</p>
+              {/* The consequence is the sentence that must not be skimmed, so it is
+                  set apart rather than run in with the explanation. */}
+              <p className="gc-modal__consequence">{consequenceOf(request, language)}</p>
+              {stage === 2 && (
+                <p className="gc-modal__warning">
+                  <Icon name="warning" />
+                  <span>
+                    {strings.guard.stage2Warning}
+                  </span>
+                </p>
+              )}
+            </>
           )}
         </div>
 
@@ -385,8 +395,12 @@ function GuardDialogBody({ guard }: { guard: PendingGuard }): JSX.Element {
         </div>
 
         {/* A disabled button with no stated reason is worse than no button. */}
-        {confirmDisabled && !busy && (
-          <p className="gc-help-text" id={ackHintId}>
+        {level === 2 && stage === 2 && (
+          <p
+            className={`gc-help-text gc-modal__ack-hint${confirmDisabled && !busy ? '' : ' gc-modal__ack-hint--hidden'}`}
+            id={ackHintId}
+            aria-hidden={!confirmDisabled || busy}
+          >
             {strings.guard.ackRequiredHint}
           </p>
         )}
