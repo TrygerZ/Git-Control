@@ -21,8 +21,9 @@ import { CommitForm } from './CommitForm';
 import { ConflictPanel, OperationBanner } from './ConflictPanel';
 import { GuardDialog } from './GuardDialog';
 import { ToastRegion } from './Toast';
+import { copyToClipboard } from './clipboard';
 import { bridge, loadState, saveState } from './bridge';
-import { formatCount, sanitizeGitText, shortHash, UNKNOWN_CHURN } from './format';
+import { formatCount, formatStashLabel, sanitizeGitText, shortHash, UNKNOWN_CHURN } from './format';
 import { useT } from './useT';
 import { groupBySection, isSectionBulkDisabled, stageableFrom, unstageableFrom, type ChangeSection } from './tree';
 import {
@@ -34,7 +35,7 @@ import {
   useSettingsStore,
   wireHostEvents,
 } from './store';
-import { ContextBar, EmptyState, ErrorBanner, FileListSkeleton, Icon, InfoBanner } from './ui';
+import { ContextBar, EmptyState, ErrorBanner, FileListSkeleton, Icon, InfoBanner, Spinner } from './ui';
 import type { ChangeEntry, Lang, StashEntry } from '../messages';
 
 /**
@@ -559,6 +560,7 @@ function StashSection({
         <StashList
           stashes={stashes}
           busy={busy}
+          language={language}
           onApply={onApply}
           onDrop={onDrop}
         />
@@ -570,15 +572,23 @@ function StashSection({
 function StashList({
   stashes,
   busy,
+  language,
   onApply,
   onDrop,
 }: {
   stashes: readonly StashEntry[];
   busy: boolean;
+  language: Lang;
   onApply(index: number): void;
   onDrop(index: number): void;
 }): JSX.Element {
   const strings = useT();
+  const stashesExpanded = useChangesStore((s) => s.stashesExpanded);
+  const stashContents = useChangesStore((s) => s.stashContents);
+  const stashContentsLoading = useChangesStore((s) => s.stashContentsLoading);
+  const toggleStashExpanded = useChangesStore((s) => s.toggleStashExpanded);
+  const pushToast = useOperationStore((s) => s.pushToast);
+
   if (stashes.length === 0) {
     return (
       <div className="gc-stash__empty">
@@ -587,41 +597,124 @@ function StashList({
     );
   }
 
+  const handleCopyHash = async (hash: string) => {
+    const ok = await copyToClipboard(hash);
+    if (ok) {
+      pushToast({ level: 'info', message: strings.pending.stashToastCopied });
+    } else {
+      pushToast({ level: 'warning', message: strings.inspector.toastCopyFailed });
+    }
+  };
+
   return (
     <ul className="gc-tree gc-stash-list" role="list">
       {stashes.map((stash, index) => {
         const parsedIndex = parseStashIndex(stash.ref) ?? index;
+        const stashNumber = parsedIndex + 1;
+        const isExpanded = stashesExpanded.has(parsedIndex);
+        const files = stashContents[parsedIndex];
+        const isLoading = stashContentsLoading.has(parsedIndex);
         return (
-          <li key={stash.ref} className="gc-tree__row gc-stash-item" role="listitem">
-            <span className="gc-stash-item__ref">{stash.ref}</span>
-            <span className="gc-stash-item__hash" title={stash.hash}>
-              {shortHash(stash.hash)}
-            </span>
-            <span className="gc-stash-item__subject" title={sanitizeGitText(stash.subject)}>
-              {sanitizeGitText(stash.subject)}
-            </span>
-            <div className="gc-stash-item__actions">
+          <li key={stash.ref} className="gc-stash-entry" role="listitem">
+            <div className="gc-tree__row gc-stash-item">
               <button
                 type="button"
-                className="gc-button gc-button--quiet"
-                aria-label={strings.pending.stashApplyAria(stash.ref)}
-                title={strings.pending.stashApplyTitle}
-                disabled={busy}
-                onClick={() => onApply(parsedIndex)}
+                className="gc-icon-button gc-stash-item__twisty"
+                aria-expanded={isExpanded}
+                aria-label={
+                  isExpanded
+                    ? strings.pending.stashCollapseAria(stashNumber)
+                    : strings.pending.stashExpandAria(stashNumber)
+                }
+                onClick={() => void toggleStashExpanded(parsedIndex)}
               >
-                {strings.pending.stashApplyLabel}
+                <span className="gc-tree__twisty" aria-hidden="true">
+                  <Icon name={isExpanded ? 'chevron-down' : 'chevron-right'} />
+                </span>
               </button>
+              <span className="gc-stash-item__title">
+                {formatStashLabel(parsedIndex, language)}
+              </span>
               <button
                 type="button"
-                className="gc-button gc-button--quiet gc-button--danger"
-                aria-label={strings.pending.stashDropAria(stash.ref)}
-                title={strings.pending.stashDropTitle}
-                disabled={busy}
-                onClick={() => onDrop(parsedIndex)}
+                className="gc-stash-item__hash-btn"
+                aria-label={strings.pending.stashCopyHashAria}
+                title={stash.hash}
+                onClick={() => void handleCopyHash(stash.hash)}
               >
-                {strings.pending.stashDropLabel}
+                {shortHash(stash.hash)}
               </button>
+              <div className="gc-stash-item__actions">
+                <button
+                  type="button"
+                  className="gc-button gc-button--quiet"
+                  aria-label={strings.pending.stashApplyAria(stash.ref)}
+                  title={strings.pending.stashApplyTitle}
+                  disabled={busy}
+                  onClick={() => onApply(parsedIndex)}
+                >
+                  {strings.pending.stashApplyLabel}
+                </button>
+                <button
+                  type="button"
+                  className="gc-button gc-button--quiet gc-button--danger"
+                  aria-label={strings.pending.stashDropAria(stash.ref)}
+                  title={strings.pending.stashDropTitle}
+                  disabled={busy}
+                  onClick={() => onDrop(parsedIndex)}
+                >
+                  {strings.pending.stashDropLabel}
+                </button>
+              </div>
             </div>
+            {isExpanded && (
+              <div className="gc-stash-item__details">
+                {isLoading && (
+                  <div className="gc-stash-files__loading">
+                    <Spinner label={strings.pending.stashFilesLoading} />
+                  </div>
+                )}
+                {!isLoading && files !== undefined && files.length === 0 && (
+                  <div className="gc-stash-files__empty">
+                    <span className="gc-help-text">{strings.pending.stashFilesEmpty}</span>
+                  </div>
+                )}
+                {!isLoading && files !== undefined && files.length > 0 && (
+                  <ul className="gc-tree gc-stash-files" role="list">
+                    {files.map((file) => {
+                      const isBinary = file.additions === null && file.deletions === null;
+                      return (
+                        <li key={file.path} className="gc-tree__row gc-stash-file" role="listitem">
+                          <span className="gc-stash-file__path" title={file.path}>
+                            {file.path}
+                          </span>
+                          {isBinary ? (
+                            <span
+                              className="gc-tree__binary"
+                              title={strings.changeTree.binaryAria}
+                              aria-label={strings.changeTree.binaryAria}
+                            >
+                              {strings.changeTree.binaryLabel}
+                            </span>
+                          ) : (
+                            <span
+                              className="gc-tree__stats gc-stat-group"
+                              aria-label={strings.changeTree.churnSummary(
+                                file.additions ?? 0,
+                                file.deletions ?? 0,
+                              )}
+                            >
+                              <span className="gc-stat gc-stat--add">+{file.additions ?? 0}</span>
+                              <span className="gc-stat gc-stat--del">−{file.deletions ?? 0}</span>
+                            </span>
+                          )}
+                        </li>
+                      );
+                    })}
+                  </ul>
+                )}
+              </div>
+            )}
           </li>
         );
       })}
