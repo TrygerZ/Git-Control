@@ -1782,3 +1782,151 @@ test('merge-into on dirty tree is blocked with DIRTY_TREE', async (t) => {
   assert.equal(response.error.status, 412);
   assert.equal(response.error.code, 'DIRTY_TREE');
 });
+
+test('stash/list returns stash entries DTO', async (t) => {
+  const dir = await makeRepo();
+  t.after(() => cleanup(dir));
+  const repo = new RepositoryService({ folderPath: dir, gitPath: 'git', store: new MemoryStore() });
+  const h = harness(repo);
+  t.after(() => h.bridge.dispose());
+
+  // Initially empty
+  const emptyRes = await h.webview.send(req('stash/list', {}));
+  assert.equal(emptyRes.ok, true);
+  if (!emptyRes.ok) return;
+  assert.deepEqual(emptyRes.data, []);
+
+  // Create a stash entry
+  await fs.writeFile(path.join(dir, 'test.txt'), 'stash me\n', 'utf8');
+  await repo.git.stashPush('bridge stash', { includeUntracked: true });
+
+  const res = await h.webview.send(req('stash/list', {}));
+  assert.equal(res.ok, true);
+  if (!res.ok) return;
+  const list = res.data as { ref: string; hash: string; subject: string }[];
+  assert.equal(list.length, 1);
+  assert.equal(list[0]?.ref, 'stash@{0}');
+  assert.ok(list[0]?.hash.length >= 7);
+  assert.ok(list[0]?.subject.includes('bridge stash'));
+});
+
+test('stash-apply requires confirmation, is blocked on dirty tree, and rejects stale token or invalid index', async (t) => {
+  const dir = await makeRepo();
+  t.after(() => cleanup(dir));
+  const repo = new RepositoryService({ folderPath: dir, gitPath: 'git', store: new MemoryStore() });
+  const h = harness(repo);
+  t.after(() => h.bridge.dispose());
+
+  await fs.writeFile(path.join(dir, 'stashfile.txt'), 'stash content\n', 'utf8');
+  await repo.git.stashPush('stash test', { includeUntracked: true });
+  repo.invalidate();
+  const token = (await repo.status()).statusToken;
+
+  // Rejects invalid index with 400 VALIDATION_ERROR
+  const invalidRes = await h.webview.send(
+    req('actions/git', { action: 'stash-apply', index: -1, statusToken: token }),
+  );
+  assert.equal(invalidRes.ok, false);
+  if (!invalidRes.ok) {
+    assert.equal(invalidRes.error.status, 400);
+    assert.equal(invalidRes.error.code, 'VALIDATION_ERROR');
+  }
+
+  // Rejects stale statusToken with 409
+  const staleRes = await h.webview.send(
+    req('actions/git', { action: 'stash-apply', index: 0, statusToken: 'stale-token-123' }),
+  );
+  assert.equal(staleRes.ok, false);
+  if (!staleRes.ok) {
+    assert.equal(staleRes.error.status, 409);
+    assert.equal(staleRes.error.code, 'CONFLICT');
+  }
+
+  // Without confirm: blocked with 428 CONFIRMATION_REQUIRED
+  const unconfirmed = await h.webview.send(
+    req('actions/git', { action: 'stash-apply', index: 0, statusToken: token }),
+  );
+  assert.equal(unconfirmed.ok, false);
+  if (!unconfirmed.ok) {
+    assert.equal(unconfirmed.error.status, 428);
+    assert.equal(unconfirmed.error.code, 'CONFIRMATION_REQUIRED');
+  }
+
+  // When dirty: blocked with 412 DIRTY_TREE
+  await fs.writeFile(path.join(dir, 'dirty.txt'), 'dirty tree\n', 'utf8');
+  repo.invalidate();
+  const dirtyToken = (await repo.status()).statusToken;
+  const dirtyRes = await h.webview.send(
+    req('actions/git', { action: 'stash-apply', index: 0, confirm: true, statusToken: dirtyToken }),
+  );
+  assert.equal(dirtyRes.ok, false);
+  if (!dirtyRes.ok) {
+    assert.equal(dirtyRes.error.status, 412);
+    assert.equal(dirtyRes.error.code, 'DIRTY_TREE');
+  }
+
+  // Clean tree: succeeds with confirm: true
+  await fs.rm(path.join(dir, 'dirty.txt'), { force: true });
+  repo.invalidate();
+  const cleanToken = (await repo.status()).statusToken;
+  const successRes = await h.webview.send(
+    req('actions/git', { action: 'stash-apply', index: 0, confirm: true, statusToken: cleanToken }),
+  );
+  assert.equal(successRes.ok, true);
+
+  // Stash entry still exists in stash list after apply
+  const afterList = await repo.stashList();
+  assert.equal(afterList.length, 1);
+});
+
+test('stash-drop requires level 2 confirmation with forceAcknowledgement and deletes entry', async (t) => {
+  const dir = await makeRepo();
+  t.after(() => cleanup(dir));
+  const repo = new RepositoryService({ folderPath: dir, gitPath: 'git', store: new MemoryStore() });
+  const h = harness(repo);
+  t.after(() => h.bridge.dispose());
+
+  await fs.writeFile(path.join(dir, 'dropme.txt'), 'drop content\n', 'utf8');
+  await repo.git.stashPush('to drop', { includeUntracked: true });
+  repo.invalidate();
+  const token = (await repo.status()).statusToken;
+
+  // Rejects invalid index with 400
+  const invalidRes = await h.webview.send(
+    req('actions/git', { action: 'stash-drop', index: 'zero' as unknown as number, statusToken: token }),
+  );
+  assert.equal(invalidRes.ok, false);
+  if (!invalidRes.ok) {
+    assert.equal(invalidRes.error.status, 400);
+    assert.equal(invalidRes.error.code, 'VALIDATION_ERROR');
+  }
+
+  // confirm: true alone is NOT sufficient for level 2 (requires forceAcknowledgement)
+  const partialConfirm = await h.webview.send(
+    req('actions/git', { action: 'stash-drop', index: 0, confirm: true, statusToken: token }),
+  );
+  assert.equal(partialConfirm.ok, false);
+  if (!partialConfirm.ok) {
+    assert.equal(partialConfirm.error.status, 428);
+    assert.equal(partialConfirm.error.code, 'CONFIRMATION_REQUIRED');
+  }
+
+  // confirm: true AND forceAcknowledgement: true succeeds even on dirty tree
+  await fs.writeFile(path.join(dir, 'unrelated.txt'), 'unrelated work\n', 'utf8');
+  repo.invalidate();
+  const dirtyToken = (await repo.status()).statusToken;
+  const dropRes = await h.webview.send(
+    req('actions/git', {
+      action: 'stash-drop',
+      index: 0,
+      confirm: true,
+      forceAcknowledgement: true,
+      statusToken: dirtyToken,
+    }),
+  );
+  assert.equal(dropRes.ok, true);
+
+  // Stash list is now empty
+  const afterDrop = await repo.stashList();
+  assert.deepEqual(afterDrop, []);
+});

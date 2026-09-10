@@ -229,6 +229,8 @@ export type GitActionRequest =
   | { action: 'fetch'; remote?: string; prune?: boolean }
   | { action: 'stash'; message: string; includeUntracked?: boolean }
   | { action: 'stash-pop' }
+  | { action: 'stash-apply'; index: number }
+  | { action: 'stash-drop'; index: number }
   | { action: 'merge-continue' }
   | { action: 'merge-abort' };
 
@@ -370,6 +372,12 @@ export type ContributorEntry = ContributorInfo;
 export type ContributorsPayload = Record<string, never>;
 export type ContributorsRequest = ContributorsPayload;
 export type ContributorsResponse = ContributorInfo[];
+
+export interface StashEntry {
+  ref: string;
+  hash: string;
+  subject: string;
+}
 
 export interface ActionResult {
   ok: true;
@@ -535,6 +543,7 @@ export interface RequestMap {
   'repos/graph': { payload: GraphPayload; response: RepoGraph };
   'repos/remotes': { payload: Record<string, never>; response: { remotes: RemoteInfo[] } };
   'repos/contributors': { payload: ContributorsRequest; response: ContributorsResponse };
+  'stash/list': { payload: Record<string, never>; response: StashEntry[] };
   'commits/detail': { payload: CommitDetailPayload; response: CommitDetail };
   'actions/stage': { payload: StagePayload; response: ActionResult };
   'actions/commit': { payload: CommitPayload; response: CommitResult };

@@ -80,6 +80,7 @@ import type {
   SettingsSetPayload,
   SettingsSnapshot,
   StagePayload,
+  StashEntry,
   StatusPayload,
 } from './messages';
 
@@ -308,6 +309,9 @@ export class MessageBridge {
       case 'repos/contributors':
         validateEmptyPayload(request.payload, this.text().invalid);
         return this.handleContributors();
+      case 'stash/list':
+        validateEmptyPayload(request.payload, this.text().invalid);
+        return this.handleStashList();
       case 'commits/detail':
         return this.handleCommitDetail(request.payload as CommitDetailPayload);
       case 'actions/stage':
@@ -438,6 +442,12 @@ export class MessageBridge {
   private async handleContributors(): Promise<ContributorsResponse> {
     const repo = await this.repository();
     return repo.contributors();
+  }
+
+  /** Query list of stash entries. Readonly; no guard needed. */
+  private async handleStashList(): Promise<StashEntry[]> {
+    const repo = await this.repository();
+    return repo.stashList();
   }
 
   /**
@@ -845,6 +855,10 @@ export class MessageBridge {
         });
       case 'stash-pop':
         return git.stashPop();
+      case 'stash-apply':
+        return git.stashApply(action.index);
+      case 'stash-drop':
+        return git.stashDrop(action.index);
       case 'merge-continue':
         return git.mergeContinue();
       case 'merge-abort':
