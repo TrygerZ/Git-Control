@@ -1808,6 +1808,33 @@ test('stash/list returns stash entries DTO', async (t) => {
   assert.equal(list[0]?.ref, 'stash@{0}');
   assert.ok(list[0]?.hash.length >= 7);
   assert.ok(list[0]?.subject.includes('bridge stash'));
+
+  // Test stash/show on valid index
+  const showRes = await h.webview.send(req('stash/show', { index: 0 }));
+  assert.equal(showRes.ok, true);
+  if (!showRes.ok) return;
+  const files = showRes.data as { path: string; additions: number | null; deletions: number | null }[];
+  assert.equal(files.length, 1);
+  assert.equal(files[0]?.path, 'test.txt');
+  assert.equal(files[0]?.additions, 1);
+  assert.equal(files[0]?.deletions, 0);
+
+  // Test stash/show on invalid index
+  const invalidRes = await h.webview.send(req('stash/show', { index: -1 }));
+  assert.equal(invalidRes.ok, false);
+  if (!invalidRes.ok) {
+    assert.equal(invalidRes.error.code, 'VALIDATION_ERROR');
+    assert.equal(invalidRes.error.status, 400);
+    assert.equal(invalidRes.error.detail, 'index');
+  }
+
+  const badTypeRes = await h.webview.send(req('stash/show', { index: 'zero' as unknown as number }));
+  assert.equal(badTypeRes.ok, false);
+  if (!badTypeRes.ok) {
+    assert.equal(badTypeRes.error.code, 'VALIDATION_ERROR');
+    assert.equal(badTypeRes.error.status, 400);
+    assert.equal(badTypeRes.error.detail, 'index');
+  }
 });
 
 test('stash-apply requires confirmation, is blocked on dirty tree, and rejects stale token or invalid index', async (t) => {

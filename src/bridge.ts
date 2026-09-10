@@ -37,6 +37,7 @@ import {
   validateHash,
   validateRemoteName,
   validateRepoRelativePath,
+  validateStashIndex,
 } from './validation';
 import type {
   ActionResult,
@@ -81,6 +82,8 @@ import type {
   SettingsSnapshot,
   StagePayload,
   StashEntry,
+  StashFile,
+  StashShowPayload,
   StatusPayload,
 } from './messages';
 
@@ -312,6 +315,8 @@ export class MessageBridge {
       case 'stash/list':
         validateEmptyPayload(request.payload, this.text().invalid);
         return this.handleStashList();
+      case 'stash/show':
+        return this.handleStashShow(request.payload as StashShowPayload);
       case 'commits/detail':
         return this.handleCommitDetail(request.payload as CommitDetailPayload);
       case 'actions/stage':
@@ -448,6 +453,15 @@ export class MessageBridge {
   private async handleStashList(): Promise<StashEntry[]> {
     const repo = await this.repository();
     return repo.stashList();
+  }
+
+  /** Query file changes in a stash entry. Readonly; no guard needed. */
+  private async handleStashShow(payload: StashShowPayload): Promise<StashFile[]> {
+    if (typeof payload !== 'object' || payload === null || !validateStashIndex(payload.index)) {
+      fail(400, 'VALIDATION_ERROR', this.text().invalid, { detail: 'index' });
+    }
+    const repo = await this.repository();
+    return repo.stashShow(payload.index);
   }
 
   /**

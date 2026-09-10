@@ -4,13 +4,14 @@ import { makeRepo, type Harness, type TestRepo } from './fixture';
 import type { ErrorCode, RequestKind } from '../src/messages';
 
 const ERROR_CODES = new Set<ErrorCode>(['VALIDATION_ERROR','AUTH_ERROR','FORBIDDEN','NOT_FOUND','CONFLICT','RATE_LIMITED','SERVER_ERROR','UNAVAILABLE','REPOSITORY_LOCKED','DIRTY_TREE','REMOTE_AHEAD','STALE_STATUS','NON_FAST_FORWARD','HOOK_REJECTED','CONFIRMATION_REQUIRED']);
-const kinds: readonly RequestKind[] = ['repos/status','repos/graph','repos/remotes','repos/contributors','stash/list','commits/detail','actions/stage','actions/commit','actions/git','actions/openDiff','actions/showLogs','actions/openExplorer','actions/openExternal','github/auth','github/connect','github/disconnect','github/repo','github/pullRequests','github/commitAuthors','github/contributorIdentity','github/linkage','settings/get','settings/set','iconTheme/get'];
+const kinds: readonly RequestKind[] = ['repos/status','repos/graph','repos/remotes','repos/contributors','stash/list','stash/show','commits/detail','actions/stage','actions/commit','actions/git','actions/openDiff','actions/showLogs','actions/openExplorer','actions/openExternal','github/auth','github/connect','github/disconnect','github/repo','github/pullRequests','github/commitAuthors','github/contributorIdentity','github/linkage','settings/get','settings/set','iconTheme/get'];
 
 function own(t: { after(fn: () => unknown): void }, repo: TestRepo, h: Harness): void { t.after(() => { h.dispose(); return repo.cleanup(); }); }
 function checkResponse(r: any): void { assert.equal(typeof r, 'object'); assert.equal(typeof r.id, 'string'); assert.equal(typeof r.ok, 'boolean'); if (!r.ok) assert.equal(ERROR_CODES.has(r.error.code), true, JSON.stringify(r)); }
 function valid(kind: RequestKind, head: string): Record<string, unknown> {
   switch (kind) {
     case 'commits/detail': return { hash: head };
+    case 'stash/show': return { index: 0 };
     case 'actions/stage': return { paths: ['c1.txt'], stage: true, statusToken: '', idempotencyKey: `valid-${kind}` };
     case 'actions/commit': return { message: 'valid message', statusToken: '', idempotencyKey: `valid-${kind}` };
     case 'actions/git': return { action: 'fetch', idempotencyKey: `valid-${kind}` };
@@ -30,6 +31,7 @@ function hostile(kind: RequestKind): Record<string, unknown> {
   if (kind === 'repos/status') return { includeIgnored: 7 };
   if (kind === 'repos/graph') return { limit: 'x'.repeat(1_000_000) };
   if (kind === 'repos/remotes' || kind === 'repos/contributors' || kind === 'stash/list' || kind === 'actions/showLogs' || kind === 'actions/openExplorer' || kind === 'github/auth' || kind === 'github/connect' || kind === 'github/disconnect' || kind === 'github/linkage') return { value: null };
+  if (kind === 'stash/show') return { index: -1 };
   if (kind === 'commits/detail') return { hash: '--force' };
   if (kind === 'actions/stage') return { paths: ['../../etc/passwd'], stage: true, statusToken: '', idempotencyKey: 'hostile' };
   if (kind === 'actions/commit') return { message: 'x'.repeat(1_000_000), statusToken: '', idempotencyKey: 'hostile' };
@@ -46,7 +48,7 @@ function hostile(kind: RequestKind): Record<string, unknown> {
 }
 
 test('RequestMap is exhaustively listed and every kind has hostile/error contract coverage', async (t) => {
-  assert.equal(new Set(kinds).size, 24);
+  assert.equal(new Set(kinds).size, 25);
   const repo = await makeRepo({ label: 'contract' });
   const h = repo.harness({ host: { iconThemeSnapshot: async () => null, openDiff: async () => ({ opened: true, mode: 'worktree' }), openExplorer: () => {}, openExternal: async () => true, githubRepo: async () => ({ defaultBranch: 'main', private: false, htmlUrl: 'https://github.com/x/y', rateLimit: { limit: null, remaining: null, resetAt: null, cached: false, offline: false } }), githubPullRequests: async () => ({ pullRequests: [], rateLimit: { limit: null, remaining: null, resetAt: null, cached: false, offline: false } }), githubCommitAuthors: async () => ({ authors: [], rateLimit: { limit: null, remaining: null, resetAt: null, cached: false, offline: false } }), githubContributorIdentity: async () => ({ login: 'octocat', avatarUrl: 'https://avatars.githubusercontent.com/u/1', htmlUrl: 'https://github.com/octocat' }), githubLinkage: async () => ({ available: false, host: null, owner: null, repo: null, webUrl: null, commitUrlTemplate: null, apiUrl: null }) } }); own(t, repo, h);
   const head = await repo.git.headHash() as string;
@@ -58,7 +60,7 @@ test('RequestMap is exhaustively listed and every kind has hostile/error contrac
     if (kind !== 'actions/showLogs' && kind !== 'actions/openExplorer') assert.equal(invalid.ok, false, `${kind} hostile payload accepted`);
     const absent = repo.harness({ host: { resolveRepository: async () => null, openDiff: async () => ({ opened: true, mode: 'worktree' }), openExplorer: () => {}, githubRepo: async () => ({ defaultBranch: 'main', private: false, htmlUrl: '', rateLimit: { limit: null, remaining: null, resetAt: null, cached: false, offline: false } }), githubPullRequests: async () => ({ pullRequests: [], rateLimit: { limit: null, remaining: null, resetAt: null, cached: false, offline: false } }), githubCommitAuthors: async () => ({ authors: [], rateLimit: { limit: null, remaining: null, resetAt: null, cached: false, offline: false } }), githubContributorIdentity: async () => ({ login: null, avatarUrl: null, htmlUrl: null }), githubLinkage: async () => ({ available: false, host: null, owner: null, repo: null, webUrl: null, commitUrlTemplate: null, apiUrl: null }) } });
     const missing = await absent.send(kind, valid(kind, head)); checkResponse(missing); absent.dispose();
-    if (!missing.ok && ['repos/status','repos/graph','repos/remotes','repos/contributors','stash/list','commits/detail','actions/stage','actions/commit','actions/git','actions/openDiff'].includes(kind)) assert.equal(missing.error.code, 'NOT_FOUND');
+    if (!missing.ok && ['repos/status','repos/graph','repos/remotes','repos/contributors','stash/list','stash/show','commits/detail','actions/stage','actions/commit','actions/git','actions/openDiff'].includes(kind)) assert.equal(missing.error.code, 'NOT_FOUND');
   }
 });
 
