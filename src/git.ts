@@ -462,6 +462,17 @@ export class GitRunner {
   }
 
   /**
+   * Discard local unstaged changes to a single file in the working tree.
+   *
+   * Reverts uncommitted worktree modifications back to index/HEAD.
+   * Defends against flag injection by placing `--` before the pathspec.
+   */
+  async discardFile(path: string): Promise<void> {
+    const safe = this.pathspecs([path]);
+    await this.runExclusive(() => this.run(['restore', '--worktree', '--', ...safe]));
+  }
+
+  /**
    * Message goes over stdin via `-F -`, never as an argv string.
    * @returns the new HEAD hash, or `null` if HEAD could not be read back.
    */
