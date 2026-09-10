@@ -726,6 +726,15 @@ export function gitCommandOf(action: GitActionRequest): string {
       return `git push ${action.setUpstream === true ? '-u ' : ''}${s(action.remote)} ${s(action.branch)}:${s(action.branch)}`;
     case 'push-up-to':
       return `git push ${s(action.remote)} ${shortHash(action.hash)}:refs/heads/${s(action.branch)}`;
+    case 'pull': {
+      const target =
+        action.remote !== undefined && action.branch !== undefined
+          ? ` ${s(action.remote)} ${s(action.branch)}`
+          : action.remote !== undefined
+            ? ` ${s(action.remote)}`
+            : '';
+      return `git pull --no-rebase${target}`;
+    }
     case 'fetch':
       return `git fetch ${action.remote === undefined ? '--all' : s(action.remote)}${action.prune === true ? ' --prune' : ''}`;
     case 'stash':
@@ -768,6 +777,8 @@ export function consequenceOf(action: GitActionRequest, lang: Lang = 'en'): stri
       return strings.push(s(action.branch), s(action.remote));
     case 'push-up-to':
       return strings.pushUpTo(shortHash(action.hash), s(action.remote), s(action.branch));
+    case 'pull':
+      return strings.pull;
     case 'fetch':
       return strings.fetch;
     case 'stash':
@@ -810,6 +821,8 @@ export function actionTitle(action: GitActionRequest, lang: Lang = 'en'): string
       return strings.push(s(action.branch));
     case 'push-up-to':
       return strings.pushUpTo(shortHash(action.hash));
+    case 'pull':
+      return strings.pull;
     case 'fetch':
       return strings.fetch;
     case 'stash':
@@ -828,6 +841,11 @@ export function actionTitle(action: GitActionRequest, lang: Lang = 'en'): string
 /** Target the action operates on, shown as the dialog's subject line. Sanitised. */
 export function actionTarget(action: GitActionRequest): string {
   if (action.action === 'merge-into') return sanitizeGitText(action.target);
+  if (action.action === 'pull') {
+    if (action.branch !== undefined) return sanitizeGitText(action.branch);
+    if (action.remote !== undefined) return sanitizeGitText(action.remote);
+    return 'HEAD';
+  }
   if ('branch' in action && typeof action.branch === 'string') return sanitizeGitText(action.branch);
   if ('name' in action) return sanitizeGitText(action.name);
   if ('hash' in action) return shortHash(action.hash);
