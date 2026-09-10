@@ -10,6 +10,7 @@ import {
   validateLimit,
   validateRemoteName,
   validateRepoRelativePath,
+  validateStashIndex,
   validateStashMessage,
   validateEmail,
 } from '../src/validation';
@@ -183,6 +184,23 @@ test('validateStashMessage caps length and rejects control chars', () => {
   assert.equal(validateStashMessage('x'.repeat(101)), false);
   assert.equal(validateStashMessage('a\nb'), false);
   assert.equal(validateStashMessage(1), false);
+});
+
+test('validateStashIndex accepts non-negative integers up to max and rejects invalid indices', () => {
+  assert.equal(validateStashIndex(0), true);
+  assert.equal(validateStashIndex(1), true);
+  assert.equal(validateStashIndex(999), true);
+  assert.equal(validateStashIndex(1000), false);
+  assert.equal(validateStashIndex(-1), false);
+  assert.equal(validateStashIndex(1.5), false);
+  assert.equal(validateStashIndex(NaN), false);
+  assert.equal(validateStashIndex(Infinity), false);
+  assert.equal(validateStashIndex('0'), false);
+  assert.equal(validateStashIndex(null), false);
+  assert.equal(validateStashIndex(undefined), false);
+  assert.equal(validateStashIndex({}), false);
+  assert.equal(validateStashIndex(10, 5), false);
+  assert.equal(validateStashIndex(5, 5), true);
 });
 
 test('validateLimit accepts integers within bounds', () => {

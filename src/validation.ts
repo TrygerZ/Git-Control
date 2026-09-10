@@ -165,6 +165,15 @@ export function validateStashMessage(value: unknown): boolean {
   return !CONTROL_CHARS.test(value);
 }
 
+/**
+ * Defends against: non-integer, negative, or excessively large stash indices
+ * forming invalid or out-of-range stash refspecs.
+ */
+export function validateStashIndex(value: unknown, max = 999): value is number {
+  if (typeof value !== 'number' || !Number.isInteger(value)) return false;
+  return value >= 0 && value <= max;
+}
+
 export function parseCommitTimestamp(val?: string | number | null): number {
   if (typeof val === 'number') return Number.isFinite(val) && !Number.isNaN(val) && val > 0 ? val : 0;
   if (typeof val === 'string' && val.length > 0) {
