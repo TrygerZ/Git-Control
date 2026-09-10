@@ -237,8 +237,8 @@ const id: Catalog = {
       revert: 'Membuat commit baru yang membatalkan perubahan commit tersebut. Histori tetap utuh.',
       resetSoft: 'Memindahkan branch ke commit tersebut. Perubahan tetap ada di staging area.',
       resetHard: 'Memindahkan branch DAN membuang semua perubahan setelah commit tersebut. Tidak bisa dibatalkan.',
-      discardFile: (path: string) =>
-        `Buang perubahan lokal pada ${path}. Perubahan lokal file ini hilang permanen.`,
+      discardFile: (_path: string) =>
+        'Perubahan lokal file ini akan dibuang permanen dan tidak bisa dikembalikan.',
       push: (branch: string, remote: string) => `Mengirim branch ${branch} ke ${remote}.`,
       pushUpTo: (hash: string, remote: string, branch: string) => `Mengirim histori sampai ${hash} ke ${remote}/${branch}.`,
       fetch: 'Mengambil data terbaru dari remote. Folder kerja tidak diubah.',
@@ -258,7 +258,7 @@ const id: Catalog = {
       revert: (hash: string) => `Revert ${hash}`,
       resetSoft: (hash: string) => `Reset soft ke ${hash}`,
       resetHard: (hash: string) => `Reset hard ke ${hash}`,
-      discardFile: (path: string) => `Buang perubahan pada ${path}`,
+      discardFile: (path: string) => `Buang perubahan pada ${path}?`,
       push: (branch: string) => `Push ${branch}`,
       pushUpTo: (hash: string) => `Push sampai ${hash}`,
       fetch: 'Fetch',
@@ -541,6 +541,7 @@ const id: Catalog = {
   // Guard dialog
   guard: {
     permanentBadge: 'Permanen',
+    discardRiskLabel: 'permanen',
     targetLabel: 'Target',
     problemLabel: 'Masalah',
     riskLevelLabel: 'Tingkat risiko',

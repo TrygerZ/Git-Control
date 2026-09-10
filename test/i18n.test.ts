@@ -62,6 +62,18 @@ test('i18n t(lang) returns corresponding catalog', () => {
   assert.equal(t('en').menu.riskyWord, 'risky');
   assert.equal(t('id').guard.permanentBadge, 'Permanen');
   assert.equal(t('en').guard.permanentBadge, 'Permanent');
+  assert.equal(t('id').guard.discardRiskLabel, 'permanen');
+  assert.equal(t('en').guard.discardRiskLabel, 'permanent');
+  assert.equal(t('id').format.actionTitles.discardFile('src/foo.ts'), 'Buang perubahan pada src/foo.ts?');
+  assert.equal(t('en').format.actionTitles.discardFile('src/foo.ts'), 'Discard changes to src/foo.ts?');
+  assert.equal(
+    t('id').format.actionConsequences.discardFile('src/foo.ts'),
+    'Perubahan lokal file ini akan dibuang permanen dan tidak bisa dikembalikan.',
+  );
+  assert.equal(
+    t('en').format.actionConsequences.discardFile('src/foo.ts'),
+    'Local changes to this file will be permanently discarded and cannot be recovered.',
+  );
   assert.equal(t('id').legend.title, 'Panduan simbol grafik');
   assert.equal(t('en').legend.title, 'Graph symbol legend');
   assert.equal(t('id').github.panelAria, 'Status GitHub');

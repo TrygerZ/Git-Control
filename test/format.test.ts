@@ -624,6 +624,16 @@ test('consequenceOf and actionTitle describe every action in Indonesian', () => 
   }
   assert.match(consequenceOf({ action: 'reset-hard', hash: HASH }, 'id'), /Tidak bisa dibatalkan/);
   assert.match(consequenceOf({ action: 'reset-hard', hash: HASH }, 'en'), /Cannot be undone/);
+  assert.equal(
+    consequenceOf({ action: 'discard-file', path: 'file.txt' }, 'id'),
+    'Perubahan lokal file ini akan dibuang permanen dan tidak bisa dikembalikan.',
+  );
+  assert.equal(
+    consequenceOf({ action: 'discard-file', path: 'file.txt' }, 'en'),
+    'Local changes to this file will be permanently discarded and cannot be recovered.',
+  );
+  assert.equal(actionTitle({ action: 'discard-file', path: 'file.txt' }, 'id'), 'Buang perubahan pada file.txt?');
+  assert.equal(actionTitle({ action: 'discard-file', path: 'file.txt' }, 'en'), 'Discard changes to file.txt?');
 });
 
 test('actionTarget picks the branch, name, hash, or remote', () => {
