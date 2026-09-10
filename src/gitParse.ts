@@ -287,4 +287,32 @@ export function parseShortlog(raw: string): ParsedContributor[] {
   return entries;
 }
 
+export interface ParsedStashEntry {
+  ref: string;
+  hash: string;
+  subject: string;
+}
+
+/**
+ * Parse `git stash list --format=%gd%x00%H%x00%gs` output.
+ * Each entry is newline-separated with NUL delimiters separating ref, hash, and subject.
+ */
+export function parseStashList(raw: string): ParsedStashEntry[] {
+  const entries: ParsedStashEntry[] = [];
+  for (const line of raw.split(/\r?\n/)) {
+    if (line.length === 0) continue;
+    const parts = line.split('\0');
+    if (parts.length < 3) continue;
+    const [ref, hash, ...subjectParts] = parts;
+    if (!ref || !hash) continue;
+    entries.push({
+      ref,
+      hash,
+      subject: subjectParts.join('\0'),
+    });
+  }
+  return entries;
+}
+
+
 

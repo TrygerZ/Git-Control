@@ -8,6 +8,7 @@ import {
   parseRevListCounts,
   parseShortlog,
   parseShowStat,
+  parseStashList,
   parseStatus,
 } from '../src/gitParse';
 
@@ -284,4 +285,46 @@ test('parseShortlog ignores empty or malformed lines', () => {
   ].join('\n');
   assert.deepEqual(parseShortlog(raw), []);
   assert.deepEqual(parseShortlog(''), []);
+});
+
+test('parseStashList parses multi-entry stash output', () => {
+  const raw = [
+    `stash@{0}\0${HASH_A}\0WIP on main: initial commit`,
+    `stash@{1}\0${HASH_B}\0On feature: save work before rebase`,
+  ].join('\n');
+  assert.deepEqual(parseStashList(raw), [
+    { ref: 'stash@{0}', hash: HASH_A, subject: 'WIP on main: initial commit' },
+    { ref: 'stash@{1}', hash: HASH_B, subject: 'On feature: save work before rebase' },
+  ]);
+});
+
+test('parseStashList preserves special characters and extra delimiters in subject', () => {
+  const subjectWithSpecials = 'WIP: fix(core): handle "quotes", tabs\tand unicode (čšć)\0extra:delims';
+  const raw = `stash@{0}\0${HASH_A}\0${subjectWithSpecials}\n`;
+  const result = parseStashList(raw);
+  assert.equal(result.length, 1);
+  assert.equal(result[0]?.ref, 'stash@{0}');
+  assert.equal(result[0]?.hash, HASH_A);
+  assert.equal(result[0]?.subject, subjectWithSpecials);
+});
+
+test('parseStashList tolerates CRLF, blank lines, and empty raw output', () => {
+  const raw = `\r\nstash@{0}\0${HASH_A}\0first stash\r\n\r\nstash@{1}\0${HASH_B}\0second stash\r\n`;
+  assert.deepEqual(parseStashList(raw), [
+    { ref: 'stash@{0}', hash: HASH_A, subject: 'first stash' },
+    { ref: 'stash@{1}', hash: HASH_B, subject: 'second stash' },
+  ]);
+  assert.deepEqual(parseStashList(''), []);
+  assert.deepEqual(parseStashList('\r\n\n  \n'), []);
+});
+
+test('parseStashList ignores malformed lines with missing delimiters', () => {
+  const raw = [
+    'malformed line without null delimiters',
+    `stash@{0}\0missing-subject-and-hash`,
+    `stash@{0}\0${HASH_A}\0valid subject`,
+  ].join('\n');
+  assert.deepEqual(parseStashList(raw), [
+    { ref: 'stash@{0}', hash: HASH_A, subject: 'valid subject' },
+  ]);
 });
