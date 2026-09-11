@@ -21,7 +21,6 @@ import { CommitForm } from './CommitForm';
 import { ConflictPanel, OperationBanner } from './ConflictPanel';
 import { GuardDialog } from './GuardDialog';
 import { ToastRegion } from './Toast';
-import { copyToClipboard } from './clipboard';
 import { bridge, loadState, saveState } from './bridge';
 import { baseName, formatCount, formatStashLabel, sanitizeGitText, shortHash, UNKNOWN_CHURN } from './format';
 import { useT } from './useT';
@@ -587,7 +586,6 @@ function StashList({
   const stashContents = useChangesStore((s) => s.stashContents);
   const stashContentsLoading = useChangesStore((s) => s.stashContentsLoading);
   const toggleStashExpanded = useChangesStore((s) => s.toggleStashExpanded);
-  const pushToast = useOperationStore((s) => s.pushToast);
 
   if (stashes.length === 0) {
     return (
@@ -597,12 +595,11 @@ function StashList({
     );
   }
 
-  const handleCopyHash = async (hash: string) => {
-    const ok = await copyToClipboard(hash);
-    if (ok) {
-      pushToast({ level: 'info', message: strings.pending.stashToastCopied });
-    } else {
-      pushToast({ level: 'warning', message: strings.inspector.toastCopyFailed });
+  const handleRevealCommit = async (hash: string) => {
+    try {
+      await bridge.request('graph/revealCommit', { hash });
+    } catch {
+      // Ignore
     }
   };
 
@@ -638,9 +635,9 @@ function StashList({
               <button
                 type="button"
                 className="gc-stash-item__hash-btn"
-                aria-label={strings.pending.stashCopyHashAria}
-                title={stash.hash}
-                onClick={() => void handleCopyHash(stash.hash)}
+                aria-label={strings.pending.stashOpenCommitAria}
+                title={strings.pending.stashOpenCommitTitle}
+                onClick={() => void handleRevealCommit(stash.hash)}
               >
                 {shortHash(stash.hash)}
               </button>

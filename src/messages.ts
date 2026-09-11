@@ -547,6 +547,11 @@ export interface OpenExternalPayload {
   url: string;
 }
 
+/** Ask the host to reveal and focus a commit in the explorer canvas. */
+export interface RevealCommitPayload {
+  hash: string;
+}
+
 /** Request kind → { payload, response } map. Extend here, nowhere else. */
 export interface RequestMap {
   'repos/status': { payload: StatusPayload; response: RepoStatus };
@@ -570,6 +575,10 @@ export interface RequestMap {
    * parameters, so it cannot be used to run an arbitrary host command.
    */
   'actions/openExplorer': { payload: Record<string, never>; response: { opened: boolean } };
+  /**
+   * Reveal a commit in the Git Control explorer canvas and select it.
+   */
+  'graph/revealCommit': { payload: RevealCommitPayload; response: { revealed: boolean } };
   /** Open a URL in the system browser. Host-side only; the webview cannot navigate. */
   'actions/openExternal': { payload: OpenExternalPayload; response: { opened: boolean } };
   'github/auth': { payload: Record<string, never>; response: GitHubAuthState };
@@ -685,6 +694,10 @@ export interface IconThemeSnapshot {
   hidesExplorerArrows: boolean;
 }
 
+export interface CommitFocusEvent {
+  hash: string;
+}
+
 /** Event kind → payload map for unsolicited host pushes. */
 export interface EventMap {
   'event/repoChanged': RepoChangedEvent;
@@ -693,6 +706,8 @@ export interface EventMap {
   'event/settingsChanged': SettingsSnapshot;
   /** `null` = no active icon theme → webview falls back to generic icons. */
   'event/iconThemeChanged': IconThemeSnapshot | null;
+  /** Focus and select a commit in the explorer canvas. */
+  'event/commitFocus': CommitFocusEvent;
 }
 
 export type EventKind = keyof EventMap;

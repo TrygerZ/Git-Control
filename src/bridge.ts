@@ -78,6 +78,7 @@ import type {
   Request,
   RequestKind,
   Response,
+  RevealCommitPayload,
   SettingsSetPayload,
   SettingsSnapshot,
   StagePayload,
@@ -116,6 +117,8 @@ export interface BridgeHost {
   showLogs?(): void;
   /** Open the explorer webview panel. Takes no parameters, so it cannot run commands. */
   openExplorer?(): void;
+  /** Reveal and focus a commit in the explorer canvas. */
+  revealCommit?(hash: string): Promise<boolean> | boolean;
   /** Open an external URL. Host-side so the webview never navigates itself. */
   openExternal?(url: string): Promise<boolean>;
   githubRepo?(payload: GitHubRepoPayload): Promise<GitHubRepoInfo>;
@@ -331,6 +334,8 @@ export class MessageBridge {
         return this.handleShowLogs();
       case 'actions/openExplorer':
         return this.handleOpenExplorer();
+      case 'graph/revealCommit':
+        return this.handleRevealCommit(request.payload as RevealCommitPayload);
       case 'actions/openExternal':
         return this.handleOpenExternal(request.payload as OpenExternalPayload);
       case 'github/auth':
@@ -508,6 +513,19 @@ export class MessageBridge {
     if (open === undefined) return { opened: false };
     open();
     return { opened: true };
+  }
+
+  /**
+   * Reveal and focus a commit in the explorer canvas.
+   */
+  private async handleRevealCommit(payload: RevealCommitPayload): Promise<{ revealed: boolean }> {
+    if (!payload || typeof payload !== 'object' || !validateHash(payload.hash)) {
+      fail(400, 'VALIDATION_ERROR', this.text().invalid, { detail: 'hash' });
+    }
+    const reveal = this.host.revealCommit;
+    if (reveal === undefined) return { revealed: false };
+    const revealed = await reveal(payload.hash);
+    return { revealed: revealed !== false };
   }
 
   /**

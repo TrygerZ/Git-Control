@@ -79,10 +79,12 @@ export interface RepoState {
   contributorsExpanded: boolean;
   authorFilter: string | null;
   contributorIdentities: Record<string, ContributorIdentity | null>;
+  focusTargetHash: string | null;
   loadStatus(): Promise<void>;
   loadGraph(): Promise<void>;
   loadMore(): Promise<void>;
   selectCommit(hash: string | null): void;
+  focusCommit(hash: string): void;
   loadContributors(): Promise<void>;
   loadContributorIdentity(email: string): Promise<ContributorIdentity | null>;
   toggleContributorsExpanded(): void;
@@ -110,6 +112,7 @@ export const useRepoStore = create<RepoState>((set, get) => ({
   contributorsExpanded: true,
   authorFilter: null,
   contributorIdentities: {},
+  focusTargetHash: null,
 
   async loadStatus() {
     if (inFlightStatus !== null) return inFlightStatus;
@@ -164,6 +167,11 @@ export const useRepoStore = create<RepoState>((set, get) => ({
 
   selectCommit(hash) {
     set({ selectedHash: hash });
+    saveState({ selectedHash: hash });
+  },
+
+  focusCommit(hash) {
+    set({ selectedHash: hash, focusTargetHash: hash });
     saveState({ selectedHash: hash });
   },
 
@@ -1055,12 +1063,17 @@ export function wireHostEvents(mode: 'explorer' | 'pending'): () => void {
     useIconThemeStore.setState({ snapshot });
   });
 
+  const offCommitFocus = bridge.on('event/commitFocus', (payload) => {
+    useRepoStore.getState().focusCommit(payload.hash);
+  });
+
   return () => {
     offChanged();
     offProgress();
     offToast();
     offSettings();
     offIconTheme();
+    offCommitFocus();
     wired = false;
   };
 }

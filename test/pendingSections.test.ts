@@ -332,7 +332,7 @@ test('loadStashes resets stashesExpanded and prunes stashContents on stash list 
   assert.ok(state.stashContents[0] !== undefined);
 });
 
-test('stash item row renders expandable twisty, 1-based label, copyable hash button, and no subject', () => {
+test('stash item row renders expandable twisty, 1-based label, open-commit hash button, and no subject', () => {
   const src = fs.readFileSync(
     path.join(__dirname, '..', '..', 'src', 'webview', 'PendingChanges.tsx'),
     'utf8',
@@ -341,7 +341,8 @@ test('stash item row renders expandable twisty, 1-based label, copyable hash but
   assert.match(src, /aria-expanded=\{isExpanded\}/);
   assert.match(src, /formatStashLabel\(parsedIndex, language\)/);
   assert.match(src, /className="gc-stash-item__hash-btn"/);
-  assert.match(src, /aria-label=\{strings\.pending\.stashCopyHashAria\}/);
+  assert.match(src, /aria-label=\{strings\.pending\.stashOpenCommitAria\}/);
+  assert.match(src, /title=\{strings\.pending\.stashOpenCommitTitle\}/);
   assert.doesNotMatch(src, /stash\.subject/);
   assert.match(src, /aria-label=\{strings\.pending\.stashApplyAria\(stash\.ref\)\}/);
   assert.match(src, /title=\{strings\.pending\.stashApplyTitle\}/);

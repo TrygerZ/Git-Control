@@ -89,6 +89,7 @@ class Controller implements vscode.Disposable {
   private readonly bridges = new Set<MessageBridge>();
   private readonly disposables: vscode.Disposable[] = [];
   private panel: vscode.WebviewPanel | undefined;
+  private pendingFocusHash: string | undefined;
   /** Sidebar view webview, tracked so icon-theme options can be re-assigned. */
   private pendingView: vscode.WebviewView | undefined;
   private gitPath: string | null = null;
@@ -148,6 +149,7 @@ class Controller implements vscode.Disposable {
     this.repositories.clear();
     this.panel?.dispose();
     this.panel = undefined;
+    this.pendingFocusHash = undefined;
   }
 
   // ------------------------------------------------------------- git lookup
@@ -523,10 +525,39 @@ class Controller implements vscode.Disposable {
     panel.webview.html = this.html(panel.webview, 'explorer');
     // No icon-theme push here either: same pull-on-mount contract as the view.
     this.attachBridge(panel.webview, panel);
+    // The first incoming message from the webview panel confirms that its script
+    // has executed and window message listeners (wireHostEvents) are attached.
+    // Emitting commitFocus here avoids the race where an immediate postMessage
+    // during panel creation is dropped before listeners exist.
+    const firstMessageSub = panel.webview.onDidReceiveMessage(() => {
+      firstMessageSub.dispose();
+      if (this.pendingFocusHash !== undefined) {
+        const hash = this.pendingFocusHash;
+        this.pendingFocusHash = undefined;
+        for (const bridge of this.bridges) {
+          bridge.emit('event/commitFocus', { hash });
+        }
+      }
+    });
     panel.onDidDispose(() => {
+      firstMessageSub.dispose();
+      this.pendingFocusHash = undefined;
       this.panel = undefined;
     });
     this.panel = panel;
+  }
+
+  private revealCommit(hash: string): boolean {
+    if (this.panel !== undefined) {
+      this.panel.reveal();
+      for (const bridge of this.bridges) {
+        bridge.emit('event/commitFocus', { hash });
+      }
+      return true;
+    }
+    this.pendingFocusHash = hash;
+    this.openExplorer();
+    return true;
   }
 
   private webviewOptions(): vscode.WebviewOptions {
@@ -578,6 +609,7 @@ class Controller implements vscode.Disposable {
       openDiff: (payload) => this.openDiff(payload),
       showLogs: () => this.channel.show(true),
       openExplorer: () => this.openExplorer(),
+      revealCommit: (hash) => this.revealCommit(hash),
       openExternal: (url) => this.openExternal(url),
       githubRepo: (payload) => this.githubRepo(payload),
       githubPullRequests: (payload) => this.githubPullRequests(payload),

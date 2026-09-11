@@ -201,12 +201,12 @@ interface Harness {
   bridge: MessageBridge;
   repo: RepositoryService | null;
   /** Calls recorded by the optional host callbacks. */
-  calls: { showLogs: number; openExplorer: number; openDiff: OpenDiffPayload[]; external: string[] };
+  calls: { showLogs: number; openExplorer: number; revealCommit: string[]; openDiff: OpenDiffPayload[]; external: string[] };
 }
 
 function harness(repo: RepositoryService | null, overrides: Partial<BridgeHost> = {}): Harness {
   const webview = new FakeWebview();
-  const calls = { showLogs: 0, openExplorer: 0, openDiff: [] as OpenDiffPayload[], external: [] as string[] };
+  const calls = { showLogs: 0, openExplorer: 0, revealCommit: [] as string[], openDiff: [] as OpenDiffPayload[], external: [] as string[] };
   const host: BridgeHost = {
     logger: new Logger(new NullSink()),
     resolveRepository: () => Promise.resolve(repo),
@@ -224,6 +224,10 @@ function harness(repo: RepositoryService | null, overrides: Partial<BridgeHost> 
     },
     openExplorer: () => {
       calls.openExplorer += 1;
+    },
+    revealCommit: (hash) => {
+      calls.revealCommit.push(hash);
+      return Promise.resolve(true);
     },
     openExternal: (url) => {
       calls.external.push(url);
@@ -774,6 +778,50 @@ test('actions/openExplorer only opens the explorer panel and takes no parameters
   // Extra fields are ignored, so the kind cannot smuggle a command.
   await h.webview.send(req('actions/openExplorer', { command: 'workbench.action.terminal.new' }));
   assert.equal(h.calls.openExplorer, 2);
+});
+
+test('graph/revealCommit validates hash and dispatches to host.revealCommit', async (t) => {
+  const h = harness(null);
+  t.after(() => h.bridge.dispose());
+
+  // Valid 40-character hex hash
+  const hash = 'a'.repeat(40);
+  const response = await h.webview.send(req('graph/revealCommit', { hash }));
+  assert.equal(response.ok, true);
+  if (!response.ok) return;
+  assert.deepEqual(response.data, { revealed: true });
+  assert.deepEqual(h.calls.revealCommit, [hash]);
+
+  // Valid 7-character short hash
+  const shortH = 'b'.repeat(7);
+  const shortResp = await h.webview.send(req('graph/revealCommit', { hash: shortH }));
+  assert.equal(shortResp.ok, true);
+  assert.equal(h.calls.revealCommit.length, 2);
+
+  // Rejects invalid hashes: command injection, too short, too long, non-hex
+  for (const bad of ['--force', 'abc', 'x'.repeat(40), '123456', '']) {
+    const errResp = await h.webview.send(req('graph/revealCommit', { hash: bad }));
+    assert.equal(errResp.ok, false);
+    if (errResp.ok) return;
+    assert.equal(errResp.error.code, 'VALIDATION_ERROR');
+    assert.equal(errResp.error.detail, 'hash');
+  }
+});
+
+test('graph/revealCommit returns revealed false when host handler returns false or is absent', async (t) => {
+  const hAbsent = harness(null, { revealCommit: undefined });
+  t.after(() => hAbsent.bridge.dispose());
+  const r1 = await hAbsent.webview.send(req('graph/revealCommit', { hash: 'c'.repeat(40) }));
+  assert.equal(r1.ok, true);
+  if (!r1.ok) return;
+  assert.deepEqual(r1.data, { revealed: false });
+
+  const hFalse = harness(null, { revealCommit: () => false });
+  t.after(() => hFalse.bridge.dispose());
+  const r2 = await hFalse.webview.send(req('graph/revealCommit', { hash: 'd'.repeat(40) }));
+  assert.equal(r2.ok, true);
+  if (!r2.ok) return;
+  assert.deepEqual(r2.data, { revealed: false });
 });
 
 test('actions/openExternal rejects every non-https scheme (SEC-006)', async (t) => {
