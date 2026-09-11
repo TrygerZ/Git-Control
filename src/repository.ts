@@ -78,6 +78,7 @@ export class RepositoryService {
   private readonly fileLimit: number;
 
   private statusCache: RepoStatus | undefined;
+  private statusIgnoredCache: RepoStatus | undefined;
   /** Last graph that loaded successfully, replayed as `stale` after a failure. */
   private graphCache: RepoGraph | undefined;
   private readonly detailCache = new Map<string, CommitDetail>();
@@ -109,6 +110,7 @@ export class RepositoryService {
   /** Drop every cached read. Call after any mutation or watcher event. */
   invalidate(): void {
     this.statusCache = undefined;
+    this.statusIgnoredCache = undefined;
     this.detailCache.clear();
     this.contributorsCache = undefined;
     // graphCache is deliberately kept: it is the offline fallback (PRD §9).
@@ -116,9 +118,15 @@ export class RepositoryService {
 
   /** Cached status, or a fresh read when the cache was invalidated. */
   async status(opts: { includeIgnored?: boolean } = {}): Promise<RepoStatus> {
-    if (this.statusCache !== undefined) return this.statusCache;
-    const status = await this.readStatus(opts.includeIgnored === true);
-    this.statusCache = status;
+    const ignored = opts.includeIgnored === true;
+    const cached = ignored ? this.statusIgnoredCache : this.statusCache;
+    if (cached !== undefined) return cached;
+    const status = await this.readStatus(ignored);
+    if (ignored) {
+      this.statusIgnoredCache = status;
+    } else {
+      this.statusCache = status;
+    }
     return status;
   }
 

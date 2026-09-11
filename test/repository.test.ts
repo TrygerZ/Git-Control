@@ -59,6 +59,36 @@ test('status reports branch, cleanliness, and a stable token', async (t) => {
   assert.deepEqual(dirty.changes.map((c) => [c.path, c.untracked]), [['dirty.txt', true]]);
 });
 
+test('status distinguishes default from includeIgnored cache and invalidate clears both (BUG1)', async (t) => {
+  const dir = await makeRepo();
+  t.after(() => cleanup(dir));
+  const repo = service(dir);
+
+  await fs.writeFile(path.join(dir, '.gitignore'), 'ignored.txt\n', 'utf8');
+  await fs.writeFile(path.join(dir, 'ignored.txt'), 'secret\n', 'utf8');
+
+  // Default status: does not include ignored files.
+  const defaultStatus = await repo.status();
+  assert.equal(defaultStatus.changes.some((c) => c.path === 'ignored.txt'), false);
+
+  // Status with includeIgnored: includes ignored files.
+  const ignoredStatus = await repo.status({ includeIgnored: true });
+  assert.equal(ignoredStatus.changes.some((c) => c.path === 'ignored.txt'), true);
+
+  // Both should be independently cached.
+  const defaultCached = await repo.status();
+  assert.equal(defaultCached, defaultStatus);
+  const ignoredCached = await repo.status({ includeIgnored: true });
+  assert.equal(ignoredCached, ignoredStatus);
+
+  // Invalidate clears both cache slots.
+  repo.invalidate();
+  const refreshedDefault = await repo.status();
+  assert.notEqual(refreshedDefault, defaultStatus);
+  const refreshedIgnored = await repo.status({ includeIgnored: true });
+  assert.notEqual(refreshedIgnored, ignoredStatus);
+});
+
 /**
  * The panel shows churn per file, so `status` has to carry it. `null` and `0` are
  * different answers: an untracked file is in no diff at all, and rendering it as

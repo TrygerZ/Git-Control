@@ -1094,6 +1094,10 @@ export class MessageBridge {
   private async assertToken(repo: RepositoryService, token: string | undefined): Promise<RepoStatus> {
     const status = await repo.status();
     if (typeof token === 'string' && token.length > 0 && token !== status.statusToken) {
+      const ignoredStatus = await repo.status({ includeIgnored: true });
+      if (token === ignoredStatus.statusToken) {
+        return ignoredStatus;
+      }
       fail(409, 'CONFLICT', this.text().staleToken, { remedies: ['cancel'] });
     }
     return status;
