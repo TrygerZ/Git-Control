@@ -5,6 +5,86 @@ All notable changes to the "Git Control" extension will be documented in this fi
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.6.17] - 2026-09-11
+
+### Fixed
+- Commit inspector file paging ignores late responses for a commit that is no longer selected.
+
+## [2.6.16] - 2026-09-11
+
+### Fixed
+- Test suite now builds empty repositories through the shared fixture instead of hand-rolled setup.
+
+## [2.6.15] - 2026-09-11
+
+### Added
+- Added unit tests for bridge request envelope parsing and idempotency decisions.
+
+## [2.6.14] - 2026-09-11
+
+### Added
+- Added deterministic geometry tests for branch ribbon edge paths.
+
+## [2.6.13] - 2026-09-11
+
+### Added
+- Added unit tests for the graph query pure helpers (`chipsFor`, `matchesSearch`, `lanesForFilter`).
+
+## [2.6.12] - 2026-09-11
+
+### Fixed
+- Content Security Policy now pins `base-uri`, `form-action`, and `frame-src` to `'none'`.
+
+## [2.6.11] - 2026-09-11
+
+### Fixed
+- Image sources (avatars, theme icons) are validated to `https:` or `data:image` before rendering, with existing fallbacks.
+
+## [2.6.10] - 2026-09-11
+
+### Fixed
+- Webview validates host message shapes at intake and drops unknown or malformed events and responses (defense in depth).
+
+## [2.6.9] - 2026-09-11
+
+### Fixed
+- Commit detail cache is bounded at 200 entries with insertion-order eviction to prevent unbounded memory growth in long read-only sessions.
+
+## [2.6.8] - 2026-09-11
+
+### Fixed
+- Live stderr progress lines forwarded to the webview are now passed through the credential redactor.
+
+## [2.6.7] - 2026-09-11
+
+### Fixed
+- Diagnostic log redaction now strips userinfo credentials on any URL scheme, including `ssh://` and schemeless forms.
+
+## [2.6.6] - 2026-09-11
+
+### Fixed
+- File statistics parsing validates git rename records (`old => new`) and decodes quoted paths instead of inferring renames from column count.
+
+## [2.6.5] - 2026-09-11
+
+### Fixed
+- Commit log parsing switched to NUL-delimited framing (`git log -z`), so commit messages containing delimiter control characters no longer corrupt the graph.
+
+## [2.6.4] - 2026-09-11
+
+### Fixed
+- Commit now reports the HEAD hash read inside the mutation mutex, preventing the response from pointing at an unrelated concurrent commit.
+
+## [2.6.3] - 2026-09-11
+
+### Fixed
+- Repository status cache now keeps separate results for the default and include-ignored reads, so ignored files appear consistently regardless of request order.
+
+## [2.6.2] - 2026-09-11
+
+### Fixed
+- Push retry after remote-ahead or non-fast-forward guard failure no longer replays the cached failure: both transient codes are treated as retryable by the idempotency cache.
+
 ## [2.6.1] - 2026-09-11
 
 ### Fixed
