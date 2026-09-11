@@ -10,7 +10,7 @@
  * the title now sit in their own quiet row, because "which commit is this" and "copy
  * its id" are not the same question.
  */
-import { useEffect, useMemo, useState, type JSX } from 'react';
+import { useEffect, useMemo, useRef, useState, type JSX } from 'react';
 import {
   absoluteTime,
   authorInitials,
@@ -43,6 +43,9 @@ export function Inspector({ hash }: Props): JSX.Element {
   const showLogs = useOperationStore((st) => st.showLogs);
   const linkage = useGitHubStore((st) => st.linkage);
   const openCommit = useGitHubStore((st) => st.openCommit);
+
+  const hashRef = useRef(hash);
+  hashRef.current = hash;
 
   useEffect(() => {
     if (hash === null) {
@@ -112,9 +115,11 @@ export function Inspector({ hash }: Props): JSX.Element {
     if (hash === null || detail === null || paging) return;
     const cursor = detail.nextFileCursor;
     if (cursor === null) return;
+    const requestedHash = hash;
     setPaging(true);
     try {
-      const page = await bridge.request('commits/detail', { hash, fileCursor: cursor });
+      const page = await bridge.request('commits/detail', { hash: requestedHash, fileCursor: cursor });
+      if (hashRef.current !== requestedHash) return;
       const known = new Set(detail.files.map((f) => f.path));
       const added = page.files.filter((f) => !known.has(f.path));
       if (added.length === 0) {
@@ -132,6 +137,7 @@ export function Inspector({ hash }: Props): JSX.Element {
         });
       }
     } catch (err) {
+      if (hashRef.current !== requestedHash) return;
       pushToast({ level: 'error', message: toErrorBody(err).message });
     } finally {
       setPaging(false);
