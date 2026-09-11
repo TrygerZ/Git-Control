@@ -21,7 +21,7 @@ import { useT } from './useT';
 import { bridge } from './bridge';
 import { toErrorBody, useChangesStore, useOperationStore, useSettingsStore } from './store';
 import { EmptyState, InfoBanner } from './ui';
-import type { ConflictEntry, OperationState, RepoStatus } from '../messages';
+import type { ConflictEntry, GitActionRequest, OperationState, RepoStatus } from '../messages';
 
 /** Banner shown above the canvas while any git operation is unfinished. */
 export function OperationBanner({ status }: { status: RepoStatus | null }): JSX.Element | null {
@@ -31,6 +31,25 @@ export function OperationBanner({ status }: { status: RepoStatus | null }): JSX.
   if (status === null || status.operation === 'idle') return null;
   const resolved = status.conflicts.length === 0;
   const blockedId = 'gc-continue-blocked';
+  const isCherryPick = status.operation === 'cherry-pick';
+  const continueAction: GitActionRequest = isCherryPick
+    ? { action: 'cherry-pick-continue' }
+    : { action: 'merge-continue' };
+  const abortAction: GitActionRequest = isCherryPick
+    ? { action: 'cherry-pick-abort' }
+    : { action: 'merge-abort' };
+  const continueTitle = isCherryPick
+    ? strings.conflict.continueCherryPickTitle
+    : strings.conflict.continueMergeTitle;
+  const continueLabel = isCherryPick
+    ? strings.conflict.continueCherryPick
+    : strings.conflict.continueMerge;
+  const abortTitle = isCherryPick
+    ? strings.conflict.abortCherryPickTitle
+    : strings.conflict.abortMergeTitle;
+  const abortLabel = isCherryPick
+    ? strings.conflict.abortCherryPick
+    : strings.conflict.abortMerge;
 
   return (
     <InfoBanner tone="warning" glyph="warning">
@@ -47,18 +66,18 @@ export function OperationBanner({ status }: { status: RepoStatus | null }): JSX.
           disabled={!resolved}
           // The reason for the disabled state is announced, not only hovered.
           aria-describedby={resolved ? undefined : blockedId}
-          title={strings.conflict.continueMergeTitle}
-          onClick={() => void runAction({ action: 'merge-continue' })}
+          title={continueTitle}
+          onClick={() => void runAction(continueAction)}
         >
-          {strings.conflict.continueMerge}
+          {continueLabel}
         </button>
         <button
           type="button"
           className="gc-button"
-          title={strings.conflict.abortMergeTitle}
-          onClick={() => void runAction({ action: 'merge-abort' })}
+          title={abortTitle}
+          onClick={() => void runAction(abortAction)}
         >
-          {strings.conflict.abortMerge}
+          {abortLabel}
         </button>
       </span>
       {!resolved && (
@@ -153,27 +172,25 @@ export function ConflictPanel({ conflicts, operation }: Props): JSX.Element {
       </ul>
       <div className="gc-conflicts__footer">
         {/*
-          Tier deliberately NOT `--primary`: this button is permanently disabled and
-          the live `Lanjutkan merge` lives in `OperationBanner` above. Two loud buttons
-          with the same word, one of which never works, is worse than one — so this one
-          keeps the neutral tier and exists only to state the gate that is blocking it.
+          Positive/primary tier matches OperationBanner for visual consistency.
+          Disabled state remains while conflicted files are unresolved.
         */}
         <button
           type="button"
-          className="gc-button"
+          className="gc-button gc-button--primary"
           disabled
           aria-describedby={blockedId}
           title={strings.conflict.continueLockedTitle}
         >
-          {strings.conflict.continueMerge}
+          {operation === 'cherry-pick' ? strings.conflict.continueCherryPick : strings.conflict.continueMerge}
         </button>
         <button
           type="button"
           className="gc-button"
-          title={strings.conflict.abortMergeTitle}
-          onClick={() => void runAction({ action: 'merge-abort' })}
+          title={operation === 'cherry-pick' ? strings.conflict.abortCherryPickTitle : strings.conflict.abortMergeTitle}
+          onClick={() => void runAction(operation === 'cherry-pick' ? { action: 'cherry-pick-abort' } : { action: 'merge-abort' })}
         >
-          {strings.conflict.abortMerge}
+          {operation === 'cherry-pick' ? strings.conflict.abortCherryPick : strings.conflict.abortMerge}
         </button>
         <span className="gc-help-text" id={blockedId}>
           {strings.conflict.resolveAllFirst}

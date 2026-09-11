@@ -181,6 +181,14 @@ export function menuItemsFor(
 
   if (!busy) {
     items.push({
+      id: 'cherry-pick',
+      label: strings.cherryPick,
+      group: 'ubah',
+      hint: strings.cherryPickHint,
+      risky: true,
+      command: { kind: 'action', request: { action: 'cherry-pick', hash: node.hash } },
+    });
+    items.push({
       id: 'revert',
       label: strings.revert,
       group: 'ubah',

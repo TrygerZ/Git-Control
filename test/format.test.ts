@@ -597,6 +597,7 @@ const ACTIONS: GitActionRequest[] = [
   { action: 'discard-file', path: 'file.txt' },
   { action: 'push', remote: 'origin', branch: 'main' },
   { action: 'push-up-to', remote: 'origin', branch: 'main', hash: HASH },
+  { action: 'pull' },
   { action: 'fetch', prune: true },
   { action: 'stash', message: 'wip' },
   { action: 'stash-pop' },
@@ -604,6 +605,9 @@ const ACTIONS: GitActionRequest[] = [
   { action: 'stash-drop', index: 0 },
   { action: 'merge-continue' },
   { action: 'merge-abort' },
+  { action: 'cherry-pick', hash: HASH },
+  { action: 'cherry-pick-continue' },
+  { action: 'cherry-pick-abort' },
 ];
 
 test('gitCommandOf renders a runnable command for every action', () => {

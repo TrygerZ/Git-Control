@@ -809,3 +809,69 @@ test('git.revert rejects invalid mainline with VALIDATION_ERROR', async (t) => {
   );
 });
 
+test('cherryPick rejects invalid hash before spawning git', async (t) => {
+  const dir = await makeRepo();
+  t.after(() => cleanup(dir));
+  const git = new GitRunner({ gitPath: 'git', cwd: dir });
+
+  await assert.rejects(
+    () => git.cherryPick('invalid-hash'),
+    (err: unknown) => err instanceof GitError && err.code === 'VALIDATION_ERROR',
+  );
+});
+
+test('cherryPick copies a commit onto active branch', async (t) => {
+  const dir = await makeFixture('triple');
+  t.after(() => cleanup(dir));
+  const git = new GitRunner({ gitPath: 'git', cwd: dir });
+
+  const sideRev = await git.run(['rev-parse', 'side']);
+  const sideHash = sideRev.stdout.trim();
+  const mainBefore = await git.headHash();
+
+  await git.cherryPick(sideHash);
+
+  const mainAfter = await git.headHash();
+  assert.notEqual(mainAfter, mainBefore);
+  const meta = await git.commitMeta(mainAfter as string);
+  assert.equal(meta?.parents.length, 1);
+  assert.equal(meta?.parents[0], mainBefore);
+  assert.equal(await git.showFile('HEAD', 'side.txt'), 'side\n');
+});
+
+test('cherryPick conflict flow: abort restores pre-pick state and continue completes operation', async (t) => {
+  const dir = await makeRepo();
+  t.after(() => cleanup(dir));
+  const git = new GitRunner({ gitPath: 'git', cwd: dir });
+
+  await git.createBranch('side', 'main');
+  await fs.writeFile(path.join(dir, 'a.txt'), 'side change\n', 'utf8');
+  await git.stage(['a.txt']);
+  const sideCommit = await git.commit('side commit');
+
+  await git.switchBranch('main');
+  await fs.writeFile(path.join(dir, 'a.txt'), 'main change\n', 'utf8');
+  await git.stage(['a.txt']);
+  const mainCommit = await git.commit('main commit');
+
+  await assert.rejects(() => git.cherryPick(sideCommit as string));
+  assert.equal(await git.operationState(), 'cherry-pick');
+
+  await git.cherryPickAbort();
+  assert.equal(await git.operationState(), 'idle');
+  assert.equal(await git.headHash(), mainCommit);
+  assert.equal(await git.showFile('HEAD', 'a.txt'), 'main change\n');
+
+  await assert.rejects(() => git.cherryPick(sideCommit as string));
+  assert.equal(await git.operationState(), 'cherry-pick');
+
+  await fs.writeFile(path.join(dir, 'a.txt'), 'resolved change\n', 'utf8');
+  await git.stage(['a.txt']);
+
+  await git.cherryPickContinue();
+  assert.equal(await git.operationState(), 'idle');
+  const headAfter = await git.headHash();
+  assert.notEqual(headAfter, mainCommit);
+  assert.equal(await git.showFile('HEAD', 'a.txt'), 'resolved change\n');
+});
+

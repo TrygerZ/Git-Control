@@ -630,7 +630,7 @@ test('only non-obvious or destructive menu items carry a hint', () => {
   const withHint = items.filter((i) => i.hint !== undefined).map((i) => i.id);
   assert.deepEqual(
     withHint.sort(),
-    ['checkout-commit', 'merge-into', 'push-up-to', 'reset-hard', 'reset-soft', 'revert'].sort(),
+    ['checkout-commit', 'cherry-pick', 'merge-into', 'push-up-to', 'reset-hard', 'reset-soft', 'revert'].sort(),
   );
   for (const item of items) {
     if (item.hint !== undefined) {
@@ -648,7 +648,7 @@ test('the destructive items are the ones marked risky, and they say what is lost
     'id',
   );
   const risky = new Set(items.filter((i) => i.risky === true).map((i) => i.id));
-  for (const id of ['reset-hard', 'reset-soft', 'revert', 'checkout-commit', 'merge-into']) {
+  for (const id of ['reset-hard', 'reset-soft', 'revert', 'checkout-commit', 'merge-into', 'cherry-pick']) {
     assert.ok(risky.has(id), `${id} is marked risky`);
   }
   const hard = items.find((i) => i.id === 'reset-hard');
@@ -1163,5 +1163,30 @@ test('BranchSelector: accessibility attributes (aria-label, title) are defined a
     assert.ok(strings.graph.checkoutBranchDetached, `checkoutBranchDetached must be defined for ${lang}`);
     assert.ok(typeof strings.graph.checkoutBranchCurrent === 'function', `checkoutBranchCurrent must be function for ${lang}`);
     assert.ok(strings.graph.checkoutBranchCurrent('main').includes('main'));
+  }
+});
+
+test('ConflictPanel and OperationBanner: continue action buttons unify on primary tier', () => {
+  const panelSource = fs.readFileSync(
+    path.join(__dirname, '..', '..', 'src', 'webview', 'ConflictPanel.tsx'),
+    'utf8',
+  );
+
+  // Both OperationBanner and ConflictPanel continue buttons must be primary tier
+  const continueMatches = [
+    ...panelSource.matchAll(/<button[^>]*className="([^"]*gc-button[^"]*)"[^>]*title=\{[^}]*continue[^}]*\}/gi),
+  ];
+  assert.equal(continueMatches.length, 2, 'two continue buttons found in ConflictPanel.tsx');
+  for (const match of continueMatches) {
+    assert.ok(match[1]?.includes('gc-button--primary'), 'continue button must use primary tier');
+  }
+
+  // Both abort buttons remain neutral tier
+  const abortMatches = [
+    ...panelSource.matchAll(/<button[^>]*className="([^"]*gc-button[^"]*)"[^>]*title=\{[^}]*abort[^}]*\}/gi),
+  ];
+  assert.equal(abortMatches.length, 2, 'two abort buttons found in ConflictPanel.tsx');
+  for (const match of abortMatches) {
+    assert.equal(match[1], 'gc-button', 'abort button must use neutral tier');
   }
 });

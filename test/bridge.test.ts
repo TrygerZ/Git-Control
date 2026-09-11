@@ -2183,6 +2183,201 @@ test('pull on dirty tree is blocked with DIRTY_TREE and remedies', async (t) => 
   assert.deepEqual(response.error.remedies, ['commit', 'stash', 'cancel']);
 });
 
+test('cherry-pick succeeds end-to-end on clean tree with confirmation', async (t) => {
+  const dir = await makeFixture('triple');
+  t.after(() => cleanup(dir));
+  const repo = new RepositoryService({ folderPath: dir, gitPath: 'git', store: new MemoryStore() });
+  const h = harness(repo);
+  t.after(() => h.bridge.dispose());
+
+  const sideRev = await repo.git.run(['rev-parse', 'side']);
+  const sideHash = sideRev.stdout.trim();
+  const token = (await repo.status()).statusToken;
+
+  const response = await h.webview.send(
+    req('actions/git', {
+      action: 'cherry-pick',
+      hash: sideHash,
+      confirm: true,
+      statusToken: token,
+      idempotencyKey: 'bridge-cp-1',
+    }),
+  );
+  assert.equal(response.ok, true);
+  const statusAfter = await repo.status();
+  assert.equal(statusAfter.operation, 'idle');
+  assert.equal(await repo.git.showFile('HEAD', 'side.txt'), 'side\n');
+});
+
+test('cherry-pick on dirty tree is rejected with 412 DIRTY_TREE', async (t) => {
+  const dir = await makeFixture('triple');
+  t.after(() => cleanup(dir));
+  const repo = new RepositoryService({ folderPath: dir, gitPath: 'git', store: new MemoryStore() });
+  const h = harness(repo);
+  t.after(() => h.bridge.dispose());
+
+  const sideRev = await repo.git.run(['rev-parse', 'side']);
+  const sideHash = sideRev.stdout.trim();
+
+  await fs.writeFile(path.join(dir, 'dirty.txt'), 'dirty\n', 'utf8');
+  repo.invalidate();
+  const token = (await repo.status()).statusToken;
+
+  const response = await h.webview.send(
+    req('actions/git', {
+      action: 'cherry-pick',
+      hash: sideHash,
+      confirm: true,
+      statusToken: token,
+      idempotencyKey: 'bridge-cp-dirty',
+    }),
+  );
+  assert.equal(response.ok, false);
+  if (response.ok) return;
+  assert.equal(response.error.status, 412);
+  assert.equal(response.error.code, 'DIRTY_TREE');
+  assert.deepEqual(response.error.remedies, ['commit', 'stash', 'cancel']);
+});
+
+test('cherry-pick conflict produces cherry-pick operation state, continue succeeds, abort restores idle', async (t) => {
+  const dir = await makeRepo();
+  t.after(() => cleanup(dir));
+  const repo = new RepositoryService({ folderPath: dir, gitPath: 'git', store: new MemoryStore() });
+  const h = harness(repo);
+  t.after(() => h.bridge.dispose());
+
+  await repo.git.createBranch('side', 'main');
+  await fs.writeFile(path.join(dir, 'a.txt'), 'side line\n', 'utf8');
+  await repo.git.stage(['a.txt']);
+  const sideCommit = (await repo.git.commit('side commit')) as string;
+
+  await repo.git.switchBranch('main');
+  await fs.writeFile(path.join(dir, 'a.txt'), 'main line\n', 'utf8');
+  await repo.git.stage(['a.txt']);
+  const mainCommit = (await repo.git.commit('main commit')) as string;
+
+  repo.invalidate();
+  let token = (await repo.status()).statusToken;
+
+  const response = await h.webview.send(
+    req('actions/git', {
+      action: 'cherry-pick',
+      hash: sideCommit,
+      confirm: true,
+      statusToken: token,
+      idempotencyKey: 'bridge-cp-conflict',
+    }),
+  );
+  assert.equal(response.ok, false);
+
+  repo.invalidate();
+  let status = await repo.status();
+  assert.equal(status.operation, 'cherry-pick');
+  assert.ok(status.conflicts.length > 0);
+
+  const abortRes = await h.webview.send(
+    req('actions/git', {
+      action: 'cherry-pick-abort',
+      idempotencyKey: 'bridge-cp-abort',
+    }),
+  );
+  assert.equal(abortRes.ok, true);
+  repo.invalidate();
+  status = await repo.status();
+  assert.equal(status.operation, 'idle');
+  assert.equal(status.head, mainCommit);
+
+  token = status.statusToken;
+  await h.webview.send(
+    req('actions/git', {
+      action: 'cherry-pick',
+      hash: sideCommit,
+      confirm: true,
+      statusToken: token,
+      idempotencyKey: 'bridge-cp-conflict-2',
+    }),
+  );
+
+  repo.invalidate();
+  status = await repo.status();
+  assert.equal(status.operation, 'cherry-pick');
+
+  await fs.writeFile(path.join(dir, 'a.txt'), 'resolved line\n', 'utf8');
+  token = status.statusToken;
+  const stageRes = await h.webview.send(
+    req('actions/stage', {
+      paths: ['a.txt'],
+      stage: true,
+      statusToken: token,
+      idempotencyKey: 'bridge-cp-stage',
+    }),
+  );
+  assert.equal(stageRes.ok, true);
+
+  repo.invalidate();
+  status = await repo.status();
+  assert.equal(status.conflicts.length, 0);
+
+  const continueRes = await h.webview.send(
+    req('actions/git', {
+      action: 'cherry-pick-continue',
+      idempotencyKey: 'bridge-cp-continue',
+    }),
+  );
+  assert.equal(continueRes.ok, true);
+
+  repo.invalidate();
+  status = await repo.status();
+  assert.equal(status.operation, 'idle');
+  assert.equal(await repo.git.showFile('HEAD', 'a.txt'), 'resolved line\n');
+});
+
+test('cherry-pick rejects stale token with 409', async (t) => {
+  const dir = await makeFixture('triple');
+  t.after(() => cleanup(dir));
+  const repo = new RepositoryService({ folderPath: dir, gitPath: 'git', store: new MemoryStore() });
+  const h = harness(repo);
+  t.after(() => h.bridge.dispose());
+
+  const sideRev = await repo.git.run(['rev-parse', 'side']);
+  const sideHash = sideRev.stdout.trim();
+
+  const response = await h.webview.send(
+    req('actions/git', {
+      action: 'cherry-pick',
+      hash: sideHash,
+      confirm: true,
+      statusToken: 'definitely-stale-token',
+      idempotencyKey: 'bridge-cp-stale',
+    }),
+  );
+  assert.equal(response.ok, false);
+  if (response.ok) return;
+  assert.equal(response.error.status, 409);
+  assert.equal(response.error.code, 'CONFLICT');
+});
+
+test('cherry-pick rejects invalid hash with 400 VALIDATION_ERROR', async (t) => {
+  const dir = await makeRepo();
+  t.after(() => cleanup(dir));
+  const repo = new RepositoryService({ folderPath: dir, gitPath: 'git', store: new MemoryStore() });
+  const h = harness(repo);
+  t.after(() => h.bridge.dispose());
+
+  const response = await h.webview.send(
+    req('actions/git', {
+      action: 'cherry-pick',
+      hash: 'not-a-valid-hash',
+      confirm: true,
+      idempotencyKey: 'bridge-cp-invalid',
+    }),
+  );
+  assert.equal(response.ok, false);
+  if (response.ok) return;
+  assert.equal(response.error.status, 400);
+  assert.equal(response.error.code, 'VALIDATION_ERROR');
+});
+
 test('actions/git: revert on a merge commit auto-detects merge and succeeds with -m 1', async (t) => {
   const dir = await makeFixture('triple');
   t.after(() => cleanup(dir));

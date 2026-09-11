@@ -65,6 +65,9 @@ const VALID_ACTIONS: Record<GitActionRequest['action'], GitActionRequest> = {
   'stash-drop': { action: 'stash-drop', index: 0 },
   'merge-continue': { action: 'merge-continue' },
   'merge-abort': { action: 'merge-abort' },
+  'cherry-pick': { action: 'cherry-pick', hash: node().hash },
+  'cherry-pick-continue': { action: 'cherry-pick-continue' },
+  'cherry-pick-abort': { action: 'cherry-pick-abort' },
 };
 
 const INVALID_ACTIONS: Record<GitActionRequest['action'], GitActionRequest> = {
@@ -88,6 +91,9 @@ const INVALID_ACTIONS: Record<GitActionRequest['action'], GitActionRequest> = {
   'stash-drop': { action: 'stash-drop', index: -1 },
   'merge-continue': { action: 'merge-continue' },
   'merge-abort': { action: 'merge-abort' },
+  'cherry-pick': { action: 'cherry-pick', hash: 'bad' },
+  'cherry-pick-continue': { action: 'cherry-pick-continue' },
+  'cherry-pick-abort': { action: 'cherry-pick-abort' },
 };
 
 test('validateAction accepts every union member and rejects every invalid table row', async (t) => {
@@ -100,7 +106,7 @@ test('validateAction accepts every union member and rejects every invalid table 
     if (!response.ok) assert.notEqual(response.error.code, 'VALIDATION_ERROR', action);
   }
   for (const action of Object.keys(INVALID_ACTIONS) as GitActionRequest['action'][]) {
-    const invalid = ['stash-pop', 'merge-continue', 'merge-abort'].includes(action)
+    const invalid = ['stash-pop', 'merge-continue', 'merge-abort', 'cherry-pick-continue', 'cherry-pick-abort'].includes(action)
       ? { action: 'not-an-action' }
       : INVALID_ACTIONS[action];
     const response = await h.send('actions/git', { ...invalid, idempotencyKey: `invalid-${action}` });

@@ -938,6 +938,12 @@ export class MessageBridge {
         return git.mergeContinue();
       case 'merge-abort':
         return git.mergeAbort();
+      case 'cherry-pick':
+        return git.cherryPick(action.hash);
+      case 'cherry-pick-continue':
+        return git.cherryPickContinue();
+      case 'cherry-pick-abort':
+        return git.cherryPickAbort();
       default:
         return fail(400, 'VALIDATION_ERROR', this.text().invalid);
     }

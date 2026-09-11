@@ -267,6 +267,9 @@ const id: Catalog = {
       stashDrop: (index: number) => `Menghapus permanen stash@{${index}}. Tindakan ini tidak bisa dibatalkan.`,
       mergeContinue: 'Melanjutkan merge setelah semua konflik selesai.',
       mergeAbort: 'Membatalkan merge dan kembali ke keadaan sebelum merge.',
+      cherryPick: (hash: string) => `Terapkan perubahan dari ${hash} ke branch aktif. Konflik mungkin muncul.`,
+      cherryPickContinue: 'Melanjutkan cherry-pick setelah semua konflik selesai.',
+      cherryPickAbort: 'Membatalkan cherry-pick dan kembali ke keadaan sebelum cherry-pick.',
       defaultAction: 'Menjalankan perintah git.',
     },
 
@@ -290,6 +293,9 @@ const id: Catalog = {
       stashDrop: (index: number) => `Hapus stash@{${index}}`,
       mergeContinue: 'Lanjutkan merge',
       mergeAbort: 'Batalkan merge',
+      cherryPick: (hash: string) => `Cherry-pick ${hash}`,
+      cherryPickContinue: 'Lanjutkan cherry-pick',
+      cherryPickAbort: 'Batalkan cherry-pick',
       defaultAction: 'Tindakan git',
     },
 
@@ -444,6 +450,11 @@ const id: Catalog = {
     abortMergeTitle:
       'Kembalikan repository ke keadaan sebelum merge dimulai. Perubahan yang sudah di-commit tidak hilang.',
     abortMerge: 'Batalkan merge',
+    continueCherryPickTitle: 'Buat commit cherry-pick penutup operasi.',
+    continueCherryPick: 'Lanjutkan cherry-pick',
+    abortCherryPickTitle:
+      'Kembalikan repository ke keadaan sebelum cherry-pick dimulai. Perubahan yang sudah di-commit tidak hilang.',
+    abortCherryPick: 'Batalkan cherry-pick',
     resolveAllFirst: 'Selesaikan semua file konflik terlebih dahulu.',
     emptyTitle: 'Tidak ada konflik.',
     emptyHintIdle: 'Semua perubahan bisa digabung otomatis.',
@@ -538,6 +549,8 @@ const id: Catalog = {
     merge: (branch: string, current: string) => `Merge ${branch} ke ${current}`,
     mergeInto: 'Merge ke...',
     mergeIntoHint: 'Pindah ke branch tujuan dan gabungkan node ini ke sana.',
+    cherryPick: 'Cherry-pick commit ini',
+    cherryPickHint: 'Terapkan perubahan dari commit ini ke branch aktif.',
     revert: 'Revert commit ini',
     revertHint: 'Membatalkan perubahan dengan commit baru; histori tetap utuh.',
     resetSoft: 'Reset soft ke sini',
