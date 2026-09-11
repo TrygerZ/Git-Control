@@ -528,6 +528,42 @@ export class GitRunner {
     );
   }
 
+  /**
+   * Pull changes from remote into current branch without rebasing.
+   *
+   * Threat model: remote and branch come from webview (untrusted) or defaults.
+   * Validated and passed via sanitizeRefArg. Flag --no-rebase is always emitted so
+   * local git config (such as pull.rebase=true) cannot alter extension semantics.
+   */
+  async pull(
+    opts: { remote?: string; branch?: string; onProgress?: (line: string) => void } = {},
+  ): Promise<void> {
+    const args = ['pull', '--no-rebase'];
+    if (opts.remote !== undefined) {
+      if (!validateRemoteName(opts.remote)) {
+        throw new GitError({ code: 'VALIDATION_ERROR', message: `Invalid remote name: ${opts.remote}` });
+      }
+      args.push(sanitizeRefArg(opts.remote));
+      if (opts.branch !== undefined) {
+        if (!validateBranchName(opts.branch)) {
+          throw new GitError({ code: 'VALIDATION_ERROR', message: `Invalid branch name: ${opts.branch}` });
+        }
+        args.push(sanitizeRefArg(opts.branch));
+      }
+    } else if (opts.branch !== undefined) {
+      if (!validateBranchName(opts.branch)) {
+        throw new GitError({ code: 'VALIDATION_ERROR', message: `Invalid branch name: ${opts.branch}` });
+      }
+      args.push(sanitizeRefArg(opts.branch));
+    }
+    await this.runExclusive(() =>
+      this.run(args, {
+        timeoutMs: 120_000,
+        ...(opts.onProgress === undefined ? {} : { onStderrLine: opts.onProgress }),
+      }),
+    );
+  }
+
   async switchBranch(name: string): Promise<void> {
     this.assertBranch(name);
     await this.runExclusive(() => this.run(['switch', '--', sanitizeRefArg(name)]));

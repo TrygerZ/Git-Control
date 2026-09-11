@@ -106,6 +106,27 @@ export function CommitForm(): JSX.Element {
     void runAction({ action: 'push', remote, branch, setUpstream });
   };
 
+  let pullDisabled = false;
+  let pullTitle = '';
+  if (busy) {
+    pullDisabled = true;
+    pullTitle = strings.commitForm.pullDisabledBusy;
+  } else if (status === null || branch === null) {
+    pullDisabled = true;
+    pullTitle = strings.commitForm.pullDisabledNoBranch;
+  } else if (remote !== null) {
+    pullTitle = strings.commitForm.pullTitle(remote, branch);
+  }
+
+  const pullLabel =
+    (status?.behind ?? 0) > 0
+      ? strings.commitForm.pullWithCountButton(formatCount(status?.behind ?? 0, language))
+      : strings.commitForm.pullButton;
+
+  const handlePull = (): void => {
+    void runAction({ action: 'pull' });
+  };
+
   // Label follows the operation marker, never the combined `busy` boolean:
   // `commit()` also raises the changes-store `busy`, so a boolean-based label
   // would claim "staging" during a commit. `busyKind === null` with `busy`
@@ -185,6 +206,17 @@ export function CommitForm(): JSX.Element {
             onClick={handlePush}
           >
             {pushLabel}
+          </button>
+        )}
+        {remote !== null && (
+          <button
+            type="button"
+            className="gc-button gc-button--action"
+            title={pullTitle}
+            disabled={pullDisabled}
+            onClick={handlePull}
+          >
+            {pullLabel}
           </button>
         )}
         {retryPush !== null && (

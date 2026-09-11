@@ -830,6 +830,15 @@ export class MessageBridge {
           refspec: `${action.hash}:refs/heads/${action.branch}`,
           onProgress: this.progressSink(operationId, 'push-up-to'),
         });
+      case 'pull': {
+        await git.pull({
+          ...(action.remote === undefined ? {} : { remote: action.remote }),
+          ...(action.branch === undefined ? {} : { branch: action.branch }),
+          onProgress: this.progressSink(operationId, 'pull'),
+        });
+        await repo.markFetched();
+        return;
+      }
       case 'fetch': {
         await git.fetch({
           ...(action.remote === undefined ? {} : { remote: action.remote }),

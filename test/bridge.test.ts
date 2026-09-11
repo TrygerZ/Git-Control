@@ -8,7 +8,7 @@ import { MessageBridge, toErrorBody, type BridgeHost, type WebviewLike } from '.
 import { hostText } from '../src/hostText';
 import { Logger, type LogSink } from '../src/logger';
 import { RepositoryService, type PersistentStore } from '../src/repository';
-import { cleanup, makeFixture } from './repoFixture';
+import { advanceRemote, cleanup, makeFixture } from './repoFixture';
 import type {
   ContributorInfo,
   HostEvent,
@@ -1781,4 +1781,119 @@ test('merge-into on dirty tree is blocked with DIRTY_TREE', async (t) => {
   if (response.ok) return;
   assert.equal(response.error.status, 412);
   assert.equal(response.error.code, 'DIRTY_TREE');
+});
+
+test('pull without confirm is blocked by guard with CONFIRMATION_REQUIRED', async (t) => {
+  const dir = await makeFixture('remote');
+  t.after(() => cleanup(dir));
+  const repo = new RepositoryService({ folderPath: dir, gitPath: 'git', store: new MemoryStore() });
+  const h = harness(repo);
+  t.after(() => h.bridge.dispose());
+
+  const token = (await repo.status()).statusToken;
+  const response = await h.webview.send(
+    req('actions/git', {
+      action: 'pull',
+      statusToken: token,
+      idempotencyKey: 'pull-unconfirmed-1',
+    }),
+  );
+  assert.equal(response.ok, false);
+  if (response.ok) return;
+  assert.equal(response.error.status, 428);
+  assert.equal(response.error.code, 'CONFIRMATION_REQUIRED');
+  assert.equal(response.error.confirmationLevel, 1);
+  assert.deepEqual(response.error.remedies, ['confirm', 'cancel']);
+});
+
+test('pull with clean tree and confirm succeeds and advances HEAD', async (t) => {
+  const dir = await makeFixture('remote');
+  t.after(() => cleanup(dir));
+  const repo = new RepositoryService({ folderPath: dir, gitPath: 'git', store: new MemoryStore() });
+  const h = harness(repo);
+  t.after(() => h.bridge.dispose());
+
+  const headBefore = await repo.git.headHash();
+  const upstreamHash = await advanceRemote(dir, 'pull-test.txt', 'remote commit content\n');
+
+  const token = (await repo.status()).statusToken;
+  const response = await h.webview.send(
+    req('actions/git', {
+      action: 'pull',
+      confirm: true,
+      statusToken: token,
+      idempotencyKey: 'pull-clean-1',
+    }),
+  );
+  assert.equal(response.ok, true);
+
+  const headAfter = await repo.git.headHash();
+  assert.equal(headAfter, upstreamHash);
+  assert.notEqual(headBefore, headAfter);
+  assert.match(await fs.readFile(path.join(dir, 'pull-test.txt'), 'utf8'), /^remote commit content\r?\n$/);
+});
+
+test('pull on dirty tree is blocked with DIRTY_TREE and remedies', async (t) => {
+  const dir = await makeFixture('remote');
+  t.after(() => cleanup(dir));
+  const repo = new RepositoryService({ folderPath: dir, gitPath: 'git', store: new MemoryStore() });
+  const h = harness(repo);
+  t.after(() => h.bridge.dispose());
+
+  await fs.writeFile(path.join(dir, 'dirty.txt'), 'dirty content\n', 'utf8');
+  repo.invalidate();
+  const token = (await repo.status()).statusToken;
+
+  const response = await h.webview.send(
+    req('actions/git', {
+      action: 'pull',
+      confirm: true,
+      statusToken: token,
+      idempotencyKey: 'pull-dirty-1',
+    }),
+  );
+  assert.equal(response.ok, false);
+  if (response.ok) return;
+  assert.equal(response.error.status, 412);
+  assert.equal(response.error.code, 'DIRTY_TREE');
+  assert.deepEqual(response.error.remedies, ['commit', 'stash', 'cancel']);
+});
+
+test('pull rejects invalid remote or branch names before touching git', async (t) => {
+  const dir = await makeFixture('remote');
+  t.after(() => cleanup(dir));
+  const repo = new RepositoryService({ folderPath: dir, gitPath: 'git', store: new MemoryStore() });
+  const h = harness(repo);
+  t.after(() => h.bridge.dispose());
+
+  const token = (await repo.status()).statusToken;
+  const badRemoteResponse = await h.webview.send(
+    req('actions/git', {
+      action: 'pull',
+      remote: '-bad-remote',
+      confirm: true,
+      statusToken: token,
+      idempotencyKey: 'pull-invalid-1',
+    }),
+  );
+  assert.equal(badRemoteResponse.ok, false);
+  if (!badRemoteResponse.ok) {
+    assert.equal(badRemoteResponse.error.status, 400);
+    assert.equal(badRemoteResponse.error.code, 'VALIDATION_ERROR');
+  }
+
+  const badBranchResponse = await h.webview.send(
+    req('actions/git', {
+      action: 'pull',
+      branch: '-bad-branch',
+      confirm: true,
+      statusToken: token,
+      idempotencyKey: 'pull-invalid-2',
+    }),
+  );
+  assert.equal(badBranchResponse.ok, false);
+  if (!badBranchResponse.ok) {
+    assert.equal(badBranchResponse.error.status, 400);
+    assert.equal(badBranchResponse.error.code, 'VALIDATION_ERROR');
+  }
 });

@@ -68,6 +68,7 @@ const DIRTY_BLOCKED = new Set<GuardAction['action']>([
   'checkout-commit',
   'merge',
   'merge-into',
+  'pull',
 ]);
 
 /**
@@ -80,6 +81,7 @@ const CONFIRM_LEVEL_1 = new Set<GuardAction['action']>([
   'revert',
   'reset-soft',
   'merge-into',
+  'pull',
 ]);
 
 /**

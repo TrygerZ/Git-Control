@@ -48,6 +48,10 @@ export function validateAction(action: GitActionPayload, fail: (detail: string) 
       if (!validateRemoteName(action.remote)) fail('remote');
       if (!validateBranchName(action.branch)) fail('branch');
       if (!validateHash(action.hash)) fail('hash'); return;
+    case 'pull':
+      if (action.remote !== undefined && !validateRemoteName(action.remote)) fail('remote');
+      if (action.branch !== undefined && !validateBranchName(action.branch)) fail('branch');
+      return;
     case 'fetch': if (action.remote !== undefined && !validateRemoteName(action.remote)) fail('remote'); return;
     case 'stash': if (typeof action.message !== 'string') fail('message'); return;
     case 'stash-pop': case 'merge-continue': case 'merge-abort': return;

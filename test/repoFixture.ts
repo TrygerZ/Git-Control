@@ -30,7 +30,9 @@ export type FixtureKind =
   /** One commit, `a.txt` containing `one\n`, on `main`. */
   | 'single'
   /** Three commits on `main` (`add one/two/three`) plus `add side` on `side`. */
-  | 'triple';
+  | 'triple'
+  /** One commit on `main`, tracked by bare remote `origin` at `.git/bare.git`. */
+  | 'remote';
 
 /** Built templates, one per kind per process. */
 const templates = new Map<FixtureKind, Promise<string>>();
@@ -60,6 +62,29 @@ export async function makeFixture(kind: FixtureKind = 'single'): Promise<string>
   return dir;
 }
 
+/**
+ * Advance the bare origin in a 'remote' fixture by committing and pushing to it.
+ * Simulates upstream changes from another collaborator.
+ */
+export async function advanceRemote(dir: string, filename: string, content: string): Promise<string> {
+  const bareDir = path.join(dir, '.git', 'bare.git');
+  const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'git-control-remote-adv-'));
+  try {
+    const git = new GitRunner({ gitPath: 'git', cwd: tempDir });
+    await git.run(['clone', '--quiet', bareDir, tempDir]);
+    await git.run(['config', 'user.email', 'upstream@example.com']);
+    await git.run(['config', 'user.name', 'Upstream User']);
+    await fs.writeFile(path.join(tempDir, filename), content, 'utf8');
+    await git.stage([filename]);
+    await git.commit(`add ${filename} from upstream`);
+    await git.run(['push', '--quiet', 'origin', 'main']);
+    const tip = await git.run(['rev-parse', 'HEAD']);
+    return tip.stdout.trim();
+  } finally {
+    await cleanup(tempDir);
+  }
+}
+
 function templateFor(kind: FixtureKind): Promise<string> {
   const existing = templates.get(kind);
   if (existing !== undefined) return existing;
@@ -81,6 +106,18 @@ async function buildTemplate(kind: FixtureKind): Promise<string> {
     await fs.writeFile(path.join(dir, 'a.txt'), 'one\n', 'utf8');
     await git.stage(['a.txt']);
     await git.commit('initial commit');
+    return dir;
+  }
+
+  if (kind === 'remote') {
+    await fs.writeFile(path.join(dir, 'a.txt'), 'one\n', 'utf8');
+    await git.stage(['a.txt']);
+    await git.commit('initial commit');
+    const bareDir = path.join(dir, '.git', 'bare.git');
+    const bareGit = new GitRunner({ gitPath: 'git', cwd: dir });
+    await bareGit.run(['init', '--bare', '--quiet', '--initial-branch=main', bareDir]);
+    await git.run(['remote', 'add', 'origin', './.git/bare.git']);
+    await git.run(['push', '--quiet', '-u', 'origin', 'main']);
     return dir;
   }
 
