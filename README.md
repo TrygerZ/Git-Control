@@ -14,7 +14,7 @@ Git Control replaces flat vertical commit lists with an interactive two-dimensio
 
 ### 1. Interactive 2D Branch Explorer
 * **Topological DAG Canvas**: Visualizes branches, merges, tags, HEAD position, and remote synchronization status with deterministic lane allocation.
-* **Navigation and Filtering**: Pan, zoom (25% to 400%), search by commit message, hash, or author, and isolate specific branches.
+* **Navigation and Filtering**: Pan, zoom (35% to 400%), search by commit message, hash, or author, and isolate specific branches.
 * **Canvas Minimap**: Compact overview map for large repositories.
 * **High-Capacity History**: Loads up to 10,000 commits per view with on-demand pagination for older history.
 
@@ -32,36 +32,46 @@ Git Control replaces flat vertical commit lists with an interactive two-dimensio
 * **Recursive Folder Selection**: Checking a folder toggles all child files automatically.
 * **One-Click Commit and Push**: Write commit messages, stage selected items, and optionally push to upstream remotes in a single flow.
 * **Inline File Churn**: Displays added and deleted line counts alongside binary and untracked indicators.
+* **File Icon Theme Integration**: File rows display icons from the active VS Code File Icon Theme, updating automatically on theme changes.
+* **Pull from Upstream**: Pull active branch from its upstream with dirty working tree guard offering commit, stash, and cancel remedies.
+* **Per-File Discard**: Discard unstaged changes for individual files with two-step destructive confirmation, blocked during active operations and conflicts.
 
-### 4. Node Context Menu and Branch Operations
+### 4. Stash Management
+* **List, Apply, and Drop Stashes**: List all stashes with apply (keeps the entry) and drop actions; drop requires two-step destructive confirmation.
+* **Expandable Stash Entries**: Expand stash entries to view file contents with file icons, line churn counters, and click-to-diff.
+* **Dedicated Archive Icon**: Stash section header displays a dedicated archive icon in its own color tone.
+* **Commit Hash Navigation**: "Stash N from <hash>" labels; clicking the hash opens the Branch Explorer and selects that commit.
+
+### 5. Node Context Menu and Branch Operations
 Right-click any commit node or branch ref to perform standard Git actions:
 * **Checkout**: Switch branches or checkout specific commits into detached HEAD state.
 * **Branch Management**: Create new branches pointing directly to selected commits.
 * **Merge Workflows**: Merge target branches into the active branch with visual status tracking.
 * **Revert**: Generate standard inverse commits while preserving branch history.
 * **Reset**: Choose between Soft Reset (moves HEAD, keeps working changes staged) and Hard Reset.
+* **Cherry-Pick**: Apply a single commit from the node context menu with full conflict flow support (continue and abort actions available during cherry-pick, conflicted files surface in resolution panel).
 * **Push Up To**: Fast-forward push repository history up to a selected commit hash.
 
-### 5. Safety Guard and Conflict Resolution
+### 6. Safety Guard and Conflict Resolution
 * **Dirty-Tree Protection**: Prevents accidental checkouts, resets, or merges when unstaged or uncommitted changes are present.
 * **Two-Stage Destructive Confirmation**: Explicit dual-stage review required before executing irreversible actions like Hard Reset.
 * **Remote-Ahead Detection**: Warns when the remote branch contains incoming commits, preventing unintentional non-fast-forward push rejections.
 * **Dedicated Conflict Panel**: Lists conflicted files during merge, rebase, or cherry-pick states with quick shortcuts to the VS Code merge editor.
 
-### 6. Commit Inspector and Diff Viewer
+### 7. Commit Inspector and Diff Viewer
 * **Detailed Commit Metadata**: Displays author, committer, commit date, hash, and parent commits.
 * **Multi-Parent Comparison**: Compare merge commits against any individual parent commit.
 * **Integrated Diffing**: Opens files directly in the native VS Code Diff Editor.
 * **File Changes Breakdown**: Summarizes changed files and line modifications, including binary file identification.
 
-### 7. GitHub Integration
+### 8. GitHub Integration
 * **Token Storage**: Connects directly to GitHub via VS Code SecretStorage without exposing credentials.
 * **Pull Request Visibility**: Displays pull request statuses and numbers associated with branch heads.
 * **External Navigation**: Direct links to view commits and pull requests in the browser.
 * **Rate Limit Monitoring**: Real-time indicator for GitHub REST API quotas and cache status.
 * **Contributor Identity Resolution**: Resolves author email addresses to GitHub profiles and avatars with cached API queries.
 
-### 8. Bilingual Interface
+### 9. Bilingual Interface
 * Full interface support for English and Bahasa Indonesia, configurable via settings or the status bar toggle.
 
 ## Requirements
@@ -121,6 +131,7 @@ Access these commands through the Command Palette (`Ctrl+Shift+P` / `Cmd+Shift+P
 | `Shift + F10` | Open context menu for selected commit |
 | `+` / `-` | Zoom in and zoom out |
 | `0` | Reset zoom to 100% |
+| `Space` (hold) | Drag-to-pan anywhere, including over commit rows and nodes |
 
 ## License
 
