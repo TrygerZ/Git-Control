@@ -231,6 +231,8 @@ export type GitActionRequest =
   | { action: 'fetch'; remote?: string; prune?: boolean }
   | { action: 'stash'; message: string; includeUntracked?: boolean }
   | { action: 'stash-pop' }
+  | { action: 'stash-apply'; index: number }
+  | { action: 'stash-drop'; index: number }
   | { action: 'merge-continue' }
   | { action: 'merge-abort' };
 
@@ -333,10 +335,23 @@ export interface OpenDiffPayload {
   parent?: string;
 }
 
+export interface OpenStashDiffPayload {
+  index: number;
+  path: string;
+}
+
+export interface OpenStashDiffHostPayload {
+  index: number;
+  path: string;
+  stashHash: string;
+  parentHash: string;
+  untrackedHash?: string;
+}
+
 export interface OpenDiffResult {
   opened: boolean;
   /** What the host actually opened, so the UI can label the result. */
-  mode: 'commit' | 'index' | 'worktree' | 'merge';
+  mode: 'commit' | 'index' | 'worktree' | 'merge' | 'stash';
 }
 
 /**
@@ -372,6 +387,22 @@ export type ContributorEntry = ContributorInfo;
 export type ContributorsPayload = Record<string, never>;
 export type ContributorsRequest = ContributorsPayload;
 export type ContributorsResponse = ContributorInfo[];
+
+export interface StashEntry {
+  ref: string;
+  hash: string;
+  subject: string;
+}
+
+export interface StashFile {
+  path: string;
+  additions: number | null;
+  deletions: number | null;
+}
+
+export interface StashShowPayload {
+  index: number;
+}
 
 export interface ActionResult {
   ok: true;
@@ -531,17 +562,25 @@ export interface OpenExternalPayload {
   url: string;
 }
 
+/** Ask the host to reveal and focus a commit in the explorer canvas. */
+export interface RevealCommitPayload {
+  hash: string;
+}
+
 /** Request kind → { payload, response } map. Extend here, nowhere else. */
 export interface RequestMap {
   'repos/status': { payload: StatusPayload; response: RepoStatus };
   'repos/graph': { payload: GraphPayload; response: RepoGraph };
   'repos/remotes': { payload: Record<string, never>; response: { remotes: RemoteInfo[] } };
   'repos/contributors': { payload: ContributorsRequest; response: ContributorsResponse };
+  'stash/list': { payload: Record<string, never>; response: StashEntry[] };
+  'stash/show': { payload: StashShowPayload; response: StashFile[] };
   'commits/detail': { payload: CommitDetailPayload; response: CommitDetail };
   'actions/stage': { payload: StagePayload; response: ActionResult };
   'actions/commit': { payload: CommitPayload; response: CommitResult };
   'actions/git': { payload: GitActionPayload; response: ActionResult };
   'actions/openDiff': { payload: OpenDiffPayload; response: OpenDiffResult };
+  'actions/openStashDiff': { payload: OpenStashDiffPayload; response: OpenDiffResult };
   /**
    * Reveal the `Git Control` output channel. Empty payload by design: it takes no
    * parameters, so it cannot be used to run an arbitrary host command.
@@ -552,6 +591,10 @@ export interface RequestMap {
    * parameters, so it cannot be used to run an arbitrary host command.
    */
   'actions/openExplorer': { payload: Record<string, never>; response: { opened: boolean } };
+  /**
+   * Reveal a commit in the Git Control explorer canvas and select it.
+   */
+  'graph/revealCommit': { payload: RevealCommitPayload; response: { revealed: boolean } };
   /** Open a URL in the system browser. Host-side only; the webview cannot navigate. */
   'actions/openExternal': { payload: OpenExternalPayload; response: { opened: boolean } };
   'github/auth': { payload: Record<string, never>; response: GitHubAuthState };
@@ -667,6 +710,10 @@ export interface IconThemeSnapshot {
   hidesExplorerArrows: boolean;
 }
 
+export interface CommitFocusEvent {
+  hash: string;
+}
+
 /** Event kind → payload map for unsolicited host pushes. */
 export interface EventMap {
   'event/repoChanged': RepoChangedEvent;
@@ -675,6 +722,8 @@ export interface EventMap {
   'event/settingsChanged': SettingsSnapshot;
   /** `null` = no active icon theme → webview falls back to generic icons. */
   'event/iconThemeChanged': IconThemeSnapshot | null;
+  /** Focus and select a commit in the explorer canvas. */
+  'event/commitFocus': CommitFocusEvent;
 }
 
 export type EventKind = keyof EventMap;

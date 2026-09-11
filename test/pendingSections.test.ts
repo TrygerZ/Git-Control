@@ -11,8 +11,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { useChangesStore } from '../src/webview/store';
-import { loadState, saveState } from '../src/webview/bridge';
+import { useChangesStore, pruneStashCache } from '../src/webview/store';
+import { bridge, loadState, saveState } from '../src/webview/bridge';
 import { t } from '../src/webview/i18n';
 
 function reset(): void {
@@ -118,6 +118,20 @@ test('the section header renders a real toggle button with aria-expanded and a d
     src,
     /className="gc-section__toggle"[\s\S]{0,600}<button/,
     'no button nested inside the section toggle',
+  );
+});
+
+test('stash section header renders archive icon badge with special tone and no dollar glyph', () => {
+  const src = fs.readFileSync(
+    path.join(__dirname, '..', '..', 'src', 'webview', 'PendingChanges.tsx'),
+    'utf8',
+  );
+  assert.match(src, /gc-section__badge--special/);
+  assert.match(src, /<Icon name="archive" \/>/);
+  assert.doesNotMatch(
+    src,
+    /gc-section__badge[^>]*>\s*\$/,
+    'no raw dollar glyph in section badges',
   );
 });
 
@@ -247,4 +261,168 @@ test('discard action is scoped strictly to unstaged changes section', () => {
     /discardAction=\{\s*section === 'unstaged'\s*\?/,
     'discard action must be conditionally provided only for unstaged section',
   );
+});
+
+test('pruneStashCache drops indices greater than or equal to stash count', () => {
+  const cached = {
+    0: [{ path: 'a.txt', additions: 1, deletions: 0 }],
+    1: [{ path: 'b.txt', additions: 2, deletions: 1 }],
+    2: [{ path: 'c.txt', additions: null, deletions: null }],
+  };
+  const pruned = pruneStashCache(cached, 2);
+  assert.deepEqual(Object.keys(pruned).sort(), ['0', '1']);
+  assert.equal(pruned[2], undefined);
+  assert.equal(pruned[0]?.length, 1);
+  assert.equal(pruned[1]?.length, 1);
+});
+
+test('toggleStashExpanded toggles expansion and lazy fetches stash files with caching', async (t) => {
+  useChangesStore.setState({
+    stashesExpanded: new Set<number>(),
+    stashContents: {},
+    stashContentsLoading: new Set<number>(),
+  });
+
+  let requestedIndex: number | null = null;
+  const originalRequest = bridge.request;
+  bridge.request = (async (kind: any, payload: any): Promise<any> => {
+    if (kind === 'stash/show') {
+      const p = payload as { index: number };
+      requestedIndex = p.index;
+      return [{ path: 'file1.txt', additions: 5, deletions: 2 }];
+    }
+    return originalRequest.call(bridge, kind, payload);
+  }) as any;
+  t.after(() => {
+    bridge.request = originalRequest;
+  });
+
+  // First toggle: expands and fetches
+  await useChangesStore.getState().toggleStashExpanded(0);
+  assert.ok(useChangesStore.getState().stashesExpanded.has(0));
+  assert.equal(requestedIndex, 0);
+  assert.deepEqual(useChangesStore.getState().stashContents[0], [
+    { path: 'file1.txt', additions: 5, deletions: 2 },
+  ]);
+
+  // Second toggle: collapses without re-fetching
+  requestedIndex = null;
+  await useChangesStore.getState().toggleStashExpanded(0);
+  assert.ok(!useChangesStore.getState().stashesExpanded.has(0));
+  assert.equal(requestedIndex, null);
+  // Cache remains intact
+  assert.deepEqual(useChangesStore.getState().stashContents[0], [
+    { path: 'file1.txt', additions: 5, deletions: 2 },
+  ]);
+
+  // Third toggle: expands using cached content without re-fetching
+  requestedIndex = null;
+  await useChangesStore.getState().toggleStashExpanded(0);
+  assert.ok(useChangesStore.getState().stashesExpanded.has(0));
+  assert.equal(requestedIndex, null);
+});
+
+test('loadStashes resets stashesExpanded and prunes stashContents on stash list changes', async (t) => {
+  useChangesStore.setState({
+    stashes: [
+      { ref: 'stash@{0}', hash: '1111111', subject: 'first' },
+      { ref: 'stash@{1}', hash: '2222222', subject: 'second' },
+    ],
+    stashesExpanded: new Set<number>([0, 1]),
+    stashContents: {
+      0: [{ path: 'a.txt', additions: 1, deletions: 0 }],
+      1: [{ path: 'b.txt', additions: 2, deletions: 1 }],
+    },
+  });
+
+  const originalRequest = bridge.request;
+  bridge.request = (async (kind: any, payload: any): Promise<any> => {
+    if (kind === 'stash/list') {
+      // Stash was dropped, only 1 entry left with shifted hash
+      return [{ ref: 'stash@{0}', hash: '2222222', subject: 'second' }];
+    }
+    return originalRequest.call(bridge, kind, payload);
+  }) as any;
+  t.after(() => {
+    bridge.request = originalRequest;
+  });
+
+  await useChangesStore.getState().loadStashes();
+
+  const state = useChangesStore.getState();
+  assert.equal(state.stashes.length, 1);
+  // Expanded state reset
+  assert.equal(state.stashesExpanded.size, 0);
+  // Index 1 pruned from cache
+  assert.equal(state.stashContents[1], undefined);
+  assert.ok(state.stashContents[0] !== undefined);
+});
+
+test('stash item row renders expandable twisty, 1-based label, open-commit hash button, and no subject', () => {
+  const src = fs.readFileSync(
+    path.join(__dirname, '..', '..', 'src', 'webview', 'PendingChanges.tsx'),
+    'utf8',
+  );
+  assert.match(src, /className="gc-icon-button gc-stash-item__twisty"/);
+  assert.match(src, /aria-expanded=\{isExpanded\}/);
+  assert.match(src, /formatStashLabel\(parsedIndex, language\)/);
+  assert.match(src, /className="gc-stash-item__hash-btn"/);
+  assert.match(src, /aria-label=\{strings\.pending\.stashOpenCommitAria\}/);
+  assert.match(src, /title=\{strings\.pending\.stashOpenCommitTitle\}/);
+  assert.doesNotMatch(src, /stash\.subject/);
+  assert.match(src, /aria-label=\{strings\.pending\.stashApplyAria\(stash\.ref\)\}/);
+  assert.match(src, /title=\{strings\.pending\.stashApplyTitle\}/);
+  assert.match(src, /<Icon name="add" \/>/);
+  assert.match(src, /aria-label=\{strings\.pending\.stashDropAria\(stash\.ref\)\}/);
+  assert.match(src, /title=\{strings\.pending\.stashDropTitle\}/);
+  assert.match(src, /<Icon name="dash" \/>/);
+  assert.doesNotMatch(src, /strings\.pending\.stashApplyLabel/);
+  assert.doesNotMatch(src, /strings\.pending\.stashDropLabel/);
+
+  const stylesSrc = fs.readFileSync(
+    path.join(__dirname, '..', '..', 'src', 'webview', 'styles.css'),
+    'utf8',
+  );
+  const actionsBlock = stylesSrc.match(/\.gc-stash-item__actions\s*\{([^}]*)\}/)?.[1] ?? '';
+  assert.match(actionsBlock, /margin-left:\s*auto;/);
+  const actionBlock = stylesSrc.match(/\.gc-stash-item__action\s*\{([^}]*)\}/)?.[1] ?? '';
+  assert.match(actionBlock, /font-size:\s*var\(--gc-fs-sm\);/);
+});
+
+test('stash file row renders theme file icon, path, and click button for actions/openStashDiff', () => {
+  const src = fs.readFileSync(
+    path.join(__dirname, '..', '..', 'src', 'webview', 'PendingChanges.tsx'),
+    'utf8',
+  );
+  assert.match(src, /<FileIcon kind="file" name=\{baseName\(file\.path\)\} \/>/);
+  assert.match(src, /className="gc-stash-file__path"/);
+  assert.match(src, /actions\/openStashDiff/);
+  assert.match(src, /className="gc-tree__row gc-stash-file__button"/);
+  assert.match(src, /onClick=\{\(\) => onOpenDiff\(parsedIndex, file\.path\)\}/);
+  assert.match(src, /aria-label=\{strings\.pending\.stashFileOpenDiffAria\(file\.path, churn\)\}/);
+
+  const stylesSrc = fs.readFileSync(
+    path.join(__dirname, '..', '..', 'src', 'webview', 'styles.css'),
+    'utf8',
+  );
+  const buttonBlock = stylesSrc.match(/\.gc-stash-file__button\s*\{([^}]*)\}/)?.[1] ?? '';
+  assert.match(buttonBlock, /cursor:\s*pointer;/);
+});
+
+test('openStashDiff dispatches actions/openStashDiff request with index and path', async (t) => {
+  let requestedKind: string | null = null;
+  let requestedPayload: unknown = null;
+  const originalRequest = bridge.request;
+  bridge.request = (async (kind: any, payload: any): Promise<any> => {
+    requestedKind = kind;
+    requestedPayload = payload;
+    return { opened: true, mode: 'stash' };
+  }) as any;
+  t.after(() => {
+    bridge.request = originalRequest;
+  });
+
+  await bridge.request('actions/openStashDiff', { index: 2, path: 'src/app.ts' });
+  assert.equal(requestedKind, 'actions/openStashDiff');
+  assert.deepEqual(requestedPayload, { index: 2, path: 'src/app.ts' });
 });

@@ -10,6 +10,7 @@ const en = {
     nonFastForward: 'Push is not fast-forward.',
     resetHard: 'Hard reset discards changes permanently.',
     discardFile: 'Discarding local changes is permanent.',
+    stashDrop: 'Stash drop discards changes permanently.',
     confirm: 'This action requires confirmation.',
   },
   bridge: {
@@ -74,6 +75,7 @@ const id: HostCatalog = {
     nonFastForward: 'Push bukan fast-forward.',
     resetHard: 'Hard reset membuang perubahan permanen.',
     discardFile: 'Membuang perubahan lokal bersifat permanen.',
+    stashDrop: 'Drop stash membuang perubahan permanen.',
     confirm: 'Tindakan ini perlu konfirmasi.',
   },
   bridge: {

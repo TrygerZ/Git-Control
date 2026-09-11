@@ -21,6 +21,8 @@ import type {
   RefInfo,
   RepoGraph,
   RepoStatus,
+  StashEntry,
+  StashFile,
 } from './messages';
 import type { ParsedCommit, ParsedNumstatEntry, ParsedRef, ParsedStatusEntry } from './gitParse';
 
@@ -126,6 +128,23 @@ export class RepositoryService {
     const contributors = await this.git.contributors();
     this.contributorsCache = contributors;
     return contributors;
+  }
+
+  /** Read stash list on-demand without mutation lock or dedicated cache. */
+  async stashList(): Promise<StashEntry[]> {
+    return this.git.stashList();
+  }
+
+  /** Read file changes in a stash entry on-demand without mutation lock. */
+  async stashShow(index: number): Promise<StashFile[]> {
+    return this.git.stashShow(index);
+  }
+
+  /** Read stash entry hashes (stash commit and base parent) on-demand without mutation lock. */
+  async stashHashes(
+    index: number,
+  ): Promise<{ stashHash: string; parentHash: string; untrackedHash?: string } | null> {
+    return this.git.stashHashes(index);
   }
 
   /** Working-tree changes plus the derived conflict list. */

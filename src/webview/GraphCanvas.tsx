@@ -139,6 +139,7 @@ export function GraphCanvas({
   const setBranchFilter = useSettingsStore((s) => s.setBranchFilter);
   const selectedHash = useRepoStore((s) => s.selectedHash);
   const selectCommit = useRepoStore((s) => s.selectCommit);
+  const focusTargetHash = useRepoStore((s) => s.focusTargetHash);
   const loadMore = useRepoStore((s) => s.loadMore);
   const avatars = useGitHubStore((s) => s.avatars);
   const loadCommitAuthors = useGitHubStore((s) => s.loadCommitAuthors);
@@ -462,6 +463,24 @@ export function GraphCanvas({
     const index = rowIndex.get(selectedHash);
     if (index !== undefined) setFocusRow(index);
   }, [selectedHash, rowIndex]);
+
+  // Scroll and focus requested commit (e.g. from stash hash click or external reveal).
+  useEffect(() => {
+    if (focusTargetHash === null) return;
+    const index = rowIndex.get(focusTargetHash);
+    if (index !== undefined) {
+      goToRow(index);
+      const target = rows[index];
+      const node = scrollRef.current;
+      if (target !== undefined && node !== null) {
+        node.scrollLeft = scrollToCommit(target.x, viewportWidthState, zoom, totalWorldW);
+      }
+      useRepoStore.setState({ focusTargetHash: null });
+    } else if (!loading) {
+      // Commit is not in the loaded graph window. Do not scroll or fetch; clear target.
+      useRepoStore.setState({ focusTargetHash: null });
+    }
+  }, [focusTargetHash, rowIndex, loading, goToRow, rows, totalWorldW, viewportWidthState, zoom]);
 
   const onKeyDown = (event: KeyboardEvent<HTMLDivElement>): void => {
     switch (event.key) {

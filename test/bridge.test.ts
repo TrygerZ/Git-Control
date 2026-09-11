@@ -14,6 +14,7 @@ import type {
   HostEvent,
   HostMessage,
   OpenDiffPayload,
+  OpenStashDiffHostPayload,
   RemoteInfo,
   Request,
   Response,
@@ -201,12 +202,26 @@ interface Harness {
   bridge: MessageBridge;
   repo: RepositoryService | null;
   /** Calls recorded by the optional host callbacks. */
-  calls: { showLogs: number; openExplorer: number; openDiff: OpenDiffPayload[]; external: string[] };
+  calls: {
+    showLogs: number;
+    openExplorer: number;
+    revealCommit: string[];
+    openDiff: OpenDiffPayload[];
+    openStashDiff: OpenStashDiffHostPayload[];
+    external: string[];
+  };
 }
 
 function harness(repo: RepositoryService | null, overrides: Partial<BridgeHost> = {}): Harness {
   const webview = new FakeWebview();
-  const calls = { showLogs: 0, openExplorer: 0, openDiff: [] as OpenDiffPayload[], external: [] as string[] };
+  const calls = {
+    showLogs: 0,
+    openExplorer: 0,
+    revealCommit: [] as string[],
+    openDiff: [] as OpenDiffPayload[],
+    openStashDiff: [] as OpenStashDiffHostPayload[],
+    external: [] as string[],
+  };
   const host: BridgeHost = {
     logger: new Logger(new NullSink()),
     resolveRepository: () => Promise.resolve(repo),
@@ -219,11 +234,19 @@ function harness(repo: RepositoryService | null, overrides: Partial<BridgeHost> 
       calls.openDiff.push(payload);
       return Promise.resolve({ opened: true, mode: 'commit' });
     },
+    openStashDiff: (payload) => {
+      calls.openStashDiff.push(payload);
+      return Promise.resolve({ opened: true, mode: 'stash' });
+    },
     showLogs: () => {
       calls.showLogs += 1;
     },
     openExplorer: () => {
       calls.openExplorer += 1;
+    },
+    revealCommit: (hash) => {
+      calls.revealCommit.push(hash);
+      return Promise.resolve(true);
     },
     openExternal: (url) => {
       calls.external.push(url);
@@ -895,6 +918,114 @@ test('actions/openDiff reports UNAVAILABLE when the host cannot open editors', a
   assert.equal(response.error.code, 'UNAVAILABLE');
 });
 
+test('actions/openStashDiff validates its payload before reaching the host callback', async (t) => {
+  const dir = await makeRepo();
+  t.after(() => cleanup(dir));
+  const repo = new RepositoryService({ folderPath: dir, gitPath: 'git', store: new MemoryStore() });
+  const h = harness(repo);
+  t.after(() => h.bridge.dispose());
+
+  for (const payload of [
+    { index: -1, path: 'a.txt' },
+    { index: '0' as unknown as number, path: 'a.txt' },
+    { index: 1.5, path: 'a.txt' },
+    { index: 1000, path: 'a.txt' },
+    { index: 0, path: '../escape.txt' },
+    { index: 0, path: 'C:\\abs\\path.txt' },
+  ]) {
+    const response = await h.webview.send(req('actions/openStashDiff', payload));
+    assert.equal(response.ok, false, JSON.stringify(payload));
+    if (response.ok) return;
+    assert.equal(response.error.code, 'VALIDATION_ERROR');
+  }
+  assert.deepEqual(h.calls.openStashDiff, [], 'no invalid payload reached the host');
+});
+
+test('actions/openStashDiff reports UNAVAILABLE when the host cannot open editors', async (t) => {
+  const dir = await makeRepo();
+  t.after(() => cleanup(dir));
+  const repo = new RepositoryService({ folderPath: dir, gitPath: 'git', store: new MemoryStore() });
+  const h = harness(repo, { openStashDiff: undefined });
+  t.after(() => h.bridge.dispose());
+
+  const response = await h.webview.send(req('actions/openStashDiff', { index: 0, path: 'a.txt' }));
+  assert.equal(response.ok, false);
+  if (response.ok) return;
+  assert.equal(response.error.status, 503);
+  assert.equal(response.error.code, 'UNAVAILABLE');
+});
+
+test('actions/openStashDiff forwards valid payload with resolved refs to the host callback', async (t) => {
+  const dir = await makeRepo();
+  t.after(() => cleanup(dir));
+  const repo = new RepositoryService({ folderPath: dir, gitPath: 'git', store: new MemoryStore() });
+  const h = harness(repo);
+  t.after(() => h.bridge.dispose());
+
+  // Non-existent stash index returns NOT_FOUND
+  const notFound = await h.webview.send(req('actions/openStashDiff', { index: 0, path: 'a.txt' }));
+  assert.equal(notFound.ok, false);
+  if (notFound.ok) return;
+  assert.equal(notFound.error.code, 'NOT_FOUND');
+
+  // Create a stash entry
+  await fs.writeFile(path.join(dir, 'stashed.txt'), 'stash line\n', 'utf8');
+  await repo.git.stashPush('test stash diff', { includeUntracked: true });
+
+  const hashes = await repo.git.stashHashes(0);
+  assert.ok(hashes !== null);
+
+  const ok = await h.webview.send(req('actions/openStashDiff', { index: 0, path: 'stashed.txt' }));
+  assert.equal(ok.ok, true);
+  assert.equal(h.calls.openStashDiff.length, 1);
+  assert.equal(h.calls.openStashDiff[0]?.index, 0);
+  assert.equal(h.calls.openStashDiff[0]?.path, 'stashed.txt');
+  assert.equal(h.calls.openStashDiff[0]?.stashHash, hashes.stashHash);
+  assert.equal(h.calls.openStashDiff[0]?.parentHash, hashes.parentHash);
+});
+
+test('openStashDiff host edge cases: handles missing sides and read failures gracefully', async (t) => {
+  const dir = await makeRepo();
+  t.after(() => cleanup(dir));
+  const repo = new RepositoryService({ folderPath: dir, gitPath: 'git', store: new MemoryStore() });
+
+  // Commit tracked file
+  await fs.writeFile(path.join(dir, 'tracked.txt'), 'version 1\n', 'utf8');
+  await repo.git.stage(['tracked.txt']);
+  await repo.git.commit('add tracked');
+
+  // Stash: modified tracked file and new untracked file
+  await fs.writeFile(path.join(dir, 'tracked.txt'), 'version 2\n', 'utf8');
+  await fs.writeFile(path.join(dir, 'newfile.txt'), 'new content\n', 'utf8');
+  await repo.git.stashPush('stash with untracked', { includeUntracked: true });
+
+  const hashes = await repo.git.stashHashes(0);
+  assert.ok(hashes !== null);
+
+  // Case 1: Untracked / new file absent in parent -> left is empty, right is found
+  let leftAbsent = false;
+  try {
+    await repo.git.showFile(hashes.parentHash, 'newfile.txt');
+  } catch {
+    leftAbsent = true;
+  }
+  assert.equal(leftAbsent, true, 'new file should not exist in parent');
+
+  // Right side exists in stash untracked commit
+  assert.ok(hashes.untrackedHash !== undefined);
+  const untrackedContent = await repo.git.showFile(hashes.untrackedHash, 'newfile.txt');
+  assert.equal(untrackedContent, 'new content\n');
+
+  // Case 2: File absent in stash commit -> right is empty
+  let rightAbsent = false;
+  try {
+    await repo.git.showFile(hashes.stashHash, 'nonexistent.txt');
+  } catch {
+    rightAbsent = true;
+  }
+  assert.equal(rightAbsent, true, 'nonexistent file should not exist in stash');
+});
+
 test('actions/showLogs only reveals the channel and takes no parameters', async (t) => {
   const h = harness(null);
   t.after(() => h.bridge.dispose());
@@ -923,6 +1054,50 @@ test('actions/openExplorer only opens the explorer panel and takes no parameters
   // Extra fields are ignored, so the kind cannot smuggle a command.
   await h.webview.send(req('actions/openExplorer', { command: 'workbench.action.terminal.new' }));
   assert.equal(h.calls.openExplorer, 2);
+});
+
+test('graph/revealCommit validates hash and dispatches to host.revealCommit', async (t) => {
+  const h = harness(null);
+  t.after(() => h.bridge.dispose());
+
+  // Valid 40-character hex hash
+  const hash = 'a'.repeat(40);
+  const response = await h.webview.send(req('graph/revealCommit', { hash }));
+  assert.equal(response.ok, true);
+  if (!response.ok) return;
+  assert.deepEqual(response.data, { revealed: true });
+  assert.deepEqual(h.calls.revealCommit, [hash]);
+
+  // Valid 7-character short hash
+  const shortH = 'b'.repeat(7);
+  const shortResp = await h.webview.send(req('graph/revealCommit', { hash: shortH }));
+  assert.equal(shortResp.ok, true);
+  assert.equal(h.calls.revealCommit.length, 2);
+
+  // Rejects invalid hashes: command injection, too short, too long, non-hex
+  for (const bad of ['--force', 'abc', 'x'.repeat(40), '123456', '']) {
+    const errResp = await h.webview.send(req('graph/revealCommit', { hash: bad }));
+    assert.equal(errResp.ok, false);
+    if (errResp.ok) return;
+    assert.equal(errResp.error.code, 'VALIDATION_ERROR');
+    assert.equal(errResp.error.detail, 'hash');
+  }
+});
+
+test('graph/revealCommit returns revealed false when host handler returns false or is absent', async (t) => {
+  const hAbsent = harness(null, { revealCommit: undefined });
+  t.after(() => hAbsent.bridge.dispose());
+  const r1 = await hAbsent.webview.send(req('graph/revealCommit', { hash: 'c'.repeat(40) }));
+  assert.equal(r1.ok, true);
+  if (!r1.ok) return;
+  assert.deepEqual(r1.data, { revealed: false });
+
+  const hFalse = harness(null, { revealCommit: () => false });
+  t.after(() => hFalse.bridge.dispose());
+  const r2 = await hFalse.webview.send(req('graph/revealCommit', { hash: 'd'.repeat(40) }));
+  assert.equal(r2.ok, true);
+  if (!r2.ok) return;
+  assert.deepEqual(r2.data, { revealed: false });
 });
 
 test('actions/openExternal rejects every non-https scheme (SEC-006)', async (t) => {
@@ -2045,4 +2220,179 @@ test('pull rejects invalid remote or branch names before touching git', async (t
     assert.equal(badBranchResponse.error.status, 400);
     assert.equal(badBranchResponse.error.code, 'VALIDATION_ERROR');
   }
+});
+
+test('stash/list returns stash entries DTO', async (t) => {
+  const dir = await makeRepo();
+  t.after(() => cleanup(dir));
+  const repo = new RepositoryService({ folderPath: dir, gitPath: 'git', store: new MemoryStore() });
+  const h = harness(repo);
+  t.after(() => h.bridge.dispose());
+
+  // Initially empty
+  const emptyRes = await h.webview.send(req('stash/list', {}));
+  assert.equal(emptyRes.ok, true);
+  if (!emptyRes.ok) return;
+  assert.deepEqual(emptyRes.data, []);
+
+  // Create a stash entry
+  await fs.writeFile(path.join(dir, 'test.txt'), 'stash me\n', 'utf8');
+  await repo.git.stashPush('bridge stash', { includeUntracked: true });
+
+  const res = await h.webview.send(req('stash/list', {}));
+  assert.equal(res.ok, true);
+  if (!res.ok) return;
+  const list = res.data as { ref: string; hash: string; subject: string }[];
+  assert.equal(list.length, 1);
+  assert.equal(list[0]?.ref, 'stash@{0}');
+  assert.ok(list[0]?.hash.length >= 7);
+  assert.ok(list[0]?.subject.includes('bridge stash'));
+
+  // Test stash/show on valid index
+  const showRes = await h.webview.send(req('stash/show', { index: 0 }));
+  assert.equal(showRes.ok, true);
+  if (!showRes.ok) return;
+  const files = showRes.data as { path: string; additions: number | null; deletions: number | null }[];
+  assert.equal(files.length, 1);
+  assert.equal(files[0]?.path, 'test.txt');
+  assert.equal(files[0]?.additions, 1);
+  assert.equal(files[0]?.deletions, 0);
+
+  // Test stash/show on invalid index
+  const invalidRes = await h.webview.send(req('stash/show', { index: -1 }));
+  assert.equal(invalidRes.ok, false);
+  if (!invalidRes.ok) {
+    assert.equal(invalidRes.error.code, 'VALIDATION_ERROR');
+    assert.equal(invalidRes.error.status, 400);
+    assert.equal(invalidRes.error.detail, 'index');
+  }
+
+  const badTypeRes = await h.webview.send(req('stash/show', { index: 'zero' as unknown as number }));
+  assert.equal(badTypeRes.ok, false);
+  if (!badTypeRes.ok) {
+    assert.equal(badTypeRes.error.code, 'VALIDATION_ERROR');
+    assert.equal(badTypeRes.error.status, 400);
+    assert.equal(badTypeRes.error.detail, 'index');
+  }
+});
+
+test('stash-apply requires confirmation, is blocked on dirty tree, and rejects stale token or invalid index', async (t) => {
+  const dir = await makeRepo();
+  t.after(() => cleanup(dir));
+  const repo = new RepositoryService({ folderPath: dir, gitPath: 'git', store: new MemoryStore() });
+  const h = harness(repo);
+  t.after(() => h.bridge.dispose());
+
+  await fs.writeFile(path.join(dir, 'stashfile.txt'), 'stash content\n', 'utf8');
+  await repo.git.stashPush('stash test', { includeUntracked: true });
+  repo.invalidate();
+  const token = (await repo.status()).statusToken;
+
+  // Rejects invalid index with 400 VALIDATION_ERROR
+  const invalidRes = await h.webview.send(
+    req('actions/git', { action: 'stash-apply', index: -1, statusToken: token }),
+  );
+  assert.equal(invalidRes.ok, false);
+  if (!invalidRes.ok) {
+    assert.equal(invalidRes.error.status, 400);
+    assert.equal(invalidRes.error.code, 'VALIDATION_ERROR');
+  }
+
+  // Rejects stale statusToken with 409
+  const staleRes = await h.webview.send(
+    req('actions/git', { action: 'stash-apply', index: 0, statusToken: 'stale-token-123' }),
+  );
+  assert.equal(staleRes.ok, false);
+  if (!staleRes.ok) {
+    assert.equal(staleRes.error.status, 409);
+    assert.equal(staleRes.error.code, 'CONFLICT');
+  }
+
+  // Without confirm: blocked with 428 CONFIRMATION_REQUIRED
+  const unconfirmed = await h.webview.send(
+    req('actions/git', { action: 'stash-apply', index: 0, statusToken: token }),
+  );
+  assert.equal(unconfirmed.ok, false);
+  if (!unconfirmed.ok) {
+    assert.equal(unconfirmed.error.status, 428);
+    assert.equal(unconfirmed.error.code, 'CONFIRMATION_REQUIRED');
+  }
+
+  // When dirty: blocked with 412 DIRTY_TREE
+  await fs.writeFile(path.join(dir, 'dirty.txt'), 'dirty tree\n', 'utf8');
+  repo.invalidate();
+  const dirtyToken = (await repo.status()).statusToken;
+  const dirtyRes = await h.webview.send(
+    req('actions/git', { action: 'stash-apply', index: 0, confirm: true, statusToken: dirtyToken }),
+  );
+  assert.equal(dirtyRes.ok, false);
+  if (!dirtyRes.ok) {
+    assert.equal(dirtyRes.error.status, 412);
+    assert.equal(dirtyRes.error.code, 'DIRTY_TREE');
+  }
+
+  // Clean tree: succeeds with confirm: true
+  await fs.rm(path.join(dir, 'dirty.txt'), { force: true });
+  repo.invalidate();
+  const cleanToken = (await repo.status()).statusToken;
+  const successRes = await h.webview.send(
+    req('actions/git', { action: 'stash-apply', index: 0, confirm: true, statusToken: cleanToken }),
+  );
+  assert.equal(successRes.ok, true);
+
+  // Stash entry still exists in stash list after apply
+  const afterList = await repo.stashList();
+  assert.equal(afterList.length, 1);
+});
+
+test('stash-drop requires level 2 confirmation with forceAcknowledgement and deletes entry', async (t) => {
+  const dir = await makeRepo();
+  t.after(() => cleanup(dir));
+  const repo = new RepositoryService({ folderPath: dir, gitPath: 'git', store: new MemoryStore() });
+  const h = harness(repo);
+  t.after(() => h.bridge.dispose());
+
+  await fs.writeFile(path.join(dir, 'dropme.txt'), 'drop content\n', 'utf8');
+  await repo.git.stashPush('to drop', { includeUntracked: true });
+  repo.invalidate();
+  const token = (await repo.status()).statusToken;
+
+  // Rejects invalid index with 400
+  const invalidRes = await h.webview.send(
+    req('actions/git', { action: 'stash-drop', index: 'zero' as unknown as number, statusToken: token }),
+  );
+  assert.equal(invalidRes.ok, false);
+  if (!invalidRes.ok) {
+    assert.equal(invalidRes.error.status, 400);
+    assert.equal(invalidRes.error.code, 'VALIDATION_ERROR');
+  }
+
+  // confirm: true alone is NOT sufficient for level 2 (requires forceAcknowledgement)
+  const partialConfirm = await h.webview.send(
+    req('actions/git', { action: 'stash-drop', index: 0, confirm: true, statusToken: token }),
+  );
+  assert.equal(partialConfirm.ok, false);
+  if (!partialConfirm.ok) {
+    assert.equal(partialConfirm.error.status, 428);
+    assert.equal(partialConfirm.error.code, 'CONFIRMATION_REQUIRED');
+  }
+
+  // confirm: true AND forceAcknowledgement: true succeeds even on dirty tree
+  await fs.writeFile(path.join(dir, 'unrelated.txt'), 'unrelated work\n', 'utf8');
+  repo.invalidate();
+  const dirtyToken = (await repo.status()).statusToken;
+  const dropRes = await h.webview.send(
+    req('actions/git', {
+      action: 'stash-drop',
+      index: 0,
+      confirm: true,
+      forceAcknowledgement: true,
+      statusToken: dirtyToken,
+    }),
+  );
+  assert.equal(dropRes.ok, true);
+
+  // Stash list is now empty
+  const afterDrop = await repo.stashList();
+  assert.deepEqual(afterDrop, []);
 });

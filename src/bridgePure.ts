@@ -1,5 +1,5 @@
 import type { ErrorCode, GitActionPayload, Request, RequestKind } from './messages';
-import { validateBranchName, validateHash, validateRemoteName, validateRepoRelativePath } from './validation';
+import { validateBranchName, validateHash, validateRemoteName, validateRepoRelativePath, validateStashIndex } from './validation';
 
 export type Outcome = { ok: true; data: unknown } | { ok: false; error: { code: ErrorCode } };
 export const MUTATION_KINDS = new Set<string>(['actions/stage', 'actions/commit', 'actions/git']);
@@ -56,6 +56,9 @@ export function validateAction(action: GitActionPayload, fail: (detail: string) 
     case 'stash': if (typeof action.message !== 'string') fail('message'); return;
     case 'discard-file': if (!validateRepoRelativePath(action.path)) fail('path'); return;
     case 'stash-pop': case 'merge-continue': case 'merge-abort': return;
+    case 'stash-apply':
+    case 'stash-drop':
+      if (!validateStashIndex(action.index)) fail('index'); return;
     default: fail('action');
   }
 }

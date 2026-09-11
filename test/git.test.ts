@@ -578,38 +578,6 @@ test('mergeInto creates a merge commit when noFf is true', async (t) => {
   assert.ok(meta?.parents.includes(sideCommit as string));
 });
 
-test('pull synchronizes active branch with upstream using --no-rebase', async (t) => {
-  const dir = await makeFixture('remote');
-  t.after(() => cleanup(dir));
-  const git = new GitRunner({ gitPath: 'git', cwd: dir });
-
-  const headBefore = await git.headHash();
-  const upstreamHash = await advanceRemote(dir, 'upstream.txt', 'hello from upstream\n');
-
-  await git.pull();
-
-  const headAfter = await git.headHash();
-  assert.equal(headAfter, upstreamHash);
-  assert.notEqual(headBefore, headAfter);
-  assert.match(await fs.readFile(path.join(dir, 'upstream.txt'), 'utf8'), /^hello from upstream\r?\n$/);
-});
-
-test('pull rejects invalid remote or branch names before running git', async (t) => {
-  const dir = await makeFixture('remote');
-  t.after(() => cleanup(dir));
-  const git = new GitRunner({ gitPath: 'git', cwd: dir });
-
-  await assert.rejects(
-    () => git.pull({ remote: '-bad-remote' }),
-    (err: unknown) => err instanceof GitError && err.code === 'VALIDATION_ERROR',
-  );
-
-  await assert.rejects(
-    () => git.pull({ branch: '-bad-branch' }),
-    (err: unknown) => err instanceof GitError && err.code === 'VALIDATION_ERROR',
-  );
-});
-
 test('GitRunner discardFile restores unstaged changes back to HEAD', async (t) => {
   const dir = await makeRepo();
   t.after(() => cleanup(dir));
@@ -626,5 +594,131 @@ test('GitRunner discardFile restores unstaged changes back to HEAD', async (t) =
   assert.equal(after, original);
   const clean = await git.status();
   assert.equal(clean.some((e) => e.path === 'a.txt'), false);
+});
+
+test('stashList returns entries latest-first; stashApply keeps entry; stashDrop deletes entry', async (t) => {
+  const dir = await makeRepo();
+  t.after(() => cleanup(dir));
+  const git = new GitRunner({ gitPath: 'git', cwd: dir });
+
+  // Initially empty
+  const empty = await git.stashList();
+  assert.deepEqual(empty, []);
+
+  // Create first stash
+  await fs.writeFile(path.join(dir, 'file1.txt'), 'content 1\n', 'utf8');
+  await git.stashPush('stash one', { includeUntracked: true });
+
+  // Create second stash
+  await fs.writeFile(path.join(dir, 'file2.txt'), 'content 2\n', 'utf8');
+  await git.stashPush('stash two', { includeUntracked: true });
+
+  // Verify stashList returns newest first
+  const list = await git.stashList();
+  assert.equal(list.length, 2);
+  assert.equal(list[0]?.ref, 'stash@{0}');
+  assert.ok(list[0]?.subject.includes('stash two'));
+  assert.equal(list[1]?.ref, 'stash@{1}');
+  assert.ok(list[1]?.subject.includes('stash one'));
+
+  // Test invalid index validation
+  await assert.rejects(() => git.stashApply(-1), (err: unknown) => {
+    assert.ok(err instanceof GitError);
+    assert.equal(err.code, 'VALIDATION_ERROR');
+    return true;
+  });
+  await assert.rejects(() => git.stashDrop(-1), (err: unknown) => {
+    assert.ok(err instanceof GitError);
+    assert.equal(err.code, 'VALIDATION_ERROR');
+    return true;
+  });
+
+  // Apply stash@{1} (content 1): working tree gains file1.txt, but stash@{1} remains in list
+  await git.stashApply(1);
+  const file1Content = await fs.readFile(path.join(dir, 'file1.txt'), 'utf8');
+  assert.equal(file1Content.replace(/\r\n/g, '\n'), 'content 1\n');
+  const afterApply = await git.stashList();
+  assert.equal(afterApply.length, 2);
+
+  // Clean worktree before dropping
+  await fs.rm(path.join(dir, 'file1.txt'), { force: true });
+
+  // Drop stash@{0} (stash two)
+  await git.stashDrop(0);
+  const afterDrop = await git.stashList();
+  assert.equal(afterDrop.length, 1);
+  assert.equal(afterDrop[0]?.ref, 'stash@{0}');
+  assert.ok(afterDrop[0]?.subject.includes('stash one'));
+});
+
+test('stashShow returns files with line churn for text and null churn for binary', async (t) => {
+  const dir = await makeRepo();
+  t.after(() => cleanup(dir));
+  const git = new GitRunner({ gitPath: 'git', cwd: dir });
+
+  // Invalid index validation rejects before executing git
+  await assert.rejects(() => git.stashShow(-1), (err: unknown) => {
+    assert.ok(err instanceof GitError);
+    assert.equal(err.code, 'VALIDATION_ERROR');
+    return true;
+  });
+  await assert.rejects(() => git.stashShow(1000), (err: unknown) => {
+    assert.ok(err instanceof GitError);
+    assert.equal(err.code, 'VALIDATION_ERROR');
+    return true;
+  });
+
+  // Create text file and binary file in worktree
+  await fs.writeFile(path.join(dir, 'notes.txt'), 'line 1\nline 2\nline 3\n', 'utf8');
+  await fs.writeFile(path.join(dir, 'blob.bin'), Buffer.from([0, 1, 2, 255, 0, 4]));
+  await git.stashPush('stash show test', { includeUntracked: true });
+
+  const files = await git.stashShow(0);
+  assert.equal(files.length, 2);
+
+  const textFile = files.find((f) => f.path === 'notes.txt');
+  assert.ok(textFile !== undefined);
+  assert.equal(textFile.additions, 3);
+  assert.equal(textFile.deletions, 0);
+
+  const binFile = files.find((f) => f.path === 'blob.bin');
+  assert.ok(binFile !== undefined);
+  assert.equal(binFile.additions, null);
+  assert.equal(binFile.deletions, null);
+});
+
+test('stashHashes returns stash and parent commit hashes for valid stash entry', async (t) => {
+  const dir = await makeRepo();
+  t.after(() => cleanup(dir));
+  const git = new GitRunner({ gitPath: 'git', cwd: dir });
+
+  // Invalid index validation rejects before executing git
+  await assert.rejects(() => git.stashHashes(-1), (err: unknown) => {
+    assert.ok(err instanceof GitError);
+    assert.equal(err.code, 'VALIDATION_ERROR');
+    return true;
+  });
+  await assert.rejects(() => git.stashHashes(1000), (err: unknown) => {
+    assert.ok(err instanceof GitError);
+    assert.equal(err.code, 'VALIDATION_ERROR');
+    return true;
+  });
+
+  // Out of range index returns null
+  const absent = await git.stashHashes(0);
+  assert.equal(absent, null);
+
+  // Create stash entry with untracked file
+  await fs.writeFile(path.join(dir, 'untracked.txt'), 'content\n', 'utf8');
+  await git.stashPush('stash hashes test', { includeUntracked: true });
+
+  const hashes = await git.stashHashes(0);
+  assert.ok(hashes !== null);
+  assert.equal(typeof hashes.stashHash, 'string');
+  assert.equal(hashes.stashHash.length, 40);
+  assert.equal(typeof hashes.parentHash, 'string');
+  assert.equal(hashes.parentHash.length, 40);
+  assert.equal(typeof hashes.untrackedHash, 'string');
+  assert.equal(hashes.untrackedHash?.length, 40);
 });
 

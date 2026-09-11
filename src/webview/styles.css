@@ -504,12 +504,18 @@ h3 {
  * The glyph is the second channel next to the border colour: `!` for an error,
  * `⚠` for a warning, `⋯`/`⌛` for information. It is `aria-hidden` because the
  * banner's `role` already conveys urgency to a screen reader.
+ * Sized at --gc-fs-md and nudged by --gc-space-1 to optically centre against
+ * the cap-height of the first line of text.
  */
 .gc-banner__glyph {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   flex: 0 0 auto;
   min-width: 1em;
-  text-align: center;
+  font-size: var(--gc-fs-md);
   font-weight: var(--gc-weight-strong);
+  margin-top: var(--gc-space-1);
 }
 
 .gc-banner--error .gc-banner__glyph {
@@ -771,6 +777,10 @@ h3 {
   font-weight: var(--gc-weight-strong);
   text-transform: uppercase;
   letter-spacing: 0.05em;
+}
+
+.gc-explorer__aside-toggle {
+  font-size: var(--gc-fs-sm);
 }
 
 .gc-explorer__aside-content {
@@ -1643,6 +1653,7 @@ h3 {
 .gc-chip {
   display: inline-flex;
   align-items: center;
+  gap: var(--gc-space-1);
   max-width: 18em;
   padding: 0 var(--gc-space-3);
   overflow: hidden;
@@ -1653,6 +1664,10 @@ h3 {
   line-height: 1.6;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.gc-chip .gc-icon {
+  flex: 0 0 auto;
 }
 
 /* The active branch is the one fact worth extra weight anywhere in the row. */
@@ -1784,6 +1799,7 @@ h3 {
 
 .gc-legend__close {
   flex: 0 0 auto;
+  font-size: var(--gc-fs-sm);
 }
 
 /*
@@ -2006,7 +2022,7 @@ h3 {
 
 .gc-menu__label {
   display: flex;
-  align-items: baseline;
+  align-items: center;
   gap: var(--gc-space-2);
 }
 
@@ -2038,7 +2054,11 @@ h3 {
 }
 
 .gc-menu__risk {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   flex: 0 0 auto;
+  font-size: var(--gc-fs-sm);
 }
 
 .gc-menu__risk-word {
@@ -2182,6 +2202,10 @@ h3 {
   font-weight: var(--gc-weight-strong);
 }
 
+.gc-modal__warning .gc-icon {
+  margin-top: var(--gc-space-1);
+}
+
 .gc-modal__command {
   display: flex;
   flex-direction: column;
@@ -2246,6 +2270,14 @@ h3 {
 .gc-risk--neutral {
   color: var(--vscode-foreground);
   font-weight: normal;
+}
+
+.gc-risk__glyph {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  font-size: var(--gc-fs-md);
 }
 
 /* ----------------------------------------------------------- pending changes */
@@ -2385,20 +2417,25 @@ h3 {
 }
 
 .gc-section__twisty {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   flex: 0 0 auto;
   width: 1em;
-  text-align: center;
+  height: 1em;
+  font-size: var(--gc-fs-sm);
 }
 
 /*
  * Section bulk button: same hit area and icon size as the per-row `+`/`-`
- * (both are `gc-icon-button`, so `--gc-hit` and `--gc-fs-lg` already apply).
+ * (both are `gc-icon-button`, `--gc-hit` applies and font-size matches `--gc-fs-sm`).
  * The button always stays in the DOM and in the Tab order so the header row
  * composition never changes between expanded and collapsed states. It is
  * hidden at rest via opacity and revealed only on hover or focus-within and
  * only when not disabled, so an unusable button never becomes visible.
  */
 .gc-section__bulk {
+  font-size: var(--gc-fs-sm);
   opacity: 0;
   pointer-events: none;
   transition: opacity var(--gc-dur-fast) var(--gc-ease);
@@ -2471,6 +2508,16 @@ h3 {
   color: var(--gc-tone-pending);
 }
 
+.gc-section__badge--special {
+  color: var(--gc-tone-special);
+}
+
+.gc-section__badge .gc-icon {
+  display: block;
+  width: 14px;
+  height: 14px;
+}
+
 .gc-section__count {
   margin: 0;
   padding: 0 var(--gc-space-2);
@@ -2480,6 +2527,156 @@ h3 {
   font-weight: normal;
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
+}
+
+/* ------------------------------------------------------------------- stashes */
+
+.gc-stash-list {
+  padding: var(--gc-space-1) 0;
+}
+
+.gc-stash-entry {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.gc-stash-item {
+  display: flex;
+  align-items: center;
+  gap: var(--gc-space-2);
+  min-height: var(--gc-hit);
+  padding: 0 var(--gc-space-2);
+  font-size: var(--gc-fs-sm);
+}
+
+.gc-stash-item__twisty {
+  flex-shrink: 0;
+  font-size: var(--gc-fs-sm);
+}
+
+.gc-stash-item__title {
+  flex-shrink: 0;
+  font-weight: var(--gc-weight-strong);
+}
+
+.gc-stash-item__hash-btn {
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--gc-hit);
+  padding: 0 var(--gc-space-1);
+  margin: 0;
+  border: none;
+  background: transparent;
+  color: var(--vscode-textLink-foreground, var(--vscode-foreground));
+  font-family: var(--vscode-editor-font-family, monospace);
+  font-size: var(--gc-fs-xs);
+  cursor: pointer;
+  border-radius: var(--gc-radius);
+  text-decoration: none;
+  line-height: inherit;
+  flex-shrink: 0;
+}
+
+.gc-stash-item__hash-btn:hover {
+  text-decoration: underline;
+  color: var(--vscode-textLink-activeForeground, var(--vscode-textLink-foreground));
+}
+
+.gc-stash-item__hash-btn:focus-visible {
+  outline: 1px solid var(--vscode-focusBorder);
+  outline-offset: 1px;
+}
+
+.gc-stash-item__actions {
+  display: flex;
+  align-items: center;
+  gap: var(--gc-space-1);
+  flex-shrink: 0;
+  margin-left: auto;
+  opacity: 0;
+  transition: opacity var(--gc-dur-fast) var(--gc-ease);
+}
+
+.gc-stash-item__action {
+  padding: 0;
+  font-size: var(--gc-fs-sm);
+}
+
+.gc-stash-item__details {
+  padding-left: calc(var(--gc-hit) + var(--gc-space-2));
+  padding-right: var(--gc-space-2);
+  padding-bottom: var(--gc-space-1);
+}
+
+.gc-stash-files {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.gc-stash-file {
+  display: flex;
+  min-height: var(--gc-hit);
+  border-radius: var(--gc-radius);
+}
+
+.gc-stash-file__button {
+  display: flex;
+  flex: 1 1 auto;
+  align-items: center;
+  gap: var(--gc-space-2);
+  width: 100%;
+  min-width: 0;
+  min-height: var(--gc-hit);
+  padding: 0 var(--gc-space-1);
+  border: none;
+  border-radius: var(--gc-radius);
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: var(--gc-fs-xs);
+  text-align: left;
+  cursor: pointer;
+  transition: background var(--gc-dur-fast) var(--gc-ease);
+}
+
+.gc-stash-file__button:hover {
+  background: var(--vscode-list-hoverBackground);
+}
+
+.gc-stash-file__button:focus-visible {
+  outline: 1px solid var(--vscode-focusBorder);
+  outline-offset: -1px;
+}
+
+.gc-stash-file__path {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.gc-stash-files__loading,
+.gc-stash-files__empty {
+  padding: var(--gc-space-1) var(--gc-space-2);
+}
+
+.gc-stash-item:hover .gc-stash-item__actions,
+.gc-stash-item:focus-within .gc-stash-item__actions {
+  opacity: 1;
+}
+
+@media (hover: none) {
+  .gc-stash-item__actions {
+    opacity: 1;
+  }
+}
+
+.gc-stash__empty {
+  padding: var(--gc-space-2) var(--gc-space-3);
+  margin: 0;
 }
 
 .gc-tree {
@@ -2565,9 +2762,13 @@ h3 {
 }
 
 .gc-tree__twisty {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   flex: 0 0 auto;
   width: 1em;
-  text-align: center;
+  height: 1em;
+  font-size: var(--gc-fs-sm);
 }
 
 .gc-tree__name {
@@ -2655,14 +2856,24 @@ h3 {
 /*
  * Column 2 of a file row now holds the theme icon instead of the status box.
  * Same footprint as the old box so the row rhythm survives the swap.
+ * Folder rows use .gc-tree__icon with the same 18x18 footprint.
  */
-.gc-tree__icon-cell {
+.gc-tree__icon-cell,
+.gc-tree__icon {
   display: inline-flex;
   flex: 0 0 auto;
   align-items: center;
   justify-content: center;
   width: 18px;
   height: 18px;
+}
+
+.gc-tree__icon-cell .gc-icon,
+.gc-tree__icon .gc-icon,
+.gc-filelist__button .gc-icon,
+.gc-stash-file__button .gc-icon {
+  width: 16px;
+  height: 16px;
 }
 
 /*
@@ -3428,6 +3639,8 @@ h3 {
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  flex: 0 0 auto;
+  font-size: var(--gc-fs-xs);
   color: var(--gc-muted);
 }
 
@@ -3620,10 +3833,19 @@ h3 {
 }
 
 .gc-toast__glyph {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   flex: 0 0 auto;
   min-width: 1em;
-  text-align: center;
+  font-size: var(--gc-fs-md);
   font-weight: var(--gc-weight-strong);
+  margin-top: var(--gc-space-1);
+}
+
+.gc-toast .gc-icon-button {
+  flex: 0 0 auto;
+  font-size: var(--gc-fs-sm);
 }
 
 .gc-toast--info .gc-toast__glyph {
@@ -3695,6 +3917,17 @@ h3 {
 
 /* ---------------------------------------------------------------- icons */
 
+/*
+ * Icon sizing and optical alignment system:
+ * - Proportional base: .gc-icon renders at 1em x 1em relative to the container
+ *   or adjacent text font-size, preserving visual hierarchy across zoom levels.
+ * - Optical alignment: icons in flex rows use inline-flex centering to eliminate
+ *   font baseline drift. Multiline blocks (banners, toasts, severe warnings)
+ *   apply a top optical offset of --gc-space-1 to align with cap-height.
+ * - Fixed footprints: tree and folder icon cells reserve 18x18px with 16x16px
+ *   contained glyphs so theme and fallback icons share identical geometry.
+ * - Sub-actions: bulk stage and row actions share --gc-fs-sm for visual parity.
+ */
 .gc-icon {
   width: 1em;
   height: 1em;

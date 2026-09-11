@@ -12,6 +12,7 @@
  *    stays unit-testable.
  */
 import * as path from 'node:path';
+import type { StashFile } from './messages';
 import {
   GitExecutionLayer,
   GitError,
@@ -31,12 +32,14 @@ import {
   parseRevListCounts,
   parseShortlog,
   parseShowStat,
+  parseStashList,
   parseStatus,
   type AheadBehind,
   type ParsedCommit,
   type ParsedContributor,
   type ParsedNumstatEntry,
   type ParsedRef,
+  type ParsedStashEntry,
   type ParsedStatusEntry,
 } from './gitParse';
 import {
@@ -52,6 +55,7 @@ import {
   validateLimit,
   validateRemoteName,
   validateRepoRelativePath,
+  validateStashIndex,
   validateStashMessage,
 } from './validation';
 
@@ -657,6 +661,104 @@ export class GitRunner {
 
   async stashPop(): Promise<void> {
     await this.runExclusive(() => this.run(['stash', 'pop']));
+  }
+
+  /**
+   * Query stash list without taking mutation mutex.
+   * Delimiter is NUL bytes to avoid collision with commit subjects.
+   */
+  async stashList(): Promise<ParsedStashEntry[]> {
+    const { stdout } = await this.run(['stash', 'list', '--format=%gd%x00%H%x00%gs']);
+    return parseStashList(stdout);
+  }
+
+  /**
+   * Query file changes in a stash entry. Read-only without mutation mutex.
+   * Refspec `stash@{n}` is constructed internally after validation, never from user ref strings.
+   */
+  async stashShow(index: number): Promise<StashFile[]> {
+    if (!validateStashIndex(index)) {
+      throw new GitError({ code: 'VALIDATION_ERROR', message: `Invalid stash index: ${index}` });
+    }
+    const ref = sanitizeRefArg(`stash@{${index}}`);
+    let stdout: string;
+    try {
+      const res = await this.run(['stash', 'show', '--include-untracked', '--numstat', ref]);
+      stdout = res.stdout;
+    } catch {
+      const res = await this.run(['stash', 'show', '--numstat', ref]);
+      stdout = res.stdout;
+    }
+    return parseShowStat(stdout).map((entry) => ({
+      path: entry.path,
+      additions: entry.additions,
+      deletions: entry.deletions,
+    }));
+  }
+
+  /**
+   * Object IDs for a stash entry and its base parent (stash@{n} and stash@{n}^1).
+   * Also resolves the untracked-files commit (stash@{n}^3) if present.
+   * Returns null if the stash entry cannot be resolved.
+   */
+  async stashHashes(
+    index: number,
+  ): Promise<{ stashHash: string; parentHash: string; untrackedHash?: string } | null> {
+    if (!validateStashIndex(index)) {
+      throw new GitError({ code: 'VALIDATION_ERROR', message: `Invalid stash index: ${index}` });
+    }
+    const stashRef = sanitizeRefArg(`stash@{${index}}`);
+    const parentRef = sanitizeRefArg(`stash@{${index}}^1`);
+    const { stdout: stashOut, code: stashCode } = await this.run(
+      ['rev-parse', '--verify', '--quiet', stashRef],
+      { allowedExitCodes: [0, 1] },
+    );
+    if (stashCode !== 0) return null;
+    const stashHash = stashOut.trim();
+    if (!validateFullHash(stashHash)) return null;
+
+    const { stdout: parentOut, code: parentCode } = await this.run(
+      ['rev-parse', '--verify', '--quiet', parentRef],
+      { allowedExitCodes: [0, 1] },
+    );
+    if (parentCode !== 0) return null;
+    const parentHash = parentOut.trim();
+    if (!validateFullHash(parentHash)) return null;
+
+    const untrackedRef = sanitizeRefArg(`stash@{${index}}^3`);
+    const { stdout: untrackedOut, code: untrackedCode } = await this.run(
+      ['rev-parse', '--verify', '--quiet', untrackedRef],
+      { allowedExitCodes: [0, 1] },
+    );
+    const untrackedTrimmed = untrackedOut.trim();
+    const untrackedHash =
+      untrackedCode === 0 && validateFullHash(untrackedTrimmed) ? untrackedTrimmed : undefined;
+
+    return { stashHash, parentHash, ...(untrackedHash !== undefined ? { untrackedHash } : {}) };
+  }
+
+  /**
+   * Apply a specific stash entry by validated non-negative index. Entry remains in stash stack.
+   * Refspec `stash@{n}` is constructed internally after validation, never from user ref strings.
+   */
+  async stashApply(index: number): Promise<void> {
+    if (!validateStashIndex(index)) {
+      throw new GitError({ code: 'VALIDATION_ERROR', message: `Invalid stash index: ${index}` });
+    }
+    const ref = sanitizeRefArg(`stash@{${index}}`);
+    await this.runExclusive(() => this.run(['stash', 'apply', ref]));
+  }
+
+  /**
+   * Drop a specific stash entry by validated non-negative index. Permanent deletion.
+   * Refspec `stash@{n}` is constructed internally after validation, never from user ref strings.
+   */
+  async stashDrop(index: number): Promise<void> {
+    if (!validateStashIndex(index)) {
+      throw new GitError({ code: 'VALIDATION_ERROR', message: `Invalid stash index: ${index}` });
+    }
+    const ref = sanitizeRefArg(`stash@{${index}}`);
+    await this.runExclusive(() => this.run(['stash', 'drop', ref]));
   }
 
   async mergeContinue(): Promise<void> {

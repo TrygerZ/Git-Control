@@ -14,6 +14,7 @@ import {
   entryStatus,
   formatCount,
   formatDateLabel,
+  formatStashLabel,
   gitCommandOf,
   githubConnectionLabel,
   linkageChangedRepo,
@@ -53,6 +54,13 @@ test('shortHash takes seven characters by default', () => {
   assert.equal(shortHash(HASH), 'abc1234');
   assert.equal(shortHash(HASH, 10), 'abc1234def');
   assert.equal(shortHash('ab'), 'ab');
+});
+
+test('formatStashLabel maps 0-based index to 1-based localized label', () => {
+  assert.equal(formatStashLabel(0, 'en'), 'Stash 1 from');
+  assert.equal(formatStashLabel(0, 'id'), 'Stash 1 dari');
+  assert.equal(formatStashLabel(4, 'en'), 'Stash 5 from');
+  assert.equal(formatStashLabel(4, 'id'), 'Stash 5 dari');
 });
 
 test('formatDateLabel formats timestamp into Indonesian date without em-dash', () => {
@@ -592,6 +600,8 @@ const ACTIONS: GitActionRequest[] = [
   { action: 'fetch', prune: true },
   { action: 'stash', message: 'wip' },
   { action: 'stash-pop' },
+  { action: 'stash-apply', index: 0 },
+  { action: 'stash-drop', index: 0 },
   { action: 'merge-continue' },
   { action: 'merge-abort' },
 ];
@@ -643,6 +653,8 @@ test('actionTarget picks the branch, name, hash, or remote', () => {
   assert.equal(actionTarget({ action: 'revert', hash: HASH }), 'abc1234');
   assert.equal(actionTarget({ action: 'fetch', remote: 'origin' }), 'origin');
   assert.equal(actionTarget({ action: 'stash-pop' }), '?');
+  assert.equal(actionTarget({ action: 'stash-apply', index: 0 }), 'stash@{0}');
+  assert.equal(actionTarget({ action: 'stash-drop', index: 1 }), 'stash@{1}');
 });
 
 // ------------------------------------------------------------------ numbers

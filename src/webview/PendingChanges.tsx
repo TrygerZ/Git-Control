@@ -21,7 +21,7 @@ import { ConflictPanel, OperationBanner } from './ConflictPanel';
 import { GuardDialog } from './GuardDialog';
 import { ToastRegion } from './Toast';
 import { bridge, loadState, saveState } from './bridge';
-import { formatCount, sanitizeGitText, UNKNOWN_CHURN } from './format';
+import { baseName, formatCount, formatStashLabel, sanitizeGitText, shortHash, UNKNOWN_CHURN } from './format';
 import { useT } from './useT';
 import { groupBySection, isSectionBulkDisabled, stageableFrom, unstageableFrom, type ChangeSection } from './tree';
 import {
@@ -33,8 +33,8 @@ import {
   useSettingsStore,
   wireHostEvents,
 } from './store';
-import { ContextBar, EmptyState, ErrorBanner, FileListSkeleton, Icon, InfoBanner } from './ui';
-import type { ChangeEntry } from '../messages';
+import { ContextBar, EmptyState, ErrorBanner, FileIcon, FileListSkeleton, Icon, InfoBanner, Spinner } from './ui';
+import type { ChangeEntry, Lang, StashEntry } from '../messages';
 
 /**
  * Letter badge per section, mirroring the Unity reference's `C` / `D` / `A` boxes.
@@ -79,6 +79,11 @@ export function PendingChangesApp(): JSX.Element {
   const clear = useChangesStore((s) => s.clear);
   const stage = useChangesStore((s) => s.stage);
   const unstage = useChangesStore((s) => s.unstage);
+  const stashes = useChangesStore((s) => s.stashes);
+  const stashesCollapsed = useChangesStore((s) => s.stashesCollapsed);
+  const toggleStashesCollapsed = useChangesStore((s) => s.toggleStashesCollapsed);
+  const applyStash = useChangesStore((s) => s.applyStash);
+  const dropStash = useChangesStore((s) => s.dropStash);
 
   const status = useRepoStore((s) => s.status);
   const graph = useRepoStore((s) => s.graph);
@@ -158,6 +163,18 @@ export function PendingChangesApp(): JSX.Element {
   const openDiff = async (entry: ChangeEntry): Promise<void> => {
     try {
       await bridge.request('actions/openDiff', { path: entry.path });
+    } catch (err) {
+      const body = toErrorBody(err);
+      pushToast({
+        level: body.code === 'UNAVAILABLE' ? 'warning' : 'error',
+        message: body.message,
+      });
+    }
+  };
+
+  const openStashDiff = async (index: number, path: string): Promise<void> => {
+    try {
+      await bridge.request('actions/openStashDiff', { index, path });
     } catch (err) {
       const body = toErrorBody(err);
       pushToast({
@@ -302,10 +319,24 @@ export function PendingChangesApp(): JSX.Element {
       {!hasLoaded && loading && changes.length === 0 ? (
         <FileListSkeleton rows={8} />
       ) : changes.length === 0 ? (
-        <EmptyState
-          title={strings.pending.emptyTitle}
-          hint={strings.pending.emptyHint}
-        />
+        <>
+          <EmptyState
+            title={strings.pending.emptyTitle}
+            hint={strings.pending.emptyHint}
+          />
+          <div className="gc-pending__sections" ref={scrollRef}>
+            <StashSection
+              stashes={stashes}
+              isCollapsed={stashesCollapsed}
+              busy={busy}
+              language={language}
+              onToggle={toggleStashesCollapsed}
+              onApply={(i) => void applyStash(i)}
+              onDrop={(i) => void dropStash(i)}
+              onOpenDiff={(index, path) => void openStashDiff(index, path)}
+            />
+          </div>
+        </>
       ) : (
         <>
           {/*
@@ -474,6 +505,16 @@ export function PendingChangesApp(): JSX.Element {
                   </section>
                 );
               })}
+              <StashSection
+                stashes={stashes}
+                isCollapsed={stashesCollapsed}
+                busy={busy}
+                language={language}
+                onToggle={toggleStashesCollapsed}
+                onApply={(i) => void applyStash(i)}
+                onDrop={(i) => void dropStash(i)}
+                onOpenDiff={(index, path) => void openStashDiff(index, path)}
+              />
             </div>
           )}
         </>
@@ -482,5 +523,235 @@ export function PendingChangesApp(): JSX.Element {
       <GuardDialog />
       <ToastRegion />
     </div>
+  );
+}
+
+function parseStashIndex(ref: string): number | null {
+  const match = /^stash@\{(\d+)\}$/.exec(ref);
+  return match !== null && match[1] !== undefined ? parseInt(match[1], 10) : null;
+}
+
+function StashSection({
+  stashes,
+  isCollapsed,
+  busy,
+  language,
+  onToggle,
+  onApply,
+  onDrop,
+  onOpenDiff,
+}: {
+  stashes: readonly StashEntry[];
+  isCollapsed: boolean;
+  busy: boolean;
+  language: Lang;
+  onToggle(): void;
+  onApply(index: number): void;
+  onDrop(index: number): void;
+  onOpenDiff(index: number, path: string): void;
+}): JSX.Element {
+  const strings = useT();
+  const title = strings.pending.stashesHeader;
+  const toggleAria = isCollapsed
+    ? strings.pending.expandSectionAria(title)
+    : strings.pending.collapseSectionAria(title);
+
+  return (
+    <section className="gc-section" aria-label={title}>
+      <div className="gc-section__head">
+        <h3 className="gc-section__title">
+          <button
+            type="button"
+            className="gc-section__toggle"
+            aria-expanded={!isCollapsed}
+            aria-label={toggleAria}
+            onClick={onToggle}
+          >
+            <span className="gc-section__twisty" aria-hidden="true">
+              <Icon name={isCollapsed ? 'chevron-right' : 'chevron-down'} />
+            </span>
+            <span
+              className="gc-section__badge gc-section__badge--special"
+              aria-hidden="true"
+            >
+              <Icon name="archive" />
+            </span>
+            <span className="gc-section__name">{title}</span>
+          </button>
+        </h3>
+        <span className="gc-section__count">{formatCount(stashes.length, language)}</span>
+      </div>
+      {!isCollapsed && (
+        <StashList
+          stashes={stashes}
+          busy={busy}
+          language={language}
+          onApply={onApply}
+          onDrop={onDrop}
+          onOpenDiff={onOpenDiff}
+        />
+      )}
+    </section>
+  );
+}
+
+function StashList({
+  stashes,
+  busy,
+  language,
+  onApply,
+  onDrop,
+  onOpenDiff,
+}: {
+  stashes: readonly StashEntry[];
+  busy: boolean;
+  language: Lang;
+  onApply(index: number): void;
+  onDrop(index: number): void;
+  onOpenDiff(index: number, path: string): void;
+}): JSX.Element {
+  const strings = useT();
+  const stashesExpanded = useChangesStore((s) => s.stashesExpanded);
+  const stashContents = useChangesStore((s) => s.stashContents);
+  const stashContentsLoading = useChangesStore((s) => s.stashContentsLoading);
+  const toggleStashExpanded = useChangesStore((s) => s.toggleStashExpanded);
+
+  if (stashes.length === 0) {
+    return (
+      <div className="gc-stash__empty">
+        <p className="gc-help-text">{strings.pending.stashesEmptyHint}</p>
+      </div>
+    );
+  }
+
+  const handleRevealCommit = async (hash: string) => {
+    try {
+      await bridge.request('graph/revealCommit', { hash });
+    } catch {
+      // Ignore
+    }
+  };
+
+  return (
+    <ul className="gc-tree gc-stash-list" role="list">
+      {stashes.map((stash, index) => {
+        const parsedIndex = parseStashIndex(stash.ref) ?? index;
+        const stashNumber = parsedIndex + 1;
+        const isExpanded = stashesExpanded.has(parsedIndex);
+        const files = stashContents[parsedIndex];
+        const isLoading = stashContentsLoading.has(parsedIndex);
+        return (
+          <li key={stash.ref} className="gc-stash-entry" role="listitem">
+            <div className="gc-tree__row gc-stash-item">
+              <button
+                type="button"
+                className="gc-icon-button gc-stash-item__twisty"
+                aria-expanded={isExpanded}
+                aria-label={
+                  isExpanded
+                    ? strings.pending.stashCollapseAria(stashNumber)
+                    : strings.pending.stashExpandAria(stashNumber)
+                }
+                onClick={() => void toggleStashExpanded(parsedIndex)}
+              >
+                <span className="gc-tree__twisty" aria-hidden="true">
+                  <Icon name={isExpanded ? 'chevron-down' : 'chevron-right'} />
+                </span>
+              </button>
+              <span className="gc-stash-item__title">
+                {formatStashLabel(parsedIndex, language)}
+              </span>
+              <button
+                type="button"
+                className="gc-stash-item__hash-btn"
+                aria-label={strings.pending.stashOpenCommitAria}
+                title={strings.pending.stashOpenCommitTitle}
+                onClick={() => void handleRevealCommit(stash.hash)}
+              >
+                {shortHash(stash.hash)}
+              </button>
+              <div className="gc-stash-item__actions">
+                <button
+                  type="button"
+                  className="gc-icon-button gc-stash-item__action"
+                  aria-label={strings.pending.stashApplyAria(stash.ref)}
+                  title={strings.pending.stashApplyTitle}
+                  disabled={busy}
+                  onClick={() => onApply(parsedIndex)}
+                >
+                  <Icon name="add" />
+                </button>
+                <button
+                  type="button"
+                  className="gc-icon-button gc-stash-item__action"
+                  aria-label={strings.pending.stashDropAria(stash.ref)}
+                  title={strings.pending.stashDropTitle}
+                  disabled={busy}
+                  onClick={() => onDrop(parsedIndex)}
+                >
+                  <Icon name="dash" />
+                </button>
+              </div>
+            </div>
+            {isExpanded && (
+              <div className="gc-stash-item__details">
+                {isLoading && (
+                  <div className="gc-stash-files__loading">
+                    <Spinner label={strings.pending.stashFilesLoading} />
+                  </div>
+                )}
+                {!isLoading && files !== undefined && files.length === 0 && (
+                  <div className="gc-stash-files__empty">
+                    <span className="gc-help-text">{strings.pending.stashFilesEmpty}</span>
+                  </div>
+                )}
+                {!isLoading && files !== undefined && files.length > 0 && (
+                  <ul className="gc-tree gc-stash-files" role="list">
+                    {files.map((file) => {
+                      const isBinary = file.additions === null && file.deletions === null;
+                      const churn = isBinary
+                        ? strings.changeTree.binaryLabel
+                        : strings.changeTree.churnSummary(file.additions ?? 0, file.deletions ?? 0);
+                      return (
+                        <li key={file.path} className="gc-stash-file" role="listitem">
+                          <button
+                            type="button"
+                            className="gc-tree__row gc-stash-file__button"
+                            aria-label={strings.pending.stashFileOpenDiffAria(file.path, churn)}
+                            title={file.path}
+                            onClick={() => onOpenDiff(parsedIndex, file.path)}
+                          >
+                            <FileIcon kind="file" name={baseName(file.path)} />
+                            <span className="gc-stash-file__path">
+                              {file.path}
+                            </span>
+                            {isBinary ? (
+                              <span
+                                className="gc-tree__binary"
+                                aria-hidden="true"
+                              >
+                                {strings.changeTree.binaryLabel}
+                              </span>
+                            ) : (
+                              <span
+                                className="gc-tree__stats gc-stat-group"
+                                aria-hidden="true"
+                              >
+                                <span className="gc-stat gc-stat--add">+{file.additions ?? 0}</span>
+                                <span className="gc-stat gc-stat--del">−{file.deletions ?? 0}</span>
+                              </span>
+                            )}
+                          </button>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                )}
+              </div>
+            )}
+          </li>
+        );
+      })}
+    </ul>
   );
 }

@@ -264,4 +264,28 @@ export const ICON_PATHS: Record<IconName, () => JSX.Element> = {
       fill="none"
     />
   ),
+  // Git stash / archive storage box: lid with slight overhang, recessed body, and horizontal handle slot.
+  archive: () => (
+    <>
+      <rect
+        x="2"
+        y="3"
+        width="12"
+        height="3"
+        rx="0.5"
+        stroke="currentColor"
+        strokeWidth="1.5"
+        strokeLinejoin="round"
+        fill="none"
+      />
+      <path
+        d="M3 6v6.5a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1V6"
+        stroke="currentColor"
+        strokeWidth="1.5"
+        strokeLinejoin="round"
+        fill="none"
+      />
+      <path d="M6 8.75h4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+    </>
+  ),
 };

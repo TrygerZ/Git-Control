@@ -30,6 +30,14 @@ export function shortHash(hash: string, length: number = SHORT_HASH_LENGTH): str
   return hash.slice(0, Math.max(1, length));
 }
 
+/**
+ * Localized label for a stash entry: "Stash N from".
+ * `index` is 0-based; presentation is 1-based (stash@{0} maps to "Stash 1 from").
+ */
+export function formatStashLabel(index: number, lang: Lang = 'en'): string {
+  return t(lang).pending.stashEntryLabel(index + 1);
+}
+
 // merge-into.source can be a branch name or a 40-character hash; only shorten hashes,
 // because shortHash would make a branch name unreadable.
 function refOrShortHash(source: string): string {
@@ -743,6 +751,10 @@ export function gitCommandOf(action: GitActionRequest): string {
       return `git stash push${action.includeUntracked === true ? ' -u' : ''} -m "${s(action.message)}"`;
     case 'stash-pop':
       return 'git stash pop';
+    case 'stash-apply':
+      return `git stash apply stash@{${action.index}}`;
+    case 'stash-drop':
+      return `git stash drop stash@{${action.index}}`;
     case 'merge-continue':
       return 'git merge --continue';
     case 'merge-abort':
@@ -789,6 +801,10 @@ export function consequenceOf(action: GitActionRequest, lang: Lang = 'en'): stri
       return strings.stash;
     case 'stash-pop':
       return strings.stashPop;
+    case 'stash-apply':
+      return strings.stashApply(action.index);
+    case 'stash-drop':
+      return strings.stashDrop(action.index);
     case 'merge-continue':
       return strings.mergeContinue;
     case 'merge-abort':
@@ -835,6 +851,10 @@ export function actionTitle(action: GitActionRequest, lang: Lang = 'en'): string
       return strings.stash;
     case 'stash-pop':
       return strings.stashPop;
+    case 'stash-apply':
+      return strings.stashApply(action.index);
+    case 'stash-drop':
+      return strings.stashDrop(action.index);
     case 'merge-continue':
       return strings.mergeContinue;
     case 'merge-abort':
@@ -853,6 +873,7 @@ export function actionTarget(action: GitActionRequest): string {
     if (action.remote !== undefined) return sanitizeGitText(action.remote);
     return 'HEAD';
   }
+  if (action.action === 'stash-apply' || action.action === 'stash-drop') return `stash@{${action.index}}`;
   if ('branch' in action && typeof action.branch === 'string') return sanitizeGitText(action.branch);
   if ('name' in action) return sanitizeGitText(action.name);
   if ('hash' in action) return shortHash(action.hash);

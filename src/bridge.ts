@@ -37,6 +37,7 @@ import {
   validateHash,
   validateRemoteName,
   validateRepoRelativePath,
+  validateStashIndex,
 } from './validation';
 import type {
   ActionResult,
@@ -69,6 +70,8 @@ import type {
   OpenDiffPayload,
   OpenDiffResult,
   OpenExternalPayload,
+  OpenStashDiffHostPayload,
+  OpenStashDiffPayload,
   PullRequestsPayload,
   PullRequestsResult,
   RemoteInfo,
@@ -77,9 +80,13 @@ import type {
   Request,
   RequestKind,
   Response,
+  RevealCommitPayload,
   SettingsSetPayload,
   SettingsSnapshot,
   StagePayload,
+  StashEntry,
+  StashFile,
+  StashShowPayload,
   StatusPayload,
 } from './messages';
 
@@ -108,10 +115,14 @@ export interface BridgeHost {
   disconnectGitHub(): Promise<GitHubAuthState>;
   /** Open a real diff editor. Implemented in `extension.ts`, which owns `vscode`. */
   openDiff?(payload: OpenDiffPayload): Promise<OpenDiffResult>;
+  /** Open a stash diff editor. Implemented in `extension.ts`, which owns `vscode`. */
+  openStashDiff?(payload: OpenStashDiffHostPayload): Promise<OpenDiffResult>;
   /** Reveal the output channel. Takes no parameters, so it cannot run commands. */
   showLogs?(): void;
   /** Open the explorer webview panel. Takes no parameters, so it cannot run commands. */
   openExplorer?(): void;
+  /** Reveal and focus a commit in the explorer canvas. */
+  revealCommit?(hash: string): Promise<boolean> | boolean;
   /** Open an external URL. Host-side so the webview never navigates itself. */
   openExternal?(url: string): Promise<boolean>;
   githubRepo?(payload: GitHubRepoPayload): Promise<GitHubRepoInfo>;
@@ -308,6 +319,11 @@ export class MessageBridge {
       case 'repos/contributors':
         validateEmptyPayload(request.payload, this.text().invalid);
         return this.handleContributors();
+      case 'stash/list':
+        validateEmptyPayload(request.payload, this.text().invalid);
+        return this.handleStashList();
+      case 'stash/show':
+        return this.handleStashShow(request.payload as StashShowPayload);
       case 'commits/detail':
         return this.handleCommitDetail(request.payload as CommitDetailPayload);
       case 'actions/stage':
@@ -318,10 +334,14 @@ export class MessageBridge {
         return this.handleGitAction(request.payload as GitActionPayload, operationId);
       case 'actions/openDiff':
         return this.handleOpenDiff(request.payload as OpenDiffPayload);
+      case 'actions/openStashDiff':
+        return this.handleOpenStashDiff(request.payload as OpenStashDiffPayload);
       case 'actions/showLogs':
         return this.handleShowLogs();
       case 'actions/openExplorer':
         return this.handleOpenExplorer();
+      case 'graph/revealCommit':
+        return this.handleRevealCommit(request.payload as RevealCommitPayload);
       case 'actions/openExternal':
         return this.handleOpenExternal(request.payload as OpenExternalPayload);
       case 'github/auth':
@@ -440,6 +460,21 @@ export class MessageBridge {
     return repo.contributors();
   }
 
+  /** Query list of stash entries. Readonly; no guard needed. */
+  private async handleStashList(): Promise<StashEntry[]> {
+    const repo = await this.repository();
+    return repo.stashList();
+  }
+
+  /** Query file changes in a stash entry. Readonly; no guard needed. */
+  private async handleStashShow(payload: StashShowPayload): Promise<StashFile[]> {
+    if (typeof payload !== 'object' || payload === null || !validateStashIndex(payload.index)) {
+      fail(400, 'VALIDATION_ERROR', this.text().invalid, { detail: 'index' });
+    }
+    const repo = await this.repository();
+    return repo.stashShow(payload.index);
+  }
+
   /**
    * Open a real diff editor. The work happens in `extension.ts` because opening
    * an editor needs `vscode`; this arm only validates and maps failures.
@@ -460,6 +495,30 @@ export class MessageBridge {
     // confusing editor error.
     await this.repository();
     return open(payload);
+  }
+
+  /**
+   * Open a diff editor comparing stash@{index} against its base parent.
+   */
+  private async handleOpenStashDiff(payload: OpenStashDiffPayload): Promise<OpenDiffResult> {
+    if (typeof payload !== 'object' || payload === null || !validateStashIndex(payload.index)) {
+      fail(400, 'VALIDATION_ERROR', this.text().invalid, { detail: 'index' });
+    }
+    if (!validateRepoRelativePath(payload.path)) {
+      fail(400, 'VALIDATION_ERROR', this.text().invalid, { detail: 'path' });
+    }
+    const open = this.host.openStashDiff;
+    if (open === undefined) fail(503, 'UNAVAILABLE', this.text().diffUnavailable);
+    const repo = await this.repository();
+    const hashes = await repo.stashHashes(payload.index);
+    if (hashes === null) fail(404, 'NOT_FOUND', this.text().notFound);
+    return open({
+      index: payload.index,
+      path: payload.path,
+      stashHash: hashes.stashHash,
+      parentHash: hashes.parentHash,
+      ...(hashes.untrackedHash !== undefined ? { untrackedHash: hashes.untrackedHash } : {}),
+    });
   }
 
   /**
@@ -484,6 +543,19 @@ export class MessageBridge {
     if (open === undefined) return { opened: false };
     open();
     return { opened: true };
+  }
+
+  /**
+   * Reveal and focus a commit in the explorer canvas.
+   */
+  private async handleRevealCommit(payload: RevealCommitPayload): Promise<{ revealed: boolean }> {
+    if (!payload || typeof payload !== 'object' || !validateHash(payload.hash)) {
+      fail(400, 'VALIDATION_ERROR', this.text().invalid, { detail: 'hash' });
+    }
+    const reveal = this.host.revealCommit;
+    if (reveal === undefined) return { revealed: false };
+    const revealed = await reveal(payload.hash);
+    return { revealed: revealed !== false };
   }
 
   /**
@@ -856,6 +928,10 @@ export class MessageBridge {
         });
       case 'stash-pop':
         return git.stashPop();
+      case 'stash-apply':
+        return git.stashApply(action.index);
+      case 'stash-drop':
+        return git.stashDrop(action.index);
       case 'merge-continue':
         return git.mergeContinue();
       case 'merge-abort':

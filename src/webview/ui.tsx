@@ -282,7 +282,7 @@ export function ContextBar({
         */}
         <span className={status.detached ? 'gc-chip gc-chip--detached' : 'gc-chip gc-chip--current'}>
           {status.detached ? <Icon name="tag" /> : <Icon name="git-branch" />}
-          {' '}{strings.ui.branchLabel(branch)}
+          <span>{strings.ui.branchLabel(branch)}</span>
         </span>
         {head !== null && (
           <code className="gc-context__hash" aria-label={strings.ui.headAtCommit(head)}>

@@ -30,4 +30,5 @@ export type IconName =
   | 'diff-ignored'
   | 'external'
   | 'file'
-  | 'folder';
+  | 'folder'
+  | 'archive';

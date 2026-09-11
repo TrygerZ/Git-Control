@@ -310,25 +310,25 @@ export function BranchLegend({ lanes, id, onClose }: Props): JSX.Element {
         <h3 className="gc-legend__heading">{strings.legend.sectionRefLabels}</h3>
         <dl className="gc-legend__list">
           <dt>
-            <span className="gc-chip gc-chip--current"><Icon name="git-branch" /> main</span>
+            <span className="gc-chip gc-chip--current"><Icon name="git-branch" /><span>main</span></span>
           </dt>
           <dd>
             {strings.legend.currentBranchDesc}
           </dd>
           <dt>
-            <span className="gc-chip gc-chip--local"><Icon name="circle-filled" /> fitur</span>
+            <span className="gc-chip gc-chip--local"><Icon name="circle-filled" /><span>fitur</span></span>
           </dt>
           <dd>
             {strings.legend.localBranchDesc}
           </dd>
           <dt>
-            <span className="gc-chip gc-chip--remote"><Icon name="cloud" /> origin/main</span>
+            <span className="gc-chip gc-chip--remote"><Icon name="cloud" /><span>origin/main</span></span>
           </dt>
           <dd>
             {strings.legend.remoteBranchDesc}
           </dd>
           <dt>
-            <span className="gc-chip gc-chip--tag"><Icon name="tag" /> v1.0</span>
+            <span className="gc-chip gc-chip--tag"><Icon name="tag" /><span>v1.0</span></span>
           </dt>
           <dd>
             {strings.legend.tagDesc}

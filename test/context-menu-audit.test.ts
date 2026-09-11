@@ -61,6 +61,8 @@ const VALID_ACTIONS: Record<GitActionRequest['action'], GitActionRequest> = {
   fetch: { action: 'fetch' },
   stash: { action: 'stash', message: 'audit' },
   'stash-pop': { action: 'stash-pop' },
+  'stash-apply': { action: 'stash-apply', index: 0 },
+  'stash-drop': { action: 'stash-drop', index: 0 },
   'merge-continue': { action: 'merge-continue' },
   'merge-abort': { action: 'merge-abort' },
 };
@@ -82,6 +84,8 @@ const INVALID_ACTIONS: Record<GitActionRequest['action'], GitActionRequest> = {
   fetch: { action: 'fetch', remote: '-bad' },
   stash: { action: 'stash', message: 1 as unknown as string },
   'stash-pop': { action: 'stash-pop' },
+  'stash-apply': { action: 'stash-apply', index: -1 },
+  'stash-drop': { action: 'stash-drop', index: -1 },
   'merge-continue': { action: 'merge-continue' },
   'merge-abort': { action: 'merge-abort' },
 };
