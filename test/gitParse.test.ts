@@ -25,22 +25,23 @@ interface Fixture {
   body: string;
 }
 
-/** Build one `git log` record exactly as LOG_FORMAT emits it. */
+/** Build one `git log -z` record exactly as LOG_FORMAT emits it. */
 function record(f: Fixture): string {
-  return [
-    '',
-    f.hash,
-    f.short,
-    f.parents,
-    'Ada Lovelace',
-    'ada@example.com',
-    '2026-01-01T10:00:00+00:00',
-    'Ada Lovelace',
-    '2026-01-01T10:05:00+00:00',
-    f.refs,
-    f.subject,
-    f.body,
-  ].join(FS) + RS;
+  return (
+    [
+      f.hash,
+      f.short,
+      f.parents,
+      'Ada Lovelace',
+      'ada@example.com',
+      '2026-01-01T10:00:00+00:00',
+      'Ada Lovelace',
+      '2026-01-01T10:05:00+00:00',
+      f.refs,
+      f.subject,
+      f.body,
+    ].join('\0') + '\0'
+  );
 }
 
 const HASH_A = 'a'.repeat(40);
@@ -57,7 +58,6 @@ test('parseLog handles multi-line bodies, merges, and decorations', () => {
       subject: "Merge branch 'feature/x'",
       body: 'Line one\nLine two\n\nLine four\n',
     }) +
-    '\n' +
     record({
       hash: HASH_B,
       short: 'bbbbbbb',
@@ -65,8 +65,7 @@ test('parseLog handles multi-line bodies, merges, and decorations', () => {
       refs: '',
       subject: 'Plain commit',
       body: '',
-    }) +
-    '\n';
+    });
 
   const commits = parseLog(raw);
   assert.equal(commits.length, 2);
@@ -91,18 +90,38 @@ test('parseLog handles multi-line bodies, merges, and decorations', () => {
   assert.equal(plain.body, '');
 });
 
-test('parseLog tolerates CRLF record terminators', () => {
+test('parseLog tolerates CRLF in body and trailing whitespace', () => {
+  const raw =
+    record({
+      hash: HASH_A,
+      short: 'aaaaaaa',
+      parents: '',
+      refs: '',
+      subject: 'Root commit',
+      body: 'Body with CRLF\r\nline two\r\n',
+    }) + '\r\n';
+  const commits = parseLog(raw);
+  assert.equal(commits.length, 1);
+  assert.deepEqual(commits[0]?.parents, []);
+  assert.equal(commits[0]?.body, 'Body with CRLF\r\nline two');
+});
+
+test('parseLog preserves messages containing delimiter control characters (BUG4)', () => {
   const raw = record({
     hash: HASH_A,
     short: 'aaaaaaa',
     parents: '',
     refs: '',
-    subject: 'Root commit',
-    body: '',
-  }) + '\r\n';
+    subject: 'Subject with \x1f and \x1e delimiters',
+    body: 'Line 1\x1fstill line 1\nLine 2\x1emore line 2\x1f\x1e',
+  });
   const commits = parseLog(raw);
   assert.equal(commits.length, 1);
-  assert.deepEqual(commits[0]?.parents, []);
+  const c = commits[0];
+  assert.ok(c);
+  assert.equal(c.hash, HASH_A);
+  assert.equal(c.subject, 'Subject with \x1f and \x1e delimiters');
+  assert.equal(c.body, 'Line 1\x1fstill line 1\nLine 2\x1emore line 2\x1f\x1e');
 });
 
 test('parseStatus handles rename, deletion, untracked, and staged+unstaged', () => {

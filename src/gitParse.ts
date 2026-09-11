@@ -3,17 +3,17 @@
  * so every branch is unit-testable. All parsers tolerate CRLF line endings.
  */
 
-/** Field separator inside a log record. */
-export const LOG_FIELD_SEP = '\x1f';
-/** Record separator between log records. */
-export const LOG_RECORD_SEP = '\x1e';
+/** Field separator inside a log record (NUL cannot appear in git commit objects). */
+export const LOG_FIELD_SEP = '\0';
+/** Record separator between log records when emitted with git log -z. */
+export const LOG_RECORD_SEP = '\0';
 
 /**
- * `git log` format string. Fields are NUL-adjacent control characters rather
- * than newlines so that multi-line commit bodies survive parsing intact.
+ * `git log` format string. Fields are NUL-delimited so that any commit message
+ * (including control characters and multi-line bodies) survives parsing intact.
  */
 export const LOG_FORMAT =
-  '--format=%x1f%H%x1f%h%x1f%P%x1f%an%x1f%ae%x1f%aI%x1f%cn%x1f%cI%x1f%D%x1f%s%x1f%b%x1e';
+  '--format=%H%x00%h%x00%P%x00%an%x00%ae%x00%aI%x00%cn%x00%cI%x00%D%x00%s%x00%b';
 
 export interface ParsedCommit {
   hash: string;
@@ -59,20 +59,28 @@ export interface AheadBehind {
 const CONFLICT_CODES = new Set(['DD', 'AU', 'UD', 'UA', 'DU', 'AA', 'UU']);
 
 /**
- * Parse output of `git log <LOG_FORMAT>`. Each record starts with the field
- * separator, so the first split element of a record is always empty.
+ * Parse output of `git log -z <LOG_FORMAT>`. Each commit record consists of
+ * exactly 11 NUL-delimited fields followed by the record-terminating NUL emitted
+ * by `git log -z`.
  */
 export function parseLog(raw: string): ParsedCommit[] {
+  if (raw.length === 0) return [];
+  // ponytail: 11-field NUL record framing assumes standard git log output order; upgrade to header length prefixing if git adds configurable custom record trailers.
+  const tokens = raw.split('\0');
   const commits: ParsedCommit[] = [];
-  for (const rawRecord of raw.split(LOG_RECORD_SEP)) {
-    // Leading newline belongs to the previous record's terminator.
-    const record = rawRecord.replace(/^[\r\n]+/, '');
-    if (record.length === 0) continue;
-    const fields = record.split(LOG_FIELD_SEP);
-    // fields[0] is the empty string before the first %x1f.
-    if (fields.length < 12) continue;
-    const [, hash, shortHash, parents, authorName, authorEmail, authoredAt, committerName, committedAt, refs, subject, ...bodyParts] =
-      fields as [string, string, string, string, string, string, string, string, string, string, string, ...string[]];
+  for (let i = 0; i + 10 < tokens.length; i += 11) {
+    const hash = tokens[i]?.trim() ?? '';
+    if (hash.length === 0) continue;
+    const shortHash = tokens[i + 1] ?? '';
+    const parents = tokens[i + 2] ?? '';
+    const authorName = tokens[i + 3] ?? '';
+    const authorEmail = tokens[i + 4] ?? '';
+    const authoredAt = tokens[i + 5] ?? '';
+    const committerName = tokens[i + 6] ?? '';
+    const committedAt = tokens[i + 7] ?? '';
+    const refs = tokens[i + 8] ?? '';
+    const subject = tokens[i + 9] ?? '';
+    const body = tokens[i + 10] ?? '';
     commits.push({
       hash,
       shortHash,
@@ -84,7 +92,7 @@ export function parseLog(raw: string): ParsedCommit[] {
       committedAt,
       refNames: parseRefNames(refs),
       subject,
-      body: bodyParts.join(LOG_FIELD_SEP).replace(/[\r\n]+$/, ''),
+      body: body.replace(/[\r\n]+$/, ''),
     });
   }
   return commits;
@@ -216,7 +224,7 @@ export function parseRefs(raw: string): ParsedRef[] {
   const refs: ParsedRef[] = [];
   for (const line of raw.split(/\r?\n/)) {
     if (line.length === 0) continue;
-    const fields = line.split(LOG_FIELD_SEP);
+    const fields = line.split('\x1f');
     if (fields.length < 5) continue;
     const [refName, objectName, upstream, track, head] = fields as [string, string, string, string, string];
     refs.push({

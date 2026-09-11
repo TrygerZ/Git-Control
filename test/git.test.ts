@@ -61,6 +61,24 @@ test('GitRunner drives a real repository end to end', async (t) => {
   assert.deepEqual(await git.remotes(), []);
 });
 
+test('git.log and git.commitMeta preserve control characters in commit message (BUG4)', async (t) => {
+  const dir = await makeFixture('control-chars');
+  t.after(() => cleanup(dir));
+  const git = new GitRunner({ gitPath: 'git', cwd: dir });
+
+  const commits = await git.log({ limit: 10 });
+  assert.equal(commits.length, 1);
+  const head = commits[0];
+  assert.ok(head);
+  assert.equal(head.subject, 'Subject with \x1f and \x1e delimiters');
+  assert.equal(head.body, 'Body line 1\x1fstill body\x1eand record sep');
+
+  const meta = await git.commitMeta(head.hash);
+  assert.ok(meta);
+  assert.equal(meta.subject, 'Subject with \x1f and \x1e delimiters');
+  assert.equal(meta.body, 'Body line 1\x1fstill body\x1eand record sep');
+});
+
 test('GitRunner rejects invalid input before spawning git', async (t) => {
   const dir = await makeRepo();
   t.after(() => cleanup(dir));
