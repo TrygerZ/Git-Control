@@ -25,7 +25,7 @@ import type {
   Response,
   ResponseData,
 } from '../messages';
-import { isHostEvent } from '../messages';
+import { isValidResponse, validateHostEvent } from './hostGuards';
 import type { ChangeSection } from './tree';
 import { activeLang, t } from './i18n';
 
@@ -165,18 +165,23 @@ class WebviewBridge implements Bridge {
 
   private receive(raw: unknown): void {
     if (typeof raw !== 'object' || raw === null) return;
-    const message = raw as HostMessage;
-    if (isHostEvent(message)) {
-      const set = this.listeners.get(message.kind);
+    const event = validateHostEvent(raw);
+    if (event !== null) {
+      const set = this.listeners.get(event.kind);
       if (set === undefined) return;
       // Copy first: a handler may unsubscribe during dispatch.
-      for (const handler of [...set]) (handler as (p: unknown) => void)(message.payload);
+      for (const handler of [...set]) (handler as (p: unknown) => void)(event.payload);
       return;
     }
-    this.settle(message as Response);
+    if (isValidResponse(raw)) {
+      this.settle(raw);
+      return;
+    }
+    console.warn('[git-control] dropped unrecognized host message', raw);
   }
 
   private settle(response: Response): void {
+    if (!isValidResponse(response)) return;
     const entry = this.pending.get(response.id);
     if (entry === undefined) return; // Late reply after a timeout; drop it.
     this.pending.delete(response.id);
