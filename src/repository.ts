@@ -66,6 +66,11 @@ export const DEFAULT_FILE_LIMIT = 2000;
  * `git diff --numstat` runs over a huge worktree would dominate every refresh.
  */
 export const MAX_STAT_ENTRIES = 2000;
+/**
+ * Cap on cached commit details. Prevents unbounded memory growth during
+ * extended read-only browsing sessions without mutations.
+ */
+export const DETAIL_CACHE_MAX_ENTRIES = 200;
 const LAST_FETCH_KEY_PREFIX = 'gitControl.lastFetchAt:';
 
 export class RepositoryService {
@@ -326,7 +331,13 @@ export class RepositoryService {
       // the byte cap has no further page to serve.
       nextFileCursor: hasMorePages ? end : null,
     };
+    this.detailCache.delete(cacheKey);
     this.detailCache.set(cacheKey, detail);
+    while (this.detailCache.size > DETAIL_CACHE_MAX_ENTRIES) {
+      const oldest = this.detailCache.keys().next();
+      if (oldest.done === true) break;
+      this.detailCache.delete(oldest.value);
+    }
     return detail;
   }
 
