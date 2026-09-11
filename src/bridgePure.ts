@@ -3,7 +3,13 @@ import { validateBranchName, validateHash, validateRemoteName, validateRepoRelat
 
 export type Outcome = { ok: true; data: unknown } | { ok: false; error: { code: ErrorCode } };
 export const MUTATION_KINDS = new Set<string>(['actions/stage', 'actions/commit', 'actions/git']);
-const RETRYABLE_CODES = new Set<ErrorCode>(['CONFIRMATION_REQUIRED', 'DIRTY_TREE', 'STALE_STATUS']);
+const RETRYABLE_CODES = new Set<ErrorCode>([
+  'CONFIRMATION_REQUIRED',
+  'DIRTY_TREE',
+  'STALE_STATUS',
+  'REMOTE_AHEAD',
+  'NON_FAST_FORWARD',
+]);
 
 export function parseRequest(raw: unknown): Request | null {
   if (typeof raw !== 'object' || raw === null) return null;

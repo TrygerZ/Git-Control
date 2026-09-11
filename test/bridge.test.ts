@@ -5,6 +5,7 @@ import * as path from 'node:path';
 import { GitError, GitRunner } from '../src/git';
 import { GitHubError } from '../src/github';
 import { MessageBridge, toErrorBody, type BridgeHost, type WebviewLike } from '../src/bridge';
+import { shouldRemember } from '../src/bridgePure';
 import { hostText } from '../src/hostText';
 import { Logger, type LogSink } from '../src/logger';
 import { RepositoryService, type PersistentStore } from '../src/repository';
@@ -1778,6 +1779,16 @@ test('a DIRTY_TREE rejection is retryable once the tree is clean (SEC-014)', asy
     req('actions/git', { action: 'checkout-branch', branch: 'main', idempotencyKey: key }),
   );
   assert.equal(retried.ok, true, 'a resolved DIRTY_TREE must not be replayed from cache');
+});
+
+test('shouldRemember treats transient remote guard failures as retryable (BUG2)', () => {
+  assert.equal(shouldRemember({ ok: false, error: { code: 'REMOTE_AHEAD' } }), false);
+  assert.equal(shouldRemember({ ok: false, error: { code: 'NON_FAST_FORWARD' } }), false);
+  assert.equal(shouldRemember({ ok: false, error: { code: 'CONFIRMATION_REQUIRED' } }), false);
+  assert.equal(shouldRemember({ ok: false, error: { code: 'DIRTY_TREE' } }), false);
+  assert.equal(shouldRemember({ ok: false, error: { code: 'STALE_STATUS' } }), false);
+  assert.equal(shouldRemember({ ok: false, error: { code: 'NOT_FOUND' } }), true);
+  assert.equal(shouldRemember({ ok: true, data: { success: true } }), true);
 });
 
 test('a genuine failure IS still replayed for a repeated key (SEC-014)', async (t) => {
