@@ -9,7 +9,7 @@ import {
   type LayoutInput,
   type LayoutNode,
 } from '../src/layout';
-import { computeStaggerMap } from '../src/webview/GraphCanvas';
+import { computeStaggerMap, edgePath } from '../src/webview/GraphCanvas';
 
 const A = 'a'.repeat(40);
 const B = 'b'.repeat(40);
@@ -590,3 +590,27 @@ test('branch ribbon correctly handles merge topology without bleeding onto merge
   assert.ok(featureRibbon.length > 0, 'Feature branch ribbon must exist');
   assert.ok(featureRibbon.every((r: any) => !r.key.includes('link')), 'Feature branch with single commit has no intra-branch links');
 });
+
+test('edgePath produces deterministic SVG path strings without NaN or undefined', () => {
+  // Straight lane (fromLane === toLane)
+  const straightEdge = { from: A, to: B, fromLane: 0, toLane: 0, kind: 'direct' as const };
+  const straightPath = edgePath(straightEdge, 100, 200, 88, 40);
+  assert.equal(straightPath, 'M100 84L200 84');
+  assert.equal(straightPath.includes('NaN'), false);
+  assert.equal(straightPath.includes('undefined'), false);
+
+  // Lane transition (fromLane !== toLane)
+  const transitionEdge = { from: A, to: B, fromLane: 0, toLane: 1, kind: 'direct' as const };
+  const transitionPath = edgePath(transitionEdge, 100, 200, 88, 40);
+  assert.equal(transitionPath, 'M100 84C150 84 150 172 200 172');
+  assert.equal(transitionPath.includes('NaN'), false);
+  assert.equal(transitionPath.includes('undefined'), false);
+
+  // Degenerate same-point (fromX === toX)
+  const degenerateEdge = { from: A, to: B, fromLane: 1, toLane: 1, kind: 'direct' as const };
+  const degeneratePath = edgePath(degenerateEdge, 150, 150, 88, 40);
+  assert.equal(degeneratePath, 'M150 172L150 172');
+  assert.equal(degeneratePath.includes('NaN'), false);
+  assert.equal(degeneratePath.includes('undefined'), false);
+});
+
