@@ -41,6 +41,7 @@ const ALL_ICON_NAMES: readonly IconName[] = [
   'external',
   'file',
   'folder',
+  'archive',
 ];
 
 test('every IconName has an SVG render function in ICON_PATHS and no orphan paths exist', () => {

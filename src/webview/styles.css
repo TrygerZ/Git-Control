@@ -2457,6 +2457,17 @@ h3 {
   color: var(--gc-tone-pending);
 }
 
+.gc-section__badge--special {
+  color: var(--gc-tone-special);
+}
+
+.gc-section__badge .gc-icon {
+  display: block;
+  width: 1em;
+  height: 1em;
+  font-size: var(--gc-fs-md);
+}
+
 .gc-section__count {
   margin: 0;
   padding: 0 var(--gc-space-2);

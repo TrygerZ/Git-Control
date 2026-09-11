@@ -561,10 +561,10 @@ function StashSection({
               <Icon name={isCollapsed ? 'chevron-right' : 'chevron-down'} />
             </span>
             <span
-              className="gc-section__badge gc-section__badge--changed"
+              className="gc-section__badge gc-section__badge--special"
               aria-hidden="true"
             >
-              $
+              <Icon name="archive" />
             </span>
             <span className="gc-section__name">{title}</span>
           </button>

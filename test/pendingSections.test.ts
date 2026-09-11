@@ -121,6 +121,20 @@ test('the section header renders a real toggle button with aria-expanded and a d
   );
 });
 
+test('stash section header renders archive icon badge with special tone and no dollar glyph', () => {
+  const src = fs.readFileSync(
+    path.join(__dirname, '..', '..', 'src', 'webview', 'PendingChanges.tsx'),
+    'utf8',
+  );
+  assert.match(src, /gc-section__badge--special/);
+  assert.match(src, /<Icon name="archive" \/>/);
+  assert.doesNotMatch(
+    src,
+    /gc-section__badge[^>]*>\s*\$/,
+    'no raw dollar glyph in section badges',
+  );
+});
+
 test('commit form progress spinner renders inside gc-commit__status outside actions', () => {
   const commitFormSrc = fs.readFileSync(
     path.join(__dirname, '..', '..', 'src', 'webview', 'CommitForm.tsx'),
