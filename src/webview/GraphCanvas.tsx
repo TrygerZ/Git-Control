@@ -42,6 +42,7 @@ import { loadState, saveState } from './bridge';
 import {
   authorInitials,
   formatCount,
+  isSafeImageSrc,
   relativeTime,
   rowLabel,
   sanitizeGitText,
@@ -1170,7 +1171,7 @@ function NodeMark({
   const showContent = zoom >= TEXT_MIN_ZOOM;
   // A local commit has no avatar to show - it is not on GitHub yet - and its hollow dashed
   // dot is a signal an image would paint over.
-  const hasAvatar = showContent && !node.local && avatarUrl !== null && !imgFailed;
+  const hasAvatar = showContent && !node.local && avatarUrl !== null && isSafeImageSrc(avatarUrl) && !imgFailed;
   const clipId = `clip-${node.hash}`;
   // Hit circle world radius: ensures rendered pixel radius is max(NODE_RADIUS * zoom, 14) px,
   // clamped so it cannot exceed half of min(COLUMN_WIDTH, LANE_HEIGHT).
@@ -1232,7 +1233,7 @@ function NodeMark({
           fill={node.local ? 'var(--vscode-editor-background)' : color}
         />
       )}
-      {hasAvatar && !isCapsule && (
+      {hasAvatar && !isCapsule && isSafeImageSrc(avatarUrl) && (
         <image
           className="gc-node__avatar"
           href={avatarUrl}

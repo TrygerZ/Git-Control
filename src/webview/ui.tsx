@@ -4,6 +4,7 @@
  */
 import { Component, useEffect, type ErrorInfo, type JSX, type ReactNode } from 'react';
 import {
+  isSafeImageSrc,
   presentError,
   remedyConsequence,
   remedyLabel,
@@ -82,6 +83,7 @@ function iconFontFamily(fontId: string | undefined): string | undefined {
 function ThemeIcon({ icon, fallback }: { icon: ResolvedIcon | undefined; fallback: IconName }): JSX.Element {
   if (icon === undefined) return <Icon name={fallback} />;
   if (icon.kind === 'svg') {
+    if (!isSafeImageSrc(icon.uri)) return <Icon name={fallback} />;
     return <img src={icon.uri} alt="" aria-hidden="true" className="gc-file-icon" />;
   }
   return (

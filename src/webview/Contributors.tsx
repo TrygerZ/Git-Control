@@ -11,6 +11,7 @@ import {
   contributorAvatarColor,
   contributorInitials,
   formatCount,
+  isSafeImageSrc,
   resolveContributorAvatar,
   sanitizeGitText,
 } from './format';
@@ -35,7 +36,7 @@ function ContributorAvatar({ name, email, avatarUrl }: ContributorAvatarProps): 
 
   const resolvedAvatar = resolveContributorAvatar(avatarUrl, loadFailed);
 
-  if (resolvedAvatar !== null) {
+  if (resolvedAvatar !== null && isSafeImageSrc(resolvedAvatar)) {
     return (
       <span className="gc-contributors__avatar" aria-hidden="true">
         <img
