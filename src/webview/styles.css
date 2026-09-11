@@ -1216,6 +1216,7 @@ h3 {
   border: 1px solid var(--gc-border);
   border-radius: var(--gc-radius);
   background: var(--vscode-editor-background);
+  user-select: none;
 }
 
 /*

@@ -587,6 +587,8 @@ export function GraphCanvas({
     // on a row or node hit target would swallow the click that selects that commit.
     const onInteractive = (event.target as HTMLElement).closest('[data-row], [data-node]') !== null;
     if (onInteractive && !spaceHeld.current) return;
+    // Suppress native text selection initiated by left-click drag while preserving click flow on interactive targets.
+    event.preventDefault();
     panFrom.current = { x: event.clientX, y: event.clientY, left: node.scrollLeft, top: node.scrollTop };
     node.setPointerCapture(event.pointerId);
   };
@@ -735,6 +737,7 @@ export function GraphCanvas({
             onPointerUp={endPan}
             onPointerCancel={endPan}
             onContextMenu={onContextMenu}
+            onDragStart={(e) => e.preventDefault()}
           >
             {/* Sticky Date Ruler at top of scroller */}
             <div
