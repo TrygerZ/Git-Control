@@ -23,7 +23,7 @@ import { GuardDialog } from './GuardDialog';
 import { ToastRegion } from './Toast';
 import { copyToClipboard } from './clipboard';
 import { bridge, loadState, saveState } from './bridge';
-import { formatCount, formatStashLabel, sanitizeGitText, shortHash, UNKNOWN_CHURN } from './format';
+import { baseName, formatCount, formatStashLabel, sanitizeGitText, shortHash, UNKNOWN_CHURN } from './format';
 import { useT } from './useT';
 import { groupBySection, isSectionBulkDisabled, stageableFrom, unstageableFrom, type ChangeSection } from './tree';
 import {
@@ -35,7 +35,7 @@ import {
   useSettingsStore,
   wireHostEvents,
 } from './store';
-import { ContextBar, EmptyState, ErrorBanner, FileListSkeleton, Icon, InfoBanner, Spinner } from './ui';
+import { ContextBar, EmptyState, ErrorBanner, FileIcon, FileListSkeleton, Icon, InfoBanner, Spinner } from './ui';
 import type { ChangeEntry, Lang, StashEntry } from '../messages';
 
 /**
@@ -685,6 +685,7 @@ function StashList({
                       const isBinary = file.additions === null && file.deletions === null;
                       return (
                         <li key={file.path} className="gc-tree__row gc-stash-file" role="listitem">
+                          <FileIcon kind="file" name={baseName(file.path)} />
                           <span className="gc-stash-file__path" title={file.path}>
                             {file.path}
                           </span>

@@ -361,3 +361,12 @@ test('stash item row renders expandable twisty, 1-based label, copyable hash but
   const actionBlock = stylesSrc.match(/\.gc-stash-item__action\s*\{([^}]*)\}/)?.[1] ?? '';
   assert.match(actionBlock, /font-size:\s*var\(--gc-fs-sm\);/);
 });
+
+test('stash file row renders theme file icon and path', () => {
+  const src = fs.readFileSync(
+    path.join(__dirname, '..', '..', 'src', 'webview', 'PendingChanges.tsx'),
+    'utf8',
+  );
+  assert.match(src, /<FileIcon kind="file" name=\{baseName\(file\.path\)\} \/>/);
+  assert.match(src, /className="gc-stash-file__path"/);
+});
