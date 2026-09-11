@@ -168,3 +168,32 @@ test('redact stays idempotent across the new rules', () => {
   const once = redact(line);
   assert.equal(redact(once), once);
 });
+
+// ------------------------------------------------------------------- SEC-H1
+
+test('redact strips credentials on non-https schemes (SEC-H1)', () => {
+  const out = redact('fatal: unable to access ssh://user:secret@host/x');
+  assert.equal(out, 'fatal: unable to access ssh://user:[redacted]@host/x');
+  assert.ok(!out.includes('secret'));
+
+  const gitSsh = redact('git+ssh://alice:token123@internal.corp/repo.git');
+  assert.equal(gitSsh, 'git+ssh://alice:[redacted]@internal.corp/repo.git');
+  assert.ok(!gitSsh.includes('token123'));
+});
+
+test('redact strips schemeless user:password credentials (SEC-H1)', () => {
+  const out = redact('fatal: unable to access user:secret@host/x');
+  assert.equal(out, 'fatal: unable to access user:[redacted]@host/x');
+  assert.ok(!out.includes('secret'));
+
+  const scp = redact('remote: user:secret@host:owner/repo.git');
+  assert.equal(scp, 'remote: user:[redacted]@host:owner/repo.git');
+  assert.ok(!scp.includes('secret'));
+});
+
+test('redact leaves plain email addresses alone (SEC-H1)', () => {
+  assert.equal(redact('contact a@b.com for access'), 'contact a@b.com for access');
+  assert.equal(redact('author: dev@example.com'), 'author: dev@example.com');
+  assert.equal(redact('Author: Alice <alice@corp.example>'), 'Author: Alice <alice@corp.example>');
+});
+

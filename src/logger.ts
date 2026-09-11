@@ -47,13 +47,14 @@ const RULES: ReadonlyArray<{ pattern: RegExp; replace: string }> = [
   { pattern: /github_pat_[A-Za-z0-9_]{20,}/g, replace: REDACTED },
   // `x-access-token:<token>@host`, with or without a scheme prefix.
   { pattern: /x-access-token:[^@\s]*@/gi, replace: `x-access-token:${REDACTED}@` },
-  // Any other `user:password@host` credential in a URL. The username is kept
-  // (it is not a secret and helps debugging); only the password is dropped.
+  // Any other `user:password@host` credential in a URL, with any scheme
+  // (https://, ssh://, git://, etc.) or schemeless. The username is kept (it is
+  // not a secret and helps debugging); only the password is dropped.
   //
   // Userinfo runs to the LAST `@` before the path, so an email-style username or
   // a secret that itself contains `@` cannot leave its tail behind.
   // Idempotent, so it safely runs over the rule above.
-  { pattern: /(\bhttps?:\/\/)([^/\s:@]+)[:@][^/\s]*@/gi, replace: `$1$2:${REDACTED}@` },
+  { pattern: /((?:[a-z][a-z0-9+.-]+:\/\/)|\b)([^/\s:@]+)[:@][^/\s]*@/gi, replace: `$1$2:${REDACTED}@` },
   // Bare auth credentials, e.g. a `Bearer …` echoed without its header name.
   { pattern: /\b(Bearer|Basic|token)\s+[A-Za-z0-9._\-+/=]{16,}/gi, replace: `$1 ${REDACTED}` },
   // HTTP auth headers, however they are cased or spaced.
