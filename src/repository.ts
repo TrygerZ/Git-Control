@@ -66,6 +66,11 @@ export const DEFAULT_FILE_LIMIT = 2000;
  * `git diff --numstat` runs over a huge worktree would dominate every refresh.
  */
 export const MAX_STAT_ENTRIES = 2000;
+/**
+ * Cap on cached commit details. Prevents unbounded memory growth during
+ * extended read-only browsing sessions without mutations.
+ */
+export const DETAIL_CACHE_MAX_ENTRIES = 200;
 const LAST_FETCH_KEY_PREFIX = 'gitControl.lastFetchAt:';
 
 export class RepositoryService {
@@ -78,6 +83,7 @@ export class RepositoryService {
   private readonly fileLimit: number;
 
   private statusCache: RepoStatus | undefined;
+  private statusIgnoredCache: RepoStatus | undefined;
   /** Last graph that loaded successfully, replayed as `stale` after a failure. */
   private graphCache: RepoGraph | undefined;
   private readonly detailCache = new Map<string, CommitDetail>();
@@ -109,6 +115,7 @@ export class RepositoryService {
   /** Drop every cached read. Call after any mutation or watcher event. */
   invalidate(): void {
     this.statusCache = undefined;
+    this.statusIgnoredCache = undefined;
     this.detailCache.clear();
     this.contributorsCache = undefined;
     // graphCache is deliberately kept: it is the offline fallback (PRD §9).
@@ -116,9 +123,15 @@ export class RepositoryService {
 
   /** Cached status, or a fresh read when the cache was invalidated. */
   async status(opts: { includeIgnored?: boolean } = {}): Promise<RepoStatus> {
-    if (this.statusCache !== undefined) return this.statusCache;
-    const status = await this.readStatus(opts.includeIgnored === true);
-    this.statusCache = status;
+    const ignored = opts.includeIgnored === true;
+    const cached = ignored ? this.statusIgnoredCache : this.statusCache;
+    if (cached !== undefined) return cached;
+    const status = await this.readStatus(ignored);
+    if (ignored) {
+      this.statusIgnoredCache = status;
+    } else {
+      this.statusCache = status;
+    }
     return status;
   }
 
@@ -318,7 +331,13 @@ export class RepositoryService {
       // the byte cap has no further page to serve.
       nextFileCursor: hasMorePages ? end : null,
     };
+    this.detailCache.delete(cacheKey);
     this.detailCache.set(cacheKey, detail);
+    while (this.detailCache.size > DETAIL_CACHE_MAX_ENTRIES) {
+      const oldest = this.detailCache.keys().next();
+      if (oldest.done === true) break;
+      this.detailCache.delete(oldest.value);
+    }
     return detail;
   }
 

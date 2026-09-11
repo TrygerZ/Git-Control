@@ -184,7 +184,7 @@ export class GitRunner {
   async commitMeta(hash: string): Promise<ParsedCommit | null> {
     this.assertHash(hash);
     const { stdout, code } = await this.run(
-      ['log', LOG_FORMAT, '--max-count=1', sanitizeRefArg(hash)],
+      ['log', '-z', LOG_FORMAT, '--max-count=1', sanitizeRefArg(hash)],
       { allowedExitCodes: [0, 128] },
     );
     if (code !== 0) return null;
@@ -265,7 +265,7 @@ export class GitRunner {
     if (!Number.isInteger(skip) || skip < 0) {
       throw new GitError({ code: 'VALIDATION_ERROR', message: `Invalid skip: ${String(skip)}` });
     }
-    const args = ['log', LOG_FORMAT, `--max-count=${limit}`, '--topo-order'];
+    const args = ['log', '-z', LOG_FORMAT, `--max-count=${limit}`, '--topo-order'];
     if (skip > 0) args.push(`--skip=${skip}`);
     if (opts.all !== false) args.push('--all');
     const { stdout } = await this.run(args);
@@ -503,8 +503,10 @@ export class GitRunner {
     }
     const args = ['commit', '-F', '-'];
     if (opts.amend === true) args.push('--amend');
-    await this.runExclusive(() => this.run(args, { input: check.message }));
-    return this.headHash();
+    return this.runExclusive(async () => {
+      await this.run(args, { input: check.message });
+      return this.headHash();
+    });
   }
 
   /**

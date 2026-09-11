@@ -5,6 +5,7 @@ import {
   contributorAvatarColor,
   contributorInitials,
   emailHue,
+  isSafeImageSrc,
   resolveContributorAvatar,
 } from '../src/webview/format';
 import { useRepoStore } from '../src/webview/store';
@@ -83,6 +84,26 @@ test('resolveContributorAvatar returns avatarUrl or null on failure/absence', ()
   assert.equal(resolveContributorAvatar(null, false), null);
   assert.equal(resolveContributorAvatar(undefined, false), null);
   assert.equal(resolveContributorAvatar('', false), null);
+  assert.equal(resolveContributorAvatar('http://example.com/avatar.png', false), null);
+  assert.equal(resolveContributorAvatar('javascript:alert(1)', false), null);
+});
+
+test('isSafeImageSrc validates image schemes and rejects unsafe inputs', () => {
+  assert.equal(isSafeImageSrc('https://avatars.githubusercontent.com/u/1'), true);
+  assert.equal(isSafeImageSrc('https://example.com/image.png?size=64'), true);
+  assert.equal(isSafeImageSrc('data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=='), true);
+  assert.equal(isSafeImageSrc('data:image/svg+xml;utf8,<svg></svg>'), true);
+
+  assert.equal(isSafeImageSrc('http://avatars.githubusercontent.com/u/1'), false);
+  assert.equal(isSafeImageSrc('javascript:alert(1)'), false);
+  assert.equal(isSafeImageSrc('data:text/html;base64,PHNjcmlwdD5hbGVydCgxKTwvc2NyaXB0Pg=='), false);
+  assert.equal(isSafeImageSrc(''), false);
+  assert.equal(isSafeImageSrc('   '), false);
+  assert.equal(isSafeImageSrc('relative/path/image.png'), false);
+  assert.equal(isSafeImageSrc('./image.png'), false);
+  assert.equal(isSafeImageSrc('/image.png'), false);
+  assert.equal(isSafeImageSrc(null), false);
+  assert.equal(isSafeImageSrc(undefined), false);
 });
 
 test('contributorActionKind differentiates GitHub profile open from author filter', () => {

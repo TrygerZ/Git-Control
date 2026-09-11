@@ -5,6 +5,7 @@ import * as path from 'node:path';
 import { GitError, GitRunner } from '../src/git';
 import { GitHubError } from '../src/github';
 import { MessageBridge, toErrorBody, type BridgeHost, type WebviewLike } from '../src/bridge';
+import { shouldRemember } from '../src/bridgePure';
 import { hostText } from '../src/hostText';
 import { Logger, type LogSink } from '../src/logger';
 import { RepositoryService, type PersistentStore } from '../src/repository';
@@ -1700,6 +1701,37 @@ test('a fine-grained PAT in stderr is redacted on the webview path too (SEC-012)
   assert.ok(body.detail !== undefined && !body.detail.includes(token));
 });
 
+// ------------------------------------------------------------------- SEC-H2
+
+test('stderr progress stream is redacted before crossing to webview (SEC-H2)', () => {
+  const h = harness(null);
+  const sink = (h.bridge as any).progressSink('op-progress', 'push');
+  const token = 'ghp_secret0123456789abcdefgh';
+  sink(`Writing objects: 100% (1/1), done.\nremote: https://x-access-token:${token}@github.com/o/r.git`);
+
+  const event = h.webview
+    .events()
+    .find((e): e is HostEvent<'event/operationProgress'> => e.kind === 'event/operationProgress');
+  assert.ok(event !== undefined);
+  assert.equal(event.payload.id, 'op-progress');
+  assert.equal(event.payload.operation, 'push');
+  assert.equal(event.payload.phase, 'progress');
+  assert.ok(event.payload.message !== undefined);
+  assert.ok(!event.payload.message.includes(token));
+  assert.ok(event.payload.message.includes('[redacted]'));
+  assert.ok(event.payload.message.includes('Writing objects: 100%'));
+
+  // Also verify ssh credential form in streamed stderr line
+  sink('fatal: unable to access ssh://user:secret123@corp.example/repo.git');
+  const events = h.webview
+    .events()
+    .filter((e): e is HostEvent<'event/operationProgress'> => e.kind === 'event/operationProgress');
+  const second = events[1];
+  assert.ok(second?.payload.message !== undefined);
+  assert.ok(!second.payload.message.includes('secret123'));
+  assert.ok(second.payload.message.includes('ssh://user:[redacted]@corp.example/repo.git'));
+});
+
 // ------------------------------------------------------------------- SEC-014
 
 test('a guard rejection is not cached, so a confirmed retry reaches the guard (SEC-014)', async (t) => {
@@ -1778,6 +1810,16 @@ test('a DIRTY_TREE rejection is retryable once the tree is clean (SEC-014)', asy
     req('actions/git', { action: 'checkout-branch', branch: 'main', idempotencyKey: key }),
   );
   assert.equal(retried.ok, true, 'a resolved DIRTY_TREE must not be replayed from cache');
+});
+
+test('shouldRemember treats transient remote guard failures as retryable (BUG2)', () => {
+  assert.equal(shouldRemember({ ok: false, error: { code: 'REMOTE_AHEAD' } }), false);
+  assert.equal(shouldRemember({ ok: false, error: { code: 'NON_FAST_FORWARD' } }), false);
+  assert.equal(shouldRemember({ ok: false, error: { code: 'CONFIRMATION_REQUIRED' } }), false);
+  assert.equal(shouldRemember({ ok: false, error: { code: 'DIRTY_TREE' } }), false);
+  assert.equal(shouldRemember({ ok: false, error: { code: 'STALE_STATUS' } }), false);
+  assert.equal(shouldRemember({ ok: false, error: { code: 'NOT_FOUND' } }), true);
+  assert.equal(shouldRemember({ ok: true, data: { success: true } }), true);
 });
 
 test('a genuine failure IS still replayed for a repeated key (SEC-014)', async (t) => {

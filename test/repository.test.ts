@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import { GitRunner } from '../src/git';
-import { MAX_STAT_ENTRIES, RepositoryService, type PersistentStore } from '../src/repository';
+import { DETAIL_CACHE_MAX_ENTRIES, MAX_STAT_ENTRIES, RepositoryService, type PersistentStore } from '../src/repository';
 import { cleanup, makeFixture } from './repoFixture';
 
 /** `workspaceState` stand-in so the service can be exercised without vscode. */
@@ -57,6 +57,36 @@ test('status reports branch, cleanliness, and a stable token', async (t) => {
   assert.equal(dirty.dirty, true);
   assert.notEqual(dirty.statusToken, clean.statusToken);
   assert.deepEqual(dirty.changes.map((c) => [c.path, c.untracked]), [['dirty.txt', true]]);
+});
+
+test('status distinguishes default from includeIgnored cache and invalidate clears both (BUG1)', async (t) => {
+  const dir = await makeRepo();
+  t.after(() => cleanup(dir));
+  const repo = service(dir);
+
+  await fs.writeFile(path.join(dir, '.gitignore'), 'ignored.txt\n', 'utf8');
+  await fs.writeFile(path.join(dir, 'ignored.txt'), 'secret\n', 'utf8');
+
+  // Default status: does not include ignored files.
+  const defaultStatus = await repo.status();
+  assert.equal(defaultStatus.changes.some((c) => c.path === 'ignored.txt'), false);
+
+  // Status with includeIgnored: includes ignored files.
+  const ignoredStatus = await repo.status({ includeIgnored: true });
+  assert.equal(ignoredStatus.changes.some((c) => c.path === 'ignored.txt'), true);
+
+  // Both should be independently cached.
+  const defaultCached = await repo.status();
+  assert.equal(defaultCached, defaultStatus);
+  const ignoredCached = await repo.status({ includeIgnored: true });
+  assert.equal(ignoredCached, ignoredStatus);
+
+  // Invalidate clears both cache slots.
+  repo.invalidate();
+  const refreshedDefault = await repo.status();
+  assert.notEqual(refreshedDefault, defaultStatus);
+  const refreshedIgnored = await repo.status({ includeIgnored: true });
+  assert.notEqual(refreshedIgnored, ignoredStatus);
 });
 
 /**
@@ -360,6 +390,74 @@ test('commitDetail caches per cursor and normalizes a bad cursor to zero', async
   assert.equal(past?.files.length, 0);
   assert.equal(past?.truncated, false);
   assert.equal(past?.nextFileCursor, null);
+});
+
+test('commitDetail cache is bounded at DETAIL_CACHE_MAX_ENTRIES and evicts in insertion order (SEC-H3)', async (t) => {
+  const dir = await makeRepo();
+  t.after(() => cleanup(dir));
+  const repo = new RepositoryService({ folderPath: dir, gitPath: 'git', store: new MemoryStore() });
+
+  let metaCalls = 0;
+  (repo.git as any).commitMeta = async (hash: string) => {
+    metaCalls += 1;
+    return {
+      hash,
+      shortHash: hash.slice(0, 7),
+      parents: [],
+      authorName: 'Test Author',
+      authorEmail: 'test@example.com',
+      authoredAt: '2026-01-01T00:00:00Z',
+      committerName: 'Test Committer',
+      committedAt: '2026-01-01T00:00:00Z',
+      subject: `commit ${hash}`,
+      body: '',
+      refNames: [],
+    };
+  };
+  (repo.git as any).numstat = async () => [];
+
+  const detailCache = (repo as any).detailCache as Map<string, unknown>;
+  assert.equal(detailCache.size, 0);
+
+  // Fill cache up to the boundary.
+  for (let i = 0; i < DETAIL_CACHE_MAX_ENTRIES; i += 1) {
+    const hash = `${i}`.padStart(40, '0');
+    await repo.commitDetail(hash);
+  }
+  assert.equal(detailCache.size, DETAIL_CACHE_MAX_ENTRIES);
+
+  // Re-reading a present entry returns cached data without calling git again.
+  const presentHash = '150'.padStart(40, '0');
+  const callsBefore = metaCalls;
+  const presentDetail = await repo.commitDetail(presentHash);
+  assert.equal(metaCalls, callsBefore, 'served from cache, no git call');
+  assert.equal(presentDetail?.hash, presentHash);
+
+  // Inserting 50 more entries maintains the cap of 200.
+  for (let i = 0; i < 50; i += 1) {
+    const hash = `${DETAIL_CACHE_MAX_ENTRIES + i}`.padStart(40, '0');
+    await repo.commitDetail(hash);
+  }
+  assert.equal(detailCache.size, DETAIL_CACHE_MAX_ENTRIES, 'detail cache bound holds under growth');
+
+  // The earliest entries (0..49) were evicted in insertion order.
+  for (let i = 0; i < 50; i += 1) {
+    const evictedHash = `${i}`.padStart(40, '0');
+    assert.equal(detailCache.has(`${evictedHash}:0`), false, `entry ${i} evicted`);
+  }
+
+  // An entry inserted later (e.g. 150) is still in the cache.
+  assert.equal(detailCache.has(`${presentHash}:0`), true, 'surviving entry remains in cache');
+
+  // Reading an evicted entry calls git again to re-populate.
+  const evicted0 = '0'.repeat(40);
+  const callsBeforeEvicted = metaCalls;
+  await repo.commitDetail(evicted0);
+  assert.equal(metaCalls, callsBeforeEvicted + 1, 'evicted entry re-queries git');
+
+  // Invalidate clears detailCache.
+  repo.invalidate();
+  assert.equal(detailCache.size, 0, 'invalidate clears detail cache');
 });
 
 test('changes derives conflict entries during a merge', async (t) => {

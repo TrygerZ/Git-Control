@@ -152,6 +152,7 @@ Encodes module purity boundaries (pure logic vs I/O) and execution trust boundar
 | `src/webview/graphQuery.ts` | Pure graph query helpers extracted from GraphCanvas (`computeStaggerMap`, `chipsFor`, `matchesSearch`, `lanesForFilter`) |
 | `src/webview/ribbon.ts` | Pure branch ribbon geometry and edge path generation (`computeBranchRibbons`, `edgePath`) consumed by GraphCanvas |
 | `src/webview/tree.ts` | Pure flat change paths to collapsible tree and tri-state selection maths |
+| `src/webview/hostGuards.ts` | Pure runtime type guards for host-to-webview events and responses |
 | `src/webview/iconFontStyles.ts` | Nonce-bearing `<style>` / adopted stylesheet `@font-face` injector (strict CSP compliant) |
 | `src/webview/ui.tsx` | Shared webview UI primitives (skeletons, banners, icons, error boundary) |
 | `src/webview/GraphCanvas.tsx` | Canvas/SVG renderer for 2D git commit graph and lane routing |

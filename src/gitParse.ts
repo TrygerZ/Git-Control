@@ -3,17 +3,17 @@
  * so every branch is unit-testable. All parsers tolerate CRLF line endings.
  */
 
-/** Field separator inside a log record. */
-export const LOG_FIELD_SEP = '\x1f';
-/** Record separator between log records. */
-export const LOG_RECORD_SEP = '\x1e';
+/** Field separator inside a log record (NUL cannot appear in git commit objects). */
+export const LOG_FIELD_SEP = '\0';
+/** Record separator between log records when emitted with git log -z. */
+export const LOG_RECORD_SEP = '\0';
 
 /**
- * `git log` format string. Fields are NUL-adjacent control characters rather
- * than newlines so that multi-line commit bodies survive parsing intact.
+ * `git log` format string. Fields are NUL-delimited so that any commit message
+ * (including control characters and multi-line bodies) survives parsing intact.
  */
 export const LOG_FORMAT =
-  '--format=%x1f%H%x1f%h%x1f%P%x1f%an%x1f%ae%x1f%aI%x1f%cn%x1f%cI%x1f%D%x1f%s%x1f%b%x1e';
+  '--format=%H%x00%h%x00%P%x00%an%x00%ae%x00%aI%x00%cn%x00%cI%x00%D%x00%s%x00%b';
 
 export interface ParsedCommit {
   hash: string;
@@ -59,20 +59,28 @@ export interface AheadBehind {
 const CONFLICT_CODES = new Set(['DD', 'AU', 'UD', 'UA', 'DU', 'AA', 'UU']);
 
 /**
- * Parse output of `git log <LOG_FORMAT>`. Each record starts with the field
- * separator, so the first split element of a record is always empty.
+ * Parse output of `git log -z <LOG_FORMAT>`. Each commit record consists of
+ * exactly 11 NUL-delimited fields followed by the record-terminating NUL emitted
+ * by `git log -z`.
  */
 export function parseLog(raw: string): ParsedCommit[] {
+  if (raw.length === 0) return [];
+  // ponytail: 11-field NUL record framing assumes standard git log output order; upgrade to header length prefixing if git adds configurable custom record trailers.
+  const tokens = raw.split('\0');
   const commits: ParsedCommit[] = [];
-  for (const rawRecord of raw.split(LOG_RECORD_SEP)) {
-    // Leading newline belongs to the previous record's terminator.
-    const record = rawRecord.replace(/^[\r\n]+/, '');
-    if (record.length === 0) continue;
-    const fields = record.split(LOG_FIELD_SEP);
-    // fields[0] is the empty string before the first %x1f.
-    if (fields.length < 12) continue;
-    const [, hash, shortHash, parents, authorName, authorEmail, authoredAt, committerName, committedAt, refs, subject, ...bodyParts] =
-      fields as [string, string, string, string, string, string, string, string, string, string, string, ...string[]];
+  for (let i = 0; i + 10 < tokens.length; i += 11) {
+    const hash = tokens[i]?.trim() ?? '';
+    if (hash.length === 0) continue;
+    const shortHash = tokens[i + 1] ?? '';
+    const parents = tokens[i + 2] ?? '';
+    const authorName = tokens[i + 3] ?? '';
+    const authorEmail = tokens[i + 4] ?? '';
+    const authoredAt = tokens[i + 5] ?? '';
+    const committerName = tokens[i + 6] ?? '';
+    const committedAt = tokens[i + 7] ?? '';
+    const refs = tokens[i + 8] ?? '';
+    const subject = tokens[i + 9] ?? '';
+    const body = tokens[i + 10] ?? '';
     commits.push({
       hash,
       shortHash,
@@ -84,7 +92,7 @@ export function parseLog(raw: string): ParsedCommit[] {
       committedAt,
       refNames: parseRefNames(refs),
       subject,
-      body: bodyParts.join(LOG_FIELD_SEP).replace(/[\r\n]+$/, ''),
+      body: body.replace(/[\r\n]+$/, ''),
     });
   }
   return commits;
@@ -140,20 +148,82 @@ export function parseStatus(raw: string): ParsedStatusEntry[] {
 }
 
 /**
+ * Decode git C-style quoted path (when core.quotePath emits "\t", "\"", octal escapes, etc.).
+ * If the string is not enclosed in double quotes, returns it verbatim.
+ */
+export function unquoteGitPath(path: string): string {
+  if (path.length < 2 || !path.startsWith('"') || !path.endsWith('"')) {
+    return path;
+  }
+  const inner = path.slice(1, -1);
+  const bytes: number[] = [];
+  for (let i = 0; i < inner.length; i += 1) {
+    const char = inner.charAt(i);
+    if (char === '\\' && i + 1 < inner.length) {
+      i += 1;
+      const next = inner.charAt(i);
+      if (next >= '0' && next <= '7') {
+        let octal = next;
+        while (i + 1 < inner.length && octal.length < 3) {
+          const peek = inner.charAt(i + 1);
+          if (peek >= '0' && peek <= '7') {
+            i += 1;
+            octal += peek;
+          } else {
+            break;
+          }
+        }
+        bytes.push(Number.parseInt(octal, 8));
+      } else {
+        switch (next) {
+          case 'a': bytes.push(0x07); break;
+          case 'b': bytes.push(0x08); break;
+          case 'f': bytes.push(0x0c); break;
+          case 'n': bytes.push(0x0a); break;
+          case 'r': bytes.push(0x0d); break;
+          case 't': bytes.push(0x09); break;
+          case 'v': bytes.push(0x0b); break;
+          case '\\': bytes.push(0x5c); break;
+          case '"': bytes.push(0x22); break;
+          default:
+            bytes.push(inner.charCodeAt(i));
+            break;
+        }
+      }
+    } else {
+      const code = inner.charCodeAt(i);
+      if (code < 128) {
+        bytes.push(code);
+      } else {
+        const encoded = new TextEncoder().encode(char);
+        for (const b of encoded) bytes.push(b);
+      }
+    }
+  }
+  return new TextDecoder().decode(new Uint8Array(bytes));
+}
+
+/**
  * Parse `git show --numstat` / `git diff --numstat` output. Binary files are
  * reported by git as `-\t-\tpath` and surface here with null counts. Renames
- * appear either as an `old => new` path or as a third+fourth tab column.
+ * appear as `{old => new}` or `old => new` on the path column.
  */
 export function parseShowStat(raw: string): ParsedNumstatEntry[] {
   const entries: ParsedNumstatEntry[] = [];
   for (const line of raw.split(/\r?\n/)) {
     if (line.length === 0) continue;
-    const parts = line.split('\t');
-    if (parts.length < 3) continue;
-    const [added, removed, first, second] = parts as [string, string, string, ...string[]];
+    const firstTab = line.indexOf('\t');
+    if (firstTab === -1) continue;
+    const secondTab = line.indexOf('\t', firstTab + 1);
+    if (secondTab === -1) continue;
+
+    const added = line.slice(0, firstTab);
+    const removed = line.slice(firstTab + 1, secondTab);
+    const pathSpec = line.slice(secondTab + 1);
+
     if (!/^(\d+|-)$/.test(added) || !/^(\d+|-)$/.test(removed)) continue;
     const binary = added === '-' && removed === '-';
-    const rename = resolveRename(first, second);
+    const rename = resolveRename(pathSpec);
     entries.push({
       path: rename.path,
       ...(rename.origPath === undefined ? {} : { origPath: rename.origPath }),
@@ -165,14 +235,32 @@ export function parseShowStat(raw: string): ParsedNumstatEntry[] {
   return entries;
 }
 
-/** Resolve numstat rename notation into explicit old/new paths. */
-function resolveRename(first: string, second: string | undefined): { path: string; origPath?: string } {
-  if (second !== undefined && second.length > 0) {
-    return { path: second, origPath: first };
+/**
+ * Resolve numstat rename notation into explicit old/new paths.
+ * Git numstat formats renames as `{old => new}` (with optional prefix/suffix)
+ * or `old => new`, with individual paths optionally C-style quoted.
+ */
+function resolveRename(pathSpec: string): { path: string; origPath?: string } {
+  // ponytail: handles standard {old => new} and old => new numstat renames with git C-style unquoting; full rename tracking with copy detection or multiple brace expansions requires -z plumbing.
+  const braceMatch = /^(.*)\{(.*) => (.*)\}(.*)$/.exec(pathSpec);
+  if (braceMatch) {
+    const [, prefix = '', oldMiddle = '', newMiddle = '', suffix = ''] = braceMatch;
+    return {
+      path: unquoteGitPath(`${prefix}${newMiddle}${suffix}`),
+      origPath: unquoteGitPath(`${prefix}${oldMiddle}${suffix}`),
+    };
   }
-  const arrow = first.indexOf(' => ');
-  if (arrow === -1) return { path: first };
-  return { path: first.slice(arrow + 4), origPath: first.slice(0, arrow) };
+
+  const arrowMatch = /^(.*) => (.*)$/.exec(pathSpec);
+  if (arrowMatch) {
+    const [, oldPath = '', newPath = ''] = arrowMatch;
+    return {
+      path: unquoteGitPath(newPath),
+      origPath: unquoteGitPath(oldPath),
+    };
+  }
+
+  return { path: unquoteGitPath(pathSpec) };
 }
 
 
@@ -216,7 +304,7 @@ export function parseRefs(raw: string): ParsedRef[] {
   const refs: ParsedRef[] = [];
   for (const line of raw.split(/\r?\n/)) {
     if (line.length === 0) continue;
-    const fields = line.split(LOG_FIELD_SEP);
+    const fields = line.split('\x1f');
     if (fields.length < 5) continue;
     const [refName, objectName, upstream, track, head] = fields as [string, string, string, string, string];
     refs.push({

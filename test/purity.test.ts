@@ -19,6 +19,7 @@ const PURE_MODULES = [
   'src/webview/format.ts',
   'src/webview/viewport.ts',
   'src/webview/tree.ts',
+  'src/webview/hostGuards.ts',
 ];
 
 test('pure modules contain no vscode imports', () => {

@@ -324,6 +324,23 @@ export function contributorAvatarColor(email: string): string {
 }
 
 /**
+ * Pure scheme validator for image sources rendered in webview img or SVG image tags.
+ * Permits only https: and data:image/ schemes. Rejects http:, javascript:, relative paths, etc.
+ */
+export function isSafeImageSrc(url: string | null | undefined): boolean {
+  if (typeof url !== 'string') return false;
+  const trimmed = url.trim();
+  if (trimmed.length === 0) return false;
+  if (trimmed.startsWith('data:image/')) return true;
+  try {
+    const parsed = new URL(trimmed);
+    return parsed.protocol === 'https:';
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Resolves avatar image URL for a contributor given an avatar URL and load error state.
  * Returns the GitHub avatar URL or null if fallback initials should be displayed.
  */
@@ -331,7 +348,7 @@ export function resolveContributorAvatar(
   avatarUrl: string | null | undefined,
   imageFailed: boolean,
 ): string | null {
-  if (imageFailed || !avatarUrl) {
+  if (imageFailed || !avatarUrl || !isSafeImageSrc(avatarUrl)) {
     return null;
   }
   return avatarUrl;

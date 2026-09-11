@@ -1049,6 +1049,9 @@ class Controller implements vscode.Disposable {
       `script-src 'nonce-${nonce}'`,
       `font-src ${webview.cspSource}`,
       "connect-src 'none'",
+      "base-uri 'none'",
+      "form-action 'none'",
+      "frame-src 'none'",
     ].join('; ');
 
     return `<!DOCTYPE html>

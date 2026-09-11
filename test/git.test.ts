@@ -61,6 +61,24 @@ test('GitRunner drives a real repository end to end', async (t) => {
   assert.deepEqual(await git.remotes(), []);
 });
 
+test('git.log and git.commitMeta preserve control characters in commit message (BUG4)', async (t) => {
+  const dir = await makeFixture('control-chars');
+  t.after(() => cleanup(dir));
+  const git = new GitRunner({ gitPath: 'git', cwd: dir });
+
+  const commits = await git.log({ limit: 10 });
+  assert.equal(commits.length, 1);
+  const head = commits[0];
+  assert.ok(head);
+  assert.equal(head.subject, 'Subject with \x1f and \x1e delimiters');
+  assert.equal(head.body, 'Body line 1\x1fstill body\x1eand record sep');
+
+  const meta = await git.commitMeta(head.hash);
+  assert.ok(meta);
+  assert.equal(meta.subject, 'Subject with \x1f and \x1e delimiters');
+  assert.equal(meta.body, 'Body line 1\x1fstill body\x1eand record sep');
+});
+
 test('GitRunner rejects invalid input before spawning git', async (t) => {
   const dir = await makeRepo();
   t.after(() => cleanup(dir));
@@ -179,6 +197,29 @@ test('repoRoot, commitMeta, and isAncestor read real objects', async (t) => {
   await assert.rejects(() => git.isAncestor(first, 'refs/remotes/origin/main'), /Invalid ref/);
   await assert.rejects(() => git.isAncestor(first, 'refs/stash'), /Invalid ref/);
   await assert.rejects(() => git.isAncestor(first, '-x'), /Invalid ref/);
+});
+
+test('commit returns HEAD hash read inside exclusive lock (BUG3)', async (t) => {
+  const dir = await makeRepo();
+  t.after(() => cleanup(dir));
+  const git = new GitRunner({ gitPath: 'git', cwd: dir });
+
+  await fs.writeFile(path.join(dir, 'bug3-file.txt'), 'content\n', 'utf8');
+  await git.stage(['bug3-file.txt']);
+
+  let lockHeldDuringHeadRead = false;
+  const originalHeadHash = git.headHash.bind(git);
+  git.headHash = async () => {
+    lockHeldDuringHeadRead = git.busy;
+    return originalHeadHash();
+  };
+
+  const commitHash = await git.commit('exclusive commit check');
+  const actualHead = await originalHeadHash();
+
+  assert.ok(commitHash !== null && commitHash.length === 40);
+  assert.equal(commitHash, actualHead);
+  assert.equal(lockHeldDuringHeadRead, true, 'HEAD must be read while exclusive lock is held');
 });
 
 test('onBusyChange brackets exclusive operations', async (t) => {
@@ -459,12 +500,9 @@ test('stderr accumulation is capped without failing the operation (SEC-009)', as
 // ------------------------------------------------------- Bug 1 + Bug 3 regressions
 
 test('unstage works in a repository with no commits (Bug 1 edge case)', async (t) => {
-  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'git-control-nohead-'));
+  const dir = await makeFixture('empty');
   t.after(() => cleanup(dir));
   const git = new GitRunner({ gitPath: 'git', cwd: dir });
-  await git.run(['init', '--quiet', '--initial-branch=main']);
-  await git.run(['config', 'user.email', 'test@example.com']);
-  await git.run(['config', 'user.name', 'Test User']);
 
   await fs.writeFile(path.join(dir, 'lambada.txt'), 'x\n', 'utf8');
   await git.stage(['lambada.txt']);

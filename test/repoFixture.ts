@@ -27,12 +27,16 @@ import { GitRunner } from '../src/git';
 
 /** Shapes the suites need. Add a case rather than hand-rolling a repo in a test. */
 export type FixtureKind =
+  /** Empty repo with no commits and no HEAD. */
+  | 'empty'
   /** One commit, `a.txt` containing `one\n`, on `main`. */
   | 'single'
   /** Three commits on `main` (`add one/two/three`) plus `add side` on `side`. */
   | 'triple'
   /** One commit on `main`, tracked by bare remote `origin` at `.git/bare.git`. */
-  | 'remote';
+  | 'remote'
+  /** Commit with subject and body containing control characters (\x1f, \x1e). */
+  | 'control-chars';
 
 /** Built templates, one per kind per process. */
 const templates = new Map<FixtureKind, Promise<string>>();
@@ -102,10 +106,21 @@ async function buildTemplate(kind: FixtureKind): Promise<string> {
   await git.run(['config', 'user.email', 'test@example.com']);
   await git.run(['config', 'user.name', 'Test User']);
 
+  if (kind === 'empty') {
+    return dir;
+  }
+
   if (kind === 'single') {
     await fs.writeFile(path.join(dir, 'a.txt'), 'one\n', 'utf8');
     await git.stage(['a.txt']);
     await git.commit('initial commit');
+    return dir;
+  }
+
+  if (kind === 'control-chars') {
+    await fs.writeFile(path.join(dir, 'a.txt'), 'one\n', 'utf8');
+    await git.stage(['a.txt']);
+    await git.commit('Subject with \x1f and \x1e delimiters\n\nBody line 1\x1fstill body\x1eand record sep');
     return dir;
   }
 
