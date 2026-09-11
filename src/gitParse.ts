@@ -148,20 +148,82 @@ export function parseStatus(raw: string): ParsedStatusEntry[] {
 }
 
 /**
+ * Decode git C-style quoted path (when core.quotePath emits "\t", "\"", octal escapes, etc.).
+ * If the string is not enclosed in double quotes, returns it verbatim.
+ */
+export function unquoteGitPath(path: string): string {
+  if (path.length < 2 || !path.startsWith('"') || !path.endsWith('"')) {
+    return path;
+  }
+  const inner = path.slice(1, -1);
+  const bytes: number[] = [];
+  for (let i = 0; i < inner.length; i += 1) {
+    const char = inner.charAt(i);
+    if (char === '\\' && i + 1 < inner.length) {
+      i += 1;
+      const next = inner.charAt(i);
+      if (next >= '0' && next <= '7') {
+        let octal = next;
+        while (i + 1 < inner.length && octal.length < 3) {
+          const peek = inner.charAt(i + 1);
+          if (peek >= '0' && peek <= '7') {
+            i += 1;
+            octal += peek;
+          } else {
+            break;
+          }
+        }
+        bytes.push(Number.parseInt(octal, 8));
+      } else {
+        switch (next) {
+          case 'a': bytes.push(0x07); break;
+          case 'b': bytes.push(0x08); break;
+          case 'f': bytes.push(0x0c); break;
+          case 'n': bytes.push(0x0a); break;
+          case 'r': bytes.push(0x0d); break;
+          case 't': bytes.push(0x09); break;
+          case 'v': bytes.push(0x0b); break;
+          case '\\': bytes.push(0x5c); break;
+          case '"': bytes.push(0x22); break;
+          default:
+            bytes.push(inner.charCodeAt(i));
+            break;
+        }
+      }
+    } else {
+      const code = inner.charCodeAt(i);
+      if (code < 128) {
+        bytes.push(code);
+      } else {
+        const encoded = new TextEncoder().encode(char);
+        for (const b of encoded) bytes.push(b);
+      }
+    }
+  }
+  return new TextDecoder().decode(new Uint8Array(bytes));
+}
+
+/**
  * Parse `git show --numstat` / `git diff --numstat` output. Binary files are
  * reported by git as `-\t-\tpath` and surface here with null counts. Renames
- * appear either as an `old => new` path or as a third+fourth tab column.
+ * appear as `{old => new}` or `old => new` on the path column.
  */
 export function parseShowStat(raw: string): ParsedNumstatEntry[] {
   const entries: ParsedNumstatEntry[] = [];
   for (const line of raw.split(/\r?\n/)) {
     if (line.length === 0) continue;
-    const parts = line.split('\t');
-    if (parts.length < 3) continue;
-    const [added, removed, first, second] = parts as [string, string, string, ...string[]];
+    const firstTab = line.indexOf('\t');
+    if (firstTab === -1) continue;
+    const secondTab = line.indexOf('\t', firstTab + 1);
+    if (secondTab === -1) continue;
+
+    const added = line.slice(0, firstTab);
+    const removed = line.slice(firstTab + 1, secondTab);
+    const pathSpec = line.slice(secondTab + 1);
+
     if (!/^(\d+|-)$/.test(added) || !/^(\d+|-)$/.test(removed)) continue;
     const binary = added === '-' && removed === '-';
-    const rename = resolveRename(first, second);
+    const rename = resolveRename(pathSpec);
     entries.push({
       path: rename.path,
       ...(rename.origPath === undefined ? {} : { origPath: rename.origPath }),
@@ -173,14 +235,32 @@ export function parseShowStat(raw: string): ParsedNumstatEntry[] {
   return entries;
 }
 
-/** Resolve numstat rename notation into explicit old/new paths. */
-function resolveRename(first: string, second: string | undefined): { path: string; origPath?: string } {
-  if (second !== undefined && second.length > 0) {
-    return { path: second, origPath: first };
+/**
+ * Resolve numstat rename notation into explicit old/new paths.
+ * Git numstat formats renames as `{old => new}` (with optional prefix/suffix)
+ * or `old => new`, with individual paths optionally C-style quoted.
+ */
+function resolveRename(pathSpec: string): { path: string; origPath?: string } {
+  // ponytail: handles standard {old => new} and old => new numstat renames with git C-style unquoting; full rename tracking with copy detection or multiple brace expansions requires -z plumbing.
+  const braceMatch = /^(.*)\{(.*) => (.*)\}(.*)$/.exec(pathSpec);
+  if (braceMatch) {
+    const [, prefix = '', oldMiddle = '', newMiddle = '', suffix = ''] = braceMatch;
+    return {
+      path: unquoteGitPath(`${prefix}${newMiddle}${suffix}`),
+      origPath: unquoteGitPath(`${prefix}${oldMiddle}${suffix}`),
+    };
   }
-  const arrow = first.indexOf(' => ');
-  if (arrow === -1) return { path: first };
-  return { path: first.slice(arrow + 4), origPath: first.slice(0, arrow) };
+
+  const arrowMatch = /^(.*) => (.*)$/.exec(pathSpec);
+  if (arrowMatch) {
+    const [, oldPath = '', newPath = ''] = arrowMatch;
+    return {
+      path: unquoteGitPath(newPath),
+      origPath: unquoteGitPath(oldPath),
+    };
+  }
+
+  return { path: unquoteGitPath(pathSpec) };
 }
 
 

@@ -11,6 +11,7 @@ import {
   parseShowStat,
   parseStashList,
   parseStatus,
+  unquoteGitPath,
 } from '../src/gitParse';
 
 const FS = '\x1f';
@@ -181,7 +182,7 @@ test('parseStatus flags every porcelain conflict code', () => {
 });
 
 test('parseShowStat reports counts, binaries, and renames', () => {
-  const raw = ['12\t3\tsrc/index.ts', '-\t-\tassets/logo.png', '4\t0\tsrc/old.ts\tsrc/new.ts', '2\t1\tdocs/{a => b}/x.md'].join('\n');
+  const raw = ['12\t3\tsrc/index.ts', '-\t-\tassets/logo.png', '4\t0\tsrc/old.ts => src/new.ts', '2\t1\tdocs/{a => b}/x.md'].join('\n');
   const entries = parseShowStat(raw);
   assert.equal(entries.length, 4);
 
@@ -206,8 +207,76 @@ test('parseShowStat reports counts, binaries, and renames', () => {
 
   const arrow = entries[3];
   assert.ok(arrow);
-  assert.equal(arrow.origPath, 'docs/{a');
-  assert.equal(arrow.path, 'b}/x.md');
+  assert.equal(arrow.origPath, 'docs/a/x.md');
+  assert.equal(arrow.path, 'docs/b/x.md');
+});
+
+test('unquoteGitPath decodes C-style escapes and leaves plain paths untouched (BUG5)', () => {
+  assert.equal(unquoteGitPath('plain/path.txt'), 'plain/path.txt');
+  assert.equal(unquoteGitPath('"path\\twith\\ttabs"'), 'path\twith\ttabs');
+  assert.equal(unquoteGitPath('"path with \\"quotes\\""'), 'path with "quotes"');
+  assert.equal(unquoteGitPath('"path\\\\with\\\\backslash"'), 'path\\with\\backslash');
+  assert.equal(unquoteGitPath('"path\\nwith\\nnewline"'), 'path\nwith\nnewline');
+  assert.equal(unquoteGitPath('"path\\303\\244"'), 'pathä');
+});
+
+test('parseShowStat correctly handles renames, quoted paths, and embedded tabs (BUG5)', () => {
+  const raw = [
+    '10\t5\tsrc/{old => new}/index.ts',
+    '3\t2\t{legacy => modern}.ts',
+    '1\t0\t"path\\twith\\ttabs.txt"',
+    '4\t2\t"old\\tpath.txt" => "new\\tpath.txt"',
+    '2\t0\traw\tpath\twith\ttabs.txt',
+    '7\t8\tnormal/file.ts',
+  ].join('\n');
+
+  const entries = parseShowStat(raw);
+  assert.equal(entries.length, 6);
+
+  assert.deepEqual(entries[0], {
+    path: 'src/new/index.ts',
+    origPath: 'src/old/index.ts',
+    additions: 10,
+    deletions: 5,
+    binary: false,
+  });
+
+  assert.deepEqual(entries[1], {
+    path: 'modern.ts',
+    origPath: 'legacy.ts',
+    additions: 3,
+    deletions: 2,
+    binary: false,
+  });
+
+  assert.deepEqual(entries[2], {
+    path: 'path\twith\ttabs.txt',
+    additions: 1,
+    deletions: 0,
+    binary: false,
+  });
+
+  assert.deepEqual(entries[3], {
+    path: 'new\tpath.txt',
+    origPath: 'old\tpath.txt',
+    additions: 4,
+    deletions: 2,
+    binary: false,
+  });
+
+  assert.deepEqual(entries[4], {
+    path: 'raw\tpath\twith\ttabs.txt',
+    additions: 2,
+    deletions: 0,
+    binary: false,
+  });
+
+  assert.deepEqual(entries[5], {
+    path: 'normal/file.ts',
+    additions: 7,
+    deletions: 8,
+    binary: false,
+  });
 });
 
 test('parseShowStat tolerates CRLF and ignores non-numstat lines', () => {
