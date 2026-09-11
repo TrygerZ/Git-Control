@@ -60,8 +60,9 @@ const RESOLUTION_ACTIONS = new Set<GuardAction['action']>([
 
 /**
  * A dirty working tree would be overwritten or blocked by these.
- * Note: `reset-hard` is intentionally excluded so it proceeds to the 2-stage
- * CONFIRMATION_REQUIRED flow — discarding a dirty tree is its explicit purpose.
+ * Note: `reset-hard` and `discard-file` are intentionally excluded so they proceed
+ * to the 2-stage CONFIRMATION_REQUIRED flow. Discarding dirty changes is their
+ * explicit purpose.
  */
 const DIRTY_BLOCKED = new Set<GuardAction['action']>([
   'checkout-branch',
@@ -105,8 +106,9 @@ export function evaluate(action: GuardAction, snapshot: GuardSnapshot, lang: Lan
     };
   }
 
-  // Committing a half-resolved merge would record conflict markers.
-  if (action.action === 'commit' && snapshot.conflicted) {
+  // Committing a half-resolved merge would record conflict markers, and discarding
+  // an unmerged path is invalid while conflicts are unresolved.
+  if ((action.action === 'commit' || action.action === 'discard-file') && snapshot.conflicted) {
     return {
       allow: false,
       code: 'CONFLICT',
@@ -151,11 +153,11 @@ export function evaluate(action: GuardAction, snapshot: GuardSnapshot, lang: Lan
     }
   }
 
-  if (action.action === 'reset-hard') {
+  if (action.action === 'reset-hard' || action.action === 'discard-file') {
     return {
       allow: false,
       code: 'CONFIRMATION_REQUIRED',
-      message: text.resetHard,
+      message: action.action === 'reset-hard' ? text.resetHard : text.discardFile,
       remedies: ['confirm', 'cancel'],
       requiresConfirmation: true,
       confirmationLevel: 2,

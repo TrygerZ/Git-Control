@@ -18,6 +18,7 @@ export type IconName =
   | 'arrow-down'
   | 'arrow-up'
   | 'refresh'
+  | 'discard'
   | 'graph'
   | 'diff-modified'
   | 'diff-added'

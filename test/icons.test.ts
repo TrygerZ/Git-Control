@@ -29,6 +29,7 @@ const ALL_ICON_NAMES: readonly IconName[] = [
   'arrow-down',
   'arrow-up',
   'refresh',
+  'discard',
   'graph',
   'diff-modified',
   'diff-added',

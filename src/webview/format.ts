@@ -722,6 +722,8 @@ export function gitCommandOf(action: GitActionRequest): string {
       return `git reset --soft ${shortHash(action.hash)}`;
     case 'reset-hard':
       return `git reset --hard ${shortHash(action.hash)}`;
+    case 'discard-file':
+      return `git restore --worktree -- ${s(action.path)}`;
     case 'push':
       return `git push ${action.setUpstream === true ? '-u ' : ''}${s(action.remote)} ${s(action.branch)}:${s(action.branch)}`;
     case 'push-up-to':
@@ -773,6 +775,8 @@ export function consequenceOf(action: GitActionRequest, lang: Lang = 'en'): stri
       return strings.resetSoft;
     case 'reset-hard':
       return strings.resetHard;
+    case 'discard-file':
+      return strings.discardFile(s(action.path));
     case 'push':
       return strings.push(s(action.branch), s(action.remote));
     case 'push-up-to':
@@ -817,6 +821,8 @@ export function actionTitle(action: GitActionRequest, lang: Lang = 'en'): string
       return strings.resetSoft(shortHash(action.hash));
     case 'reset-hard':
       return strings.resetHard(shortHash(action.hash));
+    case 'discard-file':
+      return strings.discardFile(s(action.path));
     case 'push':
       return strings.push(s(action.branch));
     case 'push-up-to':
@@ -840,6 +846,7 @@ export function actionTitle(action: GitActionRequest, lang: Lang = 'en'): string
 
 /** Target the action operates on, shown as the dialog's subject line. Sanitised. */
 export function actionTarget(action: GitActionRequest): string {
+  if (action.action === 'discard-file') return sanitizeGitText(action.path);
   if (action.action === 'merge-into') return sanitizeGitText(action.target);
   if (action.action === 'pull') {
     if (action.branch !== undefined) return sanitizeGitText(action.branch);

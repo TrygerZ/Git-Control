@@ -130,6 +130,25 @@ export const ICON_PATHS: Record<IconName, () => JSX.Element> = {
       <path d="M13.5 3.5v4.25H9.25" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" fill="none" />
     </>
   ),
+  discard: () => (
+    <>
+      <path
+        d="M3 6.5h6a4 4 0 0 1 4 4v2"
+        stroke="currentColor"
+        strokeWidth="1.5"
+        strokeLinecap="round"
+        fill="none"
+      />
+      <path
+        d="M6 3L2.5 6.5 6 10"
+        stroke="currentColor"
+        strokeWidth="1.5"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        fill="none"
+      />
+    </>
+  ),
   // Tombol buka Canvas / Graph Explorer: node commit graph dengan relasi cabang
   graph: () => (
     <>

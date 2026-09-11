@@ -9,6 +9,7 @@ const en = {
     remoteAhead: 'Remote has different history.',
     nonFastForward: 'Push is not fast-forward.',
     resetHard: 'Hard reset discards changes permanently.',
+    discardFile: 'Discarding local changes is permanent.',
     confirm: 'This action requires confirmation.',
   },
   bridge: {
@@ -72,6 +73,7 @@ const id: HostCatalog = {
     remoteAhead: 'Remote memiliki histori berbeda.',
     nonFastForward: 'Push bukan fast-forward.',
     resetHard: 'Hard reset membuang perubahan permanen.',
+    discardFile: 'Membuang perubahan lokal bersifat permanen.',
     confirm: 'Tindakan ini perlu konfirmasi.',
   },
   bridge: {

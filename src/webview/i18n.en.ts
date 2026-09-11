@@ -242,6 +242,8 @@ const en = {
       revert: 'Create a new commit undoing changes from that commit. History remains intact.',
       resetSoft: 'Move branch pointer to that commit. Changes remain in staging area.',
       resetHard: 'Move branch pointer AND discard all changes after that commit. Cannot be undone.',
+      discardFile: (_path: string) =>
+        'Local changes to this file will be permanently discarded and cannot be recovered.',
       push: (branch: string, remote: string) => `Send branch ${branch} to ${remote}.`,
       pushUpTo: (hash: string, remote: string, branch: string) => `Send history up to ${hash} to ${remote}/${branch}.`,
       pull: 'Fetch latest changes and integrate into current branch without rebasing.',
@@ -262,6 +264,7 @@ const en = {
       revert: (hash: string) => `Revert ${hash}`,
       resetSoft: (hash: string) => `Reset soft to ${hash}`,
       resetHard: (hash: string) => `Reset hard to ${hash}`,
+      discardFile: (path: string) => `Discard changes to ${path}?`,
       push: (branch: string) => `Push ${branch}`,
       pushUpTo: (hash: string) => `Push up to ${hash}`,
       pull: 'Pull',
@@ -377,6 +380,8 @@ const en = {
     unstageLabel: 'Unstage',
     stageFileAria: (path: string) => `Stage ${path}`,
     unstageFileAria: (path: string) => `Unstage ${path}`,
+    discardLabel: 'Discard',
+    discardFileAria: (path: string) => `Discard changes in ${path}`,
   },
 
   // Commit form component
@@ -548,6 +553,7 @@ const en = {
   // Guard dialog
   guard: {
     permanentBadge: 'Permanent',
+    discardRiskLabel: 'permanent',
     targetLabel: 'Target',
     problemLabel: 'Problem',
     riskLevelLabel: 'Risk level',

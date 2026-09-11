@@ -5,9 +5,8 @@
  * Staged, Unstaged, Untracked. Selection is shared across sections so a bulk
  * action can act on a mixed pick.
  *
- * `discard` is deliberately absent: it destroys work and the contract offers no
- * guarded path for it. Adding it without a guard dialog would violate the PRD's
- * safety rule.
+ * Per-file `discard` is wired to `runAction({ action: 'discard-file', path })`
+ * for unstaged modifications only, gated behind the level 2 safety guard dialog.
  *
  * Layout, following VS Code: context breadcrumb, notifications, commit message
  * box with Commit/Push at the top, then a slim toolbar (branch, selection
@@ -97,6 +96,7 @@ export function PendingChangesApp(): JSX.Element {
   const setLanguage = useSettingsStore((s) => s.setLanguage);
   const pushToast = useOperationStore((s) => s.pushToast);
   const showLogs = useOperationStore((s) => s.showLogs);
+  const runAction = useOperationStore((s) => s.runAction);
   const scrollRef = useRef<HTMLDivElement>(null);
   /**
    * Path filter for the list. Local, not in the store: it narrows what is drawn
@@ -458,6 +458,16 @@ export function PendingChangesApp(): JSX.Element {
                           section === 'staged'
                             ? { label: strings.changeTree.unstageLabel, icon: 'dash', ariaLabel: (p) => strings.changeTree.unstageFileAria(p), run: (e) => void unstage([e.path]) }
                             : { label: strings.changeTree.stageLabel, icon: 'add', ariaLabel: (p) => strings.changeTree.stageFileAria(p), run: (e) => void stage([e.path]) }
+                        }
+                        discardAction={
+                          section === 'unstaged'
+                            ? {
+                                label: strings.changeTree.discardLabel,
+                                icon: 'discard',
+                                ariaLabel: (p) => strings.changeTree.discardFileAria(p),
+                                run: (e) => void runAction({ action: 'discard-file', path: e.path }),
+                              }
+                            : null
                         }
                       />
                     )}

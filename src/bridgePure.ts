@@ -1,5 +1,5 @@
 import type { ErrorCode, GitActionPayload, Request, RequestKind } from './messages';
-import { validateBranchName, validateHash, validateRemoteName } from './validation';
+import { validateBranchName, validateHash, validateRemoteName, validateRepoRelativePath } from './validation';
 
 export type Outcome = { ok: true; data: unknown } | { ok: false; error: { code: ErrorCode } };
 export const MUTATION_KINDS = new Set<string>(['actions/stage', 'actions/commit', 'actions/git']);
@@ -54,6 +54,7 @@ export function validateAction(action: GitActionPayload, fail: (detail: string) 
       return;
     case 'fetch': if (action.remote !== undefined && !validateRemoteName(action.remote)) fail('remote'); return;
     case 'stash': if (typeof action.message !== 'string') fail('message'); return;
+    case 'discard-file': if (!validateRepoRelativePath(action.path)) fail('path'); return;
     case 'stash-pop': case 'merge-continue': case 'merge-abort': return;
     default: fail('action');
   }

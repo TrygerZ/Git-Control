@@ -2226,12 +2226,26 @@ h3 {
   gap: var(--gc-space-2);
 }
 
+.gc-modal__ack-hint {
+  margin: 0;
+  min-height: 1.25em;
+}
+
+.gc-modal__ack-hint--hidden {
+  visibility: hidden;
+}
+
 .gc-risk {
   display: flex;
   align-items: center;
   gap: var(--gc-space-2);
   color: var(--gc-danger);
   font-weight: var(--gc-weight-strong);
+}
+
+.gc-risk--neutral {
+  color: var(--vscode-foreground);
+  font-weight: normal;
 }
 
 /* ----------------------------------------------------------- pending changes */

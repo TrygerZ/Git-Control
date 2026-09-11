@@ -817,6 +817,8 @@ export class MessageBridge {
         return git.resetSoft(action.hash);
       case 'reset-hard':
         return this.narrowedResetHard(repo, action.hash, action as GitActionPayload);
+      case 'discard-file':
+        return git.discardFile(action.path);
       case 'push':
         return git.push({
           remote: action.remote,

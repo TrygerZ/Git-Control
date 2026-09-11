@@ -610,3 +610,21 @@ test('pull rejects invalid remote or branch names before running git', async (t)
   );
 });
 
+test('GitRunner discardFile restores unstaged changes back to HEAD', async (t) => {
+  const dir = await makeRepo();
+  t.after(() => cleanup(dir));
+  const git = new GitRunner({ gitPath: 'git', cwd: dir });
+
+  const original = (await fs.readFile(path.join(dir, 'a.txt'), 'utf8')).replace(/\r\n/g, '\n');
+  await fs.writeFile(path.join(dir, 'a.txt'), 'modified content\n', 'utf8');
+  const dirty = await git.status();
+  assert.equal(dirty.some((e) => e.path === 'a.txt' && e.unstaged), true);
+
+  await git.discardFile('a.txt');
+
+  const after = (await fs.readFile(path.join(dir, 'a.txt'), 'utf8')).replace(/\r\n/g, '\n');
+  assert.equal(after, original);
+  const clean = await git.status();
+  assert.equal(clean.some((e) => e.path === 'a.txt'), false);
+});
+

@@ -300,6 +300,45 @@ test('reset-hard during a merge reports the conflict, not the confirmation', () 
   assert.equal(result.code, 'CONFLICT');
 });
 
+test('discard-file demands a level 2 confirmation and is high risk', () => {
+  const resId = verdict({ action: 'discard-file', path: 'file.txt' }, {}, 'id');
+  assert.equal(resId.allow, false);
+  if (resId.allow) return;
+  assert.equal(resId.code, 'CONFIRMATION_REQUIRED');
+  assert.equal(resId.message, 'Membuang perubahan lokal bersifat permanen.');
+  assert.equal(resId.requiresConfirmation, true);
+  assert.equal(resId.confirmationLevel, 2);
+  assert.equal(resId.risk, 'high');
+
+  const resEn = verdict({ action: 'discard-file', path: 'file.txt' }, {}, 'en');
+  assert.equal(resEn.allow, false);
+  if (resEn.allow) return;
+  assert.equal(resEn.message, 'Discarding local changes is permanent.');
+});
+
+test('discard-file is allowed on dirty tree without being blocked by DIRTY_TREE', () => {
+  const res = verdict({ action: 'discard-file', path: 'file.txt' }, { dirty: true });
+  assert.equal(res.allow, false);
+  if (res.allow) return;
+  assert.equal(res.code, 'CONFIRMATION_REQUIRED');
+  assert.equal(res.confirmationLevel, 2);
+  assert.equal(res.risk, 'high');
+});
+
+test('discard-file during an active operation reports conflict', () => {
+  const res = verdict({ action: 'discard-file', path: 'file.txt' }, { operation: 'merge' });
+  assert.equal(res.allow, false);
+  if (res.allow) return;
+  assert.equal(res.code, 'CONFLICT');
+});
+
+test('discard-file when conflicted files exist reports conflict', () => {
+  const res = verdict({ action: 'discard-file', path: 'file.txt' }, { conflicted: true });
+  assert.equal(res.allow, false);
+  if (res.allow) return;
+  assert.equal(res.code, 'CONFLICT');
+});
+
 test('exported messages match the PRD wording verbatim', () => {
   const idGuard = hostText('id').guard;
   assert.equal(idGuard.dirty, 'Commit atau stash perubahan sebelum checkout.');
@@ -307,9 +346,11 @@ test('exported messages match the PRD wording verbatim', () => {
   assert.equal(idGuard.stale, 'Status remote kedaluwarsa.');
   assert.equal(idGuard.remoteAhead, 'Remote memiliki histori berbeda.');
   assert.equal(idGuard.resetHard, 'Hard reset membuang perubahan permanen.');
+  assert.equal(idGuard.discardFile, 'Membuang perubahan lokal bersifat permanen.');
   const enGuard = hostText('en').guard;
   assert.equal(enGuard.dirty, 'Commit or stash changes before checkout.');
   assert.equal(enGuard.resetHard, 'Hard reset discards changes permanently.');
+  assert.equal(enGuard.discardFile, 'Discarding local changes is permanent.');
 });
 
 test('evaluate never mutates the snapshot it is given', () => {
