@@ -503,8 +503,10 @@ export class GitRunner {
     }
     const args = ['commit', '-F', '-'];
     if (opts.amend === true) args.push('--amend');
-    await this.runExclusive(() => this.run(args, { input: check.message }));
-    return this.headHash();
+    return this.runExclusive(async () => {
+      await this.run(args, { input: check.message });
+      return this.headHash();
+    });
   }
 
   /**

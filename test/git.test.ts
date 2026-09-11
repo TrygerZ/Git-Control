@@ -181,6 +181,29 @@ test('repoRoot, commitMeta, and isAncestor read real objects', async (t) => {
   await assert.rejects(() => git.isAncestor(first, '-x'), /Invalid ref/);
 });
 
+test('commit returns HEAD hash read inside exclusive lock (BUG3)', async (t) => {
+  const dir = await makeRepo();
+  t.after(() => cleanup(dir));
+  const git = new GitRunner({ gitPath: 'git', cwd: dir });
+
+  await fs.writeFile(path.join(dir, 'bug3-file.txt'), 'content\n', 'utf8');
+  await git.stage(['bug3-file.txt']);
+
+  let lockHeldDuringHeadRead = false;
+  const originalHeadHash = git.headHash.bind(git);
+  git.headHash = async () => {
+    lockHeldDuringHeadRead = git.busy;
+    return originalHeadHash();
+  };
+
+  const commitHash = await git.commit('exclusive commit check');
+  const actualHead = await originalHeadHash();
+
+  assert.ok(commitHash !== null && commitHash.length === 40);
+  assert.equal(commitHash, actualHead);
+  assert.equal(lockHeldDuringHeadRead, true, 'HEAD must be read while exclusive lock is held');
+});
+
 test('onBusyChange brackets exclusive operations', async (t) => {
   const dir = await makeRepo();
   t.after(() => cleanup(dir));
