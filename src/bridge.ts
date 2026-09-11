@@ -883,8 +883,10 @@ export class MessageBridge {
         return git.mergeInto(action.target, action.source, {
           ...(action.noFf === undefined ? {} : { noFf: action.noFf }),
         });
-      case 'revert':
-        return git.revert(action.hash);
+      case 'revert': {
+        const isMerge = await repo.isMergeCommit(action.hash);
+        return git.revert(action.hash, isMerge ? { mainline: 1 } : {});
+      }
       case 'reset-soft':
         return git.resetSoft(action.hash);
       case 'reset-hard':

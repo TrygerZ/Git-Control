@@ -6,6 +6,7 @@ import {
   parseRemoteList,
   parseRemotes,
   parseRevListCounts,
+  parseRevListParents,
   parseShortlog,
   parseShowStat,
   parseStashList,
@@ -200,6 +201,24 @@ test('parseRevListCounts reads behind then ahead', () => {
   assert.deepEqual(parseRevListCounts('3\t5\n'), { behind: 3, ahead: 5 });
   assert.deepEqual(parseRevListCounts('0\t0\r\n'), { behind: 0, ahead: 0 });
   assert.deepEqual(parseRevListCounts(''), { behind: 0, ahead: 0 });
+});
+
+test('parseRevListParents extracts parent hashes omitting commit hash itself', () => {
+  // Empty or whitespace
+  assert.deepEqual(parseRevListParents(''), []);
+  assert.deepEqual(parseRevListParents('   \r\n'), []);
+
+  // Root commit (zero parents)
+  assert.deepEqual(parseRevListParents('c0\n'), []);
+
+  // Single parent commit
+  assert.deepEqual(parseRevListParents('c1 p1\n'), ['p1']);
+
+  // Merge commit (two parents)
+  assert.deepEqual(parseRevListParents('c2 p1 p2\r\n'), ['p1', 'p2']);
+
+  // Octopus merge commit (three parents)
+  assert.deepEqual(parseRevListParents('c3 p1 p2 p3\n'), ['p1', 'p2', 'p3']);
 });
 
 test('parseRefs splits for-each-ref fields', () => {

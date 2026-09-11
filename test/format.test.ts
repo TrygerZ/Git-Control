@@ -611,6 +611,11 @@ test('gitCommandOf renders a runnable command for every action', () => {
     assert.match(gitCommandOf(action), /^git /, action.action);
   }
   assert.equal(gitCommandOf({ action: 'reset-hard', hash: HASH }), 'git reset --hard abc1234');
+  assert.equal(gitCommandOf({ action: 'revert', hash: HASH }), 'git revert --no-edit abc1234');
+  assert.equal(
+    gitCommandOf({ action: 'revert', hash: HASH }, { mainline: 1 }),
+    'git revert --no-edit -m 1 abc1234',
+  );
   assert.equal(
     gitCommandOf({ action: 'push', remote: 'origin', branch: 'main', setUpstream: true }),
     'git push -u origin main:main',

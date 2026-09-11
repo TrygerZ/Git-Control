@@ -722,3 +722,90 @@ test('stashHashes returns stash and parent commit hashes for valid stash entry',
   assert.equal(hashes.untrackedHash?.length, 40);
 });
 
+test('git.parents returns parent hashes for root, regular, and merge commits', async (t) => {
+  const dir = await makeRepo();
+  t.after(() => cleanup(dir));
+  const git = new GitRunner({ gitPath: 'git', cwd: dir });
+
+  // Initial root commit has no parents
+  const rootHead = (await git.headHash()) as string;
+  assert.deepEqual(await git.parents(rootHead), []);
+
+  // Second regular commit has 1 parent
+  await fs.writeFile(path.join(dir, 'second.txt'), 'second\n', 'utf8');
+  await git.stage(['second.txt']);
+  const secondCommit = (await git.commit('second commit')) as string;
+  assert.deepEqual(await git.parents(secondCommit), [rootHead]);
+
+  // Merge commit has 2 parents
+  await git.createBranch('side-branch', rootHead);
+  await git.switchBranch('side-branch');
+  await fs.writeFile(path.join(dir, 'side2.txt'), 'side2\n', 'utf8');
+  await git.stage(['side2.txt']);
+  const sideCommit = (await git.commit('side commit')) as string;
+
+  await git.switchBranch('main');
+  await git.merge('side-branch', { noFf: true });
+  const mergeHead = (await git.headHash()) as string;
+  const mergeParents = await git.parents(mergeHead);
+  assert.equal(mergeParents.length, 2);
+  assert.equal(mergeParents[0], secondCommit);
+  assert.equal(mergeParents[1], sideCommit);
+
+  // Unknown hash returns empty array
+  assert.deepEqual(await git.parents('1234567890123456789012345678901234567890'), []);
+});
+
+test('git.revert reverts a merge commit when mainline is specified', async (t) => {
+  const dir = await makeRepo();
+  t.after(() => cleanup(dir));
+  const git = new GitRunner({ gitPath: 'git', cwd: dir });
+
+  await git.createBranch('side', 'main');
+  await fs.writeFile(path.join(dir, 'side.txt'), 'content\n', 'utf8');
+  await git.stage(['side.txt']);
+  await git.commit('side feature');
+
+  await git.mergeInto('main', 'side', { noFf: true });
+  const mergeHead = (await git.headHash()) as string;
+
+  // Reverting merge commit with mainline: 1 creates a revert commit
+  await git.revert(mergeHead, { mainline: 1 });
+  const newHead = (await git.headHash()) as string;
+  assert.notEqual(newHead, mergeHead);
+
+  const commitMeta = await git.commitMeta(newHead);
+  assert.match(commitMeta?.subject ?? '', /^Revert/);
+
+  // File from side branch should no longer exist in working tree
+  const status = await git.status();
+  assert.equal(status.length, 0, 'working tree should be clean');
+  const exists = await fs.access(path.join(dir, 'side.txt')).then(() => true, () => false);
+  assert.equal(exists, false, 'reverted side.txt should be gone');
+});
+
+test('git.revert rejects invalid mainline with VALIDATION_ERROR', async (t) => {
+  const dir = await makeRepo();
+  t.after(() => cleanup(dir));
+  const git = new GitRunner({ gitPath: 'git', cwd: dir });
+  const head = (await git.headHash()) as string;
+
+  await assert.rejects(
+    () => git.revert(head, { mainline: 0 }),
+    (err: unknown) => {
+      assert.ok(err instanceof GitError);
+      assert.equal(err.code, 'VALIDATION_ERROR');
+      return true;
+    },
+  );
+
+  await assert.rejects(
+    () => git.revert(head, { mainline: -1 }),
+    (err: unknown) => {
+      assert.ok(err instanceof GitError);
+      assert.equal(err.code, 'VALIDATION_ERROR');
+      return true;
+    },
+  );
+});
+

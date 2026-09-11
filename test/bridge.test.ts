@@ -2183,6 +2183,98 @@ test('pull on dirty tree is blocked with DIRTY_TREE and remedies', async (t) => 
   assert.deepEqual(response.error.remedies, ['commit', 'stash', 'cancel']);
 });
 
+test('actions/git: revert on a merge commit auto-detects merge and succeeds with -m 1', async (t) => {
+  const dir = await makeFixture('triple');
+  t.after(() => cleanup(dir));
+  const repo = new RepositoryService({ folderPath: dir, gitPath: 'git', store: new MemoryStore() });
+  const h = harness(repo);
+  t.after(() => h.bridge.dispose());
+
+  // Create a merge commit on main by merging side with --no-ff
+  await repo.git.merge('side', { noFf: true });
+  repo.invalidate();
+  const mergeHead = (await repo.git.headHash()) as string;
+
+  const token = (await repo.status()).statusToken;
+  const response = await h.webview.send(
+    req('actions/git', {
+      action: 'revert',
+      hash: mergeHead,
+      confirm: true,
+      statusToken: token,
+      idempotencyKey: 'revert-merge-1',
+    }),
+  );
+
+  assert.equal(response.ok, true);
+  const newHead = (await repo.git.headHash()) as string;
+  assert.notEqual(newHead, mergeHead);
+
+  const meta = await repo.git.commitMeta(newHead);
+  assert.match(meta?.subject ?? '', /^Revert/);
+
+  // side.txt merged from side branch should be removed by the revert
+  const status = await repo.git.status();
+  assert.equal(status.length, 0, 'working tree should be clean');
+  const sideExists = await fs.access(path.join(dir, 'side.txt')).then(() => true, () => false);
+  assert.equal(sideExists, false, 'reverted side.txt should not exist');
+});
+
+test('actions/git: revert on a regular non-merge commit succeeds without mainline flag', async (t) => {
+  const dir = await makeRepo();
+  t.after(() => cleanup(dir));
+  const repo = new RepositoryService({ folderPath: dir, gitPath: 'git', store: new MemoryStore() });
+  const h = harness(repo);
+  t.after(() => h.bridge.dispose());
+
+  await fs.writeFile(path.join(dir, 'regular.txt'), 'regular\n', 'utf8');
+  await repo.git.stage(['regular.txt']);
+  const regularCommit = (await repo.git.commit('add regular')) as string;
+
+  repo.invalidate();
+  const token = (await repo.status()).statusToken;
+  const response = await h.webview.send(
+    req('actions/git', {
+      action: 'revert',
+      hash: regularCommit,
+      confirm: true,
+      statusToken: token,
+      idempotencyKey: 'revert-regular-1',
+    }),
+  );
+
+  assert.equal(response.ok, true);
+  const newHead = (await repo.git.headHash()) as string;
+  assert.notEqual(newHead, regularCommit);
+
+  const regularExists = await fs.access(path.join(dir, 'regular.txt')).then(() => true, () => false);
+  assert.equal(regularExists, false, 'reverted regular.txt should not exist');
+});
+
+test('actions/git: revert rejects invalid hash with 400 VALIDATION_ERROR', async (t) => {
+  const dir = await makeRepo();
+  t.after(() => cleanup(dir));
+  const repo = new RepositoryService({ folderPath: dir, gitPath: 'git', store: new MemoryStore() });
+  const h = harness(repo);
+  t.after(() => h.bridge.dispose());
+
+  const token = (await repo.status()).statusToken;
+  const response = await h.webview.send(
+    req('actions/git', {
+      action: 'revert',
+      hash: 'invalid-hash!',
+      confirm: true,
+      statusToken: token,
+      idempotencyKey: 'revert-bad-hash',
+    }),
+  );
+
+  assert.equal(response.ok, false);
+  if (response.ok) return;
+  assert.equal(response.error.status, 400);
+  assert.equal(response.error.code, 'VALIDATION_ERROR');
+});
+
 test('pull rejects invalid remote or branch names before touching git', async (t) => {
   const dir = await makeFixture('remote');
   t.after(() => cleanup(dir));

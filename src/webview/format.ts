@@ -709,7 +709,10 @@ export function truncate(text: string, max: number): string {
  * about to happen; a bidi override inside a branch name would make it say
  * something else, which defeats the dialog's only purpose.
  */
-export function gitCommandOf(action: GitActionRequest): string {
+export function gitCommandOf(
+  action: GitActionRequest,
+  opts: { mainline?: number } = {},
+): string {
   const s = sanitizeGitText;
   switch (action.action) {
     case 'checkout-branch':
@@ -724,8 +727,10 @@ export function gitCommandOf(action: GitActionRequest): string {
       const formattedSource = refOrShortHash(action.source);
       return `git switch ${s(action.target)} && git merge ${action.noFf === true ? '--no-ff ' : ''}${formattedSource}`;
     }
-    case 'revert':
-      return `git revert --no-edit ${shortHash(action.hash)}`;
+    case 'revert': {
+      const mainlineArg = opts.mainline !== undefined ? `-m ${opts.mainline} ` : '';
+      return `git revert --no-edit ${mainlineArg}${shortHash(action.hash)}`;
+    }
     case 'reset-soft':
       return `git reset --soft ${shortHash(action.hash)}`;
     case 'reset-hard':

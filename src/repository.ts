@@ -322,6 +322,25 @@ export class RepositoryService {
     return detail;
   }
 
+  /**
+   * Determine whether a commit is a merge commit (has two or more parents).
+   * Prioritizes cached graph nodes and commit details before querying git.
+   */
+  async isMergeCommit(hash: string): Promise<boolean> {
+    const normalized = hash.toLowerCase();
+    const cachedNode = this.graphCache?.nodes.find((n) => n.hash.toLowerCase().startsWith(normalized));
+    if (cachedNode !== undefined) {
+      return cachedNode.isMerge;
+    }
+    for (const [, detail] of this.detailCache) {
+      if (detail.hash.toLowerCase().startsWith(normalized)) {
+        return detail.parents.length >= 2;
+      }
+    }
+    const parents = await this.git.parents(hash);
+    return parents.length >= 2;
+  }
+
   // ------------------------------------------------------------ fetch clock
 
   /** Epoch ms of the last successful fetch, surviving reloads. */

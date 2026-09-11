@@ -449,3 +449,31 @@ test('contributors caches results and invalidates on repo invalidate', async (t)
     { name: 'Alice', email: 'alice@example.com', count: 1 },
   ]);
 });
+
+test('isMergeCommit detects merge vs regular commits with cache and git fallback', async (t) => {
+  const dir = await makeRepo();
+  t.after(() => cleanup(dir));
+  const git = new GitRunner({ gitPath: 'git', cwd: dir });
+  await git.merge('side', { noFf: true });
+
+  const repo = service(dir);
+  const head = (await repo.status()).head as string;
+
+  // Fallback to git directly when neither graph nor detail is cached
+  assert.equal(await repo.isMergeCommit(head), true);
+
+  // Cache detail and verify
+  await repo.commitDetail(head);
+  assert.equal(await repo.isMergeCommit(head), true);
+
+  // Load graph and verify
+  await repo.graph();
+  assert.equal(await repo.isMergeCommit(head), true);
+
+  // Regular commit
+  const log = await git.log({ limit: 5 });
+  const regularCommit = log.find((c) => c.parents.length === 1);
+  assert.ok(regularCommit !== undefined);
+  assert.equal(await repo.isMergeCommit(regularCommit!.hash), false);
+});
+
