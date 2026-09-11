@@ -5,6 +5,11 @@ All notable changes to the "Git Control" extension will be documented in this fi
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.6.0] - 2026-09-11
+
+### Added
+- Cherry-pick for single commits from the node context menu, with a full conflict flow: continue and abort actions are available while a cherry-pick is in progress, and conflicted files surface in the existing resolution panel.
+
 ## [2.5.1] - 2026-09-11
 
 ### Fixed
