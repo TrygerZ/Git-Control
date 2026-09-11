@@ -504,12 +504,18 @@ h3 {
  * The glyph is the second channel next to the border colour: `!` for an error,
  * `⚠` for a warning, `⋯`/`⌛` for information. It is `aria-hidden` because the
  * banner's `role` already conveys urgency to a screen reader.
+ * Sized at --gc-fs-md and nudged by --gc-space-1 to optically centre against
+ * the cap-height of the first line of text.
  */
 .gc-banner__glyph {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   flex: 0 0 auto;
   min-width: 1em;
-  text-align: center;
+  font-size: var(--gc-fs-md);
   font-weight: var(--gc-weight-strong);
+  margin-top: var(--gc-space-1);
 }
 
 .gc-banner--error .gc-banner__glyph {
@@ -771,6 +777,10 @@ h3 {
   font-weight: var(--gc-weight-strong);
   text-transform: uppercase;
   letter-spacing: 0.05em;
+}
+
+.gc-explorer__aside-toggle {
+  font-size: var(--gc-fs-sm);
 }
 
 .gc-explorer__aside-content {
@@ -1643,6 +1653,7 @@ h3 {
 .gc-chip {
   display: inline-flex;
   align-items: center;
+  gap: var(--gc-space-1);
   max-width: 18em;
   padding: 0 var(--gc-space-3);
   overflow: hidden;
@@ -1653,6 +1664,10 @@ h3 {
   line-height: 1.6;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.gc-chip .gc-icon {
+  flex: 0 0 auto;
 }
 
 /* The active branch is the one fact worth extra weight anywhere in the row. */
@@ -1784,6 +1799,7 @@ h3 {
 
 .gc-legend__close {
   flex: 0 0 auto;
+  font-size: var(--gc-fs-sm);
 }
 
 /*
@@ -2006,7 +2022,7 @@ h3 {
 
 .gc-menu__label {
   display: flex;
-  align-items: baseline;
+  align-items: center;
   gap: var(--gc-space-2);
 }
 
@@ -2038,7 +2054,11 @@ h3 {
 }
 
 .gc-menu__risk {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   flex: 0 0 auto;
+  font-size: var(--gc-fs-sm);
 }
 
 .gc-menu__risk-word {
@@ -2182,6 +2202,10 @@ h3 {
   font-weight: var(--gc-weight-strong);
 }
 
+.gc-modal__warning .gc-icon {
+  margin-top: var(--gc-space-1);
+}
+
 .gc-modal__command {
   display: flex;
   flex-direction: column;
@@ -2232,6 +2256,14 @@ h3 {
   gap: var(--gc-space-2);
   color: var(--gc-danger);
   font-weight: var(--gc-weight-strong);
+}
+
+.gc-risk__glyph {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  font-size: var(--gc-fs-md);
 }
 
 /* ----------------------------------------------------------- pending changes */
@@ -2371,20 +2403,25 @@ h3 {
 }
 
 .gc-section__twisty {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   flex: 0 0 auto;
   width: 1em;
-  text-align: center;
+  height: 1em;
+  font-size: var(--gc-fs-sm);
 }
 
 /*
  * Section bulk button: same hit area and icon size as the per-row `+`/`-`
- * (both are `gc-icon-button`, so `--gc-hit` and `--gc-fs-lg` already apply).
+ * (both are `gc-icon-button`, `--gc-hit` applies and font-size matches `--gc-fs-sm`).
  * The button always stays in the DOM and in the Tab order so the header row
  * composition never changes between expanded and collapsed states. It is
  * hidden at rest via opacity and revealed only on hover or focus-within and
  * only when not disabled, so an unusable button never becomes visible.
  */
 .gc-section__bulk {
+  font-size: var(--gc-fs-sm);
   opacity: 0;
   pointer-events: none;
   transition: opacity var(--gc-dur-fast) var(--gc-ease);
@@ -2463,9 +2500,8 @@ h3 {
 
 .gc-section__badge .gc-icon {
   display: block;
-  width: 1em;
-  height: 1em;
-  font-size: var(--gc-fs-md);
+  width: 14px;
+  height: 14px;
 }
 
 .gc-section__count {
@@ -2502,6 +2538,7 @@ h3 {
 
 .gc-stash-item__twisty {
   flex-shrink: 0;
+  font-size: var(--gc-fs-sm);
 }
 
 .gc-stash-item__title {
@@ -2711,9 +2748,13 @@ h3 {
 }
 
 .gc-tree__twisty {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   flex: 0 0 auto;
   width: 1em;
-  text-align: center;
+  height: 1em;
+  font-size: var(--gc-fs-sm);
 }
 
 .gc-tree__name {
@@ -2801,14 +2842,24 @@ h3 {
 /*
  * Column 2 of a file row now holds the theme icon instead of the status box.
  * Same footprint as the old box so the row rhythm survives the swap.
+ * Folder rows use .gc-tree__icon with the same 18x18 footprint.
  */
-.gc-tree__icon-cell {
+.gc-tree__icon-cell,
+.gc-tree__icon {
   display: inline-flex;
   flex: 0 0 auto;
   align-items: center;
   justify-content: center;
   width: 18px;
   height: 18px;
+}
+
+.gc-tree__icon-cell .gc-icon,
+.gc-tree__icon .gc-icon,
+.gc-filelist__button .gc-icon,
+.gc-stash-file__button .gc-icon {
+  width: 16px;
+  height: 16px;
 }
 
 /*
@@ -3574,6 +3625,8 @@ h3 {
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  flex: 0 0 auto;
+  font-size: var(--gc-fs-xs);
   color: var(--gc-muted);
 }
 
@@ -3766,10 +3819,19 @@ h3 {
 }
 
 .gc-toast__glyph {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   flex: 0 0 auto;
   min-width: 1em;
-  text-align: center;
+  font-size: var(--gc-fs-md);
   font-weight: var(--gc-weight-strong);
+  margin-top: var(--gc-space-1);
+}
+
+.gc-toast .gc-icon-button {
+  flex: 0 0 auto;
+  font-size: var(--gc-fs-sm);
 }
 
 .gc-toast--info .gc-toast__glyph {
@@ -3841,6 +3903,17 @@ h3 {
 
 /* ---------------------------------------------------------------- icons */
 
+/*
+ * Icon sizing and optical alignment system:
+ * - Proportional base: .gc-icon renders at 1em x 1em relative to the container
+ *   or adjacent text font-size, preserving visual hierarchy across zoom levels.
+ * - Optical alignment: icons in flex rows use inline-flex centering to eliminate
+ *   font baseline drift. Multiline blocks (banners, toasts, severe warnings)
+ *   apply a top optical offset of --gc-space-1 to align with cap-height.
+ * - Fixed footprints: tree and folder icon cells reserve 18x18px with 16x16px
+ *   contained glyphs so theme and fallback icons share identical geometry.
+ * - Sub-actions: bulk stage and row actions share --gc-fs-sm for visual parity.
+ */
 .gc-icon {
   width: 1em;
   height: 1em;

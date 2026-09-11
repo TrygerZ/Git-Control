@@ -221,7 +221,7 @@ function GuardDialogBody({ guard }: { guard: PendingGuard }): JSX.Element {
           {severe && (
             <span className="gc-modal__severity">
               <Icon name="warning" />
-              {' '}{strings.guard.permanentBadge}
+              <span>{strings.guard.permanentBadge}</span>
             </span>
           )}
           {actionTitle(request, language)}
