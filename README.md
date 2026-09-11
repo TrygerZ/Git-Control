@@ -44,6 +44,9 @@ Git Control replaces flat vertical commit lists with an interactive two-dimensio
 
 ### 5. Node Context Menu and Branch Operations
 Right-click any commit node or branch ref to perform standard Git actions:
+
+![Git Control node context menu](screenshots/context-menu-showcase.png)
+
 * **Checkout**: Switch branches or checkout specific commits into detached HEAD state.
 * **Branch Management**: Create new branches pointing directly to selected commits.
 * **Merge Workflows**: Merge target branches into the active branch with visual status tracking.
