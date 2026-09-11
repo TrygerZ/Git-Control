@@ -1118,7 +1118,7 @@ export class MessageBridge {
     return (line: string): void => {
       count += 1;
       if (count > PROGRESS_LINE_CAP) return;
-      this.progress(operationId, operation, 'progress', line);
+      this.progress(operationId, operation, 'progress', redact(line));
     };
   }
 

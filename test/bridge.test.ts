@@ -1701,6 +1701,37 @@ test('a fine-grained PAT in stderr is redacted on the webview path too (SEC-012)
   assert.ok(body.detail !== undefined && !body.detail.includes(token));
 });
 
+// ------------------------------------------------------------------- SEC-H2
+
+test('stderr progress stream is redacted before crossing to webview (SEC-H2)', () => {
+  const h = harness(null);
+  const sink = (h.bridge as any).progressSink('op-progress', 'push');
+  const token = 'ghp_secret0123456789abcdefgh';
+  sink(`Writing objects: 100% (1/1), done.\nremote: https://x-access-token:${token}@github.com/o/r.git`);
+
+  const event = h.webview
+    .events()
+    .find((e): e is HostEvent<'event/operationProgress'> => e.kind === 'event/operationProgress');
+  assert.ok(event !== undefined);
+  assert.equal(event.payload.id, 'op-progress');
+  assert.equal(event.payload.operation, 'push');
+  assert.equal(event.payload.phase, 'progress');
+  assert.ok(event.payload.message !== undefined);
+  assert.ok(!event.payload.message.includes(token));
+  assert.ok(event.payload.message.includes('[redacted]'));
+  assert.ok(event.payload.message.includes('Writing objects: 100%'));
+
+  // Also verify ssh credential form in streamed stderr line
+  sink('fatal: unable to access ssh://user:secret123@corp.example/repo.git');
+  const events = h.webview
+    .events()
+    .filter((e): e is HostEvent<'event/operationProgress'> => e.kind === 'event/operationProgress');
+  const second = events[1];
+  assert.ok(second?.payload.message !== undefined);
+  assert.ok(!second.payload.message.includes('secret123'));
+  assert.ok(second.payload.message.includes('ssh://user:[redacted]@corp.example/repo.git'));
+});
+
 // ------------------------------------------------------------------- SEC-014
 
 test('a guard rejection is not cached, so a confirmed retry reaches the guard (SEC-014)', async (t) => {
