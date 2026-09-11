@@ -343,6 +343,14 @@ test('stash item row renders expandable twisty, 1-based label, copyable hash but
   assert.match(src, /className="gc-stash-item__hash-btn"/);
   assert.match(src, /aria-label=\{strings\.pending\.stashCopyHashAria\}/);
   assert.doesNotMatch(src, /stash\.subject/);
+  assert.match(src, /aria-label=\{strings\.pending\.stashApplyAria\(stash\.ref\)\}/);
+  assert.match(src, /title=\{strings\.pending\.stashApplyTitle\}/);
+  assert.match(src, /<Icon name="add" \/>/);
+  assert.match(src, /aria-label=\{strings\.pending\.stashDropAria\(stash\.ref\)\}/);
+  assert.match(src, /title=\{strings\.pending\.stashDropTitle\}/);
+  assert.match(src, /<Icon name="dash" \/>/);
+  assert.doesNotMatch(src, /strings\.pending\.stashApplyLabel/);
+  assert.doesNotMatch(src, /strings\.pending\.stashDropLabel/);
 
   const stylesSrc = fs.readFileSync(
     path.join(__dirname, '..', '..', 'src', 'webview', 'styles.css'),
@@ -350,4 +358,6 @@ test('stash item row renders expandable twisty, 1-based label, copyable hash but
   );
   const actionsBlock = stylesSrc.match(/\.gc-stash-item__actions\s*\{([^}]*)\}/)?.[1] ?? '';
   assert.match(actionsBlock, /margin-left:\s*auto;/);
+  const actionBlock = stylesSrc.match(/\.gc-stash-item__action\s*\{([^}]*)\}/)?.[1] ?? '';
+  assert.match(actionBlock, /font-size:\s*var\(--gc-fs-sm\);/);
 });

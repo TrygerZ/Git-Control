@@ -2536,6 +2536,11 @@ h3 {
   transition: opacity var(--gc-dur-fast) var(--gc-ease);
 }
 
+.gc-stash-item__action {
+  padding: 0;
+  font-size: var(--gc-fs-sm);
+}
+
 .gc-stash-item__details {
   padding-left: calc(var(--gc-hit) + var(--gc-space-2));
   padding-right: var(--gc-space-2);

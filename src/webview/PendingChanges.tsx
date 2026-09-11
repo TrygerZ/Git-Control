@@ -647,23 +647,23 @@ function StashList({
               <div className="gc-stash-item__actions">
                 <button
                   type="button"
-                  className="gc-button gc-button--quiet"
+                  className="gc-icon-button gc-stash-item__action"
                   aria-label={strings.pending.stashApplyAria(stash.ref)}
                   title={strings.pending.stashApplyTitle}
                   disabled={busy}
                   onClick={() => onApply(parsedIndex)}
                 >
-                  {strings.pending.stashApplyLabel}
+                  <Icon name="add" />
                 </button>
                 <button
                   type="button"
-                  className="gc-button gc-button--quiet gc-button--danger"
+                  className="gc-icon-button gc-stash-item__action"
                   aria-label={strings.pending.stashDropAria(stash.ref)}
                   title={strings.pending.stashDropTitle}
                   disabled={busy}
                   onClick={() => onDrop(parsedIndex)}
                 >
-                  {strings.pending.stashDropLabel}
+                  <Icon name="dash" />
                 </button>
               </div>
             </div>
