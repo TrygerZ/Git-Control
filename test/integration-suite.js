@@ -192,6 +192,9 @@ async function inspectExplorerHtml() {
   assert.match(policy, /default-src 'none'/);
   assert.match(policy, /script-src 'nonce-[0-9a-f]{32}'/);
   assert.match(policy, /connect-src 'none'/);
+  assert.match(policy, /base-uri 'none'/);
+  assert.match(policy, /form-action 'none'/);
+  assert.match(policy, /frame-src 'none'/);
   assert.doesNotMatch(policy, /unsafe-inline/);
   assert.doesNotMatch(policy, /unsafe-eval/);
   assert.doesNotMatch(html, /unsafe-eval/);

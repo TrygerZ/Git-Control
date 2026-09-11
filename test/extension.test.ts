@@ -30,6 +30,9 @@ test('webview CSP keeps network access disabled except avatar images', () => {
   assert.match(source, /"connect-src 'none'"/);
   assert.match(source, /https:\/\/avatars\.githubusercontent\.com/);
   assert.match(source, /script-src 'nonce-\$\{nonce\}'/);
+  assert.match(source, /"base-uri 'none'"/);
+  assert.match(source, /"form-action 'none'"/);
+  assert.match(source, /"frame-src 'none'"/);
 });
 
 test('webview nonce is generated from 16 random bytes', () => {
