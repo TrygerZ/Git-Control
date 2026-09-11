@@ -140,6 +140,13 @@ export class RepositoryService {
     return this.git.stashShow(index);
   }
 
+  /** Read stash entry hashes (stash commit and base parent) on-demand without mutation lock. */
+  async stashHashes(
+    index: number,
+  ): Promise<{ stashHash: string; parentHash: string; untrackedHash?: string } | null> {
+    return this.git.stashHashes(index);
+  }
+
   /** Working-tree changes plus the derived conflict list. */
   async changes(
     opts: { includeIgnored?: boolean } = {},

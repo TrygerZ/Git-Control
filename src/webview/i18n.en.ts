@@ -61,6 +61,7 @@ const en = {
     stashCollapseAria: (n: number) => `Collapse stash ${n}`,
     stashFilesLoading: 'Loading stash contents...',
     stashFilesEmpty: 'No files in stash.',
+    stashFileOpenDiffAria: (path: string, churn: string) => `Open diff ${path}, ${churn}`,
   },
 
   // Shared UI primitives

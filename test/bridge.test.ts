@@ -14,6 +14,7 @@ import type {
   HostEvent,
   HostMessage,
   OpenDiffPayload,
+  OpenStashDiffHostPayload,
   RemoteInfo,
   Request,
   Response,
@@ -201,12 +202,26 @@ interface Harness {
   bridge: MessageBridge;
   repo: RepositoryService | null;
   /** Calls recorded by the optional host callbacks. */
-  calls: { showLogs: number; openExplorer: number; revealCommit: string[]; openDiff: OpenDiffPayload[]; external: string[] };
+  calls: {
+    showLogs: number;
+    openExplorer: number;
+    revealCommit: string[];
+    openDiff: OpenDiffPayload[];
+    openStashDiff: OpenStashDiffHostPayload[];
+    external: string[];
+  };
 }
 
 function harness(repo: RepositoryService | null, overrides: Partial<BridgeHost> = {}): Harness {
   const webview = new FakeWebview();
-  const calls = { showLogs: 0, openExplorer: 0, revealCommit: [] as string[], openDiff: [] as OpenDiffPayload[], external: [] as string[] };
+  const calls = {
+    showLogs: 0,
+    openExplorer: 0,
+    revealCommit: [] as string[],
+    openDiff: [] as OpenDiffPayload[],
+    openStashDiff: [] as OpenStashDiffHostPayload[],
+    external: [] as string[],
+  };
   const host: BridgeHost = {
     logger: new Logger(new NullSink()),
     resolveRepository: () => Promise.resolve(repo),
@@ -218,6 +233,10 @@ function harness(repo: RepositoryService | null, overrides: Partial<BridgeHost> 
     openDiff: (payload) => {
       calls.openDiff.push(payload);
       return Promise.resolve({ opened: true, mode: 'commit' });
+    },
+    openStashDiff: (payload) => {
+      calls.openStashDiff.push(payload);
+      return Promise.resolve({ opened: true, mode: 'stash' });
     },
     showLogs: () => {
       calls.showLogs += 1;
@@ -748,6 +767,114 @@ test('actions/openDiff reports UNAVAILABLE when the host cannot open editors', a
   if (response.ok) return;
   assert.equal(response.error.status, 503);
   assert.equal(response.error.code, 'UNAVAILABLE');
+});
+
+test('actions/openStashDiff validates its payload before reaching the host callback', async (t) => {
+  const dir = await makeRepo();
+  t.after(() => cleanup(dir));
+  const repo = new RepositoryService({ folderPath: dir, gitPath: 'git', store: new MemoryStore() });
+  const h = harness(repo);
+  t.after(() => h.bridge.dispose());
+
+  for (const payload of [
+    { index: -1, path: 'a.txt' },
+    { index: '0' as unknown as number, path: 'a.txt' },
+    { index: 1.5, path: 'a.txt' },
+    { index: 1000, path: 'a.txt' },
+    { index: 0, path: '../escape.txt' },
+    { index: 0, path: 'C:\\abs\\path.txt' },
+  ]) {
+    const response = await h.webview.send(req('actions/openStashDiff', payload));
+    assert.equal(response.ok, false, JSON.stringify(payload));
+    if (response.ok) return;
+    assert.equal(response.error.code, 'VALIDATION_ERROR');
+  }
+  assert.deepEqual(h.calls.openStashDiff, [], 'no invalid payload reached the host');
+});
+
+test('actions/openStashDiff reports UNAVAILABLE when the host cannot open editors', async (t) => {
+  const dir = await makeRepo();
+  t.after(() => cleanup(dir));
+  const repo = new RepositoryService({ folderPath: dir, gitPath: 'git', store: new MemoryStore() });
+  const h = harness(repo, { openStashDiff: undefined });
+  t.after(() => h.bridge.dispose());
+
+  const response = await h.webview.send(req('actions/openStashDiff', { index: 0, path: 'a.txt' }));
+  assert.equal(response.ok, false);
+  if (response.ok) return;
+  assert.equal(response.error.status, 503);
+  assert.equal(response.error.code, 'UNAVAILABLE');
+});
+
+test('actions/openStashDiff forwards valid payload with resolved refs to the host callback', async (t) => {
+  const dir = await makeRepo();
+  t.after(() => cleanup(dir));
+  const repo = new RepositoryService({ folderPath: dir, gitPath: 'git', store: new MemoryStore() });
+  const h = harness(repo);
+  t.after(() => h.bridge.dispose());
+
+  // Non-existent stash index returns NOT_FOUND
+  const notFound = await h.webview.send(req('actions/openStashDiff', { index: 0, path: 'a.txt' }));
+  assert.equal(notFound.ok, false);
+  if (notFound.ok) return;
+  assert.equal(notFound.error.code, 'NOT_FOUND');
+
+  // Create a stash entry
+  await fs.writeFile(path.join(dir, 'stashed.txt'), 'stash line\n', 'utf8');
+  await repo.git.stashPush('test stash diff', { includeUntracked: true });
+
+  const hashes = await repo.git.stashHashes(0);
+  assert.ok(hashes !== null);
+
+  const ok = await h.webview.send(req('actions/openStashDiff', { index: 0, path: 'stashed.txt' }));
+  assert.equal(ok.ok, true);
+  assert.equal(h.calls.openStashDiff.length, 1);
+  assert.equal(h.calls.openStashDiff[0]?.index, 0);
+  assert.equal(h.calls.openStashDiff[0]?.path, 'stashed.txt');
+  assert.equal(h.calls.openStashDiff[0]?.stashHash, hashes.stashHash);
+  assert.equal(h.calls.openStashDiff[0]?.parentHash, hashes.parentHash);
+});
+
+test('openStashDiff host edge cases: handles missing sides and read failures gracefully', async (t) => {
+  const dir = await makeRepo();
+  t.after(() => cleanup(dir));
+  const repo = new RepositoryService({ folderPath: dir, gitPath: 'git', store: new MemoryStore() });
+
+  // Commit tracked file
+  await fs.writeFile(path.join(dir, 'tracked.txt'), 'version 1\n', 'utf8');
+  await repo.git.stage(['tracked.txt']);
+  await repo.git.commit('add tracked');
+
+  // Stash: modified tracked file and new untracked file
+  await fs.writeFile(path.join(dir, 'tracked.txt'), 'version 2\n', 'utf8');
+  await fs.writeFile(path.join(dir, 'newfile.txt'), 'new content\n', 'utf8');
+  await repo.git.stashPush('stash with untracked', { includeUntracked: true });
+
+  const hashes = await repo.git.stashHashes(0);
+  assert.ok(hashes !== null);
+
+  // Case 1: Untracked / new file absent in parent -> left is empty, right is found
+  let leftAbsent = false;
+  try {
+    await repo.git.showFile(hashes.parentHash, 'newfile.txt');
+  } catch {
+    leftAbsent = true;
+  }
+  assert.equal(leftAbsent, true, 'new file should not exist in parent');
+
+  // Right side exists in stash untracked commit
+  assert.ok(hashes.untrackedHash !== undefined);
+  const untrackedContent = await repo.git.showFile(hashes.untrackedHash, 'newfile.txt');
+  assert.equal(untrackedContent, 'new content\n');
+
+  // Case 2: File absent in stash commit -> right is empty
+  let rightAbsent = false;
+  try {
+    await repo.git.showFile(hashes.stashHash, 'nonexistent.txt');
+  } catch {
+    rightAbsent = true;
+  }
+  assert.equal(rightAbsent, true, 'nonexistent file should not exist in stash');
 });
 
 test('actions/showLogs only reveals the channel and takes no parameters', async (t) => {

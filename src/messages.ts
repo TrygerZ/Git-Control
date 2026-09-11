@@ -333,10 +333,23 @@ export interface OpenDiffPayload {
   parent?: string;
 }
 
+export interface OpenStashDiffPayload {
+  index: number;
+  path: string;
+}
+
+export interface OpenStashDiffHostPayload {
+  index: number;
+  path: string;
+  stashHash: string;
+  parentHash: string;
+  untrackedHash?: string;
+}
+
 export interface OpenDiffResult {
   opened: boolean;
   /** What the host actually opened, so the UI can label the result. */
-  mode: 'commit' | 'index' | 'worktree' | 'merge';
+  mode: 'commit' | 'index' | 'worktree' | 'merge' | 'stash';
 }
 
 /**
@@ -565,6 +578,7 @@ export interface RequestMap {
   'actions/commit': { payload: CommitPayload; response: CommitResult };
   'actions/git': { payload: GitActionPayload; response: ActionResult };
   'actions/openDiff': { payload: OpenDiffPayload; response: OpenDiffResult };
+  'actions/openStashDiff': { payload: OpenStashDiffPayload; response: OpenDiffResult };
   /**
    * Reveal the `Git Control` output channel. Empty payload by design: it takes no
    * parameters, so it cannot be used to run an arbitrary host command.

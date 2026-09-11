@@ -172,6 +172,18 @@ export function PendingChangesApp(): JSX.Element {
     }
   };
 
+  const openStashDiff = async (index: number, path: string): Promise<void> => {
+    try {
+      await bridge.request('actions/openStashDiff', { index, path });
+    } catch (err) {
+      const body = toErrorBody(err);
+      pushToast({
+        level: body.code === 'UNAVAILABLE' ? 'warning' : 'error',
+        message: body.message,
+      });
+    }
+  };
+
   const openExplorer = async (): Promise<void> => {
     try {
       await bridge.request('actions/openExplorer', {});
@@ -321,6 +333,7 @@ export function PendingChangesApp(): JSX.Element {
               onToggle={toggleStashesCollapsed}
               onApply={(i) => void applyStash(i)}
               onDrop={(i) => void dropStash(i)}
+              onOpenDiff={(index, path) => void openStashDiff(index, path)}
             />
           </div>
         </>
@@ -490,6 +503,7 @@ export function PendingChangesApp(): JSX.Element {
                 onToggle={toggleStashesCollapsed}
                 onApply={(i) => void applyStash(i)}
                 onDrop={(i) => void dropStash(i)}
+                onOpenDiff={(index, path) => void openStashDiff(index, path)}
               />
             </div>
           )}
@@ -515,6 +529,7 @@ function StashSection({
   onToggle,
   onApply,
   onDrop,
+  onOpenDiff,
 }: {
   stashes: readonly StashEntry[];
   isCollapsed: boolean;
@@ -523,6 +538,7 @@ function StashSection({
   onToggle(): void;
   onApply(index: number): void;
   onDrop(index: number): void;
+  onOpenDiff(index: number, path: string): void;
 }): JSX.Element {
   const strings = useT();
   const title = strings.pending.stashesHeader;
@@ -562,6 +578,7 @@ function StashSection({
           language={language}
           onApply={onApply}
           onDrop={onDrop}
+          onOpenDiff={onOpenDiff}
         />
       )}
     </section>
@@ -574,12 +591,14 @@ function StashList({
   language,
   onApply,
   onDrop,
+  onOpenDiff,
 }: {
   stashes: readonly StashEntry[];
   busy: boolean;
   language: Lang;
   onApply(index: number): void;
   onDrop(index: number): void;
+  onOpenDiff(index: number, path: string): void;
 }): JSX.Element {
   const strings = useT();
   const stashesExpanded = useChangesStore((s) => s.stashesExpanded);
@@ -680,32 +699,39 @@ function StashList({
                   <ul className="gc-tree gc-stash-files" role="list">
                     {files.map((file) => {
                       const isBinary = file.additions === null && file.deletions === null;
+                      const churn = isBinary
+                        ? strings.changeTree.binaryLabel
+                        : strings.changeTree.churnSummary(file.additions ?? 0, file.deletions ?? 0);
                       return (
-                        <li key={file.path} className="gc-tree__row gc-stash-file" role="listitem">
-                          <FileIcon kind="file" name={baseName(file.path)} />
-                          <span className="gc-stash-file__path" title={file.path}>
-                            {file.path}
-                          </span>
-                          {isBinary ? (
-                            <span
-                              className="gc-tree__binary"
-                              title={strings.changeTree.binaryAria}
-                              aria-label={strings.changeTree.binaryAria}
-                            >
-                              {strings.changeTree.binaryLabel}
+                        <li key={file.path} className="gc-stash-file" role="listitem">
+                          <button
+                            type="button"
+                            className="gc-tree__row gc-stash-file__button"
+                            aria-label={strings.pending.stashFileOpenDiffAria(file.path, churn)}
+                            title={file.path}
+                            onClick={() => onOpenDiff(parsedIndex, file.path)}
+                          >
+                            <FileIcon kind="file" name={baseName(file.path)} />
+                            <span className="gc-stash-file__path">
+                              {file.path}
                             </span>
-                          ) : (
-                            <span
-                              className="gc-tree__stats gc-stat-group"
-                              aria-label={strings.changeTree.churnSummary(
-                                file.additions ?? 0,
-                                file.deletions ?? 0,
-                              )}
-                            >
-                              <span className="gc-stat gc-stat--add">+{file.additions ?? 0}</span>
-                              <span className="gc-stat gc-stat--del">−{file.deletions ?? 0}</span>
-                            </span>
-                          )}
+                            {isBinary ? (
+                              <span
+                                className="gc-tree__binary"
+                                aria-hidden="true"
+                              >
+                                {strings.changeTree.binaryLabel}
+                              </span>
+                            ) : (
+                              <span
+                                className="gc-tree__stats gc-stat-group"
+                                aria-hidden="true"
+                              >
+                                <span className="gc-stat gc-stat--add">+{file.additions ?? 0}</span>
+                                <span className="gc-stat gc-stat--del">−{file.deletions ?? 0}</span>
+                              </span>
+                            )}
+                          </button>
                         </li>
                       );
                     })}

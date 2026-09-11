@@ -2555,16 +2555,37 @@ h3 {
 
 .gc-stash-file {
   display: flex;
-  align-items: center;
-  gap: var(--gc-space-2);
   min-height: var(--gc-hit);
-  padding: 0 var(--gc-space-1);
-  font-size: var(--gc-fs-xs);
   border-radius: var(--gc-radius);
 }
 
-.gc-stash-file:hover {
+.gc-stash-file__button {
+  display: flex;
+  flex: 1 1 auto;
+  align-items: center;
+  gap: var(--gc-space-2);
+  width: 100%;
+  min-width: 0;
+  min-height: var(--gc-hit);
+  padding: 0 var(--gc-space-1);
+  border: none;
+  border-radius: var(--gc-radius);
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: var(--gc-fs-xs);
+  text-align: left;
+  cursor: pointer;
+  transition: background var(--gc-dur-fast) var(--gc-ease);
+}
+
+.gc-stash-file__button:hover {
   background: var(--vscode-list-hoverBackground);
+}
+
+.gc-stash-file__button:focus-visible {
+  outline: 1px solid var(--vscode-focusBorder);
+  outline-offset: -1px;
 }
 
 .gc-stash-file__path {

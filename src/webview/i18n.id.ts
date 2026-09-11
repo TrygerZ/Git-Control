@@ -57,6 +57,7 @@ const id: Catalog = {
     stashCollapseAria: (n: number) => `Lipat stash ${n}`,
     stashFilesLoading: 'Memuat isi stash...',
     stashFilesEmpty: 'Tidak ada file dalam stash.',
+    stashFileOpenDiffAria: (path: string, churn: string) => `Buka diff ${path}, ${churn}`,
   },
 
   // Shared UI primitives

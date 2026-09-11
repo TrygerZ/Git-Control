@@ -363,11 +363,40 @@ test('stash item row renders expandable twisty, 1-based label, open-commit hash 
   assert.match(actionBlock, /font-size:\s*var\(--gc-fs-sm\);/);
 });
 
-test('stash file row renders theme file icon and path', () => {
+test('stash file row renders theme file icon, path, and click button for actions/openStashDiff', () => {
   const src = fs.readFileSync(
     path.join(__dirname, '..', '..', 'src', 'webview', 'PendingChanges.tsx'),
     'utf8',
   );
   assert.match(src, /<FileIcon kind="file" name=\{baseName\(file\.path\)\} \/>/);
   assert.match(src, /className="gc-stash-file__path"/);
+  assert.match(src, /actions\/openStashDiff/);
+  assert.match(src, /className="gc-tree__row gc-stash-file__button"/);
+  assert.match(src, /onClick=\{\(\) => onOpenDiff\(parsedIndex, file\.path\)\}/);
+  assert.match(src, /aria-label=\{strings\.pending\.stashFileOpenDiffAria\(file\.path, churn\)\}/);
+
+  const stylesSrc = fs.readFileSync(
+    path.join(__dirname, '..', '..', 'src', 'webview', 'styles.css'),
+    'utf8',
+  );
+  const buttonBlock = stylesSrc.match(/\.gc-stash-file__button\s*\{([^}]*)\}/)?.[1] ?? '';
+  assert.match(buttonBlock, /cursor:\s*pointer;/);
+});
+
+test('openStashDiff dispatches actions/openStashDiff request with index and path', async (t) => {
+  let requestedKind: string | null = null;
+  let requestedPayload: unknown = null;
+  const originalRequest = bridge.request;
+  bridge.request = (async (kind: any, payload: any): Promise<any> => {
+    requestedKind = kind;
+    requestedPayload = payload;
+    return { opened: true, mode: 'stash' };
+  }) as any;
+  t.after(() => {
+    bridge.request = originalRequest;
+  });
+
+  await bridge.request('actions/openStashDiff', { index: 2, path: 'src/app.ts' });
+  assert.equal(requestedKind, 'actions/openStashDiff');
+  assert.deepEqual(requestedPayload, { index: 2, path: 'src/app.ts' });
 });

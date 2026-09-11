@@ -35,6 +35,7 @@ import type {
   Lang,
   OpenDiffPayload,
   OpenDiffResult,
+  OpenStashDiffHostPayload,
   PullRequestsPayload,
   PullRequestsResult,
   SettingsSetPayload,
@@ -347,6 +348,7 @@ class Controller implements vscode.Disposable {
 
   private async provideHistoricalContent(uri: vscode.Uri): Promise<string> {
     const params = new URLSearchParams(uri.query);
+    if (params.get('empty') === '1') return '';
     const rev = params.get('rev') ?? '';
     const filePath = params.get('path') ?? '';
     const folder = params.get('folder') ?? '';
@@ -461,6 +463,59 @@ class Controller implements vscode.Disposable {
     return { opened: true, mode: 'commit' };
   }
 
+  private async openStashDiff(payload: OpenStashDiffHostPayload): Promise<OpenDiffResult> {
+    const repo = await this.resolveRepository();
+    if (repo === null) return { opened: false, mode: 'stash' };
+    const folder = repo.folderPath;
+
+    let left: vscode.Uri;
+    try {
+      await repo.git.showFile(payload.parentHash, payload.path);
+      left = this.historicalUri(
+        folder,
+        payload.parentHash,
+        payload.path,
+        `${payload.path} (${short(payload.parentHash)})`,
+      );
+    } catch (err) {
+      this.logger.info('diff/stash/parent', err instanceof Error ? err.message : String(err));
+      left = this.emptyUri(folder, payload.path, `${payload.path} (empty)`);
+    }
+
+    let right: vscode.Uri | null = null;
+    try {
+      await repo.git.showFile(payload.stashHash, payload.path);
+      right = this.historicalUri(
+        folder,
+        payload.stashHash,
+        payload.path,
+        `${payload.path} (stash@{${payload.index}})`,
+      );
+    } catch (err) {
+      this.logger.info('diff/stash/right', err instanceof Error ? err.message : String(err));
+    }
+
+    if (right === null && payload.untrackedHash !== undefined) {
+      try {
+        await repo.git.showFile(payload.untrackedHash, payload.path);
+        right = this.historicalUri(
+          folder,
+          payload.untrackedHash,
+          payload.path,
+          `${payload.path} (stash@{${payload.index}})`,
+        );
+      } catch (err) {
+        this.logger.info('diff/stash/untracked', err instanceof Error ? err.message : String(err));
+      }
+    }
+
+    const finalRight = right ?? this.emptyUri(folder, payload.path, `${payload.path} (empty)`);
+
+    const title = `Stash ${payload.index + 1}: ${basenameOf(payload.path)} (stash@{${payload.index}})`;
+    await this.showDiff(left, finalRight, title);
+    return { opened: true, mode: 'stash' };
+  }
+
   private async firstParentOf(repo: RepositoryService | undefined, hash: string): Promise<string | null> {
     if (repo === undefined) return null;
     const meta = await repo.git.commitMeta(hash);
@@ -474,6 +529,16 @@ class Controller implements vscode.Disposable {
    */
   private historicalUri(folder: string, rev: string, filePath: string, label: string): vscode.Uri {
     const query = new URLSearchParams({ rev, path: filePath, folder }).toString();
+    return vscode.Uri.from({
+      scheme: DIFF_SCHEME,
+      path: `/${filePath}`,
+      query,
+      fragment: label,
+    });
+  }
+
+  private emptyUri(folder: string, filePath: string, label: string): vscode.Uri {
+    const query = new URLSearchParams({ empty: '1', path: filePath, folder }).toString();
     return vscode.Uri.from({
       scheme: DIFF_SCHEME,
       path: `/${filePath}`,
@@ -607,6 +672,7 @@ class Controller implements vscode.Disposable {
       connectGitHub: () => this.connectGitHub(),
       disconnectGitHub: () => this.disconnectGitHub(),
       openDiff: (payload) => this.openDiff(payload),
+      openStashDiff: (payload) => this.openStashDiff(payload),
       showLogs: () => this.channel.show(true),
       openExplorer: () => this.openExplorer(),
       revealCommit: (hash) => this.revealCommit(hash),

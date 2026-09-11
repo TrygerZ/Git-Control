@@ -669,3 +669,38 @@ test('stashShow returns files with line churn for text and null churn for binary
   assert.equal(binFile.deletions, null);
 });
 
+test('stashHashes returns stash and parent commit hashes for valid stash entry', async (t) => {
+  const dir = await makeRepo();
+  t.after(() => cleanup(dir));
+  const git = new GitRunner({ gitPath: 'git', cwd: dir });
+
+  // Invalid index validation rejects before executing git
+  await assert.rejects(() => git.stashHashes(-1), (err: unknown) => {
+    assert.ok(err instanceof GitError);
+    assert.equal(err.code, 'VALIDATION_ERROR');
+    return true;
+  });
+  await assert.rejects(() => git.stashHashes(1000), (err: unknown) => {
+    assert.ok(err instanceof GitError);
+    assert.equal(err.code, 'VALIDATION_ERROR');
+    return true;
+  });
+
+  // Out of range index returns null
+  const absent = await git.stashHashes(0);
+  assert.equal(absent, null);
+
+  // Create stash entry with untracked file
+  await fs.writeFile(path.join(dir, 'untracked.txt'), 'content\n', 'utf8');
+  await git.stashPush('stash hashes test', { includeUntracked: true });
+
+  const hashes = await git.stashHashes(0);
+  assert.ok(hashes !== null);
+  assert.equal(typeof hashes.stashHash, 'string');
+  assert.equal(hashes.stashHash.length, 40);
+  assert.equal(typeof hashes.parentHash, 'string');
+  assert.equal(hashes.parentHash.length, 40);
+  assert.equal(typeof hashes.untrackedHash, 'string');
+  assert.equal(hashes.untrackedHash?.length, 40);
+});
+
