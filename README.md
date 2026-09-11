@@ -56,6 +56,9 @@ Right-click any commit node or branch ref to perform standard Git actions:
 * **Push Up To**: Fast-forward push repository history up to a selected commit hash.
 
 ### 6. Safety Guard and Conflict Resolution
+
+![Git Control safety guard dialog](screenshots/guard-dialog-showcase.png)
+
 * **Dirty-Tree Protection**: Prevents accidental checkouts, resets, or merges when unstaged or uncommitted changes are present.
 * **Two-Stage Destructive Confirmation**: Explicit dual-stage review required before executing irreversible actions like Hard Reset.
 * **Remote-Ahead Detection**: Warns when the remote branch contains incoming commits, preventing unintentional non-fast-forward push rejections.
