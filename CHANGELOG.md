@@ -5,6 +5,16 @@ All notable changes to the "Git Control" extension will be documented in this fi
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.5.0] - 2026-09-11
+
+### Added
+- Stash management in the Pending Changes panel: list, apply (keeps the entry), and drop with a two-step destructive confirmation; expandable entries showing stash contents with file icons, line churn, and click-to-diff.
+- "Stash N from <hash>" labels; clicking the hash opens or focuses the branch explorer canvas and selects that commit.
+- Icon-only apply and drop buttons with hover tooltips.
+### Changed
+- Replaced the stash section glyph with a dedicated archive icon in its own color tone.
+- All webview icons are now scaled relative to their adjacent text with optical alignment fixes.
+
 ## [2.4.0] - 2026-09-11
 
 ### Added
