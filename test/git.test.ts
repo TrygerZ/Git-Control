@@ -500,12 +500,9 @@ test('stderr accumulation is capped without failing the operation (SEC-009)', as
 // ------------------------------------------------------- Bug 1 + Bug 3 regressions
 
 test('unstage works in a repository with no commits (Bug 1 edge case)', async (t) => {
-  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'git-control-nohead-'));
+  const dir = await makeFixture('empty');
   t.after(() => cleanup(dir));
   const git = new GitRunner({ gitPath: 'git', cwd: dir });
-  await git.run(['init', '--quiet', '--initial-branch=main']);
-  await git.run(['config', 'user.email', 'test@example.com']);
-  await git.run(['config', 'user.name', 'Test User']);
 
   await fs.writeFile(path.join(dir, 'lambada.txt'), 'x\n', 'utf8');
   await git.stage(['lambada.txt']);

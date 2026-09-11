@@ -27,6 +27,8 @@ import { GitRunner } from '../src/git';
 
 /** Shapes the suites need. Add a case rather than hand-rolling a repo in a test. */
 export type FixtureKind =
+  /** Empty repo with no commits and no HEAD. */
+  | 'empty'
   /** One commit, `a.txt` containing `one\n`, on `main`. */
   | 'single'
   /** Three commits on `main` (`add one/two/three`) plus `add side` on `side`. */
@@ -103,6 +105,10 @@ async function buildTemplate(kind: FixtureKind): Promise<string> {
   await git.run(['init', '--quiet', '--initial-branch=main']);
   await git.run(['config', 'user.email', 'test@example.com']);
   await git.run(['config', 'user.name', 'Test User']);
+
+  if (kind === 'empty') {
+    return dir;
+  }
 
   if (kind === 'single') {
     await fs.writeFile(path.join(dir, 'a.txt'), 'one\n', 'utf8');
