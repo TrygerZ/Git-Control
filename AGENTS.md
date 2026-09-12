@@ -103,8 +103,9 @@ When implementing a new Git action, modify layers in this exact sequence:
 
 - **Branches:** Create a new branch from `main` for new features and bug fixes. Follow `<type>/<kebab-case-slug>` naming using Conventional Commits types (`feat`, `fix`, `refactor`, `docs`, `chore`, `test`, `perf`, `ci`), e.g. `feat/vscode-file-icon-theme`. Minor updates do not require a branch and may commit directly to `main` (for example: typo fixes, wording adjustments in documentation, comment edits, and small configuration adjustments). When in doubt whether a change is minor, create a branch.
 - **Commits:** Conventional Commits with scope in lowercase imperative without trailing period (`feat(webview): ...`, `fix(icons): ...`, `chore(release): ...`).
+- **Granular commits:** Commit each logical change as a separate commit while working; never batch an entire feature, its tests, and unrelated edits into one commit. Split by type and scope, e.g. `fix(webview): cull nodes by world x position` stays separate from `chore(vscode): isolate dev host profile`. Stage files explicitly per commit; never use `git add -A` or `git add .` when composing commits. A single commit mixing layers (source, tests, config) is allowed only when splitting would break compilation; explain that coupling in the commit body. The ban applies at commit composition time; `git add -A` remains acceptable for scratch flows such as stashing a WIP snapshot.
 - **Merge gates:** For branched work, ensure `npm test` and `npm run typecheck` pass cleanly on the branch before reporting results and requesting merge. Never merge to `main` until user explicitly approves or requests it; task completion and passing all gates do not constitute approval.
-- **Permissions:** Commit autonomously whenever meaningful progress exists so the full development journey stays documented. Keep each commit one logical change following Conventional Commits. Push requires explicit user approval every time. Never `push --force`, never `reset --hard` on published branches, never delete branches (`branch -D`), and never rewrite history.
+- **Permissions:** Commit autonomously whenever meaningful progress exists so the full development journey stays documented. Push requires explicit user approval every time. Never `push --force`, never `reset --hard` on published branches, never delete branches (`branch -D`), and never rewrite history.
 - **Releases:** Update `CHANGELOG.md` following Keep a Changelog (`Added`, `Changed`, `Fixed`, `Security`) + SemVer, bump `package.json`, run `npm run package`.
 
 ## Project Boundaries (Strict Prohibitions)
@@ -164,4 +165,3 @@ Encodes module purity boundaries (pure logic vs I/O) and execution trust boundar
 ## Canonical References
 
 - `docs/PRD_Git_Control.md`: Product truth, feature requirements, and user flows (Indonesian). Gitignored.
-- `docs/SECURITY_AUDIT.md`: Complete security posture, threat model (T1-T10), and vulnerability resolutions (SEC-001 to SEC-018). Gitignored.
