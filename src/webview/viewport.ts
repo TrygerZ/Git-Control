@@ -143,6 +143,90 @@ export function visibleWorldBand(
   return { left, right };
 }
 
+export interface NodeRangeByXInput {
+  /** Array of ascending node x coordinates, or objects with x coordinate. */
+  nodes: readonly { readonly x: number }[] | readonly number[];
+  scrollLeft: number;
+  viewportWidth: number;
+  zoom: number;
+  overscan?: number;
+  columnWidth?: number;
+}
+
+/**
+ * Half-open node index range [start, end) intersecting the visible world band.
+ * Uses binary search over actual node x positions to avoid invisible-wall bugs
+ * caused by cumulative date bucket gaps (DAY_GAP).
+ */
+export function visibleNodeRangeByX(input: NodeRangeByXInput): ColumnRange;
+export function visibleNodeRangeByX(
+  nodes: readonly { readonly x: number }[] | readonly number[],
+  scrollLeft: number,
+  viewportWidth: number,
+  zoom: number,
+  overscan?: number,
+  columnWidth?: number,
+): ColumnRange;
+export function visibleNodeRangeByX(
+  nodesOrInput: readonly { readonly x: number }[] | readonly number[] | NodeRangeByXInput,
+  scrollLeft?: number,
+  viewportWidth?: number,
+  zoom?: number,
+  overscan?: number,
+  columnWidth?: number,
+): ColumnRange {
+  const input: NodeRangeByXInput = Array.isArray(nodesOrInput)
+    ? {
+        nodes: nodesOrInput,
+        scrollLeft: scrollLeft ?? 0,
+        viewportWidth: viewportWidth ?? 0,
+        zoom: zoom ?? 1,
+        overscan,
+        columnWidth,
+      }
+    : (nodesOrInput as NodeRangeByXInput);
+
+  const nodes = input.nodes;
+  const n = nodes.length;
+  if (n === 0) return { start: 0, end: 0 };
+
+  const overscanCols = Math.max(0, input.overscan ?? DEFAULT_OVERSCAN);
+  const colWidth = input.columnWidth ?? COLUMN_WIDTH;
+  const band = visibleWorldBand(input.scrollLeft, input.viewportWidth, input.zoom, overscanCols, colWidth);
+
+  const first = nodes[0];
+  const isNumber = typeof first === 'number';
+  const getX = isNumber
+    ? (i: number) => (nodes as readonly number[])[i] as number
+    : (i: number) => (nodes as readonly { readonly x: number }[])[i]!.x;
+
+  let low = 0;
+  let high = n;
+  while (low < high) {
+    const mid = Math.floor((low + high) / 2);
+    if (getX(mid) >= band.left) {
+      high = mid;
+    } else {
+      low = mid + 1;
+    }
+  }
+  const start = low;
+
+  low = start;
+  high = n;
+  while (low < high) {
+    const mid = Math.floor((low + high) / 2);
+    if (getX(mid) > band.right) {
+      high = mid;
+    } else {
+      low = mid + 1;
+    }
+  }
+  const end = low;
+
+  return { start, end };
+}
+
 /**
  * An edge must draw whenever its horizontal extent overlaps the band.
  */

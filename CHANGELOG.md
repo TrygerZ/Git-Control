@@ -5,6 +5,11 @@ All notable changes to the "Git Control" extension will be documented in this fi
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.6.18] - 2026-09-12
+
+### Fixed
+- Commit graph horizontal culling now uses actual world x positions instead of uniform column indices, preventing partially missing commit nodes when panning right on repositories with date gaps.
+
 ## [2.6.17] - 2026-09-11
 
 ### Fixed
