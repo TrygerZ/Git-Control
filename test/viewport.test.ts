@@ -1,7 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { layoutGraph } from '../src/layout';
 import {
   COLUMN_WIDTH,
+  DAY_GAP,
   DEFAULT_OVERSCAN,
   GUTTER_X,
   LANE_HEIGHT,
@@ -24,6 +26,7 @@ import {
   shouldRevealOnContainerFocus,
   stepZoom,
   visibleColumnRange,
+  visibleNodeRangeByX,
   visibleWorldBand,
   segmentIntersectsBand,
   worldHeight,
@@ -123,6 +126,183 @@ test('visibleColumnRange honours a custom overscan', () => {
 test('visibleColumnRange ignores a negative scroll offset', () => {
   const range = visibleColumnRange({ scrollLeft: -500, viewportWidth: 960, nodeCount: 100, zoom: 1 });
   assert.equal(range.start, 0);
+});
+
+// -------------------------------------------------------- visibleNodeRangeByX
+
+test('visibleNodeRangeByX includes rightmost node at max scrollLeft with multi-date-bucket gaps', () => {
+  // Generate multi-date-bucket x positions with DAY_GAP per date bucket
+  const count = 30;
+  const nodes: { x: number }[] = [];
+  let currentX = GUTTER_X;
+  for (let i = 0; i < count; i += 1) {
+    if (i > 0) {
+      currentX += DAY_GAP;
+    }
+    nodes.push({ x: currentX });
+    currentX += COLUMN_WIDTH;
+  }
+  const maxNodeX = nodes[count - 1]!.x;
+  const totalWorldW = worldWidth(maxNodeX + COLUMN_WIDTH, GUTTER_X);
+  const viewportWidth = 800;
+  const zoom = 1;
+  const maxScrollLeft = Math.max(0, totalWorldW * zoom - viewportWidth);
+
+  const range = visibleNodeRangeByX({
+    nodes,
+    scrollLeft: maxScrollLeft,
+    viewportWidth,
+    zoom,
+    overscan: 0,
+  });
+
+  // Rightmost node (index 29) must be included
+  assert.equal(range.end, count);
+  assert.ok(range.start <= count - 1);
+  assert.ok(range.start < range.end);
+});
+
+test('visibleNodeRangeByX works with real layoutGraph output across multiple dates', () => {
+  const dates = [
+    '2026-01-01T10:00:00Z',
+    '2026-01-02T10:00:00Z',
+    '2026-01-03T10:00:00Z',
+    '2026-01-04T10:00:00Z',
+    '2026-01-05T10:00:00Z',
+  ];
+  const commits = dates.map((committedAt, idx) => ({
+    hash: `c${idx}`.padEnd(40, '0'),
+    parents: idx > 0 ? [`c${idx - 1}`.padEnd(40, '0')] : [],
+    committedAt,
+  }));
+  const layout = layoutGraph({
+    commits,
+    refs: [{ refName: 'refs/heads/main', objectName: commits[commits.length - 1]!.hash }],
+    head: commits[commits.length - 1]!.hash,
+    currentBranch: 'main',
+  });
+  assert.equal(layout.nodes.length, 5);
+
+  const maxNodeX = layout.nodes.reduce((max, n) => Math.max(max, n.x), 0);
+  const totalWorldW = worldWidth(maxNodeX + COLUMN_WIDTH, GUTTER_X);
+  const viewportWidth = 600;
+  const zoom = 1;
+  const maxScrollLeft = Math.max(0, totalWorldW * zoom - viewportWidth);
+
+  const range = visibleNodeRangeByX({
+    nodes: layout.nodes,
+    scrollLeft: maxScrollLeft,
+    viewportWidth,
+    zoom,
+    overscan: 0,
+  });
+
+  assert.equal(range.end, 5);
+  assert.ok(range.start <= 4);
+});
+
+test('visibleNodeRangeByX is not empty when nodes exist within visible world bounds (prevents invisible wall)', () => {
+  // Few nodes with huge cumulative day gaps (5 commits across 5 months)
+  const nodes: { x: number }[] = [];
+  let currentX = GUTTER_X;
+  for (let i = 0; i < 5; i += 1) {
+    if (i > 0) {
+      currentX += 30 * DAY_GAP;
+    }
+    nodes.push({ x: currentX });
+    currentX += COLUMN_WIDTH;
+  }
+  // Scroll directly to commit 3
+  const targetNodeX = nodes[3]!.x;
+  const viewportWidth = 800;
+  const zoom = 1;
+  const scrollLeft = targetNodeX - viewportWidth / 2;
+
+  const range = visibleNodeRangeByX({
+    nodes,
+    scrollLeft,
+    viewportWidth,
+    zoom,
+    overscan: 0,
+  });
+
+  assert.ok(range.end > range.start, 'range must not be empty');
+  assert.ok(range.start <= 3 && range.end > 3, 'commit 3 must be inside range');
+});
+
+test('visibleNodeRangeByX handles zoom > 1 and zoom < 1 correctly', () => {
+  const nodes = [500, 1000, 1200, 1400, 1800, 2400];
+
+  // Zoom > 1 (zoom = 2): world coordinates are halved on screen
+  // Band for scrollLeft = 2000, viewportWidth = 800, zoom = 2, overscan = 0:
+  // left = 2000 / 2 = 1000, right = 2800 / 2 = 1400
+  const zoomedIn = visibleNodeRangeByX({
+    nodes,
+    scrollLeft: 2000,
+    viewportWidth: 800,
+    zoom: 2,
+    overscan: 0,
+  });
+  assert.equal(zoomedIn.start, 1); // 1000
+  assert.equal(zoomedIn.end, 4);   // includes 1400, excludes 1800
+
+  // Zoom < 1 (zoom = 0.5): world coordinates are doubled on screen
+  // Band for scrollLeft = 1000, viewportWidth = 800, zoom = 0.5, overscan = 0:
+  // left = 1000 / 0.5 = 2000, right = 1800 / 0.5 = 3600
+  const zoomedOut = visibleNodeRangeByX({
+    nodes: [500, 1000, 1500, 2000, 2800, 3600, 4500],
+    scrollLeft: 1000,
+    viewportWidth: 800,
+    zoom: 0.5,
+    overscan: 0,
+  });
+  assert.equal(zoomedOut.start, 3); // 2000
+  assert.equal(zoomedOut.end, 6);   // includes 3600, excludes 4500
+});
+
+test('visibleNodeRangeByX strictly excludes nodes outside band plus overscan boundary', () => {
+  // scrollLeft = 1000, viewportWidth = 1000, zoom = 1, overscan = 2, columnWidth = 100
+  // pad = 200 -> band: [800, 2200]
+  const nodes = [799.9, 800, 1500, 2200, 2200.1];
+  const range = visibleNodeRangeByX({
+    nodes,
+    scrollLeft: 1000,
+    viewportWidth: 1000,
+    zoom: 1,
+    overscan: 2,
+    columnWidth: 100,
+  });
+
+  // 799.9 is outside (< 800) -> excluded
+  // 800 is on boundary -> included (start = 1)
+  // 1500 is inside -> included
+  // 2200 is on boundary -> included
+  // 2200.1 is outside (> 2200) -> excluded (end = 4)
+  assert.equal(range.start, 1);
+  assert.equal(range.end, 4);
+});
+
+test('visibleNodeRangeByX handles empty nodes array and positional parameters', () => {
+  const empty = visibleNodeRangeByX([], 0, 500, 1);
+  assert.deepEqual(empty, { start: 0, end: 0 });
+
+  const positional = visibleNodeRangeByX([100, 200, 300], 150, 100, 1, 0);
+  assert.equal(positional.start, 1);
+  assert.equal(positional.end, 2);
+});
+
+test('visibleNodeRangeByX stays bounded at 10 000 nodes', () => {
+  const nodes = Array.from({ length: 10_000 }, (_, i) => ({ x: GUTTER_X + i * COLUMN_WIDTH }));
+  const range = visibleNodeRangeByX({
+    nodes,
+    scrollLeft: 5000 * COLUMN_WIDTH,
+    viewportWidth: 960,
+    zoom: 1,
+    overscan: DEFAULT_OVERSCAN,
+  });
+  const rendered = range.end - range.start;
+  assert.ok(rendered > 0);
+  assert.ok(rendered < 80, `rendered ${rendered} nodes`);
 });
 
 // ------------------------------------------------------------- edge culling

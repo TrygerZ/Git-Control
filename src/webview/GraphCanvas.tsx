@@ -73,7 +73,7 @@ import {
   scrollToCommit,
   shouldRevealOnContainerFocus,
   stepZoom,
-  visibleColumnRange,
+  visibleNodeRangeByX,
   visibleWorldBand,
   worldHeight,
   worldWidth,
@@ -331,10 +331,10 @@ export function GraphCanvas({
   const totalWorldW = worldWidth(maxNodeX + COLUMN_WIDTH, GUTTER_X);
   const totalWorldH = worldHeight(laneCount, LANE_HEIGHT, RULER_HEIGHT);
 
-  const range = visibleColumnRange({
+  const range = visibleNodeRangeByX({
+    nodes: rows,
     scrollLeft,
     viewportWidth: viewportWidthState,
-    nodeCount: rows.length,
     zoom,
     columnWidth: COLUMN_WIDTH,
     overscan: DEFAULT_OVERSCAN,
