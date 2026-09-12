@@ -9,4 +9,5 @@ dist/
 .env
 .vscode-test/
 .playwright-mcp/
+.tmp-devhost/
 scripts/

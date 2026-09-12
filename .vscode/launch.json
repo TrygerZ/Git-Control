@@ -7,6 +7,8 @@
       "request": "launch",
       "runtimeExecutable": "${execPath}",
       "args": [
+        "--user-data-dir=${workspaceFolder}/.tmp-devhost",
+        "--disable-gpu",
         "--disable-extensions",
         "--extensionDevelopmentPath=${workspaceFolder}"
       ],
@@ -20,6 +22,8 @@
       "request": "launch",
       "runtimeExecutable": "${execPath}",
       "args": [
+        "--user-data-dir=${workspaceFolder}/.tmp-devhost",
+        "--disable-gpu",
         "--disable-extensions",
         "--extensionDevelopmentPath=${workspaceFolder}",
         "${input:sandboxRepo}"
@@ -33,7 +37,11 @@
       "type": "extensionHost",
       "request": "launch",
       "runtimeExecutable": "${execPath}",
-      "args": ["--extensionDevelopmentPath=${workspaceFolder}"],
+      "args": [
+        "--user-data-dir=${workspaceFolder}/.tmp-devhost",
+        "--disable-gpu",
+        "--extensionDevelopmentPath=${workspaceFolder}"
+      ],
       "outFiles": ["${workspaceFolder}/dist/**/*.js"],
       "sourceMaps": true,
       "preLaunchTask": "watch"
