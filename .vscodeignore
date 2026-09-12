@@ -36,6 +36,7 @@ node_modules/**
 .gitignore
 .vscode/**
 .vscode-test/**
+.tmp-devhost/**
 **/*.vsix
 **/*.md
 !README.md
