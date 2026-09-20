@@ -1294,6 +1294,12 @@ function NodeMark({
       */}
       {node.isHead && !isCapsule && <circle className="gc-node__head-ring" cx={x} cy={y} r={r + 3} stroke={color} />}
       {node.isMerge && !isCapsule && <circle className="gc-node__merge-ring" cx={x} cy={y} r={r + 2} stroke={color} />}
+      {/*
+        Hover halo, drawn last so it sits above every other ring. The stroke is
+        CSS-owned (`--vscode-focusBorder`): it is chrome feedback, not lane data,
+        so it must follow the theme rather than the branch palette.
+      */}
+      <circle className="gc-node__hover-ring" cx={x} cy={y} r={r + 4} />
     </g>
   );
 }

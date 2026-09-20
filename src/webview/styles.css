@@ -1501,6 +1501,27 @@ h3 {
 
 .gc-node__dot {
   stroke-width: 1.5;
+  transition: stroke-width var(--gc-dur-fast) var(--gc-ease);
+}
+
+/*
+ * Hover halo. A dedicated ring rather than an SVG filter or a box-shadow,
+ * because neither of those paints inside a transformed `<g>` reliably across
+ * webview zoom levels. Resting state is a zero-width stroke (fully transparent
+ * at every dash/round join), so the halo never shows until the hit circle
+ * reports a hover; the transition on stroke-width fades it in.
+ */
+.gc-node__hover-ring {
+  fill: none;
+  stroke: var(--vscode-focusBorder);
+  stroke-width: 0;
+  opacity: 0.55;
+  pointer-events: none;
+  transition: stroke-width var(--gc-dur-fast) var(--gc-ease);
+}
+
+.gc-node:hover .gc-node__hover-ring {
+  stroke-width: 2;
 }
 
 /*
@@ -1545,6 +1566,26 @@ h3 {
 .gc-node__head-ring {
   fill: none;
   stroke-width: 1.5;
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: gc-node-head-pulse calc(var(--gc-dur-med) * 14) var(--gc-ease-spring) infinite;
+}
+
+/*
+ * A slow, small breathe on the HEAD ring: enough to find "where am I" in a
+ * dense graph without pulling the eye off everything else. Disabled wholesale
+ * by the global prefers-reduced-motion rule.
+ */
+@keyframes gc-node-head-pulse {
+  0%,
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+  50% {
+    transform: scale(1.12);
+    opacity: 0.65;
+  }
 }
 
 .gc-node__merge-ring {
@@ -1747,7 +1788,7 @@ h3 {
   white-space: nowrap;
   pointer-events: none;
   z-index: 2;
-  box-shadow: 0 1px 3px var(--vscode-widget-shadow, transparent);
+  box-shadow: var(--gc-shadow-sm);
 }
 
 .gc-pill--above {
@@ -1758,9 +1799,16 @@ h3 {
   transform: translateX(-50%);
 }
 
+/*
+ * The current branch pill carries the accent wash as well as the focus-colour
+ * edge: two channels for "this one is yours", and the wash is calm enough that
+ * a graph full of pills does not turn into a grid of badges.
+ */
 .gc-pill--current {
   border-color: var(--vscode-focusBorder);
   outline: 1px solid var(--vscode-focusBorder);
+  background: var(--gc-accent-subtle);
+  color: var(--vscode-foreground);
 }
 
 .gc-pill--remote {
@@ -1771,9 +1819,9 @@ h3 {
 .gc-pill--trail {
   font-size: var(--gc-fs-xs);
   padding: var(--gc-space-1) var(--gc-space-2);
-  background: var(--vscode-editorWidget-background, var(--vscode-editor-background));
+  background: var(--gc-surface-2);
   border: 1px solid var(--gc-border);
-  box-shadow: 0 2px 6px var(--vscode-widget-shadow, transparent);
+  box-shadow: var(--gc-shadow-sm);
   gap: var(--gc-space-1);
 }
 
@@ -1862,10 +1910,12 @@ h3 {
   align-items: center;
   gap: var(--gc-space-1);
   max-width: 18em;
+  min-height: 20px;
   padding: 0 var(--gc-space-3);
   overflow: hidden;
   border: 1px solid var(--gc-border);
   border-radius: var(--gc-radius-pill);
+  background: var(--gc-surface-3);
   color: var(--gc-muted);
   font-size: var(--gc-fs-xs);
   line-height: 1.6;
