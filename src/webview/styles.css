@@ -259,6 +259,18 @@ h3 {
   font-size: var(--gc-fs-xs);
 }
 
+/*
+ * The result count above the graph (`N commits shown`): right-aligned and
+ * tabular, so it reads as a readout beside the filter row rather than another
+ * sentence competing with it. Only the live-region paragraph gets this; the
+ * help text elsewhere stays left-aligned prose.
+ */
+.gc-graph > .gc-help-text {
+  margin: 0;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
 /* ------------------------------------------------------------------ controls */
 
 .gc-button {
