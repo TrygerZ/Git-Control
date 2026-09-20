@@ -1667,7 +1667,7 @@ h3 {
   z-index: 8;
   background: var(--vscode-editorHoverWidget-background, var(--vscode-editor-background));
   border: 1px solid var(--vscode-editorHoverWidget-border, var(--gc-border));
-  box-shadow: 0 2px 8px var(--vscode-widget-shadow, transparent);
+  box-shadow: var(--gc-shadow-md);
 }
 
 .gc-row--hovered .gc-row__subject {
