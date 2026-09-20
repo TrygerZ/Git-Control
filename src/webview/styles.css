@@ -574,9 +574,9 @@ h3 {
 }
 
 /*
- * The glyph is the second channel next to the border colour: `!` for an error,
- * `⚠` for a warning, `⋯`/`⌛` for information. It is `aria-hidden` because the
- * banner's `role` already conveys urgency to a screen reader.
+ * The banner renders an SVG icon as the second channel next to the border colour:
+ * error, warning, or info icon. It is aria-hidden because the banner role
+ * already conveys urgency to a screen reader.
  * Sized at --gc-fs-md and nudged by --gc-space-1 to optically centre against
  * the cap-height of the first line of text.
  */
