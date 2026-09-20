@@ -815,6 +815,7 @@ h3 {
   min-width: 0;
   padding-left: var(--gc-space-3);
   border-left: 1px solid var(--gc-border);
+  background: var(--gc-surface-1);
   overflow: auto;
 }
 
@@ -890,7 +891,8 @@ h3 {
   overflow: auto;
   margin: 0;
   padding: var(--gc-space-3);
-  background: var(--vscode-textCodeBlock-background, var(--vscode-editor-background));
+  border-radius: var(--gc-radius-lg);
+  background: var(--gc-surface-2);
   color: var(--vscode-foreground);
   white-space: pre-wrap;
 }
@@ -2037,10 +2039,10 @@ h3 {
   flex-direction: column;
   width: 100%;
   border: 1px solid var(--vscode-menu-border, var(--vscode-contrastBorder, var(--gc-border)));
-  border-radius: var(--gc-radius);
-  padding: var(--gc-space-3);
-  background: var(--vscode-editorWidget-background, var(--vscode-editor-background));
-  box-shadow: 0 4px 12px var(--vscode-widget-shadow, transparent);
+  border-radius: var(--gc-radius-lg);
+  padding: var(--gc-space-4);
+  background: var(--gc-surface-2);
+  box-shadow: var(--gc-shadow-md);
   overflow: hidden;
   max-height: 100%;
 }
@@ -3487,23 +3489,30 @@ h3 {
 }
 
 /*
- * The one big title on this panel. `--gc-fs-xl` establishes the top tier
- * in the three-level text hierarchy (Title: xl -> Heading: sm -> Byline/Meta: xs/sm).
+ * The one big title on this panel. `--gc-fs-lg` keeps it the top tier of the
+ * inspector without out-shouting the canvas it describes.
  */
 .gc-inspector__subject {
   margin: 0;
-  font-size: var(--gc-fs-xl);
+  font-size: var(--gc-fs-lg);
   font-weight: var(--gc-weight-strong);
   line-height: 1.25;
   overflow-wrap: anywhere;
 }
 
-/* `oleh <penulis> · <kapan>` — the reference's `by … on …` line. */
+/* `oleh <penulis> · <kapan>` — the reference's `by … on …` line, led by a user glyph. */
 .gc-inspector__byline {
+  display: flex;
+  align-items: center;
+  gap: var(--gc-space-1);
   margin: 0;
   color: var(--gc-muted);
   font-size: var(--gc-fs-xs);
   overflow-wrap: anywhere;
+}
+
+.gc-inspector__byline .gc-icon {
+  flex: 0 0 auto;
 }
 
 /*
@@ -3665,6 +3674,11 @@ h3 {
   overflow-wrap: anywhere;
 }
 
+/* Hashes line up down the meta column; fixed advance keeps them comparable. */
+.gc-inspector__meta dd .gc-inspector__hash-value {
+  font-variant-numeric: tabular-nums;
+}
+
 .gc-inspector__parents,
 .gc-inspector__refs {
   display: flex;
@@ -3712,7 +3726,7 @@ h3 {
   gap: var(--gc-space-3);
   min-width: 0;
   min-height: var(--gc-hit);
-  padding: var(--gc-space-1) var(--gc-space-2);
+  padding: var(--gc-space-2);
   border: none;
   border-radius: var(--gc-radius);
   background: transparent;
@@ -3751,7 +3765,8 @@ h3 {
 .gc-conflicts {
   padding: var(--gc-space-3);
   border: 1px solid var(--gc-warning);
-  border-radius: var(--gc-radius);
+  border-radius: var(--gc-radius-lg);
+  background: var(--gc-surface-2);
 }
 
 .gc-conflicts__title {
@@ -3853,7 +3868,8 @@ h3 {
   gap: var(--gc-space-3);
   padding: var(--gc-space-3);
   border: 1px solid var(--gc-border);
-  border-radius: var(--gc-radius);
+  border-radius: var(--gc-radius-lg);
+  background: var(--gc-surface-2);
 }
 
 .gc-github__head {
@@ -3927,10 +3943,11 @@ h3 {
 .gc-chip--pr {
   display: flex;
   gap: var(--gc-space-3);
-  align-items: baseline;
+  align-items: center;
   max-width: 100%;
   min-height: var(--gc-hit);
   padding: var(--gc-space-1) var(--gc-space-3);
+  border-radius: var(--gc-radius);
   background: transparent;
   color: var(--vscode-foreground);
   font-family: inherit;
@@ -3984,7 +4001,8 @@ h3 {
   gap: var(--gc-space-2);
   padding: var(--gc-space-3);
   border: 1px solid var(--gc-border);
-  border-radius: var(--gc-radius);
+  border-radius: var(--gc-radius-lg);
+  background: var(--gc-surface-2);
 }
 
 .gc-contributors__head {
@@ -4127,8 +4145,8 @@ h3 {
 .gc-contributors__bar-track {
   flex: 0 0 50px;
   height: 4px;
-  background: var(--gc-border);
-  border-radius: var(--gc-radius-sm);
+  background: var(--gc-surface-3);
+  border-radius: var(--gc-radius-pill);
   overflow: hidden;
 }
 
@@ -4136,7 +4154,7 @@ h3 {
   display: block;
   height: 100%;
   background: var(--vscode-progressBar-background, var(--gc-accent));
-  border-radius: var(--gc-radius-sm);
+  border-radius: var(--gc-radius-pill);
 }
 
 .gc-contributors__count {

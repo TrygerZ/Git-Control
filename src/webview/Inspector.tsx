@@ -196,6 +196,8 @@ export function Inspector({ hash }: Props): JSX.Element {
           <div className="gc-inspector__titles">
             <h2 className="gc-inspector__subject">{sanitizeGitText(detail.subject)}</h2>
             <p className="gc-inspector__byline">
+              {/* Decorative by default: the sentence beside it names the author in words. */}
+              <Icon name="user" />
               {strings.inspector.byAuthor(author, relativeTime(detail.authoredAt, Date.now(), language))}
             </p>
           </div>
