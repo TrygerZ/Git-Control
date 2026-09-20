@@ -2225,7 +2225,7 @@ h3 {
   z-index: 30;
   display: flex;
   flex-direction: column;
-  min-width: 16em;
+  min-width: 18em;
   /*
    * `min(...)` rather than a flat `26em`: the items now carry a sentence each, so the
    * box grows to the cap, and 26em is wider than a 300 px sidebar. The placement
@@ -2237,18 +2237,18 @@ h3 {
   max-height: 80vh;
   overflow: auto;
   padding: var(--gc-space-2);
-  border: 1px solid var(--vscode-menu-border, var(--vscode-contrastBorder, var(--gc-border)));
-  border-radius: var(--gc-radius);
-  background: var(--vscode-menu-background, var(--vscode-editorWidget-background));
+  border: 1px solid var(--gc-border);
+  border-radius: var(--gc-radius-lg);
+  /* Floating chrome sits on the top surface step and lifts on the mid shadow rung. */
+  background: var(--gc-surface-3);
   color: var(--vscode-menu-foreground, var(--vscode-foreground));
-  box-shadow: 0 2px 8px var(--vscode-widget-shadow, transparent);
+  box-shadow: var(--gc-shadow-md);
 }
 
 .gc-menu__item {
   display: flex;
-  flex-direction: column;
   align-items: flex-start;
-  gap: var(--gc-space-1);
+  gap: var(--gc-space-2);
   width: 100%;
   min-height: var(--gc-hit);
   padding: var(--gc-space-2) var(--gc-space-3);
@@ -2263,10 +2263,37 @@ h3 {
   transition: background var(--gc-dur-fast) var(--gc-ease);
 }
 
+/*
+ * The leading icon slot. A fixed-width column keeps the labels left-aligned down a
+ * group regardless of which glyph an item carries, and the muted colour keeps the
+ * icon a wayfinding aid rather than a second label competing with the text.
+ */
+.gc-menu__icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: 1em;
+  margin-top: var(--gc-space-1);
+  color: var(--gc-muted);
+  font-size: var(--gc-fs-sm);
+}
+
+.gc-menu__item:hover .gc-menu__icon,
+.gc-menu__item:focus-visible .gc-menu__icon {
+  color: inherit;
+}
+
 .gc-menu__item:hover,
 .gc-menu__item:focus-visible {
-  background: var(--vscode-menu-selectionBackground, var(--vscode-list-hoverBackground));
-  color: var(--vscode-menu-selectionForeground, inherit);
+  background: var(--vscode-list-hoverBackground);
+  color: var(--vscode-list-hoverForeground, inherit);
+}
+
+/* Keyboard focus still gets the ring even when the pointer is elsewhere. */
+.gc-menu__item:focus-visible {
+  outline: 2px solid var(--vscode-focusBorder);
+  outline-offset: -2px;
 }
 
 /* ------------------------------------------------------------- menu groups */
@@ -2296,6 +2323,19 @@ h3 {
   letter-spacing: 0.05em;
 }
 
+/*
+ * The text column beside the icon. Label and hint stack here so the icon stays on
+ * the first line and the hint can wrap underneath without sliding under the glyph.
+ */
+.gc-menu__body {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--gc-space-1);
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
 .gc-menu__label {
   display: flex;
   align-items: center;
@@ -2304,7 +2344,7 @@ h3 {
 
 .gc-menu__separator {
   height: 1px;
-  margin: var(--gc-space-2) var(--gc-space-1);
+  margin: var(--gc-space-1) var(--gc-space-2);
   background: var(--gc-border);
 }
 
@@ -2320,6 +2360,8 @@ h3 {
   border-left: 3px solid var(--gc-danger);
   border-top-left-radius: 0;
   border-bottom-left-radius: 0;
+  /* A second channel on the leading edge, visible while scanning before any word. */
+  box-shadow: inset 2px 0 0 var(--gc-danger);
   /* The 3 px rule replaces part of the padding, so the label does not shift. */
   padding-left: calc(var(--gc-space-3) - 3px);
 }
@@ -2366,6 +2408,9 @@ h3 {
   overflow: auto;
   /* No hex literal: the theme's own shadow token, falling back to a neutral wash. */
   background: var(--vscode-widget-shadow, var(--vscode-editorWidget-background));
+  /* A blur softens what is underneath without a second colour; the dim alone was
+   * already theme-tokenised, so this only adds depth. */
+  backdrop-filter: blur(4px);
 }
 
 .gc-modal {
@@ -2376,10 +2421,27 @@ h3 {
   max-height: 90vh;
   overflow: auto;
   padding: var(--gc-space-5);
-  border: 1px solid var(--vscode-contrastBorder, var(--gc-border));
-  border-radius: var(--gc-radius);
-  background: var(--vscode-editorWidget-background, var(--vscode-editor-background));
-  box-shadow: 0 4px 16px var(--vscode-widget-shadow, transparent);
+  border: 1px solid var(--gc-border);
+  border-radius: var(--gc-radius-lg);
+  background: var(--gc-surface-2);
+  box-shadow: var(--gc-shadow-lg);
+  animation: gc-modal-in var(--gc-dur-med) var(--gc-ease-spring);
+}
+
+/*
+ * The modal arrives with a small settle so it reads as appearing over the panel
+ * rather than teleporting into it. Reduced-motion strips every animation globally,
+ * so this needs no per-rule opt-out.
+ */
+@keyframes gc-modal-in {
+  from {
+    opacity: 0;
+    transform: translateY(var(--gc-space-2)) scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
 }
 
 .gc-modal__title {
@@ -2415,9 +2477,10 @@ h3 {
   align-items: center;
   gap: var(--gc-space-1);
   flex: 0 0 auto;
-  padding: 0 var(--gc-space-3);
+  padding: var(--gc-space-1) var(--gc-space-3);
   border: 1px solid var(--gc-tone-removed);
-  border-radius: var(--gc-radius-pill);
+  border-radius: var(--gc-radius);
+  background: var(--gc-surface-3);
   color: var(--gc-tone-removed);
   font-size: var(--gc-fs-xs);
   font-weight: var(--gc-weight-strong);
@@ -2430,6 +2493,10 @@ h3 {
   grid-template-columns: auto 1fr;
   gap: var(--gc-space-1) var(--gc-space-4);
   margin: 0;
+  padding: var(--gc-space-3);
+  border: 1px solid var(--gc-border);
+  border-radius: var(--gc-radius);
+  background: var(--gc-surface-3);
 }
 
 .gc-modal__facts dt {
@@ -2439,6 +2506,7 @@ h3 {
 .gc-modal__facts dd {
   margin: 0;
   overflow-wrap: anywhere;
+  font-weight: var(--gc-weight-strong);
 }
 
 .gc-modal__body {
@@ -2458,6 +2526,7 @@ h3 {
 .gc-modal__consequence {
   padding: var(--gc-space-3);
   border-left: 3px solid var(--gc-warning);
+  border-radius: var(--gc-radius);
   background: var(--vscode-textBlockQuote-background, transparent);
 }
 
@@ -2494,6 +2563,7 @@ h3 {
 
 .gc-modal__command code {
   overflow-wrap: anywhere;
+  font-family: var(--vscode-editor-font-family, monospace);
   font-size: var(--gc-fs-md);
 }
 

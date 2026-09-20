@@ -23,7 +23,7 @@
  */
 import { useEffect, useLayoutEffect, useRef, useState, type JSX, type KeyboardEvent } from 'react';
 import { sanitizeGitText, shortHash } from './format';
-import { Icon } from './ui';
+import { Icon, type IconName } from './ui';
 import { t, type Lang } from './i18n';
 import { useT } from './useT';
 import { useSettingsStore } from './store';
@@ -54,6 +54,35 @@ export type MenuGroup = 'jelajah' | 'ubah';
 
 export function menuGroupLabel(group: MenuGroup, lang: Lang = 'en'): string {
   return t(lang).menu.groupLabels[group];
+}
+
+/**
+ * The leading wayfinding glyph for a menu item, keyed off its stable id.
+ *
+ * Purely a visual aid: the icon sits in a muted slot beside the label and is
+ * `aria-hidden`, so the accessible name is unchanged. Destructive items keep their
+ * own risk glyph inside the label, so their leading icon is the action verb
+ * (`reset`, `revert`, ...) rather than a second warning.
+ */
+const MENU_ITEM_ICONS: Readonly<Record<string, IconName>> = {
+  'view-diff': 'eye',
+  'copy-full': 'copy',
+  'copy-short': 'copy',
+  'open-github': 'external',
+  'create-branch': 'branch-add',
+  merge: 'merge',
+  'merge-into': 'merge',
+  'cherry-pick': 'cherry-pick',
+  revert: 'revert',
+  'reset-soft': 'reset',
+  'reset-hard': 'reset',
+  'push-up-to': 'push',
+};
+
+/** Leading icon for a menu item, or `null` for one that carries no glyph. */
+function menuItemIcon(item: MenuItem): IconName | null {
+  if (item.id.startsWith('checkout-')) return item.id === 'checkout-commit' ? 'history' : 'git-branch';
+  return MENU_ITEM_ICONS[item.id] ?? null;
 }
 
 /** Groups in display order: read-only first, because it is the safe half. */
@@ -449,6 +478,7 @@ export function NodeContextMenu({
           {members.map((item) => {
             flatIndex += 1;
             const index = flatIndex;
+            const icon = menuItemIcon(item);
             return (
               <button
                 key={item.id}
@@ -473,16 +503,23 @@ export function NodeContextMenu({
                   onClose();
                 }}
               >
-                <span className="gc-menu__label">
-                  {item.risky === true && (
-                    <span className="gc-menu__risk" aria-hidden="true">
-                      <Icon name="warning" />
-                    </span>
-                  )}
-                  <span>{item.label}</span>
-                  {item.risky === true && <span className="gc-menu__risk-word">{strings.menu.riskyWord}</span>}
+                {icon !== null && (
+                  <span className="gc-menu__icon" aria-hidden="true">
+                    <Icon name={icon} />
+                  </span>
+                )}
+                <span className="gc-menu__body">
+                  <span className="gc-menu__label">
+                    {item.risky === true && (
+                      <span className="gc-menu__risk" aria-hidden="true">
+                        <Icon name="warning" />
+                      </span>
+                    )}
+                    <span>{item.label}</span>
+                    {item.risky === true && <span className="gc-menu__risk-word">{strings.menu.riskyWord}</span>}
+                  </span>
+                  {item.hint !== undefined && <span className="gc-menu__hint">{item.hint}</span>}
                 </span>
-                {item.hint !== undefined && <span className="gc-menu__hint">{item.hint}</span>}
               </button>
             );
           })}
