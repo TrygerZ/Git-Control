@@ -4279,13 +4279,29 @@ h3 {
   display: flex;
   align-items: flex-start;
   gap: var(--gc-space-3);
-  padding: var(--gc-space-3) var(--gc-space-4);
+  padding: var(--gc-space-3);
   border: 1px solid var(--gc-border);
   border-left-width: 3px;
-  border-radius: var(--gc-radius);
-  background: var(--vscode-notifications-background, var(--vscode-editorWidget-background));
+  border-radius: var(--gc-radius-lg);
+  background: var(--gc-surface-3);
   color: var(--vscode-notifications-foreground, var(--vscode-foreground));
-  box-shadow: 0 2px 8px var(--vscode-widget-shadow, transparent);
+  box-shadow: var(--gc-shadow-md);
+  animation: gc-toast-in var(--gc-dur-med) var(--gc-ease);
+}
+
+/*
+ * A toast slides up into the stack so an arriving message reads as new rather than
+ * as one that was always there. Reduced-motion clears it globally with the rest.
+ */
+@keyframes gc-toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(var(--gc-space-2));
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 /*
@@ -4343,6 +4359,7 @@ h3 {
   gap: var(--gc-space-1);
   min-width: 0;
   flex: 1 1 auto;
+  font-size: var(--gc-fs-sm);
 }
 
 /*
@@ -4373,7 +4390,7 @@ h3 {
 
 .gc-toast__detail {
   color: var(--gc-muted);
-  font-size: var(--gc-fs-xs);
+  font-size: var(--gc-fs-2xs);
   overflow-wrap: anywhere;
 }
 
