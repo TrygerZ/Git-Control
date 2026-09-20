@@ -297,7 +297,34 @@ export function ContextBar({
           {strings.ui.lastCommit(line)}
         </p>
       )}
-      <p className="gc-context__sync">{syncSummary(status, language)}</p>
+      {/*
+        Sync state is presented as arrows plus the same sentence `syncSummary`
+        builds, so the text (aria-label below, tooltip, and the visually hidden
+        fallback) never drifts from the numbers: a screen reader hears exactly
+        what a sighted user reads. The arrows are decoration on top, tone-marked
+        and labelled in words by the summary itself.
+      */}
+      <p className="gc-context__sync" title={syncSummary(status, language)}>
+        <span
+          className="gc-context__sync-visual"
+          aria-hidden="true"
+        >
+          {status.upstream !== null && status.ahead > 0 && (
+            <span className="gc-context__sync-part gc-context__sync-part--ahead">
+              <Icon name="arrow-up" />
+              {status.ahead}
+            </span>
+          )}
+          {status.upstream !== null && status.behind > 0 && (
+            <span className="gc-context__sync-part gc-context__sync-part--behind">
+              <Icon name="arrow-down" />
+              {status.behind}
+            </span>
+          )}
+          <span className="gc-context__sync-text">{syncSummary(status, language)}</span>
+        </span>
+        <span className="gc-visually-hidden">{syncSummary(status, language)}</span>
+      </p>
     </header>
   );
 }

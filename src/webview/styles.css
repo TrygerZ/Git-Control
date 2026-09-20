@@ -918,10 +918,11 @@ h3 {
   display: flex;
   align-items: flex-end;
   gap: var(--gc-space-3);
-  padding: var(--gc-space-2) var(--gc-space-3);
-  border: 1px solid var(--gc-border);
-  border-radius: var(--gc-radius);
-  background: var(--vscode-editorWidget-background, var(--vscode-editor-background));
+  padding: var(--gc-space-3);
+  border: none;
+  border-bottom: 1px solid var(--gc-border);
+  border-radius: 0;
+  background: var(--gc-surface-1);
 }
 
 .gc-toolbar__search-wrap {
@@ -956,11 +957,12 @@ h3 {
   min-height: var(--gc-hit);
   padding: var(--gc-space-1) var(--gc-space-3) var(--gc-space-1) var(--gc-space-7);
   border: 1px solid var(--vscode-input-border, var(--gc-border));
-  border-radius: var(--gc-radius);
+  border-radius: var(--gc-radius-lg);
   background: var(--vscode-input-background);
   color: var(--vscode-input-foreground);
   font-family: inherit;
   font-size: var(--gc-fs-sm);
+  transition: border-color var(--gc-dur-fast) var(--gc-ease);
 }
 
 .gc-toolbar__branch-wrap {
@@ -1008,7 +1010,7 @@ h3 {
   min-height: var(--gc-hit);
   padding: var(--gc-space-1) var(--gc-space-6) var(--gc-space-1) var(--gc-space-3);
   border: 1px solid var(--vscode-input-border, var(--gc-border));
-  border-radius: var(--gc-radius);
+  border-radius: var(--gc-radius-lg);
   background: var(--vscode-input-background);
   color: var(--vscode-input-foreground);
   font-family: inherit;
@@ -1017,6 +1019,20 @@ h3 {
   text-overflow: ellipsis;
   white-space: nowrap;
   appearance: none;
+  transition: border-color var(--gc-dur-fast) var(--gc-ease);
+}
+
+/*
+ * Quieter resting border: the control still has an edge, but it sits back until
+ * interaction asks for it. Mirrors the Phase 2 branch selector in the pending
+ * panel, so both views read as one chrome language.
+ */
+.gc-toolbar__branch-select:not(:focus):not(:hover):not(:disabled) {
+  border-color: var(--gc-border);
+}
+
+.gc-toolbar__branch-select:hover:not(:disabled) {
+  border-color: var(--vscode-input-border, var(--vscode-focusBorder));
 }
 
 .gc-toolbar__branch-chevron {
@@ -1204,8 +1220,9 @@ h3 {
   display: flex;
   flex-direction: column;
   gap: var(--gc-space-1);
-  padding-bottom: var(--gc-space-3);
+  padding: var(--gc-space-3) 0;
   border-bottom: 1px solid var(--gc-border);
+  background: var(--gc-surface-1);
 }
 
 .gc-context__crumbs {
@@ -1247,9 +1264,47 @@ h3 {
 }
 
 .gc-context__sync {
+  display: flex;
+  align-items: center;
+  gap: var(--gc-space-2);
   margin: 0;
   color: var(--gc-muted);
   font-size: var(--gc-fs-xs);
+}
+
+.gc-context__sync-visual {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--gc-space-2);
+  min-width: 0;
+}
+
+/*
+ * Ahead/behind arrows restate the numbers in `syncSummary` with tone colour so
+ * "mine to push" and "waiting for me" separate at a glance; the words beside
+ * them carry the same fact, so colour is never the only channel.
+ */
+.gc-context__sync-part {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--gc-space-1);
+  font-variant-numeric: tabular-nums;
+  font-weight: var(--gc-weight-strong);
+}
+
+.gc-context__sync-part--ahead {
+  color: var(--gc-tone-added);
+}
+
+.gc-context__sync-part--behind {
+  color: var(--gc-tone-changed);
+}
+
+.gc-context__sync-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* ------------------------------------------------------------------- avatar */
