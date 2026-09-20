@@ -958,6 +958,66 @@ test('resting commit rows retain accessible tree presence without visibility:hid
   assert.match(canvasSrc, /className="gc-row__cell-group"/, 'gc-row__cell-group is unconditionally rendered');
 });
 
+/**
+ * Commit card stacking ladder in GraphCanvas.
+ *
+ * When a commit node is selected and hovered simultaneously, both .gc-row--selected
+ * and .gc-row--hovered classes are active on the same element. Previously, both
+ * rules had equal specificity (0,1,0), so source order caused the lower z-index
+ * of .gc-row--selected (3) to silence .gc-row--hovered (8). This dropped the card
+ * below the sticky date ruler (.gc-ruler with z-index 5), clipping top lane cards.
+ *
+ * This test pins the stacking ladder:
+ *  1. .gc-row--selected lifts above .gc-ruler (z-index 6 > 5) so resting selection
+ *     is never obscured by the ruler.
+ *  2. .gc-row--selected remains below .gc-row--hovered (8) and .gc-minimap-wrap (9).
+ *  3. The compound selector .gc-row--hovered.gc-row--selected explicitly specifies
+ *     z-index 8, guaranteeing hovered cards stay on top regardless of selection.
+ *  4. The compound rule appears after .gc-row--selected in source order as defense
+ *     in depth against future reordering.
+ */
+test('commit card stacking ladder keeps hovered and selected cards above the sticky ruler', () => {
+  const css = stylesheet();
+
+  function extractZIndex(selectorRegex: RegExp, label: string): number {
+    const match = css.match(selectorRegex);
+    assert.ok(match, `${label} rule exists in styles.css`);
+    const block = match[1] ?? '';
+    const zMatch = block.match(/z-index\s*:\s*(\d+)/);
+    assert.ok(zMatch, `${label} specifies a numeric z-index`);
+    return Number(zMatch[1]);
+  }
+
+  const rulerZ = extractZIndex(/\.gc-ruler\s*\{([^}]+)\}/, '.gc-ruler');
+  const selectedZ = extractZIndex(/\.gc-row--selected\s*\{([^}]+)\}/, '.gc-row--selected');
+  const hoveredZ = extractZIndex(/\.gc-row--hovered\s*\{([^}]+)\}/, '.gc-row--hovered');
+  const compoundZ = extractZIndex(
+    /\.gc-row--hovered\.gc-row--selected\s*\{([^}]+)\}/,
+    '.gc-row--hovered.gc-row--selected',
+  );
+  const minimapZ = extractZIndex(/\.gc-minimap-wrap\s*\{([^}]+)\}/, '.gc-minimap-wrap');
+
+  // 1. Compound rule exists and has z-index: 8
+  assert.equal(compoundZ, 8, '.gc-row--hovered.gc-row--selected has z-index: 8');
+
+  // 2. .gc-row--selected has z-index greater than .gc-ruler (6 > 5)
+  assert.ok(selectedZ > rulerZ, `.gc-row--selected (${selectedZ}) must be above .gc-ruler (${rulerZ})`);
+
+  // 3. Compound rule appears after .gc-row--selected in source order
+  const selectedIndex = css.indexOf('.gc-row--selected {');
+  const compoundIndex = css.indexOf('.gc-row--hovered.gc-row--selected');
+  assert.ok(selectedIndex !== -1, '.gc-row--selected { found in source');
+  assert.ok(compoundIndex !== -1, '.gc-row--hovered.gc-row--selected found in source');
+  assert.ok(
+    compoundIndex > selectedIndex,
+    '.gc-row--hovered.gc-row--selected must appear after .gc-row--selected in source order',
+  );
+
+  // 4. Stacking ladder invariant: selected stays below hovered (8) and minimap (9)
+  assert.ok(selectedZ < hoveredZ, `.gc-row--selected (${selectedZ}) must stay below .gc-row--hovered (${hoveredZ})`);
+  assert.ok(selectedZ < minimapZ, `.gc-row--selected (${selectedZ}) must stay below .gc-minimap-wrap (${minimapZ})`);
+});
+
 // ------------------------------------------------------------- em-dash guard
 
 test('source code contains no user-facing em-dash or JSX text em-dash', () => {
