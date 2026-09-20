@@ -11,3 +11,6 @@ dist/
 .playwright-mcp/
 .tmp-devhost/
 scripts/
+
+# CodeGraph index (local only)
+.codegraph/

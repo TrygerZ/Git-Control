@@ -14,6 +14,16 @@ Interactive 2D Git DAG explorer and dedicated Pending Changes panel.
 | `npm run test:integration` | `node esbuild.js && node test/integration-runner.js` | Run real VS Code Electron integration scenarios (first run downloads VS Code via `@vscode/test-electron`) |
 | `npm run package` | `node esbuild.js --production && vsce package` | Production build + package `.vsix` artifact |
 
+## CodeGraph (Code Intelligence)
+
+This repository is indexed by CodeGraph (`.codegraph/`, local only, gitignored). Use it BEFORE grep/read loops to locate symbols, understand architecture, and trace call paths.
+
+- **MCP tools (preferred):** `codegraph_explore` returns the verbatim source of relevant symbols plus the call path among them in one call. It is the primary tool: call it first for almost any "how does X work", "where is X", "what calls X", or "impact of changing X" question. Treat its output as already Read; do not re-open those files.
+- **CLI (fallback / scripting):** `codegraph explore "<query>"`, `codegraph query <symbol>`, `codegraph node <symbol>`, `codegraph callers <symbol>`, `codegraph callees <symbol>`, `codegraph impact <symbol>`, `codegraph affected <files...>`, `codegraph files`.
+- **Freshness:** the index auto-syncs after edits. If results look stale, run `codegraph sync`; to rebuild from scratch run `codegraph index`. Inspect with `codegraph status`.
+- **Re-init:** if `.codegraph/` is missing (fresh clone), run `codegraph init`.
+- **Scope:** CodeGraph supplements, never replaces, the non-negotiable invariants and File Map below. Cross-check security-sensitive changes in `src/git.ts`, `src/validation.ts`, `src/guard.ts`, and `src/bridge.ts` against the Invariants table regardless of what the graph shows.
+
 ## Architecture & Trust Boundaries
 
 The codebase is partitioned into three execution contexts with strict trust boundaries:
@@ -62,6 +72,7 @@ In `src/logger.ts`, bare 40-character hex strings are **intentionally not redact
 
 When implementing a new Git action, modify layers in this exact sequence:
 
+0. Discover existing context first: call `codegraph_explore` (MCP) for the symbols you are about to touch to load the relevant source and call paths in one call, in place of a search/read loop.
 1. `src/validation.ts`: Define/update pure input validators (no node/vscode imports).
 2. `src/git.ts`: Add runner method using `this.run()` with `spawn` + `shell: false` + `--`.
 3. `src/messages.ts`: Update typed request/response payload union types.
@@ -81,6 +92,7 @@ When implementing a new Git action, modify layers in this exact sequence:
 - **Rules:**
   - Every new feature or bugfix must include tests.
   - Never relax, disable, or delete existing security assertion checks to force a test pass.
+  - Use `codegraph affected` (or the `codegraph_explore` MCP tool) to find which tests a source change touches before running the full suite.
   - Both `npm run typecheck` and `npm test` must pass cleanly before completing work.
 
 ## Code Conventions
