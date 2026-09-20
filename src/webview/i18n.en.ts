@@ -419,6 +419,7 @@ const en = {
     placeholder: 'Commit message (min. 3 characters)',
     advancedOptions: 'Advanced options',
     pushAfter: 'Push to remote after commit',
+    messageLength: (count: string, min: number) => `${count} / ${min} min`,
     noStagedFiles: 'No files in staging area.',
     stagedFilesReady: (count: string) => `${count} files ready to commit.`,
     commitTitle: 'Save staging area as a commit.',
