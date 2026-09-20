@@ -269,6 +269,7 @@ export function PendingChangesApp(): JSX.Element {
                 disabled={changes.length === 0}
                 onClick={selectAll}
               >
+                <Icon name="check" />
                 {strings.pending.selectAll}
               </button>
               <button
@@ -278,6 +279,7 @@ export function PendingChangesApp(): JSX.Element {
                 disabled={selected.length === 0}
                 onClick={clear}
               >
+                <Icon name="close" />
                 {strings.pending.clearSelection}
               </button>
             </div>

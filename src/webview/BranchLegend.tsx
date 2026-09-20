@@ -161,20 +161,31 @@ export function BranchSelector({
   // overwrite it and break label-in-name — omit it in the labelled variant.
   // Default (sidebar) keeps aria-label to save vertical space.
   const select = (
-    <select
-      className="gc-toolbar__branch-select"
-      value={state.selectedValue}
-      disabled={state.disabled}
-      {...(!showLabel ? { 'aria-label': strings.graph.checkoutBranchAria } : {})}
-      title={strings.graph.checkoutBranchTitle}
-      onChange={(e) => onSelect(e.target.value)}
-    >
-      {state.options.map((opt) => (
-        <option key={opt.value || '__detached'} value={opt.value} title={opt.hint ?? opt.label}>
-          {opt.label}
-        </option>
-      ))}
-    </select>
+    /*
+     * The wrapper carries the custom chevron; the `<select>` itself keeps its
+     * class, its disabled binding, its options, and its accessible name
+     * untouched (the BranchSelector contract tests pin all four).
+     */
+    <span className="gc-toolbar__branch-select-wrap">
+      <select
+        className="gc-toolbar__branch-select"
+        value={state.selectedValue}
+        disabled={state.disabled}
+        {...(!showLabel ? { 'aria-label': strings.graph.checkoutBranchAria } : {})}
+        title={strings.graph.checkoutBranchTitle}
+        onChange={(e) => onSelect(e.target.value)}
+      >
+        {state.options.map((opt) => (
+          <option key={opt.value || '__detached'} value={opt.value} title={opt.hint ?? opt.label}>
+            {opt.label}
+          </option>
+        ))}
+      </select>
+      {/* Decorative: the select keeps focusability and its own keyboard contract. */}
+      <span className="gc-toolbar__branch-chevron" aria-hidden="true">
+        <Icon name="chevron-down" />
+      </span>
+    </span>
   );
 
   return (

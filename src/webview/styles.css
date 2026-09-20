@@ -967,10 +967,27 @@ h3 {
   /* Floor prevents branch select collapsing to chevron; min() respects narrow panels */
   min-width: min(9em, 100%);
   max-width: 100%;
+  /* The width cap moved onto the inner select wrapper; this row only lays out. */
+  min-height: var(--gc-hit);
 }
 
 .gc-toolbar__field {
   width: 100%;
+}
+
+/*
+ * Wrapper holds the select and its custom chevron. `appearance: none` on the
+ * select hides the native dropdown arrow so the chevron is the only affordance;
+ * the trailing padding reserves its seat so a long branch name never slides
+ * under the glyph. The select keeps every other behaviour native.
+ */
+.gc-toolbar__branch-select-wrap {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  width: 100%;
+  min-width: 0;
+  max-width: min(14em, 100%);
 }
 
 .gc-toolbar__branch-select,
@@ -985,9 +1002,8 @@ h3 {
    */
   width: 100%;
   min-width: 0;
-  max-width: min(14em, 100%);
   min-height: var(--gc-hit);
-  padding: var(--gc-space-1) var(--gc-space-3);
+  padding: var(--gc-space-1) var(--gc-space-6) var(--gc-space-1) var(--gc-space-3);
   border: 1px solid var(--vscode-input-border, var(--gc-border));
   border-radius: var(--gc-radius);
   background: var(--vscode-input-background);
@@ -997,6 +1013,19 @@ h3 {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  appearance: none;
+}
+
+.gc-toolbar__branch-chevron {
+  position: absolute;
+  right: var(--gc-space-2);
+  top: 0;
+  bottom: 0;
+  display: inline-flex;
+  align-items: center;
+  color: var(--gc-muted);
+  font-size: var(--gc-fs-sm);
+  pointer-events: none;
 }
 
 .gc-toolbar__clear {
@@ -1004,15 +1033,18 @@ h3 {
 }
 
 /*
- * The action row on the pending panel. Primary pair, secondary helpers, count and refresh.
+ * The action row on the pending panel. Primary pair, secondary helpers, count
+ * and refresh. Visually quiet: no heavy frame of its own, just vertical
+ * breathing room and a bottom hairline separating it from the list.
  */
 .gc-toolbar--actions {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: var(--gc-space-2) var(--gc-space-3);
-  padding-bottom: var(--gc-space-3);
+  padding: var(--gc-space-3) 0;
   border-bottom: 1px solid var(--gc-border);
+  background: var(--gc-surface-1);
 }
 
 /*
@@ -1094,6 +1126,15 @@ h3 {
 
 .gc-segmented--quiet .gc-button:focus-visible {
   z-index: 2;
+}
+
+/* The pair leads with small glyphs; labels sit one step below the button font. */
+.gc-segmented--quiet .gc-button {
+  font-size: var(--gc-fs-sm);
+}
+
+.gc-segmented--quiet .gc-button .gc-icon {
+  font-size: var(--gc-fs-sm);
 }
 
 /* Selection count is data, not an action — muted and tabular so it anchors the pair.
