@@ -1001,63 +1001,77 @@ export function GraphCanvas({
             Panduan simbol popover launcher, go to HEAD, then zoom.
           */}
           <div className="gc-canvas__controls" role="group" aria-label={strings.graph.controlsAria}>
-            <button
-              ref={legendButtonRef}
-              type="button"
-              className="gc-icon-button gc-icon-button--float"
-              aria-label={strings.graph.legendButtonAria}
-              aria-expanded={showLegend}
-              aria-controls={showLegend ? legendId : undefined}
-              onClick={() => setShowLegend(!showLegend)}
-            >
-              <Icon name="info" />
-            </button>
-            <button
-              type="button"
-              className="gc-icon-button gc-icon-button--float"
-              aria-label={strings.graph.jumpHeadAria}
-              disabled={headRow === undefined}
-              onClick={() => {
-                if (headRow !== undefined) goToRow(headRow);
-              }}
-            >
-              <Icon name="home" />
-            </button>
-            <button
-              type="button"
-              className="gc-icon-button gc-icon-button--float"
-              aria-label={strings.graph.zoomInAria}
-              title={strings.graph.zoomInTitle}
-              disabled={zoom >= MAX_ZOOM}
-              onClick={() => setZoom(stepZoom(zoom, 1))}
-            >
-              <Icon name="add" />
-            </button>
-            <button
-              type="button"
-              className="gc-icon-button gc-icon-button--float"
-              aria-label={strings.graph.zoomOutAria}
-              title={strings.graph.zoomOutTitle}
-              disabled={zoom <= MIN_ZOOM}
-              onClick={() => setZoom(stepZoom(zoom, -1))}
-            >
-              <Icon name="dash" />
-            </button>
-            <button
-              type="button"
-              className="gc-button gc-button--float"
-              aria-label={strings.graph.zoomResetAria}
-              title={strings.graph.zoomResetTitle}
-              onClick={() => setZoom(1)}
-            >
-              {/*
-                `aria-live` is off deliberately: the value is announced by the buttons
-                that changed it, and a live region here would fire on every wheel notch.
-              */}
-              <span className="gc-zoom__value" aria-live="off">
-                {Math.round(zoom * 100)}%
-              </span>
-            </button>
+            {/*
+              Navigation card: the legend launcher and the go-to-HEAD button.
+              Grouped apart from zoom because they answer "where am I" rather
+              than "how big is it".
+            */}
+            <div className="gc-control-card">
+              <button
+                ref={legendButtonRef}
+                type="button"
+                className="gc-icon-button"
+                aria-label={strings.graph.legendButtonAria}
+                aria-expanded={showLegend}
+                aria-controls={showLegend ? legendId : undefined}
+                onClick={() => setShowLegend(!showLegend)}
+              >
+                <Icon name="info" />
+              </button>
+              <button
+                type="button"
+                className="gc-icon-button"
+                aria-label={strings.graph.jumpHeadAria}
+                disabled={headRow === undefined}
+                onClick={() => {
+                  if (headRow !== undefined) goToRow(headRow);
+                }}
+              >
+                <Icon name="home" />
+              </button>
+            </div>
+            {/*
+              Zoom card: out, a readout that doubles as the reset, in. The
+              readout stays a button so one control answers both "how far in
+              am I" and "put me back".
+            */}
+            <div className="gc-control-card gc-control-card--zoom">
+              <button
+                type="button"
+                className="gc-icon-button"
+                aria-label={strings.graph.zoomOutAria}
+                title={strings.graph.zoomOutTitle}
+                disabled={zoom <= MIN_ZOOM}
+                onClick={() => setZoom(stepZoom(zoom, -1))}
+              >
+                <Icon name="dash" />
+              </button>
+              <button
+                type="button"
+                className="gc-zoom__reset"
+                aria-label={strings.graph.zoomResetAria}
+                title={strings.graph.zoomResetTitle}
+                onClick={() => setZoom(1)}
+              >
+                {/*
+                  `aria-live` is off deliberately: the value is announced by the buttons
+                  that changed it, and a live region here would fire on every wheel notch.
+                */}
+                <span className="gc-zoom__value" aria-live="off">
+                  {Math.round(zoom * 100)}%
+                </span>
+              </button>
+              <button
+                type="button"
+                className="gc-icon-button"
+                aria-label={strings.graph.zoomInAria}
+                title={strings.graph.zoomInTitle}
+                disabled={zoom >= MAX_ZOOM}
+                onClick={() => setZoom(stepZoom(zoom, 1))}
+              >
+                <Icon name="add" />
+              </button>
+            </div>
             <label
               className="gc-checkbox gc-checkbox--float"
               title={strings.graph.toggleRibbonsTitle}

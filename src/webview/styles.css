@@ -475,17 +475,17 @@ h3 {
   cursor: pointer;
 }
 
-/* Floating checkbox in canvas controls stack */
+/* Floating checkbox in canvas controls stack, rounded like the control cards. */
 .gc-checkbox--float {
   align-items: center;
   gap: var(--gc-space-1);
   padding: 0 var(--gc-space-2);
   min-height: var(--gc-hit);
   border: 1px solid var(--gc-border);
-  border-radius: var(--gc-radius);
-  background: var(--vscode-editorWidget-background, var(--vscode-editor-background));
+  border-radius: var(--gc-radius-lg);
+  background: var(--gc-surface-2);
   color: var(--vscode-foreground);
-  box-shadow: 0 1px 4px var(--vscode-widget-shadow, transparent);
+  box-shadow: var(--gc-shadow-md);
   user-select: none;
 }
 
@@ -1401,24 +1401,55 @@ h3 {
 }
 
 /*
- * Floating controls need their own surface: they sit over commit rows, so a
- * transparent button would be unreadable against whatever scrolled under it.
+ * Floating controls are grouped into cards: the card carries the surface
+ * (fill, hairline, shadow) and the buttons inside stay quiet, so the cluster
+ * reads as one piece of chrome resting on the canvas instead of five loose
+ * widgets. Buttons inside keep `--gc-hit` and their hover fill; the card edge
+ * is what separates them from the rows scrolling underneath.
  */
-.gc-button--float,
-.gc-icon-button--float {
-  border-color: var(--gc-border);
-  background: var(--vscode-editorWidget-background, var(--vscode-editor-background));
-  color: var(--vscode-foreground);
-  box-shadow: 0 1px 4px var(--vscode-widget-shadow, transparent);
+.gc-control-card {
+  display: inline-flex;
+  align-items: center;
+  gap: 0;
+  padding: var(--gc-space-1);
+  border: 1px solid var(--gc-border);
+  border-radius: var(--gc-radius-lg);
+  background: var(--gc-surface-2);
+  box-shadow: var(--gc-shadow-md);
 }
 
-.gc-button--float:hover:not(:disabled),
-.gc-icon-button--float:hover:not(:disabled) {
-  background: var(--vscode-toolbar-hoverBackground, var(--vscode-list-hoverBackground));
+.gc-control-card .gc-icon-button,
+.gc-control-card .gc-zoom__reset {
+  border-radius: var(--gc-radius);
 }
 
-.gc-button--float {
+.gc-control-card--zoom .gc-icon-button {
+  font-size: var(--gc-fs-sm);
+}
+
+/*
+ * The zoom percentage doubles as the reset button: a readout you can press.
+ * Quiet at rest, hover fill like its neighbours, tabular numerals so the value
+ * never shifts the card width as it changes.
+ */
+.gc-zoom__reset {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: var(--gc-hit);
+  min-width: var(--gc-hit);
   padding: 0 var(--gc-space-2);
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--vscode-foreground);
+  font-family: inherit;
+  font-size: var(--gc-fs-xs);
+  cursor: pointer;
+  transition: background var(--gc-dur-fast) var(--gc-ease);
+}
+
+.gc-zoom__reset:hover:not(:disabled) {
+  background: var(--vscode-toolbar-hoverBackground, var(--vscode-list-hoverBackground));
 }
 
 /*
@@ -1792,7 +1823,7 @@ h3 {
   align-items: center;
   padding: 0 var(--gc-space-3);
   color: var(--gc-muted);
-  font-size: var(--gc-fs-xs);
+  font-size: var(--gc-fs-2xs);
   font-weight: var(--gc-weight-strong);
   border-right: 1px solid var(--gc-border);
   white-space: nowrap;
@@ -1894,9 +1925,9 @@ h3 {
 .gc-minimap {
   flex: 0 0 auto;
   border: 1px solid var(--gc-border);
-  border-radius: var(--gc-radius);
-  background: var(--vscode-editorWidget-background, var(--vscode-editor-background));
-  box-shadow: 0 1px 4px var(--vscode-widget-shadow, transparent);
+  border-radius: var(--gc-radius-lg);
+  background: var(--gc-surface-2);
+  box-shadow: var(--gc-shadow-md);
   cursor: pointer;
   touch-action: none;
 }
@@ -1907,8 +1938,13 @@ h3 {
   opacity: 0.7;
 }
 
+/*
+ * Viewport indicator: accent wash inside a clear focus-colour border, so the
+ * "you are here" region reads both as a fill and as an edge. Colour is backed
+ * by the drag affordance and the slider role.
+ */
 .gc-minimap__viewport {
-  fill: var(--vscode-scrollbarSlider-background);
+  fill: var(--gc-accent-subtle);
   stroke: var(--vscode-focusBorder);
   stroke-width: 1;
 }
@@ -4347,11 +4383,11 @@ h3 {
    * on top of commit rows. A solid `Canvas` background plus a border restores the
    * "these are chrome, not content" boundary the shadow was providing.
    */
-  .gc-canvas__controls .gc-button,
-  .gc-canvas__controls .gc-icon-button,
+  .gc-canvas__controls .gc-control-card,
   .gc-canvas__controls .gc-checkbox--float {
     background: Canvas;
     box-shadow: none;
+    border: 1px solid ButtonBorder;
   }
 
   .gc-skeleton {
