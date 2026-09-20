@@ -32,7 +32,6 @@ const id: Catalog = {
     emptyTitle: 'Tidak ada perubahan.',
     emptyHint: 'Folder kerja bersih.',
     changesHeader: 'Perubahan',
-    changesTotal: (count: string) => `${count} file`,
     searchPlaceholder: 'Cari file...',
     searchAria: 'Saring berdasarkan nama file',
     searchMatched: (shown: string, total: string) => `${shown} dari ${total} file cocok`,

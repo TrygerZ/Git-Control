@@ -36,7 +36,6 @@ const en = {
     emptyTitle: 'No changes.',
     emptyHint: 'Working tree is clean.',
     changesHeader: 'Changes',
-    changesTotal: (count: string) => `${count} files`,
     searchPlaceholder: 'Search files...',
     searchAria: 'Filter by file name',
     searchMatched: (shown: string, total: string) => `${shown} of ${total} files matched`,
