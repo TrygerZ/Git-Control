@@ -5,6 +5,11 @@ All notable changes to the "Git Control" extension will be documented in this fi
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.6.19] - 2026-09-20
+
+### Fixed
+- Commit cards in the top graph lane are no longer cut off by the sticky date ruler when a node is both selected and hovered (z-index cascade conflict), and resting selected cards now also clear the ruler.
+
 ## [2.6.18] - 2026-09-12
 
 ### Fixed
