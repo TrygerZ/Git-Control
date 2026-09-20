@@ -1960,6 +1960,8 @@ h3 {
   font-weight: var(--gc-weight-strong);
 }
 
+/* Local branch chips (.gc-chip--local) are the intentional neutral sample covered by .gc-chip. */
+
 .gc-chip--remote {
   border-style: dashed;
 }
