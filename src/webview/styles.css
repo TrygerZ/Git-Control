@@ -1434,7 +1434,18 @@ h3 {
   color: var(--vscode-list-activeSelectionForeground);
   outline: 1px solid var(--vscode-contrastActiveBorder, transparent);
   outline-offset: -1px;
-  z-index: 3;
+  /* Lift above sticky date ruler (5) so resting selection is not obscured */
+  z-index: 6;
+}
+
+/*
+ * A hovered card always wins the stack, selected or not. The two single-class rules
+ * above tie at (0,1,0), so source order alone let the selected value silence the
+ * hovered one and drop a hovered+selected card below the ruler (5); this compound
+ * selector outranks both regardless of future source order.
+ */
+.gc-row--hovered.gc-row--selected {
+  z-index: 8;
 }
 
 .gc-row--selected .gc-row__subject,

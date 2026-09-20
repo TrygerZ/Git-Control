@@ -37,6 +37,7 @@ node_modules/**
 .vscode/**
 .vscode-test/**
 .tmp-devhost/**
+.codegraph/**
 **/*.vsix
 **/*.md
 !README.md
