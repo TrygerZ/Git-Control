@@ -342,26 +342,48 @@ export function PendingChangesApp(): JSX.Element {
       ) : (
         <>
           {/*
-            List header with integrated search filter disclosure.
+            List header: heading with a pill count, then a full-width search box
+            with the leading glyph inside the field, and a quiet filter affordance
+            beside it.
           */}
           <div className="gc-listbar">
             <div className="gc-listbar__header">
               <h2 className="gc-listbar__title">
                 {strings.pending.changesHeader}
-                <span className="gc-listbar__total">{strings.pending.changesTotal(formatCount(changes.length, language))}</span>
+                <span className="gc-listbar__total">{formatCount(changes.length, language)}</span>
               </h2>
             </div>
-            <div className="gc-listbar__search-wrap">
-              <input
-                type="search"
-                className="gc-listbar__input"
-                value={filter}
-                maxLength={100}
-                placeholder={strings.pending.searchPlaceholder}
-                aria-label={strings.pending.searchAria}
-                aria-describedby={filterCountId}
-                onChange={(event) => setFilter(event.target.value)}
-              />
+            <div className="gc-listbar__controls">
+              <div className="gc-listbar__search-wrap">
+                <span className="gc-listbar__search-icon" aria-hidden="true">
+                  <Icon name="search" />
+                </span>
+                <input
+                  type="search"
+                  className="gc-listbar__input"
+                  value={filter}
+                  maxLength={100}
+                  placeholder={strings.pending.searchPlaceholder}
+                  aria-label={strings.pending.searchAria}
+                  aria-describedby={filterCountId}
+                  onChange={(event) => setFilter(event.target.value)}
+                />
+              </div>
+              {/*
+                Visual affordance only: the input above is the filter, so this
+                button is disabled and exists to signal that the row is the
+                filter row. aria-hidden keeps a dead control out of the tab order
+                and the accessibility tree.
+              */}
+              <button
+                type="button"
+                className="gc-icon-button gc-listbar__filter"
+                aria-hidden="true"
+                tabIndex={-1}
+                disabled
+              >
+                <Icon name="filter" />
+              </button>
             </div>
             {needle.length > 0 && (
               <p className="gc-help-text gc-listbar__count" id={filterCountId} role="status" aria-live="polite">

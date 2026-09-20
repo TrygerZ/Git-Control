@@ -2430,18 +2430,20 @@ h3 {
 }
 
 /*
- * Header of the file list: title, total count, search input.
+ * Header of the file list: title, total count pill, search input with leading
+ * glyph, and a quiet filter affordance. Sticky so the filter stays in reach
+ * while the sections scroll beneath it.
  */
 .gc-listbar {
   position: sticky;
   top: 0;
-  z-index: 1;
+  z-index: 2;
   display: flex;
   flex-direction: column;
   gap: var(--gc-space-2);
-  padding: var(--gc-space-2) 0;
+  padding: var(--gc-space-3) 0;
   border-bottom: 1px solid var(--gc-border);
-  background: var(--vscode-editor-background);
+  background: var(--gc-surface-1);
 }
 
 .gc-listbar__header {
@@ -2455,32 +2457,73 @@ h3 {
   align-items: center;
   gap: var(--gc-space-2);
   margin: 0;
-  font-size: var(--gc-fs-md);
+  font-size: var(--gc-fs-lg);
   font-weight: var(--gc-weight-strong);
 }
 
+/* The total is a pill badge, not trailing prose, so it reads as metadata. */
 .gc-listbar__total {
+  display: inline-flex;
+  align-items: center;
+  padding: 0 var(--gc-space-2);
+  border-radius: var(--gc-radius-pill);
+  background: var(--gc-surface-3);
   color: var(--gc-muted);
-  font-size: var(--gc-fs-xs);
+  font-size: var(--gc-fs-2xs);
   font-weight: normal;
   font-variant-numeric: tabular-nums;
 }
 
-.gc-listbar__search-wrap {
+.gc-listbar__controls {
   display: flex;
-  width: 100%;
+  align-items: center;
+  gap: var(--gc-space-2);
+}
+
+.gc-listbar__search-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+/* The glyph sits inside the field's left padding, not beside the field. */
+.gc-listbar__search-icon {
+  position: absolute;
+  left: var(--gc-space-3);
+  top: 0;
+  bottom: 0;
+  display: inline-flex;
+  align-items: center;
+  color: var(--gc-muted);
+  font-size: var(--gc-fs-sm);
+  pointer-events: none;
 }
 
 .gc-listbar__input {
   width: 100%;
   min-height: var(--gc-hit);
-  padding: var(--gc-space-1) var(--gc-space-3);
+  padding: var(--gc-space-1) var(--gc-space-3) var(--gc-space-1) var(--gc-space-7);
   border: 1px solid var(--vscode-input-border, var(--gc-border));
-  border-radius: var(--gc-radius);
+  border-radius: var(--gc-radius-lg);
   background: var(--vscode-input-background);
   color: var(--vscode-input-foreground);
   font-family: inherit;
   font-size: var(--gc-fs-sm);
+  transition: border-color var(--gc-dur-fast) var(--gc-ease);
+}
+
+.gc-listbar__input:focus {
+  outline: 1px solid var(--vscode-focusBorder);
+  outline-offset: -1px;
+  border-color: var(--vscode-focusBorder);
+}
+
+/* Affordance only: the input is the filter, so this button never activates. */
+.gc-listbar__filter {
+  flex: 0 0 auto;
+  font-size: var(--gc-fs-md);
 }
 
 .gc-listbar__count {
