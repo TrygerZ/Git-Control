@@ -326,18 +326,7 @@ export function PendingChangesApp(): JSX.Element {
             title={strings.pending.emptyTitle}
             hint={strings.pending.emptyHint}
           />
-          <div className="gc-pending__sections" ref={scrollRef}>
-            <StashSection
-              stashes={stashes}
-              isCollapsed={stashesCollapsed}
-              busy={busy}
-              language={language}
-              onToggle={toggleStashesCollapsed}
-              onApply={(i) => void applyStash(i)}
-              onDrop={(i) => void dropStash(i)}
-              onOpenDiff={(index, path) => void openStashDiff(index, path)}
-            />
-          </div>
+          <div className="gc-pending__sections" ref={scrollRef} />
         </>
       ) : (
         <>
@@ -529,20 +518,28 @@ export function PendingChangesApp(): JSX.Element {
                   </section>
                 );
               })}
-              <StashSection
-                stashes={stashes}
-                isCollapsed={stashesCollapsed}
-                busy={busy}
-                language={language}
-                onToggle={toggleStashesCollapsed}
-                onApply={(i) => void applyStash(i)}
-                onDrop={(i) => void dropStash(i)}
-                onOpenDiff={(index, path) => void openStashDiff(index, path)}
-              />
             </div>
           )}
         </>
       )}
+
+      {/*
+        The stash sits outside the scrolling sections, pinned to the panel foot like
+        the VS Code SCM graph menu. It renders exactly once in every state (loading,
+        empty, filtered-empty) so its dropdown never unmounts mid-interaction.
+      */}
+      <div className="gc-pending__stash">
+        <StashSection
+          stashes={stashes}
+          isCollapsed={stashesCollapsed}
+          busy={busy}
+          language={language}
+          onToggle={toggleStashesCollapsed}
+          onApply={(i) => void applyStash(i)}
+          onDrop={(i) => void dropStash(i)}
+          onOpenDiff={(index, path) => void openStashDiff(index, path)}
+        />
+      </div>
 
       <GuardDialog />
       <ToastRegion />

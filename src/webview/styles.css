@@ -2670,6 +2670,22 @@ h3 {
   scrollbar-gutter: stable;
 }
 
+/*
+ * Stash block pinned to the panel foot. Because `.gc-pending` is a fixed-height
+ * flex column and `.gc-pending__sections` grows to fill it, this block stays at
+ * the bottom regardless of how many change sections render above. Its own height
+ * is capped so a long stash list scrolls internally instead of pushing the commit
+ * form off screen.
+ */
+.gc-pending__stash {
+  flex: 0 0 auto;
+  max-height: 45%;
+  overflow-y: auto;
+  scrollbar-gutter: stable;
+  border-top: 1px solid var(--gc-border);
+  background: var(--gc-surface-1);
+}
+
 .gc-pending__count {
   align-self: center;
   color: var(--gc-muted);
