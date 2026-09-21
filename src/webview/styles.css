@@ -1,4 +1,4 @@
-﻿/*
+/*
  * Git Control webview styles.
  *
  * Rules that hold everywhere in this file:
@@ -2872,7 +2872,7 @@ h3 {
   align-items: center;
   gap: var(--gc-space-2);
   margin: 0;
-  padding: var(--gc-space-2) var(--gc-space-3) 0 1.2em;
+  padding: var(--gc-space-2) var(--gc-space-3) 0;
   background: var(--gc-surface-1);
 }
 
@@ -3028,7 +3028,7 @@ h3 {
   align-items: center;
   gap: var(--gc-space-2);
   min-height: var(--gc-hit);
-  padding: var(--gc-space-1) var(--gc-space-3) var(--gc-space-1) 1.2em;
+  padding: var(--gc-space-1) var(--gc-space-3);
   font-size: var(--gc-fs-sm);
   border-radius: var(--gc-radius);
   transition: background var(--gc-dur-fast) var(--gc-ease);
@@ -3117,7 +3117,7 @@ h3 {
   width: 100%;
   min-width: 0;
   min-height: var(--gc-hit);
-  padding: var(--gc-space-1) var(--gc-space-3) var(--gc-space-1) 1.2em;
+  padding: var(--gc-space-1) var(--gc-space-3);
   border: none;
   border-radius: var(--gc-radius);
   background: transparent;
@@ -3178,7 +3178,7 @@ h3 {
   align-items: center;
   gap: var(--gc-space-1);
   min-height: var(--gc-hit);
-  padding: var(--gc-space-1) var(--gc-space-3) var(--gc-space-1) 1.2em;
+  padding: var(--gc-space-1) var(--gc-space-3);
   border-radius: var(--gc-radius);
   transition: background var(--gc-dur-fast) var(--gc-ease);
 }
