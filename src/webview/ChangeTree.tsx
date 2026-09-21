@@ -178,7 +178,7 @@ export function ChangeTree({
             aria-expanded={node.kind === 'folder' ? !isCollapsed : undefined}
             data-tree-row={index}
             tabIndex={index === cursor ? 0 : -1}
-            style={{ paddingLeft: `${depth * 14}px` }}
+            style={{ paddingLeft: `${depth * 10}px` }}
             onKeyDown={(event) => onKeyDown(event, index)}
             onFocus={() => setCursor(index)}
           >

@@ -797,7 +797,7 @@ h3 {
   height: 100%;
   min-height: 0;
   flex: 1 1 auto;
-  padding: var(--gc-space-3);
+  padding: var(--gc-space-2);
   overflow: hidden;
   box-sizing: border-box;
 }
@@ -1148,6 +1148,10 @@ h3 {
 .gc-segmented--quiet .gc-button {
   border-color: transparent;
   background: transparent;
+  /* Fixed floor sized for the longest label ("Pilih semua") plus its icon, so
+   * Select all / Clear keep one width across EN and ID instead of reflowing. */
+  min-width: 8.5em;
+  justify-content: center;
 }
 
 .gc-segmented--quiet .gc-button + .gc-button {
@@ -2705,7 +2709,7 @@ h3 {
   display: flex;
   flex-direction: column;
   gap: var(--gc-space-2);
-  padding: var(--gc-space-3) 0;
+  padding: var(--gc-space-2) 0;
   border-bottom: 1px solid var(--gc-border);
   background: var(--gc-surface-1);
 }
@@ -2827,7 +2831,7 @@ h3 {
   align-items: center;
   gap: var(--gc-space-2);
   margin: 0 0 var(--gc-space-1);
-  padding: var(--gc-space-3) 0 var(--gc-space-1);
+  padding: var(--gc-space-2) 0 var(--gc-space-1);
   background: var(--gc-surface-1);
 }
 
@@ -2983,7 +2987,7 @@ h3 {
   align-items: center;
   gap: var(--gc-space-2);
   min-height: var(--gc-hit);
-  padding: var(--gc-space-2) var(--gc-space-1);
+  padding: var(--gc-space-1) var(--gc-space-2);
   font-size: var(--gc-fs-sm);
   border-radius: var(--gc-radius);
   transition: background var(--gc-dur-fast) var(--gc-ease);
@@ -3072,7 +3076,7 @@ h3 {
   width: 100%;
   min-width: 0;
   min-height: var(--gc-hit);
-  padding: var(--gc-space-2) var(--gc-space-1);
+  padding: var(--gc-space-1) var(--gc-space-2);
   border: none;
   border-radius: var(--gc-radius);
   background: transparent;
@@ -3133,7 +3137,7 @@ h3 {
   align-items: center;
   gap: var(--gc-space-1);
   min-height: var(--gc-hit);
-  padding: var(--gc-space-2) var(--gc-space-1);
+  padding: var(--gc-space-1) var(--gc-space-2);
   border-radius: var(--gc-radius);
   transition: background var(--gc-dur-fast) var(--gc-ease);
 }
@@ -3417,8 +3421,8 @@ h3 {
 .gc-commit {
   display: flex;
   flex-direction: column;
-  gap: var(--gc-space-3);
-  padding: var(--gc-space-4);
+  gap: var(--gc-space-2);
+  padding: var(--gc-space-3);
   border: 1px solid var(--gc-border);
   border-radius: var(--gc-radius-lg);
   background: var(--gc-surface-2);
@@ -3472,7 +3476,7 @@ h3 {
 .gc-commit__meta {
   display: flex;
   align-items: center;
-  gap: var(--gc-space-3);
+  gap: var(--gc-space-2);
 }
 
 .gc-checkbox--inline {
