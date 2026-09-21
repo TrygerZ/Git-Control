@@ -3585,22 +3585,23 @@ h3 {
 
 /* Permanent progress line reserved for the in-flow status indicator.
  * Mounting or unmounting in-flow elements alters parent height and shifts
- * panels below. Reserving exactly one text row keeps heights identical across
- * idle and busy states. The max() floor keeps the reservation from shrinking
- * below the 10px spinner dot (border-box: its 2px border is inside that box),
- * so a very small base font can never let the busy row outgrow the idle row. */
+ * panels below, so the slot stays reserved across idle and busy states. The
+ * reservation is a single 1em line rather than a taller max() floor: at idle
+ * the row is empty and only reserves space, and a smaller slot keeps the card
+ * bottom gap from ballooning past the top/side padding. If a busy label ever
+ * outgrows one line the row grows slightly, an acceptable and rare tradeoff. */
 .gc-commit__status {
   display: flex;
   align-items: center;
   margin: 0;
-  min-height: max(1.4em, 10px);
+  min-height: 1em;
   line-height: 1.4;
   font-size: var(--gc-fs-xs);
   color: var(--gc-muted);
 }
 
 .gc-commit__status .gc-spinner {
-  min-height: max(1.4em, 10px);
+  min-height: 1em;
   line-height: 1.4;
   font-size: inherit;
   color: inherit;
