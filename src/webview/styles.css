@@ -984,7 +984,7 @@ h3 {
 .gc-toolbar__branch-wrap {
   display: flex;
   align-items: center;
-  flex: 1 1 0;
+  flex: 1 1 auto;
   /* Floor prevents branch select collapsing to chevron; min() respects narrow panels */
   min-width: min(9em, 100%);
   max-width: 100%;
@@ -1008,7 +1008,9 @@ h3 {
   align-items: center;
   width: 100%;
   min-width: 0;
-  max-width: min(14em, 100%);
+  /* No cap: in the full-width column bar the select spans the whole row so its
+   * edge lines up with the buttons below. */
+  max-width: none;
 }
 
 .gc-toolbar__branch-select,
@@ -1083,6 +1085,25 @@ h3 {
 }
 
 /*
+ * The pending panel bar stacks its children as full-width rows (VS Code SCM
+ * idiom): the branch selector gets one row, the Select all / Clear pair the
+ * next, so every control shares the same left and right edge. Scoped to the
+ * pending bar only; the explorer graph toolbar keeps its horizontal flow.
+ */
+.gc-pending__bar.gc-toolbar--actions {
+  flex-direction: column;
+  align-items: stretch;
+}
+
+/*
+ * In a stretch column a trailing `margin-left: auto` no longer pushes the end
+ * group right, so align it explicitly on the cross axis instead.
+ */
+.gc-pending__bar.gc-toolbar--actions .gc-toolbar__end {
+  align-self: flex-end;
+}
+
+/*
  * Two buttons that always act on the same selection, drawn as one control: the outer
  * corners round, the inner pair meets on a single shared rule. `margin-left: -1px`
  * is what collapses the two adjacent borders into that one rule, and `position` plus
@@ -1148,9 +1169,11 @@ h3 {
 .gc-segmented--quiet .gc-button {
   border-color: transparent;
   background: transparent;
-  /* Fixed floor sized for the longest label ("Pilih semua") plus its icon, so
-   * Select all / Clear keep one width across EN and ID instead of reflowing. */
-  min-width: 8.5em;
+  /* Equal split: both buttons always share the full row 50/50, so the pair keeps
+   * one width across EN and ID without a hard-coded floor that could overflow a
+   * narrow sidebar. min-width: 0 lets flex:1 1 0 do the sizing. */
+  flex: 1 1 0;
+  min-width: 0;
   justify-content: center;
 }
 
@@ -1176,31 +1199,47 @@ h3 {
   font-size: var(--gc-fs-sm);
 }
 
-/* Selection count is data, not an action — muted and tabular so it anchors the pair.
- * Always given its own row (flex-basis: 100%) so count placement and toolbar height
- * never jump or depend on localized string lengths across EN and ID. */
+/* Selection count is data, not an action, so it is muted and tabular. The group
+ * stretches to its column row and wraps: the segmented pair takes the full width
+ * on one line and the count drops beneath it right-aligned, sharing the same right
+ * edge as the buttons rather than floating mid-row. */
 .gc-selection-group {
-  display: inline-flex;
+  display: flex;
+  flex: 1 1 auto;
   align-items: center;
   gap: var(--gc-space-2);
   min-width: 0;
   flex-wrap: wrap;
 }
 
+/* The segmented pair fills the row; its two buttons split that width equally. */
+.gc-selection-group .gc-segmented--quiet {
+  flex: 1 1 auto;
+  display: flex;
+}
+
 .gc-selection-group .gc-pending__count {
   flex-basis: 100%;
+  text-align: right;
   color: var(--gc-muted);
   font-size: var(--gc-fs-xs);
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
 
+/*
+ * Inside the column bar this group is itself a column: the branch selector and
+ * the selection group each take a full-width row, which is what aligns the
+ * dropdown edge with the buttons beneath it. Children stretch to the row.
+ */
 .gc-toolbar__secondary-group {
   display: flex;
-  align-items: center;
-  gap: var(--gc-space-1);
+  flex-direction: column;
+  align-items: stretch;
+  gap: var(--gc-space-2);
+  width: 100%;
   min-width: 0;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
 }
 
 .gc-toolbar__end {
