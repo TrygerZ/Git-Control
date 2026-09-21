@@ -102,7 +102,7 @@
   --gc-radius-pill: 999px;
   --gc-row-height: 28px;
   /* WCAG 2.5.8 target size (minimum). Every clickable element honours it. */
-  --gc-hit: 28px;
+  --gc-hit: 26px;
   /*
    * Comfortable target for the one primary button per surface. Not a replacement
    * for `--gc-hit`: that stays the floor everything else is measured against.
@@ -1258,7 +1258,7 @@ h3 {
   overflow: hidden;
   max-width: 16em;
   color: var(--vscode-foreground);
-  font-size: var(--gc-fs-lg);
+  font-size: var(--gc-fs-md);
   font-weight: var(--gc-weight-strong);
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -2725,7 +2725,7 @@ h3 {
   align-items: center;
   gap: var(--gc-space-2);
   margin: 0;
-  font-size: var(--gc-fs-lg);
+  font-size: var(--gc-fs-md);
   font-weight: var(--gc-weight-strong);
 }
 
@@ -2831,7 +2831,7 @@ h3 {
   align-items: center;
   gap: var(--gc-space-2);
   margin: 0 0 var(--gc-space-1);
-  padding: var(--gc-space-2) 0 var(--gc-space-1);
+  padding: var(--gc-space-2) 0 0;
   background: var(--gc-surface-1);
 }
 
@@ -3137,7 +3137,7 @@ h3 {
   align-items: center;
   gap: var(--gc-space-1);
   min-height: var(--gc-hit);
-  padding: var(--gc-space-1) var(--gc-space-2);
+  padding: var(--gc-space-2) var(--gc-space-2);
   border-radius: var(--gc-radius);
   transition: background var(--gc-dur-fast) var(--gc-ease);
 }
@@ -3210,7 +3210,11 @@ h3 {
   }
 }
 
+/* Rows shrink the box to the 14 px file-list metric; the commit form keeps the
+ * global 16 px platform box above. Margin keeps the padded hit area intact. */
 .gc-tree__row .gc-checkbox__input {
+  width: 14px;
+  height: 14px;
   margin: var(--gc-space-1);
 }
 
@@ -3308,8 +3312,8 @@ h3 {
 
 /*
  * Column 2 of a file row now holds the theme icon instead of the status box.
- * Same footprint as the old box so the row rhythm survives the swap.
- * Folder rows use .gc-tree__icon with the same 18x18 footprint.
+ * The cell matches the 16 px glyph inside so the row reads at SCM density.
+ * Folder rows use .gc-tree__icon with the same 16x16 footprint.
  */
 .gc-tree__icon-cell,
 .gc-tree__icon {
@@ -3317,8 +3321,8 @@ h3 {
   flex: 0 0 auto;
   align-items: center;
   justify-content: center;
-  width: 18px;
-  height: 18px;
+  width: 16px;
+  height: 16px;
 }
 
 .gc-tree__icon-cell .gc-icon,
@@ -3339,7 +3343,7 @@ h3 {
   flex: 0 0 auto;
   align-items: center;
   justify-content: center;
-  min-width: 18px;
+  min-width: 16px;
   color: var(--gc-muted);
   font-family: var(--vscode-editor-font-family, monospace);
   font-size: var(--gc-fs-md);
