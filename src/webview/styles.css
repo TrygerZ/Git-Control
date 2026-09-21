@@ -3468,11 +3468,18 @@ h3 {
  * small shadow rung) is what makes Commit read as the destination of the panel.
  * No bottom separator: the toolbar below now carries its own top padding.
  */
+/*
+ * Bottom padding is one step tighter than the top/side var(--gc-space-3): the
+ * always-reserved gc-commit__status row contributes its own min-height below
+ * the actions, so a full bottom padding on top of that reservation reads
+ * visibly larger than the top gap. The reduced bottom term restores balance
+ * while the reserved status row keeps its pinned px-floor min-height.
+ */
 .gc-commit {
   display: flex;
   flex-direction: column;
   gap: var(--gc-space-2);
-  padding: var(--gc-space-3);
+  padding: var(--gc-space-3) var(--gc-space-3) var(--gc-space-2);
   border: 1px solid var(--gc-border);
   border-radius: var(--gc-radius-lg);
   background: var(--gc-surface-2);
@@ -3585,23 +3592,23 @@ h3 {
 
 /* Permanent progress line reserved for the in-flow status indicator.
  * Mounting or unmounting in-flow elements alters parent height and shifts
- * panels below, so the slot stays reserved across idle and busy states. The
- * reservation is a single 1em line rather than a taller max() floor: at idle
- * the row is empty and only reserves space, and a smaller slot keeps the card
- * bottom gap from ballooning past the top/side padding. If a busy label ever
- * outgrows one line the row grows slightly, an acceptable and rare tradeoff. */
+ * panels below. Reserving exactly one text row keeps heights identical across
+ * idle and busy states. The max() floor keeps the reservation from shrinking
+ * below the 10px spinner dot (border-box: its 2px border is inside that box),
+ * so a very small base font can never let the busy row outgrow the idle row.
+ * The px floor is a pinned invariant (see test/pendingSections.test.ts). */
 .gc-commit__status {
   display: flex;
   align-items: center;
   margin: 0;
-  min-height: 1em;
+  min-height: max(1.4em, 10px);
   line-height: 1.4;
   font-size: var(--gc-fs-xs);
   color: var(--gc-muted);
 }
 
 .gc-commit__status .gc-spinner {
-  min-height: 1em;
+  min-height: max(1.4em, 10px);
   line-height: 1.4;
   font-size: inherit;
   color: inherit;
