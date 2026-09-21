@@ -5,6 +5,24 @@ All notable changes to the "Git Control" extension will be documented in this fi
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.7.0] - 2026-09-21
+
+### Added
+- Commit inspector now renders the author's GitHub avatar, falling back to deterministic initials when the author is unlinked or the image fails to load.
+- Stash section is pinned to the sidebar footer as its own dropdown, matching the VS Code Source Control graph menu, instead of scrolling with the change list.
+- Active change row content (checkbox, file icon, name) is inset from the panel edge while the selection wash stays flush to both edges, mirroring VS Code list behaviour.
+
+### Changed
+- Pending Changes panel is denser: smaller change row height, compact section headers, a toned-down list header, and a rebalanced commit card, so the sidebar reads nearly full width.
+- Selection toolbar is now laid out as two aligned full-width rows: the branch selector fills the first, and the Select all / Clear controls share the second at equal widths, keeping the layout stable across English and Indonesian labels.
+- Commit card bottom padding is balanced against its top and side padding, removing the oversized gap above the toolbar.
+- Branch selector and stash rows are aligned to the same content inset as change rows.
+
+### Fixed
+- Context bar no longer shows the ahead/behind count twice: the green arrow badge keeps the number while the adjacent sentence names the upstream only.
+- Scrollbar gutter in the Branch Explorer aside is reserved, so the dropdown chevron no longer drifts left or right when the file list scrolls.
+- Tree indentation is additive to the row content inset, so the indent survives at every folder depth instead of collapsing the left inset on root rows.
+
 ## [2.6.19] - 2026-09-20
 
 ### Fixed

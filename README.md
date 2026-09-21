@@ -1,4 +1,4 @@
-# Git Control
+﻿# Git Control
 
 Git Control is an interactive 2D Git DAG graph explorer and source control manager for Visual Studio Code, featuring a dedicated Pending Changes workflow.
 
@@ -35,6 +35,8 @@ Git Control replaces flat vertical commit lists with an interactive two-dimensio
 * **File Icon Theme Integration**: File rows display icons from the active VS Code File Icon Theme, updating automatically on theme changes.
 * **Pull from Upstream**: Pull active branch from its upstream with dirty working tree guard offering commit, stash, and cancel remedies.
 * **Per-File Discard**: Discard unstaged changes for individual files with two-step destructive confirmation, blocked during active operations and conflicts.
+* **Dense SCM Layout**: Change rows, section headers, and the commit card follow the VS Code Source Control density, keeping the sidebar readable and nearly full width, with the active-row wash flush to both edges and only the row content inset.
+* **Pinned Stash Footer**: The Stash section is docked to the foot of the sidebar as its own dropdown, so it stays in reach while the change list scrolls independently above it.
 
 ### 4. Stash Management
 * **List, Apply, and Drop Stashes**: List all stashes with apply (keeps the entry) and drop actions; drop requires two-step destructive confirmation.
@@ -69,6 +71,7 @@ Right-click any commit node or branch ref to perform standard Git actions:
 * **Multi-Parent Comparison**: Compare merge commits against any individual parent commit.
 * **Integrated Diffing**: Opens files directly in the native VS Code Diff Editor.
 * **File Changes Breakdown**: Summarizes changed files and line modifications, including binary file identification.
+* **Author Avatar**: Shows the commit author's GitHub avatar in the inspector header, falling back to deterministic initials when the author is unlinked or offline.
 
 ### 8. GitHub Integration
 * **Token Storage**: Connects directly to GitHub via VS Code SecretStorage without exposing credentials.
@@ -78,7 +81,11 @@ Right-click any commit node or branch ref to perform standard Git actions:
 * **Contributor Identity Resolution**: Resolves author email addresses to GitHub profiles and avatars with cached API queries.
 
 ### 9. Bilingual Interface
-* Full interface support for English and Bahasa Indonesia, configurable via settings or the status bar toggle.
+
+Git Control ships a complete English and Bahasa Indonesia UI, switched from the status bar toggle or the `gitControl.language` setting. Panel chrome, section headers, buttons, tooltips, and accessible names are all translated, and the selection controls keep identical widths in both languages.
+
+![Git Control Pending Changes panel in Bahasa Indonesia](screenshots/pending-showcase-id.png)
+
 
 ## Requirements
 
