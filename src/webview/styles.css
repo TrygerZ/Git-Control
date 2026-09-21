@@ -1342,6 +1342,22 @@ h3 {
   font-size: var(--gc-fs-sm);
   font-weight: var(--gc-weight-strong);
   line-height: 1;
+  overflow: hidden;
+}
+
+/* A real face fills the circle edge to edge; the frame and initial backdrop only
+ * exist to hold a bare letter, so they drop away once the image lands. */
+.gc-avatar__img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  object-fit: cover;
+}
+
+.gc-avatar:has(.gc-avatar__img) {
+  border: none;
+  background: transparent;
 }
 
 /* --------------------------------------------------------------------- graph */

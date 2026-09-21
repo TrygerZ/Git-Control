@@ -16,6 +16,7 @@ import {
   authorInitials,
   baseName,
   formatCount,
+  isSafeImageSrc,
   relativeTime,
   sanitizeGitText,
   shortHash,
@@ -43,6 +44,9 @@ export function Inspector({ hash }: Props): JSX.Element {
   const showLogs = useOperationStore((st) => st.showLogs);
   const linkage = useGitHubStore((st) => st.linkage);
   const openCommit = useGitHubStore((st) => st.openCommit);
+  const avatars = useGitHubStore((st) => st.avatars);
+  const loadCommitAuthors = useGitHubStore((st) => st.loadCommitAuthors);
+  const [imgFailed, setImgFailed] = useState(false);
 
   const hashRef = useRef(hash);
   hashRef.current = hash;
@@ -63,6 +67,9 @@ export function Inspector({ hash }: Props): JSX.Element {
         setDetail(data);
         setParent(data.parents[0] ?? null);
         setLoading(false);
+        // Pull the author's GitHub face alongside the detail; a miss keeps the initial.
+        void loadCommitAuthors([data.hash]);
+        setImgFailed(false);
       })
       .catch((err: unknown) => {
         if (cancelled) return;
@@ -179,6 +186,8 @@ export function Inspector({ hash }: Props): JSX.Element {
     );
 
   const author = sanitizeGitText(detail.authorName);
+  const avatarUrl = avatars[detail.hash] ?? null;
+  const showAvatar = avatarUrl !== null && isSafeImageSrc(avatarUrl) && !imgFailed;
 
   return (
     <section className="gc-inspector" aria-label={strings.inspector.panelAria}>
@@ -191,7 +200,17 @@ export function Inspector({ hash }: Props): JSX.Element {
         */}
         <div className="gc-inspector__identity">
           <span className="gc-avatar" aria-hidden="true">
-            {authorInitials(detail.authorName)}
+            {showAvatar ? (
+              <img
+                src={avatarUrl}
+                alt=""
+                className="gc-avatar__img"
+                loading="lazy"
+                onError={() => setImgFailed(true)}
+              />
+            ) : (
+              authorInitials(detail.authorName)
+            )}
           </span>
           <div className="gc-inspector__titles">
             <h2 className="gc-inspector__subject">{sanitizeGitText(detail.subject)}</h2>
