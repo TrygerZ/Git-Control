@@ -268,6 +268,19 @@ export function ContextBar({
   const head = status.head === null ? null : shortHash(status.head);
   const line = subject === undefined ? null : sanitizeGitText(subject);
 
+  /*
+   * The full sentence stays on the tooltip and the visually hidden fallback so a
+   * screen reader still hears the counts. The visible text drops them: the arrow
+   * badges already carry the numbers, and repeating them read as "↑4 4 commits".
+   */
+  const fullSummary = syncSummary(status, language);
+  const visibleSummary =
+    status.upstream === null
+      ? fullSummary
+      : status.ahead > 0 || status.behind > 0
+        ? sanitizeGitText(status.upstream)
+        : fullSummary;
+
   return (
     <header className="gc-context">
       <div className="gc-context__crumbs">
@@ -304,7 +317,7 @@ export function ContextBar({
         what a sighted user reads. The arrows are decoration on top, tone-marked
         and labelled in words by the summary itself.
       */}
-      <p className="gc-context__sync" title={syncSummary(status, language)}>
+      <p className="gc-context__sync" title={fullSummary}>
         <span
           className="gc-context__sync-visual"
           aria-hidden="true"
@@ -321,9 +334,9 @@ export function ContextBar({
               {status.behind}
             </span>
           )}
-          <span className="gc-context__sync-text">{syncSummary(status, language)}</span>
+          <span className="gc-context__sync-text">{visibleSummary}</span>
         </span>
-        <span className="gc-visually-hidden">{syncSummary(status, language)}</span>
+        <span className="gc-visually-hidden">{fullSummary}</span>
       </p>
     </header>
   );
