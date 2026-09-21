@@ -2705,12 +2705,19 @@ h3 {
  * Scroll container for change sections.
  * Gutter is locked to stable so scrollbar appearance does not cause content reflow.
  */
+/*
+ * Left inset mirrors VS Code's tree indent so the active-row wash and the
+ * checkbox no longer sit flush against the panel edge. The right edge stays
+ * unpadded: the stable scrollbar gutter owns that side, so hover actions and
+ * stats are never pushed under the scrollbar.
+ */
 .gc-pending__sections {
   flex: 1 1 auto;
   min-height: 120px;
   overflow-y: auto;
   overflow-x: hidden;
   scrollbar-gutter: stable;
+  padding-left: 1.2em;
 }
 
 /*
@@ -3026,7 +3033,7 @@ h3 {
   align-items: center;
   gap: var(--gc-space-2);
   min-height: var(--gc-hit);
-  padding: var(--gc-space-1) var(--gc-space-2);
+  padding: var(--gc-space-1) var(--gc-space-3);
   font-size: var(--gc-fs-sm);
   border-radius: var(--gc-radius);
   transition: background var(--gc-dur-fast) var(--gc-ease);
@@ -3115,7 +3122,7 @@ h3 {
   width: 100%;
   min-width: 0;
   min-height: var(--gc-hit);
-  padding: var(--gc-space-1) var(--gc-space-2);
+  padding: var(--gc-space-1) var(--gc-space-3);
   border: none;
   border-radius: var(--gc-radius);
   background: transparent;
@@ -3176,7 +3183,7 @@ h3 {
   align-items: center;
   gap: var(--gc-space-1);
   min-height: var(--gc-hit);
-  padding: var(--gc-space-2) var(--gc-space-2);
+  padding: var(--gc-space-1) var(--gc-space-3);
   border-radius: var(--gc-radius);
   transition: background var(--gc-dur-fast) var(--gc-ease);
 }
