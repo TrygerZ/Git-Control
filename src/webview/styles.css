@@ -1,4 +1,4 @@
-/*
+﻿/*
  * Git Control webview styles.
  *
  * Rules that hold everywhere in this file:
@@ -20,14 +20,14 @@
  * Everything used to be one weight, which meant nothing led. There are now exactly
  * three tiers, and every control sits in one of them on purpose:
  *
- *   primary   `.gc-button--primary` — one per surface (with opt-in `--lg` for
+ *   primary   `.gc-button--primary` â€” one per surface (with opt-in `--lg` for
  *             dialogs). `Commit` on the pending panel, `Lanjutkan merge` while a
  *             merge is unfinished. Filled with the theme's button background.
- *   action    `.gc-button--action` — repository-changing but reversible: `Push`,
+ *   action    `.gc-button--action` â€” repository-changing but reversible: `Push`,
  *             `Stage`, `Unstage`. Outlined with a subtle border and transparent fill
  *             so it stays distinct from the filled secondary button while never
  *             competing with primary.
- *   quiet     `.gc-button--quiet`, `.gc-icon-button` — view-only or per-row work:
+ *   quiet     `.gc-button--quiet`, `.gc-icon-button` â€” view-only or per-row work:
  *             selection helpers, refresh, copy, per-file Stage. No fill, no border
  *             until hover.
  *
@@ -450,7 +450,7 @@ h3 {
 .gc-field select,
 .gc-field textarea {
   min-height: var(--gc-hit);
-  padding: var(--gc-space-1) var(--gc-space-3);
+  padding: var(--gc-space-1) var(--gc-space-2);
   border: 1px solid var(--vscode-input-border, var(--gc-border));
   border-radius: var(--gc-radius);
   background: var(--vscode-input-background);
@@ -1158,7 +1158,7 @@ h3 {
  * (4px vertical, 12px horizontal) and a 4px gap between icon and label are
  * deliberate; icon is 14px optically aligned to the cap height.
  */
-/* Quiet segmented pair (Select all / Clear) — same join idiom as Stage/Unstage
+/* Quiet segmented pair (Select all / Clear) â€” same join idiom as Stage/Unstage
  * but quieter: hairline `--gc-border` frame, no accent inset, so it never competes
  * with the action tier. The join reads as "one control, two choices". */
 .gc-segmented--quiet {
@@ -1272,7 +1272,7 @@ h3 {
 
 /*
  * Which repository, which branch, how it stands against the remote. Quiet by
- * construction — a bottom rule and muted text — because it is the answer to a
+ * construction â€” a bottom rule and muted text â€” because it is the answer to a
  * question the user only asks when something looks wrong.
  */
 .gc-context {
@@ -1605,7 +1605,7 @@ h3 {
  * `dominant-baseline: central` plus `text-anchor: middle` is what centres a glyph on
  * an SVG point; without the former the letter sits a third of its height too low.
  * `pointer-events: none` keeps the letter from eating the click that selects the
- * commit — the whole `<svg>` already opts out, but a `<text>` node is the one child
+ * commit â€” the whole `<svg>` already opts out, but a `<text>` node is the one child
  * that commonly gets its own handler bolted on later.
  *
  * `fill` is set inline (lane colour or editor background), so it is absent here.
@@ -1852,7 +1852,7 @@ h3 {
   display: inline-flex;
   align-items: center;
   gap: var(--gc-space-1);
-  padding: var(--gc-space-1) var(--gc-space-3);
+  padding: var(--gc-space-1) var(--gc-space-2);
   border: 1px solid var(--gc-border);
   border-radius: var(--gc-radius-pill);
   background: var(--vscode-badge-background, var(--vscode-editorWidget-background));
@@ -2292,8 +2292,8 @@ h3 {
   /*
    * `min(...)` rather than a flat `26em`: the items now carry a sentence each, so the
    * box grows to the cap, and 26em is wider than a 300 px sidebar. The placement
-   * effect can only clamp the LEFT edge — it has no way to shrink a box that is wider
-   * than the viewport — so the cap has to be viewport-relative or the last few
+   * effect can only clamp the LEFT edge â€” it has no way to shrink a box that is wider
+   * than the viewport â€” so the cap has to be viewport-relative or the last few
    * characters of every hint sit off-screen with no way to scroll to them.
    */
   max-width: min(26em, calc(100vw - 2 * var(--gc-space-3)));
@@ -2365,7 +2365,7 @@ h3 {
  * The two halves of the menu: what only looks, and what changes the repository.
  *
  * A flat list of git verbs gives a newcomer no way to tell `Salin hash` from `Reset
- * hard` without reading every line, so the group is a real boundary — a heading, a
+ * hard` without reading every line, so the group is a real boundary â€” a heading, a
  * sentence, and a rule above the second half.
  */
 .gc-menu__group {
@@ -2412,7 +2412,7 @@ h3 {
 }
 
 /*
- * Risk is a glyph, the word `berisiko`, a left rule, and a colour — four channels.
+ * Risk is a glyph, the word `berisiko`, a left rule, and a colour â€” four channels.
  *
  * The rule matters more than it looks: the glyph and the word sit at the start of a
  * line the eye has not read yet, whereas an edge marker is visible while scanning the
@@ -2522,8 +2522,8 @@ h3 {
  *
  * Level 1 keeps the plain frame. If every guard looked like this the frame would stop
  * meaning anything, and the one dialog that had to look different would look like all
- * the others. The tone is `--gc-tone-removed` — the same hue the `D` status box uses
- * for a deleted file — so "this removes things" is one visual language across the
+ * the others. The tone is `--gc-tone-removed` â€” the same hue the `D` status box uses
+ * for a deleted file â€” so "this removes things" is one visual language across the
  * whole panel rather than a second red invented here.
  */
 .gc-modal--severe {
@@ -2540,7 +2540,7 @@ h3 {
   align-items: center;
   gap: var(--gc-space-1);
   flex: 0 0 auto;
-  padding: var(--gc-space-1) var(--gc-space-3);
+  padding: var(--gc-space-1) var(--gc-space-2);
   border: 1px solid var(--gc-tone-removed);
   border-radius: var(--gc-radius);
   background: var(--gc-surface-3);
@@ -2702,14 +2702,10 @@ h3 {
 }
 
 /*
- * Scroll container for change sections.
  * Gutter is locked to stable so scrollbar appearance does not cause content reflow.
- */
-/*
- * Left inset mirrors VS Code's tree indent so the active-row wash and the
- * checkbox no longer sit flush against the panel edge. The right edge stays
- * unpadded: the stable scrollbar gutter owns that side, so hover actions and
- * stats are never pushed under the scrollbar.
+ * The active-row wash spans the full width (flush at both edges, like VS Code);
+ * only the row CONTENT is indented from the left, via the row's own padding-left.
+ * Gutter is locked to stable so scrollbar appearance does not cause content reflow.
  */
 .gc-pending__sections {
   flex: 1 1 auto;
@@ -2717,7 +2713,6 @@ h3 {
   overflow-y: auto;
   overflow-x: hidden;
   scrollbar-gutter: stable;
-  padding-left: 1.2em;
 }
 
 /*
@@ -2877,7 +2872,7 @@ h3 {
   align-items: center;
   gap: var(--gc-space-2);
   margin: 0;
-  padding: var(--gc-space-2) var(--gc-space-3) 0;
+  padding: var(--gc-space-2) var(--gc-space-3) 0 1.2em;
   background: var(--gc-surface-1);
 }
 
@@ -3033,7 +3028,7 @@ h3 {
   align-items: center;
   gap: var(--gc-space-2);
   min-height: var(--gc-hit);
-  padding: var(--gc-space-1) var(--gc-space-3);
+  padding: var(--gc-space-1) var(--gc-space-3) var(--gc-space-1) 1.2em;
   font-size: var(--gc-fs-sm);
   border-radius: var(--gc-radius);
   transition: background var(--gc-dur-fast) var(--gc-ease);
@@ -3122,7 +3117,7 @@ h3 {
   width: 100%;
   min-width: 0;
   min-height: var(--gc-hit);
-  padding: var(--gc-space-1) var(--gc-space-3);
+  padding: var(--gc-space-1) var(--gc-space-3) var(--gc-space-1) 1.2em;
   border: none;
   border-radius: var(--gc-radius);
   background: transparent;
@@ -3183,7 +3178,7 @@ h3 {
   align-items: center;
   gap: var(--gc-space-1);
   min-height: var(--gc-hit);
-  padding: var(--gc-space-1) var(--gc-space-3);
+  padding: var(--gc-space-1) var(--gc-space-3) var(--gc-space-1) 1.2em;
   border-radius: var(--gc-radius);
   transition: background var(--gc-dur-fast) var(--gc-ease);
 }
@@ -3287,7 +3282,7 @@ h3 {
 /*
  * The box holds one icon and nothing else, so it sits at `--gc-fs-md` rather
  * than at the metadata step: stacking two fractional em steps was what pushed the
- * glyph off centre. No visible frame — the glyph itself carries the distinction
+ * glyph off centre. No visible frame â€” the glyph itself carries the distinction
  * (see header comment: colour is always the last channel).
  */
 .gc-status__box {
@@ -3680,7 +3675,7 @@ h3 {
   overflow-wrap: anywhere;
 }
 
-/* `oleh <penulis> · <kapan>` — the reference's `by … on …` line, led by a user glyph. */
+/* `oleh <penulis> Â· <kapan>` â€” the reference's `by â€¦ on â€¦` line, led by a user glyph. */
 .gc-inspector__byline {
   display: flex;
   align-items: center;
@@ -3767,7 +3762,7 @@ h3 {
  * so repeating "Copy short hash" as visible text forces the reader to parse a
  * sentence to tell two identical-length labels apart. Full accessible names
  * survive on aria-label + title.
- * Joined as one segmented control — outer height fixed to var(--gc-hit) (28px)
+ * Joined as one segmented control â€” outer height fixed to var(--gc-hit) (28px)
  * with a real border so it stays 28px matching adjacent controls (hash chip and
  * external button) in normal mode and forced-colors (where border is forced).
  */
@@ -3828,7 +3823,7 @@ h3 {
 }
 
 /*
- * External action leaves the app — standalone icon button bordered like other buttons,
+ * External action leaves the app â€” standalone icon button bordered like other buttons,
  * uniform font-size (--gc-fs-sm) matching the clipboard icon and copy mark.
  */
 .gc-inspector__external.gc-icon-button {
@@ -3959,9 +3954,9 @@ h3 {
 }
 
 /*
- * `U` — the porcelain code every conflicted file carries. Same 18x18 grid as section
+ * `U` â€” the porcelain code every conflicted file carries. Same 18x18 grid as section
  * badges so the panel and the list speak one language; `aria-hidden`, because the
- * sentence beside it already says how many files need work. No visible frame — the
+ * sentence beside it already says how many files need work. No visible frame â€” the
  * letter itself is the channel, colour only reinforces it.
  */
 .gc-conflicts__badge {
@@ -4126,7 +4121,7 @@ h3 {
   align-items: center;
   max-width: 100%;
   min-height: var(--gc-hit);
-  padding: var(--gc-space-1) var(--gc-space-3);
+  padding: var(--gc-space-1) var(--gc-space-2);
   border-radius: var(--gc-radius);
   background: transparent;
   color: var(--vscode-foreground);
@@ -4405,7 +4400,7 @@ h3 {
 /*
  * Level tones, from the same `--gc-tone-*` tokens the status boxes use: an error is
  * `removed`, a warning is `pending`, information is `changed`. Reusing them keeps one
- * colour vocabulary across the extension — the hue that marks a deleted file is the
+ * colour vocabulary across the extension â€” the hue that marks a deleted file is the
  * hue that marks a failed operation.
  *
  * Colour is still the LAST channel: `.gc-toast__level` prints the word, the glyph is
@@ -4564,7 +4559,7 @@ h3 {
 /*
  * Forced-colours mode discards our colours entirely, so every boundary that was
  * carrying meaning through colour needs a real border to survive. Shapes, dash
- * patterns, glyphs, and words already work — this only restores the edges.
+ * patterns, glyphs, and words already work â€” this only restores the edges.
  */
 @media (forced-colors: active) {
   .gc-button,
@@ -4602,7 +4597,7 @@ h3 {
     border: 2px solid ButtonBorder;
   }
 
-  /* Inspector copy pair and quiet segmented pair — the single container border
+  /* Inspector copy pair and quiet segmented pair â€” the single container border
    * and internal divider must remain visible when colours are discarded,
    * otherwise the "one control" reading is lost. */
   .gc-inspector__copy-group,
