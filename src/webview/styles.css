@@ -829,6 +829,8 @@ h3 {
   border-left: 1px solid var(--gc-border);
   background: var(--gc-surface-1);
   overflow: auto;
+  /* Lock the gutter so the dropdown chevron does not drift when the list scrolls. */
+  scrollbar-gutter: stable;
 }
 
 .gc-explorer__aside--closed {
