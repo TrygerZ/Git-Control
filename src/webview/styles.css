@@ -20,14 +20,14 @@
  * Everything used to be one weight, which meant nothing led. There are now exactly
  * three tiers, and every control sits in one of them on purpose:
  *
- *   primary   `.gc-button--primary` — one per surface (with opt-in `--lg` for
+ *   primary   `.gc-button--primary` â€” one per surface (with opt-in `--lg` for
  *             dialogs). `Commit` on the pending panel, `Lanjutkan merge` while a
  *             merge is unfinished. Filled with the theme's button background.
- *   action    `.gc-button--action` — repository-changing but reversible: `Push`,
+ *   action    `.gc-button--action` â€” repository-changing but reversible: `Push`,
  *             `Stage`, `Unstage`. Outlined with a subtle border and transparent fill
  *             so it stays distinct from the filled secondary button while never
  *             competing with primary.
- *   quiet     `.gc-button--quiet`, `.gc-icon-button` — view-only or per-row work:
+ *   quiet     `.gc-button--quiet`, `.gc-icon-button` â€” view-only or per-row work:
  *             selection helpers, refresh, copy, per-file Stage. No fill, no border
  *             until hover.
  *
@@ -53,6 +53,8 @@
   --gc-space-6: 24px;
   /* Only for the gap BETWEEN file sections, which has to beat the gap inside one. */
   --gc-space-7: 32px;
+  /* Top rung: empty states and panel-level padding that has to clear every card gap. */
+  --gc-space-8: 48px;
 
   /*
    * Type scale. Relative so the whole UI follows the editor font size and zoom.
@@ -71,16 +73,36 @@
   --gc-fs-2xl: 1.35em;
   --gc-weight-strong: 600;
 
-  /* Motion: one fast duration and one easing, shared by every hover/state fade. */
+  /*
+   * Motion. Two durations on purpose: `--gc-dur-fast` is for hover and state fades
+   * where any delay reads as lag, `--gc-dur-med` is for surface changes (panels
+   * opening, cards lifting) that need to be seen to be understood. Anything slower
+   * is choreography, and this panel is a tool, not a demo.
+   */
   --gc-dur-fast: 80ms;
+  --gc-dur-med: 160ms;
   --gc-ease: ease-out;
+  /*
+   * A slight overshoot for small elements only (chips, badges, toggles). On large
+   * surfaces the bounce reads as instability, so modals and panels keep `--gc-ease`.
+   */
+  --gc-ease-spring: cubic-bezier(0.34, 1.3, 0.64, 1);
 
+  /*
+   * Radius ladder. `xs` is for insets smaller than a control (legend ribbon
+   * swatches); `sm` is the control step itself and aliases the base token so
+   * callers that mean "one control radius" stay correct if the base changes.
+   */
+  --gc-radius-xs: 2px;
   --gc-radius: 4px;
+  --gc-radius-sm: var(--gc-radius);
+  /* Cards, modals, and the commit box: large enough to read as a surface, not a control. */
+  --gc-radius-lg: 8px;
   /* Fully round: chips, badges, and count pills are true pills, not rounded rects. */
   --gc-radius-pill: 999px;
   --gc-row-height: 28px;
   /* WCAG 2.5.8 target size (minimum). Every clickable element honours it. */
-  --gc-hit: 28px;
+  --gc-hit: 26px;
   /*
    * Comfortable target for the one primary button per surface. Not a replacement
    * for `--gc-hit`: that stays the floor everything else is measured against.
@@ -108,6 +130,45 @@
   --gc-tone-changed: var(--vscode-charts-blue, var(--vscode-foreground));
   --gc-tone-pending: var(--vscode-charts-orange, var(--vscode-foreground));
   --gc-tone-special: var(--vscode-charts-purple, var(--vscode-foreground));
+
+  /*
+   * Surface elevation. Three steps, all derived from theme tokens so light, dark,
+   * and high-contrast themes each get the layering their palette already encodes.
+   * Step 1 is the canvas itself; 2 is a card resting on it; 3 is chrome (side
+   * bars, floating panels) sitting above cards. The fallbacks walk back down the
+   * ladder because a missing widget token must degrade to flatter, never to
+   * invented colour.
+   */
+  --gc-surface-1: var(--vscode-editor-background);
+  --gc-surface-2: var(--vscode-editorWidget-background, var(--vscode-editor-background));
+  --gc-surface-3: var(--vscode-sideBar-background, var(--vscode-editorWidget-background, var(--vscode-editor-background)));
+
+  /*
+   * Quiet accent wash for selected or hinted states where a full focus ring would
+   * shout. Mixed from the theme's own blue so it stays on-palette in every theme;
+   * 12 % keeps it a tint, not a fill.
+   */
+  --gc-accent-subtle: color-mix(in srgb, var(--vscode-charts-blue, var(--vscode-focusBorder)) 12%, transparent);
+
+  /*
+   * Solid accent for fill-level marks (progress bars, the active-row rule).
+   * Shares the `--gc-accent-subtle` hue so the two always stay on-palette
+   * together; the fallback is the focus border, the one token every theme
+   * guarantees is an accent.
+   */
+  --gc-accent: var(--vscode-charts-blue, var(--vscode-focusBorder));
+
+  /*
+   * Shadow scale. Elevation is communicated by depth, and one ad-hoc shadow per
+   * component is how panels end up floating at random heights. Three rungs: `sm`
+   * for resting cards, `md` for raised popovers and menus, `lg` for modals that
+   * dim everything beneath them. All read the theme's widget shadow so a theme
+   * with no shadow (or forced colours, which strips them) stays flat instead of
+   * falling back to a hardcoded grey.
+   */
+  --gc-shadow-sm: 0 1px 2px var(--vscode-widget-shadow, transparent);
+  --gc-shadow-md: 0 2px 8px var(--vscode-widget-shadow, transparent);
+  --gc-shadow-lg: 0 8px 24px var(--vscode-widget-shadow, transparent);
 }
 
 * {
@@ -196,6 +257,18 @@ h3 {
 .gc-help-text {
   color: var(--gc-muted);
   font-size: var(--gc-fs-xs);
+}
+
+/*
+ * The result count above the graph (`N commits shown`): right-aligned and
+ * tabular, so it reads as a readout beside the filter row rather than another
+ * sentence competing with it. Only the live-region paragraph gets this; the
+ * help text elsewhere stays left-aligned prose.
+ */
+.gc-graph > .gc-help-text {
+  margin: 0;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
 }
 
 /* ------------------------------------------------------------------ controls */
@@ -377,7 +450,7 @@ h3 {
 .gc-field select,
 .gc-field textarea {
   min-height: var(--gc-hit);
-  padding: var(--gc-space-1) var(--gc-space-3);
+  padding: var(--gc-space-1) var(--gc-space-2);
   border: 1px solid var(--vscode-input-border, var(--gc-border));
   border-radius: var(--gc-radius);
   background: var(--vscode-input-background);
@@ -414,17 +487,17 @@ h3 {
   cursor: pointer;
 }
 
-/* Floating checkbox in canvas controls stack */
+/* Floating checkbox in canvas controls stack, rounded like the control cards. */
 .gc-checkbox--float {
   align-items: center;
   gap: var(--gc-space-1);
   padding: 0 var(--gc-space-2);
   min-height: var(--gc-hit);
   border: 1px solid var(--gc-border);
-  border-radius: var(--gc-radius);
-  background: var(--vscode-editorWidget-background, var(--vscode-editor-background));
+  border-radius: var(--gc-radius-lg);
+  background: var(--gc-surface-2);
   color: var(--vscode-foreground);
-  box-shadow: 0 1px 4px var(--vscode-widget-shadow, transparent);
+  box-shadow: var(--gc-shadow-md);
   user-select: none;
 }
 
@@ -484,8 +557,8 @@ h3 {
   padding: var(--gc-space-3) var(--gc-space-4);
   border: 1px solid var(--gc-border);
   border-left-width: 3px;
-  border-radius: var(--gc-radius);
-  background: var(--vscode-editorWidget-background, var(--vscode-editor-background));
+  border-radius: var(--gc-radius-lg);
+  background: var(--gc-surface-2);
 }
 
 .gc-banner--error {
@@ -501,9 +574,9 @@ h3 {
 }
 
 /*
- * The glyph is the second channel next to the border colour: `!` for an error,
- * `⚠` for a warning, `⋯`/`⌛` for information. It is `aria-hidden` because the
- * banner's `role` already conveys urgency to a screen reader.
+ * The banner renders an SVG icon as the second channel next to the border colour:
+ * error, warning, or info icon. It is aria-hidden because the banner role
+ * already conveys urgency to a screen reader.
  * Sized at --gc-fs-md and nudged by --gc-space-1 to optically centre against
  * the cap-height of the first line of text.
  */
@@ -634,20 +707,23 @@ h3 {
 
 /*
  * An empty state is an instruction, not a shrug: the title says what is true and
- * the hint says what to do next, so it stays left-aligned like prose rather than
- * centred like an error page.
+ * the hint says what to do next. On the Pending Changes panel it reads as a calm
+ * centred moment with generous air, the one place the dense list truly stops.
  */
 .gc-empty {
   display: flex;
   flex-direction: column;
+  align-items: center;
   gap: var(--gc-space-2);
-  padding: var(--gc-space-6) var(--gc-space-4);
+  padding: var(--gc-space-8) var(--gc-space-6);
   color: var(--vscode-foreground);
+  text-align: center;
 }
 
 .gc-empty__title {
   margin: 0;
   color: var(--vscode-foreground);
+  font-size: var(--gc-fs-lg);
   font-weight: var(--gc-weight-strong);
 }
 
@@ -717,11 +793,11 @@ h3 {
 .gc-pending {
   display: flex;
   flex-direction: column;
-  gap: var(--gc-space-3);
+  gap: var(--gc-space-2);
   height: 100%;
   min-height: 0;
   flex: 1 1 auto;
-  padding: var(--gc-space-3);
+  padding: var(--gc-space-2);
   overflow: hidden;
   box-sizing: border-box;
 }
@@ -751,7 +827,10 @@ h3 {
   min-width: 0;
   padding-left: var(--gc-space-3);
   border-left: 1px solid var(--gc-border);
+  background: var(--gc-surface-1);
   overflow: auto;
+  /* Lock the gutter so the dropdown chevron does not drift when the list scrolls. */
+  scrollbar-gutter: stable;
 }
 
 .gc-explorer__aside--closed {
@@ -826,7 +905,8 @@ h3 {
   overflow: auto;
   margin: 0;
   padding: var(--gc-space-3);
-  background: var(--vscode-textCodeBlock-background, var(--vscode-editor-background));
+  border-radius: var(--gc-radius-lg);
+  background: var(--gc-surface-2);
   color: var(--vscode-foreground);
   white-space: pre-wrap;
 }
@@ -854,10 +934,11 @@ h3 {
   display: flex;
   align-items: flex-end;
   gap: var(--gc-space-3);
-  padding: var(--gc-space-2) var(--gc-space-3);
-  border: 1px solid var(--gc-border);
-  border-radius: var(--gc-radius);
-  background: var(--vscode-editorWidget-background, var(--vscode-editor-background));
+  padding: var(--gc-space-3);
+  border: none;
+  border-bottom: 1px solid var(--gc-border);
+  border-radius: 0;
+  background: var(--gc-surface-1);
 }
 
 .gc-toolbar__search-wrap {
@@ -892,24 +973,44 @@ h3 {
   min-height: var(--gc-hit);
   padding: var(--gc-space-1) var(--gc-space-3) var(--gc-space-1) var(--gc-space-7);
   border: 1px solid var(--vscode-input-border, var(--gc-border));
-  border-radius: var(--gc-radius);
+  border-radius: var(--gc-radius-lg);
   background: var(--vscode-input-background);
   color: var(--vscode-input-foreground);
   font-family: inherit;
   font-size: var(--gc-fs-sm);
+  transition: border-color var(--gc-dur-fast) var(--gc-ease);
 }
 
 .gc-toolbar__branch-wrap {
   display: flex;
   align-items: center;
-  flex: 1 1 0;
+  flex: 1 1 auto;
   /* Floor prevents branch select collapsing to chevron; min() respects narrow panels */
   min-width: min(9em, 100%);
   max-width: 100%;
+  /* The width cap moved onto the inner select wrapper; this row only lays out. */
+  min-height: var(--gc-hit);
 }
 
 .gc-toolbar__field {
   width: 100%;
+}
+
+/*
+ * Wrapper holds the select and its custom chevron. `appearance: none` on the
+ * select hides the native dropdown arrow so the chevron is the only affordance;
+ * the trailing padding reserves its seat so a long branch name never slides
+ * under the glyph. The select keeps every other behaviour native.
+ */
+.gc-toolbar__branch-select-wrap {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  width: 100%;
+  min-width: 0;
+  /* No cap: in the full-width column bar the select spans the whole row so its
+   * edge lines up with the buttons below. */
+  max-width: none;
 }
 
 .gc-toolbar__branch-select,
@@ -924,11 +1025,10 @@ h3 {
    */
   width: 100%;
   min-width: 0;
-  max-width: min(14em, 100%);
   min-height: var(--gc-hit);
-  padding: var(--gc-space-1) var(--gc-space-3);
+  padding: var(--gc-space-1) var(--gc-space-6) var(--gc-space-1) var(--gc-space-3);
   border: 1px solid var(--vscode-input-border, var(--gc-border));
-  border-radius: var(--gc-radius);
+  border-radius: var(--gc-radius-lg);
   background: var(--vscode-input-background);
   color: var(--vscode-input-foreground);
   font-family: inherit;
@@ -936,6 +1036,33 @@ h3 {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  appearance: none;
+  transition: border-color var(--gc-dur-fast) var(--gc-ease);
+}
+
+/*
+ * Quieter resting border: the control still has an edge, but it sits back until
+ * interaction asks for it. Mirrors the Phase 2 branch selector in the pending
+ * panel, so both views read as one chrome language.
+ */
+.gc-toolbar__branch-select:not(:focus):not(:hover):not(:disabled) {
+  border-color: var(--gc-border);
+}
+
+.gc-toolbar__branch-select:hover:not(:disabled) {
+  border-color: var(--vscode-input-border, var(--vscode-focusBorder));
+}
+
+.gc-toolbar__branch-chevron {
+  position: absolute;
+  right: var(--gc-space-2);
+  top: 0;
+  bottom: 0;
+  display: inline-flex;
+  align-items: center;
+  color: var(--gc-muted);
+  font-size: var(--gc-fs-sm);
+  pointer-events: none;
 }
 
 .gc-toolbar__clear {
@@ -943,15 +1070,37 @@ h3 {
 }
 
 /*
- * The action row on the pending panel. Primary pair, secondary helpers, count and refresh.
+ * The action row on the pending panel. Primary pair, secondary helpers, count
+ * and refresh. Visually quiet: no heavy frame of its own, just vertical
+ * breathing room and a bottom hairline separating it from the list.
  */
 .gc-toolbar--actions {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: var(--gc-space-2) var(--gc-space-3);
-  padding-bottom: var(--gc-space-3);
+  padding: var(--gc-space-2) 0;
   border-bottom: 1px solid var(--gc-border);
+  background: var(--gc-surface-1);
+}
+
+/*
+ * The pending panel bar stacks its children as full-width rows (VS Code SCM
+ * idiom): the branch selector gets one row, the Select all / Clear pair the
+ * next, so every control shares the same left and right edge. Scoped to the
+ * pending bar only; the explorer graph toolbar keeps its horizontal flow.
+ */
+.gc-pending__bar.gc-toolbar--actions {
+  flex-direction: column;
+  align-items: stretch;
+}
+
+/*
+ * In a stretch column a trailing `margin-left: auto` no longer pushes the end
+ * group right, so align it explicitly on the cross axis instead.
+ */
+.gc-pending__bar.gc-toolbar--actions .gc-toolbar__end {
+  align-self: flex-end;
 }
 
 /*
@@ -1009,7 +1158,7 @@ h3 {
  * (4px vertical, 12px horizontal) and a 4px gap between icon and label are
  * deliberate; icon is 14px optically aligned to the cap height.
  */
-/* Quiet segmented pair (Select all / Clear) — same join idiom as Stage/Unstage
+/* Quiet segmented pair (Select all / Clear) â€” same join idiom as Stage/Unstage
  * but quieter: hairline `--gc-border` frame, no accent inset, so it never competes
  * with the action tier. The join reads as "one control, two choices". */
 .gc-segmented--quiet {
@@ -1020,6 +1169,12 @@ h3 {
 .gc-segmented--quiet .gc-button {
   border-color: transparent;
   background: transparent;
+  /* Equal split: both buttons always share the full row 50/50, so the pair keeps
+   * one width across EN and ID without a hard-coded floor that could overflow a
+   * narrow sidebar. min-width: 0 lets flex:1 1 0 do the sizing. */
+  flex: 1 1 0;
+  min-width: 0;
+  justify-content: center;
 }
 
 .gc-segmented--quiet .gc-button + .gc-button {
@@ -1035,31 +1190,56 @@ h3 {
   z-index: 2;
 }
 
-/* Selection count is data, not an action — muted and tabular so it anchors the pair.
- * Always given its own row (flex-basis: 100%) so count placement and toolbar height
- * never jump or depend on localized string lengths across EN and ID. */
+/* The pair leads with small glyphs; labels sit one step below the button font. */
+.gc-segmented--quiet .gc-button {
+  font-size: var(--gc-fs-sm);
+}
+
+.gc-segmented--quiet .gc-button .gc-icon {
+  font-size: var(--gc-fs-sm);
+}
+
+/* Selection count is data, not an action, so it is muted and tabular. The group
+ * stretches to its column row and wraps: the segmented pair takes the full width
+ * on one line and the count drops beneath it right-aligned, sharing the same right
+ * edge as the buttons rather than floating mid-row. */
 .gc-selection-group {
-  display: inline-flex;
+  display: flex;
+  flex: 1 1 auto;
   align-items: center;
   gap: var(--gc-space-2);
   min-width: 0;
   flex-wrap: wrap;
 }
 
+/* The segmented pair fills the row; its two buttons split that width equally. */
+.gc-selection-group .gc-segmented--quiet {
+  flex: 1 1 auto;
+  display: flex;
+}
+
 .gc-selection-group .gc-pending__count {
   flex-basis: 100%;
+  text-align: right;
   color: var(--gc-muted);
   font-size: var(--gc-fs-xs);
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
 
+/*
+ * Inside the column bar this group is itself a column: the branch selector and
+ * the selection group each take a full-width row, which is what aligns the
+ * dropdown edge with the buttons beneath it. Children stretch to the row.
+ */
 .gc-toolbar__secondary-group {
   display: flex;
-  align-items: center;
-  gap: var(--gc-space-1);
+  flex-direction: column;
+  align-items: stretch;
+  gap: var(--gc-space-2);
+  width: 100%;
   min-width: 0;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
 }
 
 .gc-toolbar__end {
@@ -1092,15 +1272,16 @@ h3 {
 
 /*
  * Which repository, which branch, how it stands against the remote. Quiet by
- * construction — a bottom rule and muted text — because it is the answer to a
+ * construction â€” a bottom rule and muted text â€” because it is the answer to a
  * question the user only asks when something looks wrong.
  */
 .gc-context {
   display: flex;
   flex-direction: column;
   gap: var(--gc-space-1);
-  padding-bottom: var(--gc-space-3);
+  padding: var(--gc-space-3) 0;
   border-bottom: 1px solid var(--gc-border);
+  background: var(--gc-surface-1);
 }
 
 .gc-context__crumbs {
@@ -1116,7 +1297,7 @@ h3 {
   overflow: hidden;
   max-width: 16em;
   color: var(--vscode-foreground);
-  font-size: var(--gc-fs-lg);
+  font-size: var(--gc-fs-md);
   font-weight: var(--gc-weight-strong);
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -1142,9 +1323,47 @@ h3 {
 }
 
 .gc-context__sync {
+  display: flex;
+  align-items: center;
+  gap: var(--gc-space-2);
   margin: 0;
   color: var(--gc-muted);
   font-size: var(--gc-fs-xs);
+}
+
+.gc-context__sync-visual {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--gc-space-2);
+  min-width: 0;
+}
+
+/*
+ * Ahead/behind arrows restate the numbers in `syncSummary` with tone colour so
+ * "mine to push" and "waiting for me" separate at a glance; the words beside
+ * them carry the same fact, so colour is never the only channel.
+ */
+.gc-context__sync-part {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--gc-space-1);
+  font-variant-numeric: tabular-nums;
+  font-weight: var(--gc-weight-strong);
+}
+
+.gc-context__sync-part--ahead {
+  color: var(--gc-tone-added);
+}
+
+.gc-context__sync-part--behind {
+  color: var(--gc-tone-changed);
+}
+
+.gc-context__sync-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* ------------------------------------------------------------------- avatar */
@@ -1168,6 +1387,22 @@ h3 {
   font-size: var(--gc-fs-sm);
   font-weight: var(--gc-weight-strong);
   line-height: 1;
+  overflow: hidden;
+}
+
+/* A real face fills the circle edge to edge; the frame and initial backdrop only
+ * exist to hold a bare letter, so they drop away once the image lands. */
+.gc-avatar__img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  object-fit: cover;
+}
+
+.gc-avatar:has(.gc-avatar__img) {
+  border: none;
+  background: transparent;
 }
 
 /* --------------------------------------------------------------------- graph */
@@ -1241,24 +1476,55 @@ h3 {
 }
 
 /*
- * Floating controls need their own surface: they sit over commit rows, so a
- * transparent button would be unreadable against whatever scrolled under it.
+ * Floating controls are grouped into cards: the card carries the surface
+ * (fill, hairline, shadow) and the buttons inside stay quiet, so the cluster
+ * reads as one piece of chrome resting on the canvas instead of five loose
+ * widgets. Buttons inside keep `--gc-hit` and their hover fill; the card edge
+ * is what separates them from the rows scrolling underneath.
  */
-.gc-button--float,
-.gc-icon-button--float {
-  border-color: var(--gc-border);
-  background: var(--vscode-editorWidget-background, var(--vscode-editor-background));
-  color: var(--vscode-foreground);
-  box-shadow: 0 1px 4px var(--vscode-widget-shadow, transparent);
+.gc-control-card {
+  display: inline-flex;
+  align-items: center;
+  gap: 0;
+  padding: var(--gc-space-1);
+  border: 1px solid var(--gc-border);
+  border-radius: var(--gc-radius-lg);
+  background: var(--gc-surface-2);
+  box-shadow: var(--gc-shadow-md);
 }
 
-.gc-button--float:hover:not(:disabled),
-.gc-icon-button--float:hover:not(:disabled) {
-  background: var(--vscode-toolbar-hoverBackground, var(--vscode-list-hoverBackground));
+.gc-control-card .gc-icon-button,
+.gc-control-card .gc-zoom__reset {
+  border-radius: var(--gc-radius);
 }
 
-.gc-button--float {
+.gc-control-card--zoom .gc-icon-button {
+  font-size: var(--gc-fs-sm);
+}
+
+/*
+ * The zoom percentage doubles as the reset button: a readout you can press.
+ * Quiet at rest, hover fill like its neighbours, tabular numerals so the value
+ * never shifts the card width as it changes.
+ */
+.gc-zoom__reset {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: var(--gc-hit);
+  min-width: var(--gc-hit);
   padding: 0 var(--gc-space-2);
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--vscode-foreground);
+  font-family: inherit;
+  font-size: var(--gc-fs-xs);
+  cursor: pointer;
+  transition: background var(--gc-dur-fast) var(--gc-ease);
+}
+
+.gc-zoom__reset:hover:not(:disabled) {
+  background: var(--vscode-toolbar-hoverBackground, var(--vscode-list-hoverBackground));
 }
 
 /*
@@ -1310,6 +1576,27 @@ h3 {
 
 .gc-node__dot {
   stroke-width: 1.5;
+  transition: stroke-width var(--gc-dur-fast) var(--gc-ease);
+}
+
+/*
+ * Hover halo. A dedicated ring rather than an SVG filter or a box-shadow,
+ * because neither of those paints inside a transformed `<g>` reliably across
+ * webview zoom levels. Resting state is a zero-width stroke (fully transparent
+ * at every dash/round join), so the halo never shows until the hit circle
+ * reports a hover; the transition on stroke-width fades it in.
+ */
+.gc-node__hover-ring {
+  fill: none;
+  stroke: var(--vscode-focusBorder);
+  stroke-width: 0;
+  opacity: 0.55;
+  pointer-events: none;
+  transition: stroke-width var(--gc-dur-fast) var(--gc-ease);
+}
+
+.gc-node:hover .gc-node__hover-ring {
+  stroke-width: 2;
 }
 
 /*
@@ -1318,7 +1605,7 @@ h3 {
  * `dominant-baseline: central` plus `text-anchor: middle` is what centres a glyph on
  * an SVG point; without the former the letter sits a third of its height too low.
  * `pointer-events: none` keeps the letter from eating the click that selects the
- * commit — the whole `<svg>` already opts out, but a `<text>` node is the one child
+ * commit â€” the whole `<svg>` already opts out, but a `<text>` node is the one child
  * that commonly gets its own handler bolted on later.
  *
  * `fill` is set inline (lane colour or editor background), so it is absent here.
@@ -1354,6 +1641,26 @@ h3 {
 .gc-node__head-ring {
   fill: none;
   stroke-width: 1.5;
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: gc-node-head-pulse calc(var(--gc-dur-med) * 14) var(--gc-ease-spring) infinite;
+}
+
+/*
+ * A slow, small breathe on the HEAD ring: enough to find "where am I" in a
+ * dense graph without pulling the eye off everything else. Disabled wholesale
+ * by the global prefers-reduced-motion rule.
+ */
+@keyframes gc-node-head-pulse {
+  0%,
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+  50% {
+    transform: scale(1.12);
+    opacity: 0.65;
+  }
 }
 
 .gc-node__merge-ring {
@@ -1421,7 +1728,7 @@ h3 {
   z-index: 8;
   background: var(--vscode-editorHoverWidget-background, var(--vscode-editor-background));
   border: 1px solid var(--vscode-editorHoverWidget-border, var(--gc-border));
-  box-shadow: 0 2px 8px var(--vscode-widget-shadow, transparent);
+  box-shadow: var(--gc-shadow-md);
 }
 
 .gc-row--hovered .gc-row__subject {
@@ -1545,7 +1852,7 @@ h3 {
   display: inline-flex;
   align-items: center;
   gap: var(--gc-space-1);
-  padding: var(--gc-space-1) var(--gc-space-3);
+  padding: var(--gc-space-1) var(--gc-space-2);
   border: 1px solid var(--gc-border);
   border-radius: var(--gc-radius-pill);
   background: var(--vscode-badge-background, var(--vscode-editorWidget-background));
@@ -1556,7 +1863,7 @@ h3 {
   white-space: nowrap;
   pointer-events: none;
   z-index: 2;
-  box-shadow: 0 1px 3px var(--vscode-widget-shadow, transparent);
+  box-shadow: var(--gc-shadow-sm);
 }
 
 .gc-pill--above {
@@ -1567,9 +1874,16 @@ h3 {
   transform: translateX(-50%);
 }
 
+/*
+ * The current branch pill carries the accent wash as well as the focus-colour
+ * edge: two channels for "this one is yours", and the wash is calm enough that
+ * a graph full of pills does not turn into a grid of badges.
+ */
 .gc-pill--current {
   border-color: var(--vscode-focusBorder);
   outline: 1px solid var(--vscode-focusBorder);
+  background: var(--gc-accent-subtle);
+  color: var(--vscode-foreground);
 }
 
 .gc-pill--remote {
@@ -1580,9 +1894,9 @@ h3 {
 .gc-pill--trail {
   font-size: var(--gc-fs-xs);
   padding: var(--gc-space-1) var(--gc-space-2);
-  background: var(--vscode-editorWidget-background, var(--vscode-editor-background));
+  background: var(--gc-surface-2);
   border: 1px solid var(--gc-border);
-  box-shadow: 0 2px 6px var(--vscode-widget-shadow, transparent);
+  box-shadow: var(--gc-shadow-sm);
   gap: var(--gc-space-1);
 }
 
@@ -1632,7 +1946,7 @@ h3 {
   align-items: center;
   padding: 0 var(--gc-space-3);
   color: var(--gc-muted);
-  font-size: var(--gc-fs-xs);
+  font-size: var(--gc-fs-2xs);
   font-weight: var(--gc-weight-strong);
   border-right: 1px solid var(--gc-border);
   white-space: nowrap;
@@ -1671,10 +1985,12 @@ h3 {
   align-items: center;
   gap: var(--gc-space-1);
   max-width: 18em;
+  min-height: 20px;
   padding: 0 var(--gc-space-3);
   overflow: hidden;
   border: 1px solid var(--gc-border);
   border-radius: var(--gc-radius-pill);
+  background: var(--gc-surface-3);
   color: var(--gc-muted);
   font-size: var(--gc-fs-xs);
   line-height: 1.6;
@@ -1705,6 +2021,8 @@ h3 {
   font-weight: var(--gc-weight-strong);
 }
 
+/* Local branch chips (.gc-chip--local) are the intentional neutral sample covered by .gc-chip. */
+
 .gc-chip--remote {
   border-style: dashed;
 }
@@ -1734,9 +2052,9 @@ h3 {
 .gc-minimap {
   flex: 0 0 auto;
   border: 1px solid var(--gc-border);
-  border-radius: var(--gc-radius);
-  background: var(--vscode-editorWidget-background, var(--vscode-editor-background));
-  box-shadow: 0 1px 4px var(--vscode-widget-shadow, transparent);
+  border-radius: var(--gc-radius-lg);
+  background: var(--gc-surface-2);
+  box-shadow: var(--gc-shadow-md);
   cursor: pointer;
   touch-action: none;
 }
@@ -1747,8 +2065,13 @@ h3 {
   opacity: 0.7;
 }
 
+/*
+ * Viewport indicator: accent wash inside a clear focus-colour border, so the
+ * "you are here" region reads both as a fill and as an edge. Colour is backed
+ * by the drag affordance and the slider role.
+ */
 .gc-minimap__viewport {
-  fill: var(--vscode-scrollbarSlider-background);
+  fill: var(--gc-accent-subtle);
   stroke: var(--vscode-focusBorder);
   stroke-width: 1;
 }
@@ -1791,10 +2114,10 @@ h3 {
   flex-direction: column;
   width: 100%;
   border: 1px solid var(--vscode-menu-border, var(--vscode-contrastBorder, var(--gc-border)));
-  border-radius: var(--gc-radius);
-  padding: var(--gc-space-3);
-  background: var(--vscode-editorWidget-background, var(--vscode-editor-background));
-  box-shadow: 0 4px 12px var(--vscode-widget-shadow, transparent);
+  border-radius: var(--gc-radius-lg);
+  padding: var(--gc-space-4);
+  background: var(--gc-surface-2);
+  box-shadow: var(--gc-shadow-md);
   overflow: hidden;
   max-height: 100%;
 }
@@ -1965,30 +2288,30 @@ h3 {
   z-index: 30;
   display: flex;
   flex-direction: column;
-  min-width: 16em;
+  min-width: 18em;
   /*
    * `min(...)` rather than a flat `26em`: the items now carry a sentence each, so the
    * box grows to the cap, and 26em is wider than a 300 px sidebar. The placement
-   * effect can only clamp the LEFT edge — it has no way to shrink a box that is wider
-   * than the viewport — so the cap has to be viewport-relative or the last few
+   * effect can only clamp the LEFT edge â€” it has no way to shrink a box that is wider
+   * than the viewport â€” so the cap has to be viewport-relative or the last few
    * characters of every hint sit off-screen with no way to scroll to them.
    */
   max-width: min(26em, calc(100vw - 2 * var(--gc-space-3)));
   max-height: 80vh;
   overflow: auto;
   padding: var(--gc-space-2);
-  border: 1px solid var(--vscode-menu-border, var(--vscode-contrastBorder, var(--gc-border)));
-  border-radius: var(--gc-radius);
-  background: var(--vscode-menu-background, var(--vscode-editorWidget-background));
+  border: 1px solid var(--gc-border);
+  border-radius: var(--gc-radius-lg);
+  /* Floating chrome sits on the top surface step and lifts on the mid shadow rung. */
+  background: var(--gc-surface-3);
   color: var(--vscode-menu-foreground, var(--vscode-foreground));
-  box-shadow: 0 2px 8px var(--vscode-widget-shadow, transparent);
+  box-shadow: var(--gc-shadow-md);
 }
 
 .gc-menu__item {
   display: flex;
-  flex-direction: column;
   align-items: flex-start;
-  gap: var(--gc-space-1);
+  gap: var(--gc-space-2);
   width: 100%;
   min-height: var(--gc-hit);
   padding: var(--gc-space-2) var(--gc-space-3);
@@ -2003,10 +2326,37 @@ h3 {
   transition: background var(--gc-dur-fast) var(--gc-ease);
 }
 
+/*
+ * The leading icon slot. A fixed-width column keeps the labels left-aligned down a
+ * group regardless of which glyph an item carries, and the muted colour keeps the
+ * icon a wayfinding aid rather than a second label competing with the text.
+ */
+.gc-menu__icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: 1em;
+  margin-top: var(--gc-space-1);
+  color: var(--gc-muted);
+  font-size: var(--gc-fs-sm);
+}
+
+.gc-menu__item:hover .gc-menu__icon,
+.gc-menu__item:focus-visible .gc-menu__icon {
+  color: inherit;
+}
+
 .gc-menu__item:hover,
 .gc-menu__item:focus-visible {
-  background: var(--vscode-menu-selectionBackground, var(--vscode-list-hoverBackground));
-  color: var(--vscode-menu-selectionForeground, inherit);
+  background: var(--vscode-list-hoverBackground);
+  color: var(--vscode-list-hoverForeground, inherit);
+}
+
+/* Keyboard focus still gets the ring even when the pointer is elsewhere. */
+.gc-menu__item:focus-visible {
+  outline: 2px solid var(--vscode-focusBorder);
+  outline-offset: -2px;
 }
 
 /* ------------------------------------------------------------- menu groups */
@@ -2015,7 +2365,7 @@ h3 {
  * The two halves of the menu: what only looks, and what changes the repository.
  *
  * A flat list of git verbs gives a newcomer no way to tell `Salin hash` from `Reset
- * hard` without reading every line, so the group is a real boundary — a heading, a
+ * hard` without reading every line, so the group is a real boundary â€” a heading, a
  * sentence, and a rule above the second half.
  */
 .gc-menu__group {
@@ -2036,6 +2386,19 @@ h3 {
   letter-spacing: 0.05em;
 }
 
+/*
+ * The text column beside the icon. Label and hint stack here so the icon stays on
+ * the first line and the hint can wrap underneath without sliding under the glyph.
+ */
+.gc-menu__body {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--gc-space-1);
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
 .gc-menu__label {
   display: flex;
   align-items: center;
@@ -2044,12 +2407,12 @@ h3 {
 
 .gc-menu__separator {
   height: 1px;
-  margin: var(--gc-space-2) var(--gc-space-1);
+  margin: var(--gc-space-1) var(--gc-space-2);
   background: var(--gc-border);
 }
 
 /*
- * Risk is a glyph, the word `berisiko`, a left rule, and a colour — four channels.
+ * Risk is a glyph, the word `berisiko`, a left rule, and a colour â€” four channels.
  *
  * The rule matters more than it looks: the glyph and the word sit at the start of a
  * line the eye has not read yet, whereas an edge marker is visible while scanning the
@@ -2060,6 +2423,8 @@ h3 {
   border-left: 3px solid var(--gc-danger);
   border-top-left-radius: 0;
   border-bottom-left-radius: 0;
+  /* A second channel on the leading edge, visible while scanning before any word. */
+  box-shadow: inset 2px 0 0 var(--gc-danger);
   /* The 3 px rule replaces part of the padding, so the label does not shift. */
   padding-left: calc(var(--gc-space-3) - 3px);
 }
@@ -2106,6 +2471,9 @@ h3 {
   overflow: auto;
   /* No hex literal: the theme's own shadow token, falling back to a neutral wash. */
   background: var(--vscode-widget-shadow, var(--vscode-editorWidget-background));
+  /* A blur softens what is underneath without a second colour; the dim alone was
+   * already theme-tokenised, so this only adds depth. */
+  backdrop-filter: blur(4px);
 }
 
 .gc-modal {
@@ -2116,10 +2484,27 @@ h3 {
   max-height: 90vh;
   overflow: auto;
   padding: var(--gc-space-5);
-  border: 1px solid var(--vscode-contrastBorder, var(--gc-border));
-  border-radius: var(--gc-radius);
-  background: var(--vscode-editorWidget-background, var(--vscode-editor-background));
-  box-shadow: 0 4px 16px var(--vscode-widget-shadow, transparent);
+  border: 1px solid var(--gc-border);
+  border-radius: var(--gc-radius-lg);
+  background: var(--gc-surface-2);
+  box-shadow: var(--gc-shadow-lg);
+  animation: gc-modal-in var(--gc-dur-med) var(--gc-ease-spring);
+}
+
+/*
+ * The modal arrives with a small settle so it reads as appearing over the panel
+ * rather than teleporting into it. Reduced-motion strips every animation globally,
+ * so this needs no per-rule opt-out.
+ */
+@keyframes gc-modal-in {
+  from {
+    opacity: 0;
+    transform: translateY(var(--gc-space-2)) scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
 }
 
 .gc-modal__title {
@@ -2137,8 +2522,8 @@ h3 {
  *
  * Level 1 keeps the plain frame. If every guard looked like this the frame would stop
  * meaning anything, and the one dialog that had to look different would look like all
- * the others. The tone is `--gc-tone-removed` — the same hue the `D` status box uses
- * for a deleted file — so "this removes things" is one visual language across the
+ * the others. The tone is `--gc-tone-removed` â€” the same hue the `D` status box uses
+ * for a deleted file â€” so "this removes things" is one visual language across the
  * whole panel rather than a second red invented here.
  */
 .gc-modal--severe {
@@ -2155,9 +2540,10 @@ h3 {
   align-items: center;
   gap: var(--gc-space-1);
   flex: 0 0 auto;
-  padding: 0 var(--gc-space-3);
+  padding: var(--gc-space-1) var(--gc-space-2);
   border: 1px solid var(--gc-tone-removed);
-  border-radius: var(--gc-radius-pill);
+  border-radius: var(--gc-radius);
+  background: var(--gc-surface-3);
   color: var(--gc-tone-removed);
   font-size: var(--gc-fs-xs);
   font-weight: var(--gc-weight-strong);
@@ -2170,6 +2556,10 @@ h3 {
   grid-template-columns: auto 1fr;
   gap: var(--gc-space-1) var(--gc-space-4);
   margin: 0;
+  padding: var(--gc-space-3);
+  border: 1px solid var(--gc-border);
+  border-radius: var(--gc-radius);
+  background: var(--gc-surface-3);
 }
 
 .gc-modal__facts dt {
@@ -2179,6 +2569,7 @@ h3 {
 .gc-modal__facts dd {
   margin: 0;
   overflow-wrap: anywhere;
+  font-weight: var(--gc-weight-strong);
 }
 
 .gc-modal__body {
@@ -2198,6 +2589,7 @@ h3 {
 .gc-modal__consequence {
   padding: var(--gc-space-3);
   border-left: 3px solid var(--gc-warning);
+  border-radius: var(--gc-radius);
   background: var(--vscode-textBlockQuote-background, transparent);
 }
 
@@ -2234,6 +2626,7 @@ h3 {
 
 .gc-modal__command code {
   overflow-wrap: anywhere;
+  font-family: var(--vscode-editor-font-family, monospace);
   font-size: var(--gc-fs-md);
 }
 
@@ -2301,7 +2694,7 @@ h3 {
 .gc-pending__notifications {
   display: flex;
   flex-direction: column;
-  gap: var(--gc-space-2);
+  gap: var(--gc-space-3);
 }
 
 .gc-pending__notifications:empty {
@@ -2309,7 +2702,9 @@ h3 {
 }
 
 /*
- * Scroll container for change sections.
+ * Gutter is locked to stable so scrollbar appearance does not cause content reflow.
+ * The active-row wash spans the full width (flush at both edges, like VS Code);
+ * only the row CONTENT is indented from the left, via the row's own padding-left.
  * Gutter is locked to stable so scrollbar appearance does not cause content reflow.
  */
 .gc-pending__sections {
@@ -2320,6 +2715,22 @@ h3 {
   scrollbar-gutter: stable;
 }
 
+/*
+ * Stash block pinned to the panel foot. Because `.gc-pending` is a fixed-height
+ * flex column and `.gc-pending__sections` grows to fill it, this block stays at
+ * the bottom regardless of how many change sections render above. Its own height
+ * is capped so a long stash list scrolls internally instead of pushing the commit
+ * form off screen.
+ */
+.gc-pending__stash {
+  flex: 0 0 auto;
+  max-height: 45%;
+  overflow-y: auto;
+  scrollbar-gutter: stable;
+  border-top: 1px solid var(--gc-border);
+  background: var(--gc-surface-1);
+}
+
 .gc-pending__count {
   align-self: center;
   color: var(--gc-muted);
@@ -2328,18 +2739,20 @@ h3 {
 }
 
 /*
- * Header of the file list: title, total count, search input.
+ * Header of the file list: title, total count pill, search input with leading
+ * glyph, and a quiet filter affordance. Sticky so the filter stays in reach
+ * while the sections scroll beneath it.
  */
 .gc-listbar {
   position: sticky;
   top: 0;
-  z-index: 1;
+  z-index: 2;
   display: flex;
   flex-direction: column;
   gap: var(--gc-space-2);
   padding: var(--gc-space-2) 0;
   border-bottom: 1px solid var(--gc-border);
-  background: var(--vscode-editor-background);
+  background: var(--gc-surface-1);
 }
 
 .gc-listbar__header {
@@ -2357,28 +2770,69 @@ h3 {
   font-weight: var(--gc-weight-strong);
 }
 
+/* The total is a pill badge, not trailing prose, so it reads as metadata. */
 .gc-listbar__total {
+  display: inline-flex;
+  align-items: center;
+  padding: 0 var(--gc-space-2);
+  border-radius: var(--gc-radius-pill);
+  background: var(--gc-surface-3);
   color: var(--gc-muted);
-  font-size: var(--gc-fs-xs);
+  font-size: var(--gc-fs-2xs);
   font-weight: normal;
   font-variant-numeric: tabular-nums;
 }
 
-.gc-listbar__search-wrap {
+.gc-listbar__controls {
   display: flex;
-  width: 100%;
+  align-items: center;
+  gap: var(--gc-space-2);
+}
+
+.gc-listbar__search-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+/* The glyph sits inside the field's left padding, not beside the field. */
+.gc-listbar__search-icon {
+  position: absolute;
+  left: var(--gc-space-3);
+  top: 0;
+  bottom: 0;
+  display: inline-flex;
+  align-items: center;
+  color: var(--gc-muted);
+  font-size: var(--gc-fs-sm);
+  pointer-events: none;
 }
 
 .gc-listbar__input {
   width: 100%;
   min-height: var(--gc-hit);
-  padding: var(--gc-space-1) var(--gc-space-3);
+  padding: var(--gc-space-1) var(--gc-space-3) var(--gc-space-1) var(--gc-space-7);
   border: 1px solid var(--vscode-input-border, var(--gc-border));
-  border-radius: var(--gc-radius);
+  border-radius: var(--gc-radius-lg);
   background: var(--vscode-input-background);
   color: var(--vscode-input-foreground);
   font-family: inherit;
   font-size: var(--gc-fs-sm);
+  transition: border-color var(--gc-dur-fast) var(--gc-ease);
+}
+
+.gc-listbar__input:focus {
+  outline: 1px solid var(--vscode-focusBorder);
+  outline-offset: -1px;
+  border-color: var(--vscode-focusBorder);
+}
+
+/* Affordance only: the input is the filter, so this button never activates. */
+.gc-listbar__filter {
+  flex: 0 0 auto;
+  font-size: var(--gc-fs-md);
 }
 
 .gc-listbar__count {
@@ -2404,11 +2858,22 @@ h3 {
   border-top: 1px solid var(--gc-border);
 }
 
+/*
+ * Section headers stick to the top of the scroll container, so the grouping
+ * label is always in view while its files scroll beneath. z-index sits below
+ * the listbar (2) and well below menus (20+): rows slide under it, chrome
+ * never does.
+ */
 .gc-section__head {
+  position: sticky;
+  top: 0;
+  z-index: 1;
   display: flex;
   align-items: center;
   gap: var(--gc-space-2);
-  margin: 0 0 var(--gc-space-1);
+  margin: 0;
+  padding: var(--gc-space-2) var(--gc-space-3) 0;
+  background: var(--gc-surface-1);
 }
 
 /*
@@ -2538,6 +3003,7 @@ h3 {
   margin: 0;
   padding: 0 var(--gc-space-2);
   border-radius: var(--gc-radius-pill);
+  background: var(--gc-surface-3);
   color: var(--gc-muted);
   font-size: var(--gc-fs-2xs);
   font-weight: normal;
@@ -2562,8 +3028,14 @@ h3 {
   align-items: center;
   gap: var(--gc-space-2);
   min-height: var(--gc-hit);
-  padding: 0 var(--gc-space-2);
+  padding: var(--gc-space-1) var(--gc-space-3);
   font-size: var(--gc-fs-sm);
+  border-radius: var(--gc-radius);
+  transition: background var(--gc-dur-fast) var(--gc-ease);
+}
+
+.gc-stash-item:hover {
+  background: var(--vscode-list-hoverBackground);
 }
 
 .gc-stash-item__twisty {
@@ -2645,7 +3117,7 @@ h3 {
   width: 100%;
   min-width: 0;
   min-height: var(--gc-hit);
-  padding: 0 var(--gc-space-1);
+  padding: var(--gc-space-1) var(--gc-space-3);
   border: none;
   border-radius: var(--gc-radius);
   background: transparent;
@@ -2706,7 +3178,7 @@ h3 {
   align-items: center;
   gap: var(--gc-space-1);
   min-height: var(--gc-hit);
-  padding: 0 var(--gc-space-1);
+  padding: var(--gc-space-1) var(--gc-space-3);
   border-radius: var(--gc-radius);
   transition: background var(--gc-dur-fast) var(--gc-ease);
 }
@@ -2715,9 +3187,15 @@ h3 {
   background: var(--vscode-list-hoverBackground);
 }
 
+/*
+ * The cursor row reads as a quiet accent wash with a 2 px left rule rather than
+ * the theme's full selection fill: this is a focus cursor, not a selection, and
+ * the accent rule survives themes where the wash is nearly invisible. The wash
+ * is a tint mixed from the theme's own blue, so it stays on-palette everywhere.
+ */
 .gc-tree__row--active {
-  background: var(--vscode-list-activeSelectionBackground);
-  color: var(--vscode-list-activeSelectionForeground);
+  background: var(--gc-accent-subtle);
+  box-shadow: inset 2px 0 0 var(--gc-accent);
   outline: 1px solid var(--vscode-contrastActiveBorder, transparent);
   outline-offset: -1px;
 }
@@ -2773,7 +3251,11 @@ h3 {
   }
 }
 
+/* Rows shrink the box to the 14 px file-list metric; the commit form keeps the
+ * global 16 px platform box above. Margin keeps the padded hit area intact. */
 .gc-tree__row .gc-checkbox__input {
+  width: 14px;
+  height: 14px;
   margin: var(--gc-space-1);
 }
 
@@ -2800,7 +3282,7 @@ h3 {
 /*
  * The box holds one icon and nothing else, so it sits at `--gc-fs-md` rather
  * than at the metadata step: stacking two fractional em steps was what pushed the
- * glyph off centre. No visible frame — the glyph itself carries the distinction
+ * glyph off centre. No visible frame â€” the glyph itself carries the distinction
  * (see header comment: colour is always the last channel).
  */
 .gc-status__box {
@@ -2871,8 +3353,8 @@ h3 {
 
 /*
  * Column 2 of a file row now holds the theme icon instead of the status box.
- * Same footprint as the old box so the row rhythm survives the swap.
- * Folder rows use .gc-tree__icon with the same 18x18 footprint.
+ * The cell matches the 16 px glyph inside so the row reads at SCM density.
+ * Folder rows use .gc-tree__icon with the same 16x16 footprint.
  */
 .gc-tree__icon-cell,
 .gc-tree__icon {
@@ -2880,8 +3362,8 @@ h3 {
   flex: 0 0 auto;
   align-items: center;
   justify-content: center;
-  width: 18px;
-  height: 18px;
+  width: 16px;
+  height: 16px;
 }
 
 .gc-tree__icon-cell .gc-icon,
@@ -2902,7 +3384,7 @@ h3 {
   flex: 0 0 auto;
   align-items: center;
   justify-content: center;
-  min-width: 18px;
+  min-width: 16px;
   color: var(--gc-muted);
   font-family: var(--vscode-editor-font-family, monospace);
   font-size: var(--gc-fs-md);
@@ -2939,7 +3421,7 @@ h3 {
   display: inline-flex;
   flex: 0 0 auto;
   gap: var(--gc-space-2);
-  font-size: var(--gc-fs-xs);
+  font-size: var(--gc-fs-2xs);
   font-variant-numeric: tabular-nums;
 }
 
@@ -2961,11 +3443,11 @@ h3 {
 }
 
 .gc-stat--add {
-  color: var(--vscode-gitDecoration-addedResourceForeground, var(--vscode-charts-green));
+  color: var(--vscode-gitDecoration-addedResourceForeground, var(--gc-tone-added));
 }
 
 .gc-stat--del {
-  color: var(--vscode-gitDecoration-deletedResourceForeground, var(--vscode-charts-red));
+  color: var(--vscode-gitDecoration-deletedResourceForeground, var(--gc-tone-removed));
 }
 
 .gc-stat--unknown {
@@ -2974,15 +3456,29 @@ h3 {
 
 /* ---------------------------------------------------------------- commit form */
 
-/* At the top of the panel (VS Code Source Control anatomy) the commit box needs
- * a bottom separator so the toolbar below it reads as a second row, not merged
- * with the textarea. No top border: the context bar already carries one. */
+/*
+ * The commit card: the one primary action surface on the Pending Changes panel,
+ * so it is drawn as an elevated card rather than a bare stack of controls. The
+ * elevation ladder (surface 2 on surface 1, large radius, hairline border, the
+ * small shadow rung) is what makes Commit read as the destination of the panel.
+ * No bottom separator: the toolbar below now carries its own top padding.
+ */
+/*
+ * Bottom padding is one step tighter than the top/side var(--gc-space-3): the
+ * always-reserved gc-commit__status row contributes its own min-height below
+ * the actions, so a full bottom padding on top of that reservation reads
+ * visibly larger than the top gap. The reduced bottom term restores balance
+ * while the reserved status row keeps its pinned px-floor min-height.
+ */
 .gc-commit {
   display: flex;
   flex-direction: column;
-  gap: var(--gc-space-3);
-  padding-bottom: var(--gc-space-3);
-  border-bottom: 1px solid var(--gc-border);
+  gap: var(--gc-space-2);
+  padding: var(--gc-space-3) var(--gc-space-3) var(--gc-space-2);
+  border: 1px solid var(--gc-border);
+  border-radius: var(--gc-radius-lg);
+  background: var(--gc-surface-2);
+  box-shadow: var(--gc-shadow-sm);
   flex: 0 0 auto;
 }
 
@@ -2993,6 +3489,7 @@ h3 {
 
 .gc-commit__message {
   width: 100%;
+  min-height: calc(3 * 1.4em + 2 * var(--gc-space-2));
   padding: var(--gc-space-2) var(--gc-space-3);
   border: 1px solid var(--vscode-input-border, var(--gc-border));
   border-radius: var(--gc-radius);
@@ -3002,32 +3499,67 @@ h3 {
   font-size: var(--gc-fs-sm);
   line-height: 1.4;
   resize: vertical;
+  transition: border-color var(--gc-dur-fast) var(--gc-ease);
 }
 
-.gc-commit__advanced {
+/* Softer focus treatment: the ring is the affordance, so the resting border
+ * stays a hairline and never hardens into the default 2px control outline. */
+.gc-commit__message:focus {
+  outline: 1px solid var(--vscode-focusBorder);
+  outline-offset: -1px;
+  border-color: var(--vscode-focusBorder);
+}
+
+/* Invalid keeps its own treatment (rule plus colour, message below is third). */
+.gc-commit__message[aria-invalid='true'] {
+  border-color: var(--gc-danger);
+  box-shadow: inset 0 0 0 1px var(--gc-danger);
+}
+
+.gc-commit__message[aria-invalid='true']:focus {
+  outline-color: var(--gc-danger);
+}
+
+/*
+ * Meta row under the textarea: the always-visible "push after commit" toggle on
+ * the leading edge and the message length hint on the trailing edge. Both are
+ * deliberately quiet so they inform without competing with the Commit button.
+ */
+.gc-commit__meta {
   display: flex;
-  flex-direction: column;
+  align-items: center;
   gap: var(--gc-space-2);
 }
 
-.gc-commit__advanced-toggle {
-  color: var(--vscode-textLink-foreground, var(--vscode-foreground));
-  font-size: var(--gc-fs-xs);
+.gc-checkbox--inline {
+  align-items: center;
+  gap: var(--gc-space-2);
+  min-height: var(--gc-hit);
   cursor: pointer;
-  padding: var(--gc-space-1) 0;
-  user-select: none;
 }
 
-/* A `<summary>` is interactive, so it gets the same hover colour a link gets. */
-.gc-commit__advanced-toggle:hover {
-  color: var(--vscode-textLink-activeForeground, var(--vscode-foreground));
+.gc-checkbox--inline .gc-checkbox__input {
+  margin: var(--gc-space-1);
 }
 
-.gc-commit__options {
-  display: flex;
-  flex-direction: column;
-  gap: var(--gc-space-2);
-  padding: var(--gc-space-2) 0 var(--gc-space-1);
+.gc-checkbox__text--inline {
+  padding-top: 0;
+  font-size: var(--gc-fs-xs);
+}
+
+/*
+ * Reserved hint slot: `min-height` matches the status-row reservation idiom, so
+ * the first keystroke filling this line never grows the card. `margin-left:
+ * auto` pins it to the trailing edge without a second flex container.
+ */
+.gc-commit__count {
+  margin: 0 0 0 auto;
+  min-height: 1.4em;
+  color: var(--gc-muted);
+  font-size: var(--gc-fs-2xs);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  white-space: nowrap;
 }
 
 .gc-commit__actions {
@@ -3058,7 +3590,8 @@ h3 {
  * panels below. Reserving exactly one text row keeps heights identical across
  * idle and busy states. The max() floor keeps the reservation from shrinking
  * below the 10px spinner dot (border-box: its 2px border is inside that box),
- * so a very small base font can never let the busy row outgrow the idle row. */
+ * so a very small base font can never let the busy row outgrow the idle row.
+ * The px floor is a pinned invariant (see test/pendingSections.test.ts). */
 .gc-commit__status {
   display: flex;
   align-items: center;
@@ -3131,23 +3664,30 @@ h3 {
 }
 
 /*
- * The one big title on this panel. `--gc-fs-xl` establishes the top tier
- * in the three-level text hierarchy (Title: xl -> Heading: sm -> Byline/Meta: xs/sm).
+ * The one big title on this panel. `--gc-fs-lg` keeps it the top tier of the
+ * inspector without out-shouting the canvas it describes.
  */
 .gc-inspector__subject {
   margin: 0;
-  font-size: var(--gc-fs-xl);
+  font-size: var(--gc-fs-lg);
   font-weight: var(--gc-weight-strong);
   line-height: 1.25;
   overflow-wrap: anywhere;
 }
 
-/* `oleh <penulis> · <kapan>` — the reference's `by … on …` line. */
+/* `oleh <penulis> Â· <kapan>` â€” the reference's `by â€¦ on â€¦` line, led by a user glyph. */
 .gc-inspector__byline {
+  display: flex;
+  align-items: center;
+  gap: var(--gc-space-1);
   margin: 0;
   color: var(--gc-muted);
   font-size: var(--gc-fs-xs);
   overflow-wrap: anywhere;
+}
+
+.gc-inspector__byline .gc-icon {
+  flex: 0 0 auto;
 }
 
 /*
@@ -3222,7 +3762,7 @@ h3 {
  * so repeating "Copy short hash" as visible text forces the reader to parse a
  * sentence to tell two identical-length labels apart. Full accessible names
  * survive on aria-label + title.
- * Joined as one segmented control — outer height fixed to var(--gc-hit) (28px)
+ * Joined as one segmented control â€” outer height fixed to var(--gc-hit) (28px)
  * with a real border so it stays 28px matching adjacent controls (hash chip and
  * external button) in normal mode and forced-colors (where border is forced).
  */
@@ -3283,7 +3823,7 @@ h3 {
 }
 
 /*
- * External action leaves the app — standalone icon button bordered like other buttons,
+ * External action leaves the app â€” standalone icon button bordered like other buttons,
  * uniform font-size (--gc-fs-sm) matching the clipboard icon and copy mark.
  */
 .gc-inspector__external.gc-icon-button {
@@ -3307,6 +3847,11 @@ h3 {
 .gc-inspector__meta dd {
   margin: 0;
   overflow-wrap: anywhere;
+}
+
+/* Hashes line up down the meta column; fixed advance keeps them comparable. */
+.gc-inspector__meta dd .gc-inspector__hash-value {
+  font-variant-numeric: tabular-nums;
 }
 
 .gc-inspector__parents,
@@ -3356,7 +3901,7 @@ h3 {
   gap: var(--gc-space-3);
   min-width: 0;
   min-height: var(--gc-hit);
-  padding: var(--gc-space-1) var(--gc-space-2);
+  padding: var(--gc-space-2);
   border: none;
   border-radius: var(--gc-radius);
   background: transparent;
@@ -3395,7 +3940,8 @@ h3 {
 .gc-conflicts {
   padding: var(--gc-space-3);
   border: 1px solid var(--gc-warning);
-  border-radius: var(--gc-radius);
+  border-radius: var(--gc-radius-lg);
+  background: var(--gc-surface-2);
 }
 
 .gc-conflicts__title {
@@ -3408,9 +3954,9 @@ h3 {
 }
 
 /*
- * `U` — the porcelain code every conflicted file carries. Same 18x18 grid as section
+ * `U` â€” the porcelain code every conflicted file carries. Same 18x18 grid as section
  * badges so the panel and the list speak one language; `aria-hidden`, because the
- * sentence beside it already says how many files need work. No visible frame — the
+ * sentence beside it already says how many files need work. No visible frame â€” the
  * letter itself is the channel, colour only reinforces it.
  */
 .gc-conflicts__badge {
@@ -3497,7 +4043,8 @@ h3 {
   gap: var(--gc-space-3);
   padding: var(--gc-space-3);
   border: 1px solid var(--gc-border);
-  border-radius: var(--gc-radius);
+  border-radius: var(--gc-radius-lg);
+  background: var(--gc-surface-2);
 }
 
 .gc-github__head {
@@ -3571,10 +4118,11 @@ h3 {
 .gc-chip--pr {
   display: flex;
   gap: var(--gc-space-3);
-  align-items: baseline;
+  align-items: center;
   max-width: 100%;
   min-height: var(--gc-hit);
-  padding: var(--gc-space-1) var(--gc-space-3);
+  padding: var(--gc-space-1) var(--gc-space-2);
+  border-radius: var(--gc-radius);
   background: transparent;
   color: var(--vscode-foreground);
   font-family: inherit;
@@ -3628,7 +4176,8 @@ h3 {
   gap: var(--gc-space-2);
   padding: var(--gc-space-3);
   border: 1px solid var(--gc-border);
-  border-radius: var(--gc-radius);
+  border-radius: var(--gc-radius-lg);
+  background: var(--gc-surface-2);
 }
 
 .gc-contributors__head {
@@ -3771,8 +4320,8 @@ h3 {
 .gc-contributors__bar-track {
   flex: 0 0 50px;
   height: 4px;
-  background: var(--gc-border);
-  border-radius: var(--gc-radius-sm);
+  background: var(--gc-surface-3);
+  border-radius: var(--gc-radius-pill);
   overflow: hidden;
 }
 
@@ -3780,7 +4329,7 @@ h3 {
   display: block;
   height: 100%;
   background: var(--vscode-progressBar-background, var(--gc-accent));
-  border-radius: var(--gc-radius-sm);
+  border-radius: var(--gc-radius-pill);
 }
 
 .gc-contributors__count {
@@ -3823,19 +4372,35 @@ h3 {
   display: flex;
   align-items: flex-start;
   gap: var(--gc-space-3);
-  padding: var(--gc-space-3) var(--gc-space-4);
+  padding: var(--gc-space-3);
   border: 1px solid var(--gc-border);
   border-left-width: 3px;
-  border-radius: var(--gc-radius);
-  background: var(--vscode-notifications-background, var(--vscode-editorWidget-background));
+  border-radius: var(--gc-radius-lg);
+  background: var(--gc-surface-3);
   color: var(--vscode-notifications-foreground, var(--vscode-foreground));
-  box-shadow: 0 2px 8px var(--vscode-widget-shadow, transparent);
+  box-shadow: var(--gc-shadow-md);
+  animation: gc-toast-in var(--gc-dur-med) var(--gc-ease);
+}
+
+/*
+ * A toast slides up into the stack so an arriving message reads as new rather than
+ * as one that was always there. Reduced-motion clears it globally with the rest.
+ */
+@keyframes gc-toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(var(--gc-space-2));
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 /*
  * Level tones, from the same `--gc-tone-*` tokens the status boxes use: an error is
  * `removed`, a warning is `pending`, information is `changed`. Reusing them keeps one
- * colour vocabulary across the extension — the hue that marks a deleted file is the
+ * colour vocabulary across the extension â€” the hue that marks a deleted file is the
  * hue that marks a failed operation.
  *
  * Colour is still the LAST channel: `.gc-toast__level` prints the word, the glyph is
@@ -3887,6 +4452,7 @@ h3 {
   gap: var(--gc-space-1);
   min-width: 0;
   flex: 1 1 auto;
+  font-size: var(--gc-fs-sm);
 }
 
 /*
@@ -3917,7 +4483,7 @@ h3 {
 
 .gc-toast__detail {
   color: var(--gc-muted);
-  font-size: var(--gc-fs-xs);
+  font-size: var(--gc-fs-2xs);
   overflow-wrap: anywhere;
 }
 
@@ -3993,7 +4559,7 @@ h3 {
 /*
  * Forced-colours mode discards our colours entirely, so every boundary that was
  * carrying meaning through colour needs a real border to survive. Shapes, dash
- * patterns, glyphs, and words already work — this only restores the edges.
+ * patterns, glyphs, and words already work â€” this only restores the edges.
  */
 @media (forced-colors: active) {
   .gc-button,
@@ -4031,7 +4597,7 @@ h3 {
     border: 2px solid ButtonBorder;
   }
 
-  /* Inspector copy pair and quiet segmented pair — the single container border
+  /* Inspector copy pair and quiet segmented pair â€” the single container border
    * and internal divider must remain visible when colours are discarded,
    * otherwise the "one control" reading is lost. */
   .gc-inspector__copy-group,
@@ -4077,11 +4643,11 @@ h3 {
    * on top of commit rows. A solid `Canvas` background plus a border restores the
    * "these are chrome, not content" boundary the shadow was providing.
    */
-  .gc-canvas__controls .gc-button,
-  .gc-canvas__controls .gc-icon-button,
+  .gc-canvas__controls .gc-control-card,
   .gc-canvas__controls .gc-checkbox--float {
     background: Canvas;
     box-shadow: none;
+    border: 1px solid ButtonBorder;
   }
 
   .gc-skeleton {

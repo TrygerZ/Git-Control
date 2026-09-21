@@ -10,18 +10,23 @@
  * for a reason the user cannot see is a dead end. It submits, fails validation,
  * and says why — which also keeps the reason reachable by keyboard.
  *
- * This is the one primary button on the panel. The toolbar with branch and
- * selection helpers sits below it, and the grouped file list below that, so the
- * message box is the first thing a hand reaches. The staged count that used to
- * live as a paragraph below the form now lives as the Commit button's title when
- * disabled, while the badge on the Staged Changes header carries the same number
- * visually.
+ * This is the one primary button on the panel, and it reads as one elevated card
+ * (surface 2, large radius, small shadow): the primary action surface of the
+ * Pending Changes view. The toolbar with branch and selection helpers sits below
+ * it, and the grouped file list below that, so the message box is the first thing
+ * a hand reaches. The staged count that used to live as a paragraph below the
+ * form now lives as the Commit button's title when disabled, while the badge on
+ * the Staged Changes header carries the same number visually.
+ *
+ * "Push after commit" used to hide behind an "Advanced options" disclosure. It is
+ * a common toggle, so it now sits as a quiet always-visible checkbox row under
+ * the textarea; the reserved count row beside it keeps the card height stable.
  */
 import { useEffect, useRef, type JSX } from 'react';
 import { formatCount } from './format';
 import { useT } from './useT';
 import { COMMIT_MESSAGE_MIN, useChangesStore, useOperationStore, useRepoStore, useSettingsStore } from './store';
-import { Spinner } from './ui';
+import { Icon, Spinner } from './ui';
 import { firstRemoteName } from './NodeContextMenu';
 
 export function CommitForm(): JSX.Element {
@@ -169,24 +174,36 @@ export function CommitForm(): JSX.Element {
         </p>
       )}
 
-      <details className="gc-commit__advanced">
-        <summary className="gc-commit__advanced-toggle">
-          {strings.commitForm.advancedOptions}
-        </summary>
-        <div className="gc-commit__options">
-          <label className="gc-checkbox">
-            <input
-              type="checkbox"
-              checked={pushAfter}
-              disabled={busy}
-              onChange={(e) => setPushAfter(e.target.checked)}
-            />
-            <span className="gc-checkbox__text">
-              <span>{strings.commitForm.pushAfter}</span>
-            </span>
-          </label>
-        </div>
-      </details>
+      {/*
+        Meta row under the textarea: the common "push after commit" toggle stays
+        always visible in quiet styling (no disclosure to open for one checkbox),
+        and the message length hint sits at the trailing edge. The hint keeps a
+        permanent empty slot when the textarea is empty so the card height never
+        shifts on the first keystroke.
+      */}
+      <div className="gc-commit__meta">
+        <label className="gc-checkbox gc-checkbox--inline">
+          <input
+            type="checkbox"
+            className="gc-checkbox__input"
+            checked={pushAfter}
+            disabled={busy}
+            onChange={(e) => setPushAfter(e.target.checked)}
+          />
+          <span className="gc-checkbox__text gc-checkbox__text--inline">
+            {strings.commitForm.pushAfter}
+          </span>
+        </label>
+        <span
+          className="gc-commit__count"
+          aria-live="off"
+          aria-atomic="true"
+        >
+          {message.length > 0
+            ? strings.commitForm.messageLength(formatCount(message.length, language), COMMIT_MESSAGE_MIN)
+            : ''}
+        </span>
+      </div>
 
       <div className="gc-commit__actions">
         <button
@@ -195,6 +212,7 @@ export function CommitForm(): JSX.Element {
           title={commitButtonTitle}
           disabled={busy || stagedCount === 0}
         >
+          <Icon name="commit" />
           {strings.commitForm.commitButton}
         </button>
         {remote !== null && (
@@ -205,6 +223,7 @@ export function CommitForm(): JSX.Element {
             disabled={pushDisabled}
             onClick={handlePush}
           >
+            <Icon name="push" />
             {pushLabel}
           </button>
         )}
@@ -216,6 +235,7 @@ export function CommitForm(): JSX.Element {
             disabled={pullDisabled}
             onClick={handlePull}
           >
+            <Icon name="pull" />
             {pullLabel}
           </button>
         )}

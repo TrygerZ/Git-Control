@@ -268,6 +268,19 @@ export function ContextBar({
   const head = status.head === null ? null : shortHash(status.head);
   const line = subject === undefined ? null : sanitizeGitText(subject);
 
+  /*
+   * The full sentence stays on the tooltip and the visually hidden fallback so a
+   * screen reader still hears the counts. The visible text drops them: the arrow
+   * badges already carry the numbers, and repeating them read as "↑4 4 commits".
+   */
+  const fullSummary = syncSummary(status, language);
+  const visibleSummary =
+    status.upstream === null
+      ? fullSummary
+      : status.ahead > 0 || status.behind > 0
+        ? sanitizeGitText(status.upstream)
+        : fullSummary;
+
   return (
     <header className="gc-context">
       <div className="gc-context__crumbs">
@@ -297,7 +310,34 @@ export function ContextBar({
           {strings.ui.lastCommit(line)}
         </p>
       )}
-      <p className="gc-context__sync">{syncSummary(status, language)}</p>
+      {/*
+        Sync state is presented as arrows plus the same sentence `syncSummary`
+        builds, so the text (aria-label below, tooltip, and the visually hidden
+        fallback) never drifts from the numbers: a screen reader hears exactly
+        what a sighted user reads. The arrows are decoration on top, tone-marked
+        and labelled in words by the summary itself.
+      */}
+      <p className="gc-context__sync" title={fullSummary}>
+        <span
+          className="gc-context__sync-visual"
+          aria-hidden="true"
+        >
+          {status.upstream !== null && status.ahead > 0 && (
+            <span className="gc-context__sync-part gc-context__sync-part--ahead">
+              <Icon name="arrow-up" />
+              {status.ahead}
+            </span>
+          )}
+          {status.upstream !== null && status.behind > 0 && (
+            <span className="gc-context__sync-part gc-context__sync-part--behind">
+              <Icon name="arrow-down" />
+              {status.behind}
+            </span>
+          )}
+          <span className="gc-context__sync-text">{visibleSummary}</span>
+        </span>
+        <span className="gc-visually-hidden">{fullSummary}</span>
+      </p>
     </header>
   );
 }
