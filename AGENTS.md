@@ -114,6 +114,7 @@ When implementing a new Git action, modify layers in this exact sequence:
 ## Session Recap Log
 
 - `SESSION.md` at the repo root is the rolling recap of completed work. It is gitignored and never shipped (`**/*.md` in `.vscodeignore`).
+- **Session start:** At the beginning of every new session, read `SESSION.md` before any other work (before planning, searching, or editing). It records what the previous session finished, so do not repeat or contradict that work. If the file is missing, create it with only the `# SESSION` heading and the entry for the current task.
 - **Trigger:** Write or update `SESSION.md` immediately after finishing any task, small or large, without waiting to be asked. Do this before reporting completion to the user.
 - **Entry shape:** Newest entry first, under a `## YYYY-MM-DD - Short title` heading, with bullets for what changed and why, files touched, and verification actually run (`npm test`, `npm run typecheck`, manual check).
 - **Cap:** Maximum 20 entries. When a new entry would make 21, delete the oldest (bottom) entry in the same edit.
