@@ -111,6 +111,15 @@ When implementing a new Git action, modify layers in this exact sequence:
 - Write instructions in imperative mood ("Run X", "Never import Y"), not narrative or optional advice.
 - Scope: applies to `AGENTS.md`, `README.md`, `CHANGELOG.md`, `docs/**`, code docblocks, commit messages, and PR descriptions.
 
+## Session Recap Log
+
+- `SESSION.md` at the repo root is the rolling recap of completed work. It is gitignored and never shipped (`**/*.md` in `.vscodeignore`).
+- **Trigger:** Write or update `SESSION.md` immediately after finishing any task, small or large, without waiting to be asked. Do this before reporting completion to the user.
+- **Entry shape:** Newest entry first, under a `## YYYY-MM-DD - Short title` heading, with bullets for what changed and why, files touched, and verification actually run (`npm test`, `npm run typecheck`, manual check).
+- **Cap:** Maximum 20 entries. When a new entry would make 21, delete the oldest (bottom) entry in the same edit.
+- **Language:** English, single ASCII hyphens only, no emojis, no em dashes.
+- `SESSION.md` is a work log, not a source of truth. Never cite it as documentation in `README.md`, `CHANGELOG.md`, or code comments.
+
 ## Git & Release Workflow
 
 - **Branches:** Create a new branch from `main` for new features and bug fixes. Follow `<type>/<kebab-case-slug>` naming using Conventional Commits types (`feat`, `fix`, `refactor`, `docs`, `chore`, `test`, `perf`, `ci`), e.g. `feat/vscode-file-icon-theme`. Minor updates do not require a branch and may commit directly to `main` (for example: typo fixes, wording adjustments in documentation, comment edits, and small configuration adjustments). When in doubt whether a change is minor, create a branch.
