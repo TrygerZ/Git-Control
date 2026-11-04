@@ -19,6 +19,7 @@ import { hostText } from './hostText';
 import { buildIconThemeSnapshot, iconThemeRootUri } from './iconTheme';
 import { Logger } from './logger';
 import { parseRemoteUrl, resolveGitHubApiBase, webUrlOf, type GitHubApiBase, type ParsedRemoteUrl } from './remoteUrl';
+import { isFresh, parseRoute, PENDING_ROUTE_TTL_MS } from './webview/route';
 import { clampZoom } from './webview/viewport';
 import { MAX_COMMIT_LIMIT, RepositoryService } from './repository';
 import { RepoWatcher } from './watcher';
@@ -38,6 +39,7 @@ import type {
   OpenStashDiffHostPayload,
   PullRequestsPayload,
   PullRequestsResult,
+  Route,
   SettingsSetPayload,
   SettingsSnapshot,
   UiPreferences,
@@ -91,6 +93,8 @@ class Controller implements vscode.Disposable {
   private readonly disposables: vscode.Disposable[] = [];
   private panel: vscode.WebviewPanel | undefined;
   private pendingFocusHash: string | undefined;
+  /** One-shot route for the sidebar. Memory only: a route is never written to `workspaceState`. */
+  private pendingRoute: { route: Route; at: number } | undefined;
   /** Sidebar view webview, tracked so icon-theme options can be re-assigned. */
   private pendingView: vscode.WebviewView | undefined;
   private gitPath: string | null = null;
@@ -151,6 +155,7 @@ class Controller implements vscode.Disposable {
     this.panel?.dispose();
     this.panel = undefined;
     this.pendingFocusHash = undefined;
+    this.pendingRoute = undefined;
   }
 
   // ------------------------------------------------------------- git lookup
@@ -329,6 +334,34 @@ class Controller implements vscode.Disposable {
     register('gitControl.showLogs', () => this.channel.show(true));
     // Only useful in multi-root workspaces; harmless elsewhere.
     register('gitControl.pickRepository', () => this.pickRepository());
+    // Not in `package.json`: views contribute their own commands (D-17). Takes one
+    // argument, validated by `parseRoute`, so it cannot be used to run anything else.
+    register('gitControl.internal.navigate', (...args: unknown[]) => this.navigate(args[0]));
+  }
+
+  /**
+   * Queue a route for the sidebar, reveal the view, and push the route if it is
+   * already listening. The push is best effort: the platform drops it while the
+   * view is hidden or still loading, and the webview then pulls the queued route
+   * (`ui/takePendingRoute`) once its listeners exist.
+   */
+  private async navigate(raw: unknown): Promise<void> {
+    // A bare id string is accepted so the command is usable from a keybinding or the palette.
+    const route = parseRoute(typeof raw === 'string' ? { id: raw } : raw);
+    if (route === null) {
+      this.logger.info('command/navigate', 'ignored: not a valid route');
+      return;
+    }
+    this.pendingRoute = { route, at: Date.now() };
+    await vscode.commands.executeCommand('gitControl.pendingChanges.focus');
+    for (const bridge of this.bridges) bridge.emit('event/navigate', { route });
+  }
+
+  private takePendingRoute(): Route | null {
+    const queued = this.pendingRoute;
+    this.pendingRoute = undefined;
+    if (queued === undefined) return null;
+    return isFresh(queued.at, Date.now(), PENDING_ROUTE_TTL_MS) ? queued.route : null;
   }
 
   /**
@@ -682,6 +715,7 @@ class Controller implements vscode.Disposable {
       githubCommitAuthors: (payload) => this.githubCommitAuthors(payload),
       githubContributorIdentity: (payload) => this.githubContributorIdentity(payload),
       githubLinkage: () => this.githubLinkage(),
+      takePendingRoute: () => this.takePendingRoute(),
     };
   }
 

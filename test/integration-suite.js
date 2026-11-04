@@ -151,6 +151,23 @@ async function repoScenario() {
   await vscode.commands.executeCommand('gitControl.pickRepository');
   pass('all commands execute against a real repository');
 
+  // Internal navigation: registered in the host, absent from the manifest, and
+  // an invalid route is ignored instead of throwing.
+  const manifest = require(path.join(process.env.GIT_CONTROL_ROOT, 'package.json'));
+  assert.ok(
+    !manifest.contributes.commands.some((entry) => entry.command === 'gitControl.internal.navigate'),
+    'gitControl.internal.navigate stays out of package.json',
+  );
+  assert.ok(
+    (await vscode.commands.getCommands(true)).includes('gitControl.internal.navigate'),
+    'gitControl.internal.navigate is registered',
+  );
+  await vscode.commands.executeCommand('gitControl.internal.navigate', 'prs');
+  await vscode.commands.executeCommand('gitControl.internal.navigate', { id: 'branches', sub: 'tags' });
+  await vscode.commands.executeCommand('gitControl.internal.navigate', { id: 'nope' });
+  await vscode.commands.executeCommand('gitControl.internal.navigate');
+  pass('gitControl.internal.navigate resolves for valid and invalid routes and is not contributed');
+
   const folder = vscode.workspace.workspaceFolders?.[0];
   assert.ok(folder, 'a git workspace is open');
   const head = (await execGit(['rev-parse', 'HEAD'])).trim();

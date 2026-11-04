@@ -24,8 +24,10 @@ import type {
   RequestPayload,
   Response,
   ResponseData,
+  Route,
 } from '../messages';
 import { isValidResponse, validateHostEvent } from './hostGuards';
+import { DEFAULT_ROUTE, parseRoute } from './route';
 import type { ChangeSection } from './tree';
 import { activeLang, t } from './i18n';
 
@@ -51,6 +53,7 @@ export interface WebviewState {
   commitMessage: string;
   pushAfterCommit: boolean;
   showRibbons: boolean;
+  route: Route;
 }
 
 const DEFAULT_STATE: WebviewState = {
@@ -62,6 +65,7 @@ const DEFAULT_STATE: WebviewState = {
   commitMessage: '',
   pushAfterCommit: false,
   showRibbons: true,
+  route: DEFAULT_ROUTE,
 };
 
 /** Rejection carrying the full {@link ErrorBody} so the UI can render remedies. */
@@ -268,6 +272,7 @@ export function loadState(): WebviewState {
     commitMessage: typeof partial.commitMessage === 'string' ? partial.commitMessage : '',
     pushAfterCommit: partial.pushAfterCommit === true,
     showRibbons: partial.showRibbons !== false,
+    route: parseRoute(partial.route) ?? DEFAULT_ROUTE,
   };
 }
 

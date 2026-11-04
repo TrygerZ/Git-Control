@@ -13,6 +13,7 @@ import { create } from 'zustand';
 import { BridgeRequestError, bridge, fetchContributorIdentity, fetchContributors, isBridgeError, mutation, saveState } from './bridge';
 import { unknownErrorBody } from '../errorBody';
 import { linkageChangedRepo, sanitizeGitText } from './format';
+import { DEFAULT_ROUTE, resolveInitialRoute, sameRoute } from './route';
 import { pruneSelection, toggleNode, togglePath, type ChangeSection, type TreeNode } from './tree';
 import { activeLang, setActiveLang, t } from './i18n';
 import type {
@@ -30,6 +31,7 @@ import type {
   PullRequestInfo,
   RepoGraph,
   RepoStatus,
+  Route,
   SettingsSnapshot,
   StashEntry,
   StashFile,
@@ -834,6 +836,50 @@ export const useIconThemeStore = create<IconThemeState>((set) => ({
   },
 }));
 
+// -------------------------------------------------------------- routeStore
+
+/**
+ * Which sidebar view is active. Plumbing only: nothing renders it yet.
+ *
+ * `navigate` persists (webview `getState` is the only copy, D-16); `hydrate` does
+ * not, because restoring the saved route must not rewrite it.
+ */
+export interface RouteState {
+  route: Route;
+  navigate(route: Route): void;
+  hydrate(route: Route): void;
+  /**
+   * Pull the route queued by the host, if any. Called on mount after
+   * `wireHostEvents()`. Never overwrites with "nothing queued", so a route
+   * delivered by event while the request was in flight is kept.
+   */
+  pullPending(): Promise<void>;
+}
+
+export const useRouteStore = create<RouteState>((set, get) => ({
+  route: DEFAULT_ROUTE,
+
+  navigate(route) {
+    set({ route });
+    saveState({ route });
+  },
+
+  hydrate(route) {
+    set({ route });
+  },
+
+  async pullPending() {
+    try {
+      const { route: pending } = await bridge.request('ui/takePendingRoute', {});
+      const current = get().route;
+      const next = resolveInitialRoute({ pending, local: current });
+      if (!sameRoute(next, current)) get().navigate(next);
+    } catch {
+      // A route is a convenience; the restored one stays.
+    }
+  },
+}));
+
 // -------------------------------------------------------------- githubStore
 
 export interface GitHubState {
@@ -1067,6 +1113,16 @@ export function wireHostEvents(mode: 'explorer' | 'pending'): () => void {
     useRepoStore.getState().focusCommit(payload.hash);
   });
 
+  // The explorer has no sidebar route, so it does not subscribe.
+  const offNavigate =
+    mode === 'pending'
+      ? bridge.on('event/navigate', (payload) => {
+          useRouteStore.getState().navigate(payload.route);
+          // Clear the host's queued copy so the next mount does not replay a delivered route.
+          void bridge.request('ui/takePendingRoute', {}).catch(() => undefined);
+        })
+      : undefined;
+
   return () => {
     offChanged();
     offProgress();
@@ -1074,6 +1130,7 @@ export function wireHostEvents(mode: 'explorer' | 'pending'): () => void {
     offSettings();
     offIconTheme();
     offCommitFocus();
+    offNavigate?.();
     wired = false;
   };
 }

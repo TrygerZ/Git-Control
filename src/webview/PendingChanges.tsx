@@ -30,6 +30,7 @@ import {
   useIconThemeStore,
   useOperationStore,
   useRepoStore,
+  useRouteStore,
   useSettingsStore,
   wireHostEvents,
 } from './store';
@@ -125,10 +126,13 @@ export function PendingChangesApp(): JSX.Element {
     requestAnimationFrame(() => {
       if (scrollRef.current !== null) scrollRef.current.scrollTop = persisted.scrollTop;
     });
+    // Restored before the listeners exist, so a navigate event can only overwrite it, never the reverse.
+    useRouteStore.getState().hydrate(persisted.route);
     const off = wireHostEvents('pending');
-    // Icon theme pull must follow `wireHostEvents`: the race is closed by the
-    // webview asking for the snapshot after its listeners exist.
+    // Icon theme and route pulls must follow `wireHostEvents`: the race is closed by
+    // the webview asking after its listeners exist.
     void loadIconTheme();
+    void useRouteStore.getState().pullPending();
     void loadSettings();
     void load();
     void loadStatus();

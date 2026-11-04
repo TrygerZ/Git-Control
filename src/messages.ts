@@ -630,6 +630,13 @@ export interface RequestMap {
    * falls back to generic icons, exactly as for the push event.
    */
   'iconTheme/get': { payload: Record<string, never>; response: IconThemeSnapshot | null };
+  /**
+   * Take the one-shot route queued by `gitControl.internal.navigate`. A pushed
+   * `event/navigate` is dropped while the sidebar is hidden or not yet created,
+   * so the webview pulls on mount. Returns `null` when nothing is queued or the
+   * queued route is older than the host TTL. Clears the queue.
+   */
+  'ui/takePendingRoute': { payload: Record<string, never>; response: { route: Route | null } };
 }
 
 export type RequestKind = keyof RequestMap;
@@ -717,6 +724,20 @@ export interface CommitFocusEvent {
   hash: string;
 }
 
+export type RouteId = 'changes' | 'prs' | 'issues' | 'actions' | 'branches';
+export type ChangesSub = 'changes' | 'stashes';
+export type BranchesSub = 'local' | 'remote' | 'tags';
+
+/** Which sidebar view and sub-tab is active. Validated by `parseRoute` at every trust boundary. */
+export type Route =
+  | { id: 'changes'; sub: ChangesSub }
+  | { id: 'branches'; sub: BranchesSub }
+  | { id: 'prs' | 'issues' | 'actions' };
+
+export interface NavigateEvent {
+  route: Route;
+}
+
 /** Event kind → payload map for unsolicited host pushes. */
 export interface EventMap {
   'event/repoChanged': RepoChangedEvent;
@@ -727,6 +748,8 @@ export interface EventMap {
   'event/iconThemeChanged': IconThemeSnapshot | null;
   /** Focus and select a commit in the explorer canvas. */
   'event/commitFocus': CommitFocusEvent;
+  /** Select a sidebar route. The explorer ignores it. */
+  'event/navigate': NavigateEvent;
 }
 
 export type EventKind = keyof EventMap;
