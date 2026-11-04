@@ -31,7 +31,7 @@
  * warning from "this will take a while" and a sentence alone does not say so before
  * it is read.
  */
-import { useEffect, useId, useRef, useState, type JSX, type KeyboardEvent } from 'react';
+import { useEffect, useId, useRef, useState, type JSX } from 'react';
 import {
   actionTarget,
   actionTitle,
@@ -45,12 +45,11 @@ import {
   sanitizeGitText,
 } from './format';
 import { useT } from './useT';
+import { FOCUSABLE_SELECTOR } from './focusTrap';
+import { useDialogFocusTrap } from './useDialogFocusTrap';
 import { useOperationStore, useSettingsStore, type PendingGuard } from './store';
 import { Icon } from './ui';
 import type { GitActionRequest, Remedy } from '../messages';
-
-const FOCUSABLE =
-  'button:not([disabled]), [href], input:not([disabled]), select, textarea, [tabindex]:not([tabindex="-1"])';
 
 export function GuardDialog(): JSX.Element | null {
   const guard = useOperationStore((s) => s.pendingGuard);
@@ -70,7 +69,7 @@ function GuardDialogBody({ guard }: { guard: PendingGuard }): JSX.Element {
   const [stage, setStage] = useState<1 | 2>(1);
   const [acknowledged, setAcknowledged] = useState(false);
   const [busy, setBusy] = useState(false);
-  const dialogRef = useRef<HTMLDivElement>(null);
+  const { dialogRef, onKeyDown } = useDialogFocusTrap(dismiss);
   const cancelRef = useRef<HTMLButtonElement>(null);
   const ackRef = useRef<HTMLInputElement>(null);
   const returnFocus = useRef<Element | null>(null);
@@ -86,7 +85,7 @@ function GuardDialogBody({ guard }: { guard: PendingGuard }): JSX.Element {
   useEffect(() => {
     returnFocus.current = document.activeElement;
     const node = dialogRef.current;
-    const target = cancelRef.current ?? node?.querySelector<HTMLElement>(FOCUSABLE) ?? null;
+    const target = cancelRef.current ?? node?.querySelector<HTMLElement>(FOCUSABLE_SELECTOR) ?? null;
     target?.focus();
     return () => {
       const previous = returnFocus.current;
@@ -102,30 +101,6 @@ function GuardDialogBody({ guard }: { guard: PendingGuard }): JSX.Element {
 
   const close = (): void => {
     dismiss();
-  };
-
-  /** Trap Tab inside the dialog; Escape always cancels. */
-  const onKeyDown = (event: KeyboardEvent<HTMLDivElement>): void => {
-    if (event.key === 'Escape') {
-      event.preventDefault();
-      close();
-      return;
-    }
-    if (event.key !== 'Tab') return;
-    const node = dialogRef.current;
-    if (node === null) return;
-    // `Array.from` rather than spread: the project's `lib` omits DOM.Iterable.
-    const items = Array.from(node.querySelectorAll<HTMLElement>(FOCUSABLE));
-    if (items.length === 0) return;
-    const first = items[0] as HTMLElement;
-    const last = items[items.length - 1] as HTMLElement;
-    if (event.shiftKey && document.activeElement === first) {
-      event.preventDefault();
-      last.focus();
-    } else if (!event.shiftKey && document.activeElement === last) {
-      event.preventDefault();
-      first.focus();
-    }
   };
 
   const handleRemedy = async (remedy: Remedy): Promise<void> => {
