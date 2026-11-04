@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {
   isValidCommitFocus,
   isValidIconTheme,
+  isValidNavigate,
   isValidOperationProgress,
   isValidRepoChanged,
   isValidResponse,
@@ -188,6 +189,33 @@ test('isValidResponse rejects malformed responses', () => {
   assert.equal(isValidResponse({ id: 'req-1', ok: false, error: { code: '', message: 'fail' } }), false);
   assert.equal(isValidResponse({ id: 'req-1', ok: false, error: { code: 'ERR', message: 123 } }), false);
   assert.equal(isValidResponse({ kind: 'event/toast', id: 'req-1', ok: true }), false);
+});
+
+test('validateHostEvent accepts event/navigate with a valid route and re-emits only the parsed route', () => {
+  const plain = validateHostEvent({ kind: 'event/navigate', payload: { route: { id: 'prs' } } });
+  assert.deepEqual(plain, { kind: 'event/navigate', payload: { route: { id: 'prs' } } });
+
+  const filled = validateHostEvent({ kind: 'event/navigate', payload: { route: { id: 'branches' } } });
+  assert.deepEqual(filled, { kind: 'event/navigate', payload: { route: { id: 'branches', sub: 'local' } } });
+
+  const stripped = validateHostEvent({
+    kind: 'event/navigate',
+    payload: { route: { id: 'issues', junk: 1 }, other: 'x' },
+  });
+  assert.deepEqual(stripped, { kind: 'event/navigate', payload: { route: { id: 'issues' } } });
+});
+
+test('validateHostEvent rejects event/navigate with a missing route, bad id, or bad sub', () => {
+  assert.equal(validateHostEvent({ kind: 'event/navigate', payload: {} }), null);
+  assert.equal(validateHostEvent({ kind: 'event/navigate', payload: null }), null);
+  assert.equal(validateHostEvent({ kind: 'event/navigate', payload: { route: null } }), null);
+  assert.equal(validateHostEvent({ kind: 'event/navigate', payload: { route: 'prs' } }), null);
+  assert.equal(validateHostEvent({ kind: 'event/navigate', payload: { route: { id: 'nope' } } }), null);
+  assert.equal(validateHostEvent({ kind: 'event/navigate', payload: { route: { id: 'changes', sub: 'local' } } }), null);
+  assert.equal(validateHostEvent({ kind: 'event/navigate', payload: { route: { id: 'prs', sub: 'x' } } }), null);
+  assert.equal(isValidNavigate({ route: { id: 'actions' } }), true);
+  assert.equal(isValidNavigate({ route: { id: 'bogus' } }), false);
+  assert.equal(isValidNavigate(undefined), false);
 });
 
 test('bridge receive drops unknown kind or malformed shapes without notifying listeners', () => {

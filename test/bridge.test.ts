@@ -2725,3 +2725,42 @@ test('stash-drop requires level 2 confirmation with forceAcknowledgement and del
   const afterDrop = await repo.stashList();
   assert.deepEqual(afterDrop, []);
 });
+
+test('ui/takePendingRoute returns the host value and is null when the host has none', async (t) => {
+  const queued = { id: 'branches', sub: 'tags' } as const;
+  const withRoute = harness(null, { takePendingRoute: () => queued });
+  t.after(() => withRoute.bridge.dispose());
+  const found = await withRoute.webview.send(req('ui/takePendingRoute', {}));
+  assert.equal(found.ok, true);
+  if (found.ok) assert.deepEqual(found.data, { route: queued });
+
+  const empty = harness(null, { takePendingRoute: () => null });
+  t.after(() => empty.bridge.dispose());
+  const none = await empty.webview.send(req('ui/takePendingRoute', {}));
+  assert.equal(none.ok, true);
+  if (none.ok) assert.deepEqual(none.data, { route: null });
+
+  // A host without the callback degrades to "nothing queued", not an error.
+  const absent = harness(null);
+  t.after(() => absent.bridge.dispose());
+  const missing = await absent.webview.send(req('ui/takePendingRoute', {}));
+  assert.equal(missing.ok, true);
+  if (missing.ok) assert.deepEqual(missing.data, { route: null });
+});
+
+test('ui/takePendingRoute rejects a non-empty payload without touching the host', async (t) => {
+  let calls = 0;
+  const h = harness(null, {
+    takePendingRoute: () => {
+      calls += 1;
+      return null;
+    },
+  });
+  t.after(() => h.bridge.dispose());
+  const response = await h.webview.send(req('ui/takePendingRoute', { route: { id: 'prs' } }));
+  assert.equal(response.ok, false);
+  if (response.ok) return;
+  assert.equal(response.error.code, 'VALIDATION_ERROR');
+  assert.equal(response.error.status, 400);
+  assert.equal(calls, 0);
+});
