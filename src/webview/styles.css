@@ -11,6 +11,9 @@
  *     `--vscode-focusBorder`, and a 24x24 px minimum hit area (`--gc-hit`)
  *   - `prefers-reduced-motion` disables every transition and animation
  *
+ * Colour names live in the "Design token layer" at the end of `:root`. New components
+ * use those `--gc-*` names, never `--vscode-*` directly.
+ *
  * Spacing and type are two scales, not ad-hoc numbers. Every margin, padding, and
  * gap below is one of `--gc-space-*`; every font size is one of `--gc-fs-*`. That
  * is what makes the panel read as one surface instead of six.
@@ -169,6 +172,61 @@
   --gc-shadow-sm: 0 1px 2px var(--vscode-widget-shadow, transparent);
   --gc-shadow-md: 0 2px 8px var(--vscode-widget-shadow, transparent);
   --gc-shadow-lg: 0 8px 24px var(--vscode-widget-shadow, transparent);
+
+  /*
+   * Design token layer. Names mirror the Figma collection "GC Tokens" so the v3
+   * phases share one vocabulary. Each token derives from a theme variable, so the
+   * webview keeps following the VS Code theme. Fallbacks walk toward a flatter
+   * theme token, never to a literal hue. New components use these names, never
+   * `--vscode-*` directly.
+   */
+
+  /* Backgrounds: aliases of the surface ladder; raised falls back to the card surface. */
+  --gc-bg-editor: var(--gc-surface-1);
+  --gc-bg-sidebar: var(--gc-surface-3);
+  --gc-bg-surface: var(--gc-surface-2);
+  --gc-bg-raised: var(--vscode-menu-background, var(--gc-bg-surface));
+  --gc-bg-hover: var(--vscode-list-hoverBackground);
+  /* Text on a selected row uses `--vscode-list-activeSelectionForeground`. */
+  --gc-bg-selected: var(--vscode-list-activeSelectionBackground);
+  --gc-bg-scrim: var(--vscode-widget-shadow, var(--vscode-editorWidget-background));
+
+  /* Borders: strong maps to the control outline so form fields keep a visible edge. */
+  --gc-border-default: var(--gc-border);
+  --gc-border-subtle: color-mix(in srgb, var(--gc-border) 55%, transparent);
+  --gc-border-strong: var(--vscode-checkbox-border, var(--vscode-input-border, var(--gc-border)));
+
+  /* Text: muted equals secondary because the description colour is the dimmest a theme guarantees. */
+  --gc-text-primary: var(--vscode-foreground);
+  --gc-text-secondary: var(--gc-muted);
+  --gc-text-muted: var(--gc-muted);
+  --gc-text-on-accent: var(--vscode-button-foreground, var(--vscode-editor-background));
+
+  /* Accent: solid pairs with `--gc-text-on-accent`; hover mixes toward foreground. */
+  --gc-accent-primary: var(--gc-accent);
+  --gc-accent-hover: color-mix(in srgb, var(--gc-accent) 85%, var(--vscode-foreground));
+  --gc-accent-solid: var(--vscode-button-background, var(--gc-accent));
+
+  /* File status: aliases of the tone ladder, plus 14 % washes for row and badge fills. */
+  --gc-status-added: var(--gc-tone-added);
+  --gc-status-modified: var(--gc-tone-pending);
+  --gc-status-deleted: var(--gc-tone-removed);
+  --gc-status-renamed: var(--gc-tone-changed);
+  --gc-status-conflict: var(--gc-danger);
+  --gc-status-added-subtle: color-mix(in srgb, var(--gc-status-added) 14%, transparent);
+  --gc-status-modified-subtle: color-mix(in srgb, var(--gc-status-modified) 14%, transparent);
+  --gc-status-conflict-subtle: color-mix(in srgb, var(--gc-status-conflict) 14%, transparent);
+  --gc-status-renamed-subtle: color-mix(in srgb, var(--gc-status-renamed) 14%, transparent);
+
+  /* Semantic states: warning, danger, success, merged; danger-solid is the filled destructive button. */
+  --gc-state-warning: var(--gc-warning);
+  --gc-state-warning-subtle: color-mix(in srgb, var(--gc-state-warning) 14%, transparent);
+  --gc-state-danger: var(--gc-danger);
+  --gc-state-danger-subtle: color-mix(in srgb, var(--gc-state-danger) 14%, transparent);
+  --gc-state-danger-solid: var(--vscode-inputValidation-errorBackground, var(--gc-danger));
+  --gc-state-success: var(--gc-tone-added);
+  --gc-state-merged: var(--gc-tone-special);
+  --gc-state-merged-subtle: color-mix(in srgb, var(--gc-state-merged) 14%, transparent);
 }
 
 * {
