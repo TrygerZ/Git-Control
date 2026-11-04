@@ -8,12 +8,14 @@ import type {
   CommitFocusEvent,
   HostEvent,
   IconThemeSnapshot,
+  NavigateEvent,
   OperationProgressEvent,
   RepoChangedEvent,
   Response,
   SettingsSnapshot,
   ToastEvent,
 } from '../messages';
+import { parseRoute } from './route';
 
 /** Validates that an unknown value is a record-like object. */
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -95,6 +97,11 @@ export function isValidIconTheme(payload: unknown): payload is IconThemeSnapshot
   );
 }
 
+/** Pure field-by-field validator for `event/navigate`. */
+export function isValidNavigate(payload: unknown): payload is NavigateEvent {
+  return isRecord(payload) && parseRoute(payload.route) !== null;
+}
+
 /** Pure field-by-field validator for `event/commitFocus`. */
 export function isValidCommitFocus(payload: unknown): payload is CommitFocusEvent {
   if (!isRecord(payload)) return false;
@@ -125,6 +132,11 @@ export function validateHostEvent(raw: unknown): HostEvent | null {
       return isValidIconTheme(payload) ? { kind, payload } : null;
     case 'event/commitFocus':
       return isValidCommitFocus(payload) ? { kind, payload } : null;
+    case 'event/navigate': {
+      // Re-emit the parsed route, not the raw object, so extra keys never reach a listener.
+      const route = isRecord(payload) ? parseRoute(payload.route) : null;
+      return route === null ? null : { kind, payload: { route } };
+    }
     default:
       return null;
   }
