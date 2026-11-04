@@ -5,6 +5,14 @@ All notable changes to the "Git Control" extension will be documented in this fi
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.0.0] - 2026-11-04
+
+### Changed
+- Starts the 3.x line. No command, setting, or view id changes.
+
+### Fixed
+- README keyboard shortcut table now matches the graph. Left and Right move between commits, Up and Down move between lanes.
+
 ## [2.7.0] - 2026-09-21
 
 ### Added
