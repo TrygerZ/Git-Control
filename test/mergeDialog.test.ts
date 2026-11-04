@@ -64,7 +64,7 @@ test('MergeDialog source contract: implements required modal accessibility attri
   assert.ok(dialogSource.includes('aria-labelledby={titleId}'), 'must wire aria-labelledby to title');
   assert.ok(dialogSource.includes('aria-describedby={descId}'), 'must wire aria-describedby to prompt text');
   assert.ok(dialogSource.includes('type="checkbox"'), 'must contain merge commit checkbox');
-  assert.ok(dialogSource.includes("event.key === 'Escape'"), 'must handle Escape to cancel');
+  assert.ok(dialogSource.includes('useDialogFocusTrap(onCancel)'), 'must handle Escape to cancel through the shared focus trap hook');
   assert.ok(!dialogSource.includes('\u2014'), 'zero em-dash in source');
   assert.ok(!dialogSource.includes('\u2013'), 'zero en-dash in source');
 });

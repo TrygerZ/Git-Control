@@ -12,10 +12,8 @@
  * - Form submission for Enter key activation
  * - Inline validation error presentation with aria-invalid + role="alert"
  */
-import { useEffect, useId, useRef, useState, type FormEvent, type JSX, type KeyboardEvent } from 'react';
-
-const FOCUSABLE =
-  'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea, [tabindex]:not([tabindex="-1"])';
+import { useEffect, useId, useRef, useState, type FormEvent, type JSX } from 'react';
+import { useDialogFocusTrap } from './useDialogFocusTrap';
 
 export interface PromptDialogProps {
   title: string;
@@ -51,7 +49,7 @@ export function PromptDialog({
   const [value, setValue] = useState(initialValue);
   const [checkboxChecked, setCheckboxChecked] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const dialogRef = useRef<HTMLDivElement>(null);
+  const { dialogRef, onKeyDown } = useDialogFocusTrap(onCancel);
   const controlRef = useRef<HTMLInputElement | HTMLSelectElement | null>(null);
   const returnFocus = useRef<Element | null>(null);
 
@@ -71,28 +69,6 @@ export function PromptDialog({
       if (previous instanceof HTMLElement) previous.focus();
     };
   }, []);
-
-  const onKeyDown = (event: KeyboardEvent<HTMLDivElement>): void => {
-    if (event.key === 'Escape') {
-      event.preventDefault();
-      onCancel();
-      return;
-    }
-    if (event.key !== 'Tab') return;
-    const node = dialogRef.current;
-    if (node === null) return;
-    const items = Array.from(node.querySelectorAll<HTMLElement>(FOCUSABLE));
-    if (items.length === 0) return;
-    const first = items[0] as HTMLElement;
-    const last = items[items.length - 1] as HTMLElement;
-    if (event.shiftKey && document.activeElement === first) {
-      event.preventDefault();
-      last.focus();
-    } else if (!event.shiftKey && document.activeElement === last) {
-      event.preventDefault();
-      first.focus();
-    }
-  };
 
   const handleSubmit = (e: FormEvent<HTMLFormElement>): void => {
     e.preventDefault();

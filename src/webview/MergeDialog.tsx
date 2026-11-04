@@ -5,12 +5,10 @@
  * toggle to create a dedicated merge commit (--no-ff).
  * Default behavior remains fast-forward (unchecked).
  */
-import { useEffect, useId, useRef, useState, type FormEvent, type JSX, type KeyboardEvent } from 'react';
+import { useEffect, useId, useRef, useState, type FormEvent, type JSX } from 'react';
 import { sanitizeGitText } from './format';
+import { useDialogFocusTrap } from './useDialogFocusTrap';
 import { useT } from './useT';
-
-const FOCUSABLE =
-  'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea, [tabindex]:not([tabindex="-1"])';
 
 export interface MergeDialogProps {
   branch: string;
@@ -53,7 +51,7 @@ export function MergeDialog({
 }: MergeDialogProps): JSX.Element {
   const strings = useT();
   const [noFf, setNoFf] = useState(false);
-  const dialogRef = useRef<HTMLDivElement>(null);
+  const { dialogRef, onKeyDown } = useDialogFocusTrap(onCancel);
   const submitButtonRef = useRef<HTMLButtonElement>(null);
   const returnFocus = useRef<Element | null>(null);
 
@@ -68,28 +66,6 @@ export function MergeDialog({
       if (previous instanceof HTMLElement) previous.focus();
     };
   }, []);
-
-  const onKeyDown = (event: KeyboardEvent<HTMLDivElement>): void => {
-    if (event.key === 'Escape') {
-      event.preventDefault();
-      onCancel();
-      return;
-    }
-    if (event.key !== 'Tab') return;
-    const node = dialogRef.current;
-    if (node === null) return;
-    const items = Array.from(node.querySelectorAll<HTMLElement>(FOCUSABLE));
-    if (items.length === 0) return;
-    const first = items[0] as HTMLElement;
-    const last = items[items.length - 1] as HTMLElement;
-    if (event.shiftKey && document.activeElement === first) {
-      event.preventDefault();
-      last.focus();
-    } else if (!event.shiftKey && document.activeElement === last) {
-      event.preventDefault();
-      first.focus();
-    }
-  };
 
   const handleSubmit = (e: FormEvent<HTMLFormElement>): void => {
     e.preventDefault();
