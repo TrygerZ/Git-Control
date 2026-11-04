@@ -176,6 +176,7 @@ Encodes module purity boundaries (pure logic vs I/O) and execution trust boundar
 | `src/webview/ribbon.ts` | Pure branch ribbon geometry and edge path generation (`computeBranchRibbons`, `edgePath`) consumed by GraphCanvas |
 | `src/webview/tree.ts` | Pure flat change paths to collapsible tree and tri-state selection maths |
 | `src/webview/hostGuards.ts` | Pure runtime type guards for host-to-webview events and responses |
+| `src/webview/route.ts` | Pure sidebar route model (`parseRoute`, `resolveInitialRoute`, `sameRoute`, `isFresh`). `parseRoute` is the single gate for routes from host events, the pulled pending route, and webview `getState` |
 | `src/webview/focusTrap.ts` | Pure Tab-trap maths and shared focusable selector for modal dialogs (`FOCUSABLE_SELECTOR`, `trapTabTarget`) |
 | `src/webview/useDialogFocusTrap.ts` | Hook wiring `focusTrap.ts` and Escape handling into `GuardDialog`, `MergeDialog`, `PromptDialog` |
 | `src/webview/iconFontStyles.ts` | Nonce-bearing `<style>` / adopted stylesheet `@font-face` injector (strict CSP compliant) |
