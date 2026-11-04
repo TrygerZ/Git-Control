@@ -138,10 +138,10 @@ Access these commands through the Command Palette (`Ctrl+Shift+P` / `Cmd+Shift+P
 
 | Key | Action |
 |---|---|
-| `Up` / `Down` | Navigate through commit nodes in the current lane |
-| `Left` / `Right` | Move between branch lanes |
-| `Enter` | Open selected commit in Inspector |
-| `Shift + F10` | Open context menu for selected commit |
+| `Left` / `Right` | Move to the previous or next commit |
+| `Up` / `Down` | Move to the nearest commit in the lane above or below |
+| `Enter` / `Space` | Open selected commit in Inspector |
+| `Shift + F10` / `Menu` | Open context menu for selected commit |
 | `+` / `-` | Zoom in and zoom out |
 | `0` | Reset zoom to 100% |
 | `Space` (hold) | Drag-to-pan anywhere, including over commit rows and nodes |
