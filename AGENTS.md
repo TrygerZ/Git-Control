@@ -88,7 +88,7 @@ When implementing a new Git action, modify layers in this exact sequence:
 
 - **Quality gates:** Both `npm test` and `npm run typecheck` must pass cleanly. Treat any test count drop or new failure as a regression. Never record absolute test counts in this document.
 - **Harness:** Node built-in test runner (`node:test`) + strict assertions (`node:assert/strict`).
-- **Fixtures:** Integration and git tests MUST use `test/repoFixture.ts` (`makeFixture(kind)`, `cleanup(dir)`) with `FixtureKind = 'single' | 'triple'`. Real repo templates are created with git once per test process, then copied per test via `fs.cp` (avoids 350-650 ms Windows git spawn overhead). To test a new repo shape, **add a new `FixtureKind` case; never hand-roll a repo inside a test**.
+- **Fixtures:** Integration and git tests MUST use `test/repoFixture.ts` (`makeFixture(kind)`, `cleanup(dir)`) with `FixtureKind = 'empty' | 'single' | 'triple' | 'remote' | 'control-chars'`. Real repo templates are created with git once per test process, then copied per test via `fs.cp` (avoids 350-650 ms Windows git spawn overhead). To test a new repo shape, **add a new `FixtureKind` case; never hand-roll a repo inside a test**.
 - **Rules:**
   - Every new feature or bugfix must include tests.
   - Never relax, disable, or delete existing security assertion checks to force a test pass.
