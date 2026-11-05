@@ -184,6 +184,7 @@ Encodes module purity boundaries (pure logic vs I/O) and execution trust boundar
 | `src/webview/GraphCanvas.tsx` | Canvas/SVG renderer for 2D git commit graph and lane routing |
 | `src/webview/PendingChanges.tsx` | Tree view for staged, unstaged, and untracked file changes |
 | `src/webview/Inspector.tsx` | Detail inspector for selected commit or file diff |
+| `src/webview/SidebarHeader.tsx` | Sidebar-only header (title row with refresh and open-graph, branch row with sync chip, upstream row). Reads stores and `headerModel`, owns no state. The Explorer keeps `ContextBar` |
 | `src/webview/CommitForm.tsx` | Commit message authoring, inline validation, and commit/push controls |
 | `src/webview/GuardDialog.tsx` | Blocked-action guard modal offering remedies (commit/stash/fetch/cancel/resolve-conflicts/confirm) and 2-level confirmations |
 
