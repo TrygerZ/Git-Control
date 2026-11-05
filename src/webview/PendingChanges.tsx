@@ -254,46 +254,12 @@ export function PendingChangesApp(): JSX.Element {
         )}
       </div>
 
-      <CommitForm />
-
       <div
         className="gc-pending__bar gc-toolbar--actions"
         role="toolbar"
         aria-label={strings.pending.toolbarLabel}
         aria-orientation="horizontal"
       >
-        {sub === 'changes' && (
-          <div className="gc-toolbar__secondary-group">
-            <div className="gc-selection-group" role="group" aria-label={strings.pending.selectionGroupAria}>
-              <div className="gc-segmented gc-segmented--quiet">
-                <button
-                  type="button"
-                  className="gc-button gc-button--quiet"
-                  title={strings.pending.selectAllTitle}
-                  disabled={changes.length === 0}
-                  onClick={selectAll}
-                >
-                  <Icon name="check" />
-                  {strings.pending.selectAll}
-                </button>
-                <button
-                  type="button"
-                  className="gc-button gc-button--quiet"
-                  title={strings.pending.clearSelectionTitle}
-                  disabled={selected.length === 0}
-                  onClick={clear}
-                >
-                  <Icon name="close" />
-                  {strings.pending.clearSelection}
-                </button>
-              </div>
-              <span className="gc-pending__count" aria-live="off" aria-atomic="true">
-                {strings.pending.selectedCount(formatCount(selected.length, language))}
-              </span>
-            </div>
-          </div>
-        )}
-
         <div className="gc-toolbar__end">
           <button
             type="button"
@@ -374,6 +340,38 @@ export function PendingChangesApp(): JSX.Element {
                 formatCount(changes.length, language),
               )}
             />
+
+            {sub === 'changes' && (
+              <div className="gc-listbar__selection">
+                <div className="gc-selection-group" role="group" aria-label={strings.pending.selectionGroupAria}>
+                  <div className="gc-segmented gc-segmented--quiet">
+                    <button
+                      type="button"
+                      className="gc-button gc-button--quiet"
+                      title={strings.pending.selectAllTitle}
+                      disabled={changes.length === 0}
+                      onClick={selectAll}
+                    >
+                      <Icon name="check" />
+                      {strings.pending.selectAll}
+                    </button>
+                    <button
+                      type="button"
+                      className="gc-button gc-button--quiet"
+                      title={strings.pending.clearSelectionTitle}
+                      disabled={selected.length === 0}
+                      onClick={clear}
+                    >
+                      <Icon name="close" />
+                      {strings.pending.clearSelection}
+                    </button>
+                  </div>
+                  <span className="gc-pending__count" aria-live="off" aria-atomic="true">
+                    {strings.pending.selectedCount(formatCount(selected.length, language))}
+                  </span>
+                </div>
+              </div>
+            )}
 
             {visible.length === 0 ? (
               <EmptyState
@@ -518,8 +516,14 @@ export function PendingChangesApp(): JSX.Element {
         )}
       </div>
 
+      <div className="gc-pending__footer">
+        <div className="gc-pending__footer-body">
+          <CommitForm />
+        </div>
+        <ToastRegion />
+      </div>
+
       <GuardDialog />
-      <ToastRegion />
     </div>
   );
 }

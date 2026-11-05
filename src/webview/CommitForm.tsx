@@ -1,26 +1,27 @@
 /**
- * Commit form (FEAT-02), at the top of the Source Control anatomy.
+ * Commit form (FEAT-02), rendered as the pinned footer at the bottom of the
+ * Pending Changes panel.
+ *
+ * The footer wrapper supplies the fill and the border-top; the file list above
+ * scrolls internally, so the form stays visible. It is mounted on both sub-tabs
+ * (Changes and Stashes), so a typed message survives a tab switch.
  *
  * Validation is inline and focus-managed: an empty message moves focus back to
  * the textarea and announces the error rather than silently refusing. The button
- * is disabled while a commit is in flight, on top of the host's idempotency —
+ * is disabled while a commit is in flight, on top of the host's idempotency -
  * belt and braces for PRD Kasus 2.
  *
  * The submit button is never disabled for a short message: a control that is off
  * for a reason the user cannot see is a dead end. It submits, fails validation,
- * and says why — which also keeps the reason reachable by keyboard.
+ * and says why, which also keeps the reason reachable by keyboard.
  *
- * This is the one primary button on the panel, and it reads as one elevated card
- * (surface 2, large radius, small shadow): the primary action surface of the
- * Pending Changes view. The toolbar with branch and selection helpers sits below
- * it, and the grouped file list below that, so the message box is the first thing
- * a hand reaches. The staged count that used to live as a paragraph below the
- * form now lives as the Commit button's title when disabled, while the badge on
- * the Staged Changes header carries the same number visually.
+ * The staged count that used to live as a paragraph below the form now lives as
+ * the Commit button's title when disabled, while the badge on the Staged Changes
+ * header carries the same number visually.
  *
  * "Push after commit" used to hide behind an "Advanced options" disclosure. It is
  * a common toggle, so it now sits as a quiet always-visible checkbox row under
- * the textarea; the reserved count row beside it keeps the card height stable.
+ * the textarea; the reserved count row beside it keeps the footer height stable.
  */
 import { useEffect, useRef, type JSX } from 'react';
 import { formatCount } from './format';
