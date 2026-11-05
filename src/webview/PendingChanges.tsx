@@ -25,7 +25,7 @@ import { CHANGES_PANEL_ID, CHANGES_TABS_PREFIX, changesSubTabs, changesTabId } f
 import { changesSubOf, parseRoute } from './route';
 import { ToastRegion } from './Toast';
 import { bridge, loadState, saveState } from './bridge';
-import { baseName, formatCount, formatStashLabel, sanitizeGitText, shortHash, UNKNOWN_CHURN } from './format';
+import { baseName, filterStashes, formatCount, formatStashLabel, parseStashIndex, sanitizeGitText, shortHash, UNKNOWN_CHURN } from './format';
 import { useT } from './useT';
 import { groupBySection, isSectionBulkDisabled, stageableFrom, unstageableFrom, type ChangeSection } from './tree';
 import {
@@ -110,7 +110,11 @@ export function PendingChangesApp(): JSX.Element {
    * and nothing else — no request, no persistence, nothing the host needs to know.
    */
   const [filter, setFilter] = useState('');
-  const filterCountId = useId();
+  /**
+   * Stash filter, kept separate from the file filter so each sub-tab keeps its own
+   * text while the component lives. Same rule: drawn only, never persisted.
+   */
+  const [stashFilter, setStashFilter] = useState('');
 
   // Restore persisted form state, then fetch. The view is rebuilt on every
   // reveal (`retainContextWhenHidden: false`), so this runs often and must be cheap.
@@ -150,6 +154,10 @@ export function PendingChangesApp(): JSX.Element {
     [changes, needle],
   );
   const groups = useMemo(() => groupBySection(visible), [visible]);
+  const visibleStashes = useMemo(
+    () => filterStashes(stashes, stashFilter, language),
+    [stashes, stashFilter, language],
+  );
   const selected = [...selection];
 
   const route = useRouteStore((s) => s.route);
@@ -300,16 +308,45 @@ export function PendingChangesApp(): JSX.Element {
 
       <div role="tabpanel" id={CHANGES_PANEL_ID} aria-labelledby={changesTabId(sub)} className="gc-pending__panel">
         {sub === 'stashes' ? (
-          <div className="gc-pending__sections">
-            <StashList
-              stashes={stashes}
-              busy={busy}
-              language={language}
-              onApply={(i) => void applyStash(i)}
-              onDrop={(i) => void dropStash(i)}
-              onOpenDiff={(index, path) => void openStashDiff(index, path)}
-            />
-          </div>
+          <>
+            {stashes.length > 0 && (
+              <SearchRow
+                value={stashFilter}
+                onChange={setStashFilter}
+                placeholder={strings.pending.stashSearchPlaceholder}
+                ariaLabel={strings.pending.stashSearchAria}
+                matchedText={strings.pending.stashSearchMatched(
+                  formatCount(visibleStashes.length, language),
+                  formatCount(stashes.length, language),
+                )}
+              />
+            )}
+            {stashes.length > 0 && stashFilter.trim().length > 0 && visibleStashes.length === 0 ? (
+              <EmptyState
+                title={strings.pending.stashSearchEmptyTitle}
+                action={
+                  <button
+                    type="button"
+                    className="gc-button gc-button--quiet"
+                    onClick={() => setStashFilter('')}
+                  >
+                    {strings.pending.clearSearch}
+                  </button>
+                }
+              />
+            ) : (
+              <div className="gc-pending__sections">
+                <StashList
+                  stashes={visibleStashes}
+                  busy={busy}
+                  language={language}
+                  onApply={(i) => void applyStash(i)}
+                  onDrop={(i) => void dropStash(i)}
+                  onOpenDiff={(index, path) => void openStashDiff(index, path)}
+                />
+              </div>
+            )}
+          </>
         ) : !hasLoaded && loading && changes.length === 0 ? (
           <FileListSkeleton rows={8} />
         ) : changes.length === 0 ? (
@@ -327,45 +364,16 @@ export function PendingChangesApp(): JSX.Element {
               field, and a quiet filter affordance beside it. The sub-tab above
               already names the list and carries the count, so there is no heading.
             */}
-            <div className="gc-listbar">
-              <div className="gc-listbar__controls">
-                <div className="gc-listbar__search-wrap">
-                  <span className="gc-listbar__search-icon" aria-hidden="true">
-                    <Icon name="search" />
-                  </span>
-                  <input
-                    type="search"
-                    className="gc-listbar__input"
-                    value={filter}
-                    maxLength={100}
-                    placeholder={strings.pending.searchPlaceholder}
-                    aria-label={strings.pending.searchAria}
-                    aria-describedby={filterCountId}
-                    onChange={(event) => setFilter(event.target.value)}
-                  />
-                </div>
-                {/*
-                  Visual affordance only: the input above is the filter, so this
-                  button is disabled and exists to signal that the row is the
-                  filter row. aria-hidden keeps a dead control out of the tab order
-                  and the accessibility tree.
-                */}
-                <button
-                  type="button"
-                  className="gc-icon-button gc-listbar__filter"
-                  aria-hidden="true"
-                  tabIndex={-1}
-                  disabled
-                >
-                  <Icon name="filter" />
-                </button>
-              </div>
-              {needle.length > 0 && (
-                <p className="gc-help-text gc-listbar__count" id={filterCountId} role="status" aria-live="polite">
-                  {strings.pending.searchMatched(formatCount(visible.length, language), formatCount(changes.length, language))}
-                </p>
+            <SearchRow
+              value={filter}
+              onChange={setFilter}
+              placeholder={strings.pending.searchPlaceholder}
+              ariaLabel={strings.pending.searchAria}
+              matchedText={strings.pending.searchMatched(
+                formatCount(visible.length, language),
+                formatCount(changes.length, language),
               )}
-            </div>
+            />
 
             {visible.length === 0 ? (
               <EmptyState
@@ -516,9 +524,67 @@ export function PendingChangesApp(): JSX.Element {
   );
 }
 
-function parseStashIndex(ref: string): number | null {
-  const match = /^stash@\{(\d+)\}$/.exec(ref);
-  return match !== null && match[1] !== undefined ? parseInt(match[1], 10) : null;
+/**
+ * The one search row, rendered by both sub-tabs so their markup cannot drift.
+ *
+ * `matchedText` is only drawn while the field has text: a "0 of 0 matched" line
+ * under an untouched filter reads as a failure that never happened.
+ */
+function SearchRow({
+  value,
+  onChange,
+  placeholder,
+  ariaLabel,
+  matchedText,
+}: {
+  value: string;
+  onChange(next: string): void;
+  placeholder: string;
+  ariaLabel: string;
+  matchedText: string;
+}): JSX.Element {
+  const countId = useId();
+  return (
+    <div className="gc-listbar">
+      <div className="gc-listbar__controls">
+        <div className="gc-listbar__search-wrap">
+          <span className="gc-listbar__search-icon" aria-hidden="true">
+            <Icon name="search" />
+          </span>
+          <input
+            type="search"
+            className="gc-listbar__input"
+            value={value}
+            maxLength={100}
+            placeholder={placeholder}
+            aria-label={ariaLabel}
+            aria-describedby={countId}
+            onChange={(event) => onChange(event.target.value)}
+          />
+        </div>
+        {/*
+          Visual affordance only: the input above is the filter, so this
+          button is disabled and exists to signal that the row is the
+          filter row. aria-hidden keeps a dead control out of the tab order
+          and the accessibility tree.
+        */}
+        <button
+          type="button"
+          className="gc-icon-button gc-listbar__filter"
+          aria-hidden="true"
+          tabIndex={-1}
+          disabled
+        >
+          <Icon name="filter" />
+        </button>
+      </div>
+      {value.trim().length > 0 && (
+        <p className="gc-help-text gc-listbar__count" id={countId} role="status" aria-live="polite">
+          {matchedText}
+        </p>
+      )}
+    </div>
+  );
 }
 
 function StashList({

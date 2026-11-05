@@ -176,12 +176,38 @@ test('the list area is one tabpanel labelled by the active sub-tab, and the two 
   assert.match(src, /aria-labelledby=\{changesTabId\(/, 'named by the active tab');
   assert.equal(src.match(/role="tabpanel"/g)?.length, 1, 'one panel, not one per view');
   assert.match(src, /===\s*'stashes'/, 'the panel shows the stash list or the change list');
-  // Deviation from frame 67, which still draws the "Filter files" row above the stashes
-  // (a clone leftover; phase file 6.2 hides it). Nothing can filter stashes and that is out of
-  // scope, so a dead input is not drawn. Select all and Clear act on file paths, same reason.
+  // Frame 67 draws a search row above the stashes, and the owner chose to make it a real stash
+  // filter (see the filter test below). Select all and Clear still act on file paths only, so
+  // they stay Changes only.
   assert.match(src, /===\s*'changes'\s*&&\s*\(\s*<div className="gc-toolbar__secondary-group">/, 'selection helpers are Changes only');
   assert.equal(src.match(/className="gc-listbar"/g)?.length, 1);
   assert.equal(src.match(/strings\.pending\.switchLanguageAria/g)?.length, 1, 'the language toggle stays reachable in both sub-tabs');
+});
+
+test('the Stashes sub-tab filters its own list through the pure helper, with its own strings and one shared search row', () => {
+  const src = fs.readFileSync(
+    path.join(__dirname, '..', '..', 'src', 'webview', 'PendingChanges.tsx'),
+    'utf8',
+  );
+  assert.match(src, /filterStashes\(/, 'matching is the pure, tested helper');
+  // A filtered list must not renumber: Apply and Drop take the index from the ref, so the
+  // component uses the same parser the helper uses, not a private copy and not list position.
+  assert.match(src, /import \{[^}]*\bparseStashIndex\b[^}]*\} from '\.\/format'/);
+  assert.doesNotMatch(src, /function parseStashIndex/, 'one parser, shared with the helper');
+  assert.doesNotMatch(src, /<StashList\s+stashes=\{stashes\}/, 'the list gets the filtered stashes');
+  for (const key of ['stashSearchPlaceholder', 'stashSearchAria', 'stashSearchMatched', 'stashSearchEmptyTitle']) {
+    assert.match(src, new RegExp(`strings\\.pending\\.${key}`), key);
+  }
+  assert.match(src, /strings\.pending\.clearSearch/, 'an empty result offers the same way out as the file list');
+  // The search row markup exists once and both sub-tabs render it, so they cannot drift apart.
+  assert.equal(src.match(/type="search"/g)?.length, 1, 'one search input in the source');
+  assert.equal(src.match(/className="gc-listbar"/g)?.length, 1);
+  assert.equal(src.match(/maxLength=\{100\}/g)?.length, 1);
+  assert.doesNotMatch(src, /dangerouslySetInnerHTML|innerHTML/);
+
+  const store = fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'webview', 'store.ts'), 'utf8');
+  assert.doesNotMatch(store, /stashFilter|stashSearch/, 'a filter narrows what is drawn and nothing else: no store, no request');
+  assert.doesNotMatch(src, /saveState\(\{[^}]*(?:stashFilter|filter)/, 'and nothing is persisted');
 });
 
 test('the commit form and the notification block are mounted once, outside the panel, in both sub-tabs', () => {
