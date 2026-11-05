@@ -15,10 +15,10 @@
  */
 import { useEffect, useId, useMemo, useRef, useState, type JSX } from 'react';
 import { ChangeTree } from './ChangeTree';
-import { BranchSelector } from './BranchLegend';
 import { CommitForm } from './CommitForm';
 import { ConflictPanel, OperationBanner } from './ConflictPanel';
 import { GuardDialog } from './GuardDialog';
+import { SidebarHeader } from './SidebarHeader';
 import { ToastRegion } from './Toast';
 import { bridge, loadState, saveState } from './bridge';
 import { baseName, formatCount, formatStashLabel, sanitizeGitText, shortHash, UNKNOWN_CHURN } from './format';
@@ -34,7 +34,7 @@ import {
   useSettingsStore,
   wireHostEvents,
 } from './store';
-import { ContextBar, EmptyState, ErrorBanner, FileIcon, FileListSkeleton, Icon, InfoBanner, Spinner } from './ui';
+import { EmptyState, ErrorBanner, FileIcon, FileListSkeleton, Icon, InfoBanner, Spinner } from './ui';
 import type { ChangeEntry, Lang, StashEntry } from '../messages';
 
 /**
@@ -87,7 +87,6 @@ export function PendingChangesApp(): JSX.Element {
   const dropStash = useChangesStore((s) => s.dropStash);
 
   const status = useRepoStore((s) => s.status);
-  const graph = useRepoStore((s) => s.graph);
   const loadGraph = useRepoStore((s) => s.loadGraph);
   /**
    * Whether the host managed to count every file's lines. A row without numbers is
@@ -158,12 +157,6 @@ export function PendingChangesApp(): JSX.Element {
     untracked: strings.pending.sectionUntracked,
   };
 
-  const refresh = (): void => {
-    void load();
-    void loadStatus();
-    void loadGraph();
-  };
-
   const openDiff = async (entry: ChangeEntry): Promise<void> => {
     try {
       await bridge.request('actions/openDiff', { path: entry.path });
@@ -179,18 +172,6 @@ export function PendingChangesApp(): JSX.Element {
   const openStashDiff = async (index: number, path: string): Promise<void> => {
     try {
       await bridge.request('actions/openStashDiff', { index, path });
-    } catch (err) {
-      const body = toErrorBody(err);
-      pushToast({
-        level: body.code === 'UNAVAILABLE' ? 'warning' : 'error',
-        message: body.message,
-      });
-    }
-  };
-
-  const openExplorer = async (): Promise<void> => {
-    try {
-      await bridge.request('actions/openExplorer', {});
     } catch (err) {
       const body = toErrorBody(err);
       pushToast({
@@ -232,7 +213,7 @@ export function PendingChangesApp(): JSX.Element {
 
   return (
     <div className="gc-pending">
-      <ContextBar status={status} />
+      <SidebarHeader />
 
       <div className="gc-pending__notifications">
         <OperationBanner status={status} />
@@ -259,11 +240,6 @@ export function PendingChangesApp(): JSX.Element {
         aria-orientation="horizontal"
       >
         <div className="gc-toolbar__secondary-group">
-          <BranchSelector
-            currentBranch={status?.branch ?? null}
-            refs={graph?.refs ?? []}
-            busy={busy || (status !== null && status.operation !== 'idle')}
-          />
           <div className="gc-selection-group" role="group" aria-label={strings.pending.selectionGroupAria}>
             <div className="gc-segmented gc-segmented--quiet">
               <button
@@ -301,23 +277,6 @@ export function PendingChangesApp(): JSX.Element {
             onClick={() => setLanguage(language === 'en' ? 'id' : 'en')}
           >
             {language.toUpperCase()}
-          </button>
-          <button
-            type="button"
-            className="gc-icon-button"
-            aria-label={strings.pending.openGraphAria}
-            onClick={() => void openExplorer()}
-          >
-            <Icon name="graph" />
-          </button>
-          <button
-            type="button"
-            className="gc-icon-button"
-            aria-label={strings.pending.reloadAria}
-            aria-busy={loading}
-            onClick={refresh}
-          >
-            <Icon name="refresh" />
           </button>
         </div>
       </div>
