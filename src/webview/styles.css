@@ -1427,23 +1427,30 @@ h3 {
 /* ------------------------------------------------------------ sidebar header */
 
 /*
- * Pending-panel header: title row, branch row with sync chip, upstream row. The
- * Explorer keeps `.gc-context`. Horizontal padding is 0 so the rows share the left
- * edge of the list below; frame 20 pads the whole column instead.
+ * Pending-panel header, read from frame 20 (Header 157:3; Light has the same
+ * geometry): padding 12/12/8/12, row gap 8, a title row, a branch row with the sync
+ * chip, and an upstream row. The frame is the whole 380 px panel, so the header
+ * bleeds over the `--gc-space-2` padding of `.gc-pending` to keep the frame's 12 px
+ * inset from the panel edge. No border and no fill: the frame has neither, and the
+ * nav strip of P05 brings its own separator. The Explorer keeps `.gc-context`.
+ * Frame values with no token (6 px gap and radius, 28 px control height) are derived
+ * from the scale; the spacing test needs `--gc-space-*` written inside each gap.
  */
 .gc-sidebar-header {
+  --gc-sidebar-header-radius: calc(var(--gc-radius) + var(--gc-space-1));
+  --gc-sidebar-header-control: 28px;
   display: flex;
   flex-direction: column;
   gap: var(--gc-space-3);
-  padding: var(--gc-space-3) 0;
-  border-bottom: 1px solid var(--gc-border-default);
-  background: var(--gc-bg-editor);
+  margin: calc(-1 * var(--gc-space-2)) calc(-1 * var(--gc-space-2)) 0;
+  padding: var(--gc-space-4) var(--gc-space-4) var(--gc-space-3);
 }
 
+/* Title row gap is 2 px in the frame; the branch row overrides it to 6 px. */
 .gc-sidebar-header__row {
   display: flex;
   align-items: center;
-  gap: var(--gc-space-3);
+  gap: var(--gc-space-1);
   min-width: 0;
 }
 
@@ -1463,11 +1470,12 @@ h3 {
   display: flex;
   flex: 0 0 auto;
   align-items: center;
-  gap: var(--gc-space-2);
+  gap: var(--gc-space-1);
 }
 
 .gc-sidebar-header__branch {
   flex-wrap: nowrap;
+  gap: calc(var(--gc-space-2) + var(--gc-space-1));
 }
 
 .gc-sidebar-header__branch .gc-toolbar__branch-wrap {
@@ -1475,12 +1483,40 @@ h3 {
   min-width: 0;
 }
 
-.gc-sidebar-header__sync {
-  flex: 0 0 auto;
-  color: var(--gc-text-secondary);
+/* Frame: BranchSwitcher 28 px high, 6 px radius, surface fill, 12 px medium text. */
+.gc-sidebar-header .gc-toolbar__branch-select {
+  min-height: var(--gc-sidebar-header-control);
+  border-radius: var(--gc-sidebar-header-radius);
+  background: var(--gc-bg-surface);
+  font-weight: 500;
 }
 
-/* Scoped under the header so they outrank `.gc-chip`, which is declared further down. */
+/*
+ * Frame: SyncStatus/Local is a 28 px rounded rectangle with a hover-fill background
+ * and no stroke, cloud icon 12 px, 11.5 px medium text. The border stays as a
+ * transparent 1 px so the tone variants below can colour it without changing the
+ * size. Scoped under the header so these rules outrank `.gc-chip`.
+ */
+.gc-sidebar-header .gc-sidebar-header__sync {
+  flex: 0 0 auto;
+  gap: var(--gc-space-2);
+  height: var(--gc-sidebar-header-control);
+  padding: 0 var(--gc-space-3);
+  border-color: transparent;
+  border-radius: var(--gc-sidebar-header-radius);
+  background: var(--gc-bg-hover);
+  color: var(--gc-text-secondary);
+  font-size: var(--gc-fs-xs);
+  font-weight: 500;
+  line-height: normal;
+}
+
+.gc-sidebar-header__sync .gc-icon {
+  width: 12px;
+  height: 12px;
+}
+
+/* Only `Local` is designed. The other states add a tone border on top of the same chip. */
 .gc-sidebar-header .gc-sidebar-header__sync--ahead {
   border-color: var(--gc-status-added);
   color: var(--gc-text-primary);
@@ -1500,14 +1536,14 @@ h3 {
 .gc-sidebar-header__upstream {
   margin: 0;
   min-height: 15px;
-  color: var(--gc-text-secondary);
+  color: var(--gc-text-muted);
   font-size: var(--gc-fs-xs);
 }
 
 .gc-sidebar-header__upstream-visual {
   display: flex;
   align-items: center;
-  gap: var(--gc-space-2);
+  gap: calc(var(--gc-space-2) + var(--gc-space-1));
   min-width: 0;
 }
 
@@ -1520,7 +1556,7 @@ h3 {
 
 .gc-sidebar-header__hash {
   flex: 0 0 auto;
-  font-size: var(--gc-fs-2xs);
+  font-size: var(--gc-fs-xs);
 }
 
 /* ------------------------------------------------------------------- avatar */
@@ -4820,6 +4856,11 @@ h3 {
   .gc-icon {
     color: CanvasText;
     forced-color-adjust: auto;
+  }
+
+  /* The chip's resting border is transparent (the frame uses a fill), and the fill is dropped here. */
+  .gc-sidebar-header .gc-sidebar-header__sync {
+    border-color: ButtonBorder;
   }
 }
 
