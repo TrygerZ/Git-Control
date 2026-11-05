@@ -40,6 +40,7 @@ Git Control replaces flat vertical commit lists with an interactive two-dimensio
 
 ### 4. Stash Management
 * **List, Apply, and Drop Stashes**: List all stashes with apply (keeps the entry) and drop actions; drop requires two-step destructive confirmation.
+* **Stash Filter**: Search stashes by number or hash in the Stashes tab. Filtering never renumbers a stash, so Apply and Drop act on the stash shown.
 * **Expandable Stash Entries**: Expand stash entries to view file contents with file icons, line churn counters, and click-to-diff.
 * **Commit Hash Navigation**: "Stash N from <hash>" labels; clicking the hash opens the Branch Explorer and selects that commit.
 
