@@ -254,8 +254,6 @@ export function PendingChangesApp(): JSX.Element {
         )}
       </div>
 
-      <CommitForm />
-
       <div
         className="gc-pending__bar gc-toolbar--actions"
         role="toolbar"
@@ -518,8 +516,14 @@ export function PendingChangesApp(): JSX.Element {
         )}
       </div>
 
+      <div className="gc-pending__footer">
+        <div className="gc-pending__footer-body">
+          <CommitForm />
+        </div>
+        <ToastRegion />
+      </div>
+
       <GuardDialog />
-      <ToastRegion />
     </div>
   );
 }
