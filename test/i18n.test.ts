@@ -264,6 +264,30 @@ test('nav strings exist in both languages, share keys, and carry the count into 
   assert.notEqual(t('en').nav.changesAria('2'), t('id').nav.changesAria('2'));
 });
 
+test('stash filter strings exist in both languages, are translated, and carry both counts', () => {
+  for (const lang of ['en', 'id'] as const) {
+    const p = t(lang).pending;
+    assert.equal(typeof p.stashSearchPlaceholder, 'string', `${lang} placeholder`);
+    assert.equal(typeof p.stashSearchAria, 'string', `${lang} aria`);
+    assert.equal(typeof p.stashSearchEmptyTitle, 'string', `${lang} empty title`);
+    assert.ok(p.stashSearchPlaceholder.length > 0 && p.stashSearchAria.length > 0 && p.stashSearchEmptyTitle.length > 0);
+    const line = p.stashSearchMatched('3', '9');
+    assert.match(line, /3/, `${lang}: shown count`);
+    assert.match(line, /9/, `${lang}: total count`);
+  }
+  const en = t('en').pending;
+  const id = t('id').pending;
+  assert.notEqual(en.stashSearchPlaceholder, id.stashSearchPlaceholder);
+  assert.notEqual(en.stashSearchAria, id.stashSearchAria);
+  assert.notEqual(en.stashSearchEmptyTitle, id.stashSearchEmptyTitle);
+  assert.notEqual(en.stashSearchMatched('1', '2'), id.stashSearchMatched('1', '2'));
+  assert.notEqual(en.stashSearchPlaceholder, en.searchPlaceholder, 'the stash row does not say "files"');
+  assert.notEqual(id.stashSearchPlaceholder, id.searchPlaceholder);
+  for (const text of [en.stashSearchPlaceholder, en.stashSearchAria, en.stashSearchEmptyTitle, en.stashSearchMatched('1', '2')]) {
+    assert.doesNotMatch(text, /file/i, `"${text}" is about stashes, not files`);
+  }
+});
+
 test('sub-tab strings exist in both languages, are translated, and carry the count into the accessible name', () => {
   // The Changes sub-tab reuses `nav.changesAria`: same words, so no duplicate key.
   for (const lang of ['en', 'id'] as const) {
