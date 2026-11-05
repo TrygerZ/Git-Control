@@ -455,3 +455,18 @@ test('sidebar header keeps both icon buttons named and routes checkout through B
   assert.doesNotMatch(src, /dangerouslySetInnerHTML|innerHTML/);
   assert.doesNotMatch(src, /quick|help/i, 'no quick-actions or help button before P15 and P17');
 });
+
+test('sidebar header keeps the frame 20 geometry: 12 px inset, 28 px select and chip, tones scoped above .gc-chip', () => {
+  const css = fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'webview', 'styles.css'), 'utf8');
+  const header = css.match(/\.gc-sidebar-header\s*\{([^}]*)\}/)?.[1] ?? '';
+  assert.match(header, /padding:\s*var\(--gc-space-4\)\s+var\(--gc-space-4\)\s+var\(--gc-space-3\);/);
+  assert.match(header, /--gc-sidebar-header-control:\s*28px;/);
+  const chip = css.match(/\.gc-sidebar-header \.gc-sidebar-header__sync\s*\{([^}]*)\}/)?.[1] ?? '';
+  assert.match(chip, /height:\s*var\(--gc-sidebar-header-control\);/);
+  assert.match(chip, /border-color:\s*transparent;/);
+  const select = css.match(/\.gc-sidebar-header \.gc-toolbar__branch-select\s*\{([^}]*)\}/)?.[1] ?? '';
+  assert.match(select, /min-height:\s*var\(--gc-sidebar-header-control\);/);
+  for (const tone of ['ahead', 'behind', 'diverged']) {
+    assert.match(css, new RegExp(`\.gc-sidebar-header \.gc-sidebar-header__sync--${tone}`));
+  }
+});
