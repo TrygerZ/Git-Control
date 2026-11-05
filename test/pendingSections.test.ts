@@ -273,6 +273,12 @@ test('the footer is a full-bleed border-topped strip that scrolls internally, an
   // The list keeps a floor, so a short panel cannot push the footer past the clipped edge.
   const sections = rule('.gc-pending__sections');
   assert.match(sections, /min-height:\s*64px/, 'the old 120 px floor outgrew a short panel');
+
+  // The panel box shrinks on short panels while its children keep their own minimums;
+  // without a clip they paint into the footer behind its transparent body (found at
+  // 500 px and below in the browser; the footer stays interactive either way).
+  const panel = rule('.gc-pending__panel');
+  assert.match(panel, /overflow:\s*hidden/, 'panel children clip at the panel box, not over the footer');
 });
 
 test('select all, clear, and the count live in the list bar, not the toolbar', () => {

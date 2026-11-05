@@ -3127,6 +3127,14 @@ h3 {
   flex: 1 1 auto;
   min-height: 0;
   gap: var(--gc-space-2);
+  /*
+   * The panel shrinks to `min-height: 0` when the footer and the fixed chrome
+   * above it outgrow a short panel, so its children would keep their own
+   * minimums (search row, selection row, 64 px list floor) and paint into the
+   * footer behind its transparent body. Clipping at the panel box keeps the
+   * bleed invisible; the footer, as the later sibling, stays interactive.
+   */
+  overflow: hidden;
 }
 
 .gc-pending__count {
