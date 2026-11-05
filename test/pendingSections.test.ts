@@ -123,18 +123,127 @@ test('the section header renders a real toggle button with aria-expanded and a d
   );
 });
 
-test('stash section header renders archive icon badge with special tone and no dollar glyph', () => {
+test('stashes live in the Stashes sub-tab: no pinned footer, no collapsible section header, no collapse state', () => {
+  // Replaces the 2.7.0 assertions on the archive-icon section badge. Frame 67 shows the stash
+  // list directly under the segmented control, with no header of its own (D-04).
   const src = fs.readFileSync(
     path.join(__dirname, '..', '..', 'src', 'webview', 'PendingChanges.tsx'),
     'utf8',
   );
-  assert.match(src, /gc-section__badge--special/);
-  assert.match(src, /<Icon name="archive" \/>/);
+  assert.doesNotMatch(src, /gc-pending__stash/, 'the footer block is gone');
+  assert.doesNotMatch(src, /StashSection/, 'the sub-tab is the header');
+  assert.doesNotMatch(src, /stashesCollapsed|toggleStashesCollapsed/);
+  assert.doesNotMatch(src, /gc-section__badge--special/, 'only the removed stash header used it');
+  assert.equal(src.match(/<StashList\b/g)?.length, 1, 'the list renders once, inside the panel');
   assert.doesNotMatch(
     src,
     /gc-section__badge[^>]*>\s*\$/,
     'no raw dollar glyph in section badges',
   );
+
+  const store = fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'webview', 'store.ts'), 'utf8');
+  assert.doesNotMatch(store, /stashesCollapsed|toggleStashesCollapsed/, 'not persisted before, so nothing to migrate');
+
+  const css = fs
+    .readFileSync(path.join(__dirname, '..', '..', 'src', 'webview', 'styles.css'), 'utf8')
+    .replace(/\/\*[\s\S]*?\*\//g, '');
+  assert.doesNotMatch(css, /gc-pending__stash/);
+  assert.doesNotMatch(css, /gc-section__badge--special/);
+});
+
+test('the Changes and Stashes sub-tabs read and write the route through the validating store', () => {
+  const src = fs.readFileSync(
+    path.join(__dirname, '..', '..', 'src', 'webview', 'PendingChanges.tsx'),
+    'utf8',
+  );
+  assert.match(src, /<Tablist\b/);
+  assert.match(src, /classPrefix="gc-subtabs"/);
+  assert.match(src, /idPrefix=\{CHANGES_TABS_PREFIX\}/);
+  assert.match(src, /changesSubTabs\(/, 'tab model comes from the pure helper');
+  assert.match(src, /changesSubOf\(/, 'active sub-tab comes from the route');
+  assert.match(src, /parseRoute\(\{\s*id: 'changes',\s*sub:/, 'a selected id is validated, not cast');
+  assert.match(src, /useRouteStore\.getState\(\)\.navigate\(/, 'persisting goes through the store action');
+  assert.doesNotMatch(src, /bridge\.request\('(?:ui|route)/, 'a sub-tab is UI state only, no new request');
+});
+
+test('the list area is one tabpanel labelled by the active sub-tab, and the two views swap inside it', () => {
+  const src = fs.readFileSync(
+    path.join(__dirname, '..', '..', 'src', 'webview', 'PendingChanges.tsx'),
+    'utf8',
+  );
+  assert.match(src, /role="tabpanel"/);
+  assert.match(src, /id=\{CHANGES_PANEL_ID\}/, 'the id both tabs point at with aria-controls');
+  assert.match(src, /aria-labelledby=\{changesTabId\(/, 'named by the active tab');
+  assert.equal(src.match(/role="tabpanel"/g)?.length, 1, 'one panel, not one per view');
+  assert.match(src, /===\s*'stashes'/, 'the panel shows the stash list or the change list');
+  // Frame 67 draws a search row above the stashes, and the owner chose to make it a real stash
+  // filter (see the filter test below). Select all and Clear still act on file paths only, so
+  // they stay Changes only.
+  assert.match(src, /===\s*'changes'\s*&&\s*\(\s*<div className="gc-toolbar__secondary-group">/, 'selection helpers are Changes only');
+  assert.equal(src.match(/className="gc-listbar"/g)?.length, 1);
+  assert.equal(src.match(/strings\.pending\.switchLanguageAria/g)?.length, 1, 'the language toggle stays reachable in both sub-tabs');
+});
+
+test('the Stashes sub-tab filters its own list through the pure helper, with its own strings and one shared search row', () => {
+  const src = fs.readFileSync(
+    path.join(__dirname, '..', '..', 'src', 'webview', 'PendingChanges.tsx'),
+    'utf8',
+  );
+  assert.match(src, /filterStashes\(/, 'matching is the pure, tested helper');
+  // A filtered list must not renumber: Apply and Drop take the index from the ref, so the
+  // component uses the same parser the helper uses, not a private copy and not list position.
+  assert.match(src, /import \{[^}]*\bparseStashIndex\b[^}]*\} from '\.\/format'/);
+  assert.doesNotMatch(src, /function parseStashIndex/, 'one parser, shared with the helper');
+  assert.doesNotMatch(src, /<StashList\s+stashes=\{stashes\}/, 'the list gets the filtered stashes');
+  for (const key of ['stashSearchPlaceholder', 'stashSearchAria', 'stashSearchMatched', 'stashSearchEmptyTitle']) {
+    assert.match(src, new RegExp(`strings\\.pending\\.${key}`), key);
+  }
+  assert.match(src, /strings\.pending\.clearSearch/, 'an empty result offers the same way out as the file list');
+  // The search row markup exists once and both sub-tabs render it, so they cannot drift apart.
+  assert.equal(src.match(/type="search"/g)?.length, 1, 'one search input in the source');
+  assert.equal(src.match(/className="gc-listbar"/g)?.length, 1);
+  assert.equal(src.match(/maxLength=\{100\}/g)?.length, 1);
+  assert.doesNotMatch(src, /dangerouslySetInnerHTML|innerHTML/);
+
+  const store = fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'webview', 'store.ts'), 'utf8');
+  assert.doesNotMatch(store, /stashFilter|stashSearch/, 'a filter narrows what is drawn and nothing else: no store, no request');
+  assert.doesNotMatch(src, /saveState\(\{[^}]*(?:stashFilter|filter)/, 'and nothing is persisted');
+});
+
+test('the commit form and the notification block are mounted once, outside the panel, in both sub-tabs', () => {
+  const src = fs.readFileSync(
+    path.join(__dirname, '..', '..', 'src', 'webview', 'PendingChanges.tsx'),
+    'utf8',
+  );
+  assert.equal(src.match(/<CommitForm \/>/g)?.length, 1);
+  assert.doesNotMatch(src, /sub\s*===\s*'(?:changes|stashes)'\s*(?:&&|\?)\s*\(?\s*<CommitForm/, 'a typed message must survive a tab switch');
+  const panel = src.search(/role="tabpanel"/);
+  assert.ok(panel > 0);
+  assert.ok(src.indexOf('<CommitForm />') < panel, 'the form stays above the panel, as it is today');
+  assert.ok(src.indexOf('gc-pending__notifications') < panel, 'the banners are above the panel');
+  assert.doesNotMatch(
+    src.slice(src.indexOf('gc-pending__notifications'), src.indexOf('<CommitForm />')),
+    /sub\s*===/,
+    'banners are not gated on a sub-tab',
+  );
+});
+
+test('the segmented control no longer repeats the list heading, and its i18n key is gone', () => {
+  // Frame 20: the sub-tab already reads "Changes 6", so the heading and count pill above the
+  // search box are gone. The key goes with them.
+  const src = fs.readFileSync(
+    path.join(__dirname, '..', '..', 'src', 'webview', 'PendingChanges.tsx'),
+    'utf8',
+  );
+  assert.doesNotMatch(src, /gc-listbar__header|gc-listbar__title|gc-listbar__total|changesHeader/);
+  const css = fs
+    .readFileSync(path.join(__dirname, '..', '..', 'src', 'webview', 'styles.css'), 'utf8')
+    .replace(/\/\*[\s\S]*?\*\//g, '');
+  assert.doesNotMatch(css, /gc-listbar__header|gc-listbar__title|gc-listbar__total/);
+  for (const lang of ['en', 'id'] as const) {
+    assert.equal('changesHeader' in t(lang).pending, false, lang);
+  }
+  assert.match(src, /gc-listbar__controls/, 'the search row stays');
 });
 
 test('commit form progress spinner renders inside gc-commit__status outside actions', () => {
@@ -479,10 +588,12 @@ test('pending panel mounts the nav strip directly under the sidebar header', () 
     'utf8',
   );
   assert.match(src, /import \{ NavStrip \} from '\.\/NavStrip';/);
+  // P06 puts the sub-tabs between the strip and the banners (S3 row 11), so the order is
+  // header, strip, sub-tabs, notifications. The strip stays directly under the header.
   assert.match(
     src,
-    /<SidebarHeader \/>\s*<NavStrip \/>\s*<div className="gc-pending__notifications">/,
-    'header, then strip, then the notifications',
+    /<SidebarHeader \/>\s*<NavStrip \/>\s*<Tablist\b[\s\S]{0,500}?\/>\s*<div className="gc-pending__notifications">/,
+    'header, then strip, then the sub-tabs, then the notifications',
   );
   assert.equal(src.match(/<NavStrip \/>/g)?.length, 1, 'mounted once');
 });

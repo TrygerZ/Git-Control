@@ -10,6 +10,7 @@ import assert from 'node:assert/strict';
 import {
   DEFAULT_ROUTE,
   PENDING_ROUTE_TTL_MS,
+  changesSubOf,
   isFresh,
   parseRoute,
   resolveInitialRoute,
@@ -86,6 +87,15 @@ test('resolveInitialRoute prefers pending, then local, then the default', () => 
   assert.deepEqual(resolveInitialRoute({ pending: null, local: { id: 'bogus' } }), DEFAULT_ROUTE);
   assert.deepEqual(resolveInitialRoute({ pending: null, local: undefined }), DEFAULT_ROUTE);
   assert.deepEqual(resolveInitialRoute({ pending: null, local: 'prs' }), DEFAULT_ROUTE);
+});
+
+test('changesSubOf reads the Changes sub-tab and falls back to changes for every other view', () => {
+  assert.equal(changesSubOf({ id: 'changes', sub: 'changes' }), 'changes');
+  assert.equal(changesSubOf({ id: 'changes', sub: 'stashes' }), 'stashes');
+  // No other view is registered yet, but a restored or pushed route can still name one.
+  for (const route of [{ id: 'prs' }, { id: 'issues' }, { id: 'actions' }, { id: 'branches', sub: 'tags' }] as const) {
+    assert.equal(changesSubOf(route), 'changes', route.id);
+  }
 });
 
 test('isFresh holds up to the ttl and not past it', () => {

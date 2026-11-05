@@ -1283,6 +1283,12 @@ test('Tablist exposes the WAI-ARIA tabs pattern with a roving tabindex and a pur
   assert.doesNotMatch(src, /#[0-9a-fA-F]{3,8}\b|rgba?\(/, 'no colour literal');
 });
 
+test('Tablist draws a tab count as decoration and leaves the name to ariaLabel', () => {
+  const src = fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'webview', 'Tablist.tsx'), 'utf8');
+  assert.match(src, /tab\.count/, 'the count comes from the tab model');
+  assert.match(src, /__count`\}[^>]*aria-hidden="true"/, 'the count is decoration, the name carries it');
+});
+
 function ruleBody(css: string, selector: string): string {
   const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   const matches = [...css.matchAll(new RegExp(`(?:^|\\n)${escaped}\\s*\\{([^}]*)\\}`, 'g'))];
@@ -1316,6 +1322,53 @@ test('nav strip keeps the focus ring inside its bounds and shows the badge ring 
   assert.match(badge, /padding:\s*0 var\(--gc-space-2\)/, 'two digits widen the pill');
   assert.match(ruleBody(css, '.gc-nav__dot'), /background:\s*var\(--gc-state-danger\)/, 'failing dot is the danger tone');
   assert.match(ruleBody(css, '.gc-nav__tab--active .gc-nav__badge'), /var\(--gc-accent-subtle\)/, 'active badge uses the subtle accent');
+});
+
+test('sub-tabs draw the frame 20 segmented control from tokens and size a segment from the hit-area token', () => {
+  const css = stylesheet();
+  const track = ruleBody(css, '.gc-subtabs');
+  assert.ok(track.length > 0, '.gc-subtabs rule exists');
+  assert.match(track, /display:\s*flex/);
+  assert.match(track, /padding:\s*var\(--gc-space-1\)/, 'frame: 2 px inside the track');
+  assert.match(track, /gap:\s*var\(--gc-space-1\)/, 'frame: 2 px between segments');
+  assert.match(track, /border:\s*1px solid var\(--gc-border-subtle\)/, 'frame: border/subtle');
+  assert.match(track, /background:\s*var\(--gc-bg-surface\)/, 'frame: bg/surface');
+  assert.match(track, /border-radius:\s*7px/, 'frame: radius 7');
+
+  const tab = ruleBody(css, '.gc-subtabs__tab');
+  assert.ok(tab.length > 0, '.gc-subtabs__tab rule exists');
+  // Frame: segment 24 px high (30 px track less 2 px padding and 1 px border on each side).
+  assert.match(tab, /min-height:\s*calc\(var\(--gc-hit\) - 2px\)/, 'segment is 24 px and still derives from --gc-hit');
+  assert.match(tab, /flex:\s*1 1 0/, 'segments share the track equally');
+  assert.match(tab, /color:\s*var\(--gc-text-secondary\)/, 'resting label is secondary text');
+  assert.match(tab, /border-radius:\s*5px/, 'frame: radius 5');
+  // The type scale is em based. A size on the tab would compound into the count, as the nav badge did.
+  assert.doesNotMatch(tab, /font-size/, 'sizes live on the label and the count, not on the tab');
+
+  const active = ruleBody(css, '.gc-subtabs__tab--active');
+  assert.match(active, /background:\s*var\(--gc-bg-raised\)/, 'frame: active fill is bg/raised');
+  assert.match(active, /color:\s*var\(--gc-text-primary\)/, 'frame: active label is text/primary');
+
+  const label = ruleBody(css, '.gc-subtabs__label');
+  assert.match(label, /font-size:\s*var\(--gc-fs-xs\)/, 'frame: 11.5 px medium');
+  assert.match(label, /font-weight:\s*500/);
+  const count = ruleBody(css, '.gc-subtabs__count');
+  assert.match(count, /font-size:\s*var\(--gc-fs-2xs\)/, 'frame: 10.5 px regular');
+  assert.match(count, /color:\s*var\(--gc-text-muted\)/, 'frame: count is text/muted');
+  assert.match(ruleBody(css, '.gc-subtabs__tab:focus-visible'), /outline-offset:\s*-2px/, 'the track clips, so the ring sits inside');
+  assert.doesNotMatch(css, /\.gc-subtabs[^{]*\{[^}]*transition/, 'no animation, so nothing to gate on reduced motion');
+});
+
+test('sub-tabs survive forced colours: the active segment is drawn with system colours, not a subtle fill', () => {
+  const raw = fs.readFileSync(CSS, 'utf8');
+  const body = [...raw.matchAll(/@media \(forced-colors: active\)\s*\{([\s\S]*?)\n\}/g)].map((m) => m[1] ?? '').join('\n');
+  assert.match(body, /\.gc-subtabs__tab--active\s*\{[^}]*background:\s*Highlight/, 'active segment fill');
+  assert.match(body, /\.gc-subtabs__tab--active\s*\{[^}]*color:\s*HighlightText/, 'and its text');
+  // Computed colours looked right and the pixels did not: Chromium paints a Canvas backplate behind
+  // text in forced colours, so HighlightText sat on a white plate and rendered as white blocks.
+  // Opting the segment out keeps the system colours and drops the plate (seen in the real bundle).
+  assert.match(body, /\.gc-subtabs__tab--active\s*\{[^}]*forced-color-adjust:\s*none/, 'no text backplate over the fill');
+  assert.match(body, /\.gc-subtabs__tab--active \.gc-subtabs__count\s*\{[^}]*color:\s*HighlightText/, 'the count follows');
 });
 
 test('nav strip hides labels at 360 px and below but leaves the icon, badge, and names alone', () => {

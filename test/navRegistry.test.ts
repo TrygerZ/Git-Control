@@ -10,7 +10,11 @@ import assert from 'node:assert/strict';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import {
+  CHANGES_PANEL_ID,
+  CHANGES_TABS_PREFIX,
   MIN_VISIBLE_DESTINATIONS,
+  changesSubTabs,
+  changesTabId,
   createNavRegistry,
   isNavVisible,
   navRegistry,
@@ -215,6 +219,70 @@ test('navTabs shows the failing dot on Actions only, with a text equivalent', ()
 
   const signedOut = navTabs(dests, strings, { counts: {}, failing: true, signedIn: false });
   assert.equal(signedOut[1]?.dot ?? false, false, 'a signed-out user sees no run state');
+});
+
+// ------------------------------------------------------------ changesSubTabs
+
+test('changesSubTabs returns Changes then Stashes, text only, with the count visible and in the name', () => {
+  const tabs = changesSubTabs(strings, { changes: 6, stashes: 2 });
+  assert.deepEqual(
+    tabs.map((tab) => tab.id),
+    ['changes', 'stashes'],
+    'ids are the ChangesSub values, so selection maps straight onto the route',
+  );
+  assert.deepEqual(
+    tabs.map((tab) => tab.label),
+    [strings.nav.changes, strings.pending.stashesHeader],
+  );
+  assert.deepEqual(tabs.map((tab) => tab.count), ['6', '2']);
+  assert.deepEqual(
+    tabs.map((tab) => tab.ariaLabel),
+    [strings.nav.changesAria('6'), strings.nav.subStashesAria('2')],
+    'Changes reuses the nav name; the count rides in both',
+  );
+  assert.ok(tabs.every((tab) => tab.icon === undefined), 'segments are text only (frames 20 and 67)');
+});
+
+test('changesSubTabs shows a zero instead of hiding it, so nothing shifts when the first stash appears', () => {
+  const tabs = changesSubTabs(strings, { changes: 0, stashes: 0 });
+  assert.deepEqual(tabs.map((tab) => tab.count), ['0', '0']);
+  assert.match(tabs[1]?.ariaLabel ?? '', /0/);
+});
+
+test('changesSubTabs formats counts for the active language and localises the names', () => {
+  assert.deepEqual(
+    changesSubTabs(strings, { changes: 1234, stashes: 2 }).map((tab) => tab.count),
+    ['1,234', '2'],
+  );
+  const id = t('id');
+  const tabs = changesSubTabs(id, { changes: 3, stashes: 1 });
+  assert.deepEqual(
+    tabs.map((tab) => tab.label),
+    [id.nav.changes, id.pending.stashesHeader],
+  );
+  assert.deepEqual(
+    tabs.map((tab) => tab.ariaLabel),
+    [id.nav.changesAria('3'), id.nav.subStashesAria('1')],
+  );
+});
+
+test('changesSubTabs points both tabs at the one panel, and the tab ids match what Tablist renders', () => {
+  const tabs = changesSubTabs(strings, { changes: 1, stashes: 1 });
+  assert.deepEqual(tabs.map((tab) => tab.panelId), [CHANGES_PANEL_ID, CHANGES_PANEL_ID]);
+  assert.equal(CHANGES_PANEL_ID, 'gc-changes-panel');
+  assert.equal(CHANGES_TABS_PREFIX, 'gc-subtabs');
+  // The panel labels itself by the active tab's DOM id, which Tablist builds as `<idPrefix>-tab-<id>`.
+  assert.equal(changesTabId('changes'), 'gc-subtabs-tab-changes');
+  assert.equal(changesTabId('stashes'), 'gc-subtabs-tab-stashes');
+  const tablist = fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'webview', 'Tablist.tsx'), 'utf8');
+  assert.match(tablist, /id=\{`\$\{idPrefix\}-tab-\$\{tab\.id\}`\}/, 'the id format changesTabId mirrors');
+});
+
+test('Left and Right wrap between two tabs, so the pair never needs its own key model', () => {
+  assert.equal(nextTabIndex(0, 'ArrowRight', 2), 1);
+  assert.equal(nextTabIndex(1, 'ArrowRight', 2), 0);
+  assert.equal(nextTabIndex(0, 'ArrowLeft', 2), 1);
+  assert.equal(nextTabIndex(1, 'ArrowLeft', 2), 0);
 });
 
 // ------------------------------------------------------------------- nav store

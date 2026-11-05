@@ -12,6 +12,7 @@ import {
   countdown,
   displayPath,
   entryStatus,
+  filterStashes,
   formatCount,
   formatDateLabel,
   formatStashLabel,
@@ -20,6 +21,7 @@ import {
   headerModel,
   linkageChangedRepo,
   operationLabel,
+  parseStashIndex,
   presentError,
   pullRequestLabel,
   rateLimitBadge,
@@ -42,9 +44,10 @@ import type {
   PullRequestInfo,
   Remedy,
   RepoStatus,
+  StashEntry,
 } from '../src/messages';
 
-const NOW = Date.parse('2026-06-15T12:00:00.000Z');
+const NOW =Date.parse('2026-06-15T12:00:00.000Z');
 const HASH = 'abc1234def5678'.padEnd(40, '0');
 
 /** Build an ISO timestamp `delta` ms before NOW. */
@@ -63,6 +66,65 @@ test('formatStashLabel maps 0-based index to 1-based localized label', () => {
   assert.equal(formatStashLabel(0, 'id'), 'Stash 1 dari');
   assert.equal(formatStashLabel(4, 'en'), 'Stash 5 from');
   assert.equal(formatStashLabel(4, 'id'), 'Stash 5 dari');
+});
+
+test('parseStashIndex reads N from stash@{N} and nothing else', () => {
+  assert.equal(parseStashIndex('stash@{0}'), 0);
+  assert.equal(parseStashIndex('stash@{12}'), 12);
+  for (const bad of ['', 'HEAD', 'refs/stash', 'stash@{}', 'stash@{a}', 'stash@{-1}', 'stash@{1} ', ' stash@{1}', 'xstash@{1}', 'stash@{1}x']) {
+    assert.equal(parseStashIndex(bad), null, JSON.stringify(bad));
+  }
+});
+
+// These fixtures use letter-only hashes, so a digit in a needle can only come from the "Stash N"
+// label. Real hashes are hex and contain digits too: in the browser check a lone "3" matched 3 of 4
+// stashes because "7c3a91d" and "1b2c3d4" contain it. That follows from searching what the row
+// draws; it is a trade-off, not something these fixtures prove away.
+// Everything after the first 7 characters is 'd', which the row never draws.
+const S0: StashEntry = { ref: 'stash@{0}', hash: 'aaaaaaa'.padEnd(40, 'd'), subject: 'WIP on main' };
+const S1: StashEntry = { ref: 'stash@{1}', hash: 'bbbbbbb'.padEnd(40, 'd'), subject: 'Git Control auto stash' };
+const S2: StashEntry = { ref: 'stash@{2}', hash: 'ccccccc'.padEnd(40, 'd'), subject: 'fix' };
+
+test('filterStashes returns every stash, in order, for an empty or blank needle', () => {
+  const all = Object.freeze([S0, S1, S2]);
+  assert.deepEqual(filterStashes(all, ''), [S0, S1, S2]);
+  assert.deepEqual(filterStashes(all, '   '), [S0, S1, S2]);
+});
+
+test('filterStashes matches the number in the drawn label, taken from the ref and not from the list position', () => {
+  assert.deepEqual(filterStashes([S0, S1, S2], '2'), [S1]);
+  // Position 0 of the input, but ref stash@{2}: it is "Stash 3", so Apply and Drop keep the right index.
+  assert.deepEqual(filterStashes([S2], '3'), [S2]);
+  assert.deepEqual(filterStashes([S2], '1'), []);
+  assert.equal(filterStashes([S0, S1, S2], '2')[0], S1, 'the same object comes back, not a copy');
+});
+
+test('filterStashes matches the 7 drawn hash characters, any case, with the needle trimmed', () => {
+  assert.deepEqual(filterStashes([S0, S1, S2], 'bbb'), [S1]);
+  assert.deepEqual(filterStashes([S0, S1, S2], '  BBB  '), [S1]);
+  assert.deepEqual(filterStashes([S0, S1, S2], 'ccccccc'), [S2]);
+  assert.deepEqual(filterStashes([S0, S1, S2], 'ddd'), [], 'characters past the 7th are not drawn, so they never match');
+});
+
+test('filterStashes matches what the row says, in row order, and not the hidden subject', () => {
+  assert.deepEqual(filterStashes([S0, S1, S2], 'stash 2 from bbb'), [S1]);
+  assert.deepEqual(filterStashes([S0, S1, S2], 'wip'), [], 'the subject is not drawn, so a match would have no visible reason');
+  assert.deepEqual(filterStashes([S0, S1, S2], 'auto'), []);
+});
+
+test('filterStashes matches the label in the active language only', () => {
+  assert.equal(filterStashes([S0, S1, S2], 'from', 'en').length, 3);
+  assert.deepEqual(filterStashes([S0, S1, S2], 'from', 'id'), []);
+  assert.equal(filterStashes([S0, S1, S2], 'dari', 'id').length, 3);
+  assert.deepEqual(filterStashes([S0, S1, S2], 'dari', 'en'), []);
+  assert.deepEqual(filterStashes([S0, S1, S2], 'stash 2 dari', 'id'), [S1]);
+});
+
+test('filterStashes never returns a stash whose ref has no index, so a filtered list cannot act on a shifted one', () => {
+  const odd: StashEntry = { ref: 'refs/stash', hash: 'eeeeeee'.padEnd(40, 'd'), subject: '' };
+  assert.deepEqual(filterStashes([S0, odd], 'eee'), []);
+  assert.deepEqual(filterStashes([S0, odd], 'stash'), [S0]);
+  assert.deepEqual(filterStashes([S0, odd], ''), [S0, odd], 'unfiltered, the list is left alone');
 });
 
 test('formatDateLabel formats timestamp into Indonesian date without em-dash', () => {

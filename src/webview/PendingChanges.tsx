@@ -20,9 +20,12 @@ import { ConflictPanel, OperationBanner } from './ConflictPanel';
 import { GuardDialog } from './GuardDialog';
 import { SidebarHeader } from './SidebarHeader';
 import { NavStrip } from './NavStrip';
+import { Tablist } from './Tablist';
+import { CHANGES_PANEL_ID, CHANGES_TABS_PREFIX, changesSubTabs, changesTabId } from './navRegistry';
+import { changesSubOf, parseRoute } from './route';
 import { ToastRegion } from './Toast';
 import { bridge, loadState, saveState } from './bridge';
-import { baseName, formatCount, formatStashLabel, sanitizeGitText, shortHash, UNKNOWN_CHURN } from './format';
+import { baseName, filterStashes, formatCount, formatStashLabel, parseStashIndex, sanitizeGitText, shortHash, UNKNOWN_CHURN } from './format';
 import { useT } from './useT';
 import { groupBySection, isSectionBulkDisabled, stageableFrom, unstageableFrom, type ChangeSection } from './tree';
 import {
@@ -82,8 +85,6 @@ export function PendingChangesApp(): JSX.Element {
   const stage = useChangesStore((s) => s.stage);
   const unstage = useChangesStore((s) => s.unstage);
   const stashes = useChangesStore((s) => s.stashes);
-  const stashesCollapsed = useChangesStore((s) => s.stashesCollapsed);
-  const toggleStashesCollapsed = useChangesStore((s) => s.toggleStashesCollapsed);
   const applyStash = useChangesStore((s) => s.applyStash);
   const dropStash = useChangesStore((s) => s.dropStash);
 
@@ -109,7 +110,11 @@ export function PendingChangesApp(): JSX.Element {
    * and nothing else — no request, no persistence, nothing the host needs to know.
    */
   const [filter, setFilter] = useState('');
-  const filterCountId = useId();
+  /**
+   * Stash filter, kept separate from the file filter so each sub-tab keeps its own
+   * text while the component lives. Same rule: drawn only, never persisted.
+   */
+  const [stashFilter, setStashFilter] = useState('');
 
   // Restore persisted form state, then fetch. The view is rebuilt on every
   // reveal (`retainContextWhenHidden: false`), so this runs often and must be cheap.
@@ -149,7 +154,23 @@ export function PendingChangesApp(): JSX.Element {
     [changes, needle],
   );
   const groups = useMemo(() => groupBySection(visible), [visible]);
+  const visibleStashes = useMemo(
+    () => filterStashes(stashes, stashFilter, language),
+    [stashes, stashFilter, language],
+  );
   const selected = [...selection];
+
+  const route = useRouteStore((s) => s.route);
+  const sub = changesSubOf(route);
+  const subTabs = changesSubTabs(strings, { changes: changes.length, stashes: stashes.length });
+  /**
+   * A tab id comes from the DOM, so it is parsed, never cast: `parseRoute` drops
+   * anything the route model does not know and `navigate` persists the result.
+   */
+  const selectSub = (id: string): void => {
+    const next = parseRoute({ id: 'changes', sub: id });
+    if (next !== null) useRouteStore.getState().navigate(next);
+  };
 
   const sectionTitles: Record<ChangeSection, string> = {
     conflicted: strings.pending.sectionConflicted,
@@ -216,7 +237,7 @@ export function PendingChangesApp(): JSX.Element {
     <div className="gc-pending">
       <SidebarHeader />
       <NavStrip />
-
+      <Tablist tabs={subTabs} activeId={sub} onSelect={selectSub} ariaLabel={strings.nav.subTabsAria} idPrefix={CHANGES_TABS_PREFIX} classPrefix="gc-subtabs" />
       <div className="gc-pending__notifications">
         <OperationBanner status={status} />
         {error !== null && <ErrorBanner error={error} onShowLogs={showLogs} />}
@@ -241,35 +262,37 @@ export function PendingChangesApp(): JSX.Element {
         aria-label={strings.pending.toolbarLabel}
         aria-orientation="horizontal"
       >
-        <div className="gc-toolbar__secondary-group">
-          <div className="gc-selection-group" role="group" aria-label={strings.pending.selectionGroupAria}>
-            <div className="gc-segmented gc-segmented--quiet">
-              <button
-                type="button"
-                className="gc-button gc-button--quiet"
-                title={strings.pending.selectAllTitle}
-                disabled={changes.length === 0}
-                onClick={selectAll}
-              >
-                <Icon name="check" />
-                {strings.pending.selectAll}
-              </button>
-              <button
-                type="button"
-                className="gc-button gc-button--quiet"
-                title={strings.pending.clearSelectionTitle}
-                disabled={selected.length === 0}
-                onClick={clear}
-              >
-                <Icon name="close" />
-                {strings.pending.clearSelection}
-              </button>
+        {sub === 'changes' && (
+          <div className="gc-toolbar__secondary-group">
+            <div className="gc-selection-group" role="group" aria-label={strings.pending.selectionGroupAria}>
+              <div className="gc-segmented gc-segmented--quiet">
+                <button
+                  type="button"
+                  className="gc-button gc-button--quiet"
+                  title={strings.pending.selectAllTitle}
+                  disabled={changes.length === 0}
+                  onClick={selectAll}
+                >
+                  <Icon name="check" />
+                  {strings.pending.selectAll}
+                </button>
+                <button
+                  type="button"
+                  className="gc-button gc-button--quiet"
+                  title={strings.pending.clearSelectionTitle}
+                  disabled={selected.length === 0}
+                  onClick={clear}
+                >
+                  <Icon name="close" />
+                  {strings.pending.clearSelection}
+                </button>
+              </div>
+              <span className="gc-pending__count" aria-live="off" aria-atomic="true">
+                {strings.pending.selectedCount(formatCount(selected.length, language))}
+              </span>
             </div>
-            <span className="gc-pending__count" aria-live="off" aria-atomic="true">
-              {strings.pending.selectedCount(formatCount(selected.length, language))}
-            </span>
           </div>
-        </div>
+        )}
 
         <div className="gc-toolbar__end">
           <button
@@ -283,227 +306,216 @@ export function PendingChangesApp(): JSX.Element {
         </div>
       </div>
 
-      {!hasLoaded && loading && changes.length === 0 ? (
-        <FileListSkeleton rows={8} />
-      ) : changes.length === 0 ? (
-        <>
-          <EmptyState
-            title={strings.pending.emptyTitle}
-            hint={strings.pending.emptyHint}
-          />
-          <div className="gc-pending__sections" ref={scrollRef} />
-        </>
-      ) : (
-        <>
-          {/*
-            List header: heading with a pill count, then a full-width search box
-            with the leading glyph inside the field, and a quiet filter affordance
-            beside it.
-          */}
-          <div className="gc-listbar">
-            <div className="gc-listbar__header">
-              <h2 className="gc-listbar__title">
-                {strings.pending.changesHeader}
-                <span className="gc-listbar__total">{formatCount(changes.length, language)}</span>
-              </h2>
-            </div>
-            <div className="gc-listbar__controls">
-              <div className="gc-listbar__search-wrap">
-                <span className="gc-listbar__search-icon" aria-hidden="true">
-                  <Icon name="search" />
-                </span>
-                <input
-                  type="search"
-                  className="gc-listbar__input"
-                  value={filter}
-                  maxLength={100}
-                  placeholder={strings.pending.searchPlaceholder}
-                  aria-label={strings.pending.searchAria}
-                  aria-describedby={filterCountId}
-                  onChange={(event) => setFilter(event.target.value)}
+      <div role="tabpanel" id={CHANGES_PANEL_ID} aria-labelledby={changesTabId(sub)} className="gc-pending__panel">
+        {sub === 'stashes' ? (
+          <>
+            {stashes.length > 0 && (
+              <SearchRow
+                value={stashFilter}
+                onChange={setStashFilter}
+                placeholder={strings.pending.stashSearchPlaceholder}
+                ariaLabel={strings.pending.stashSearchAria}
+                matchedText={strings.pending.stashSearchMatched(
+                  formatCount(visibleStashes.length, language),
+                  formatCount(stashes.length, language),
+                )}
+              />
+            )}
+            {stashes.length > 0 && stashFilter.trim().length > 0 && visibleStashes.length === 0 ? (
+              <EmptyState
+                title={strings.pending.stashSearchEmptyTitle}
+                action={
+                  <button
+                    type="button"
+                    className="gc-button gc-button--quiet"
+                    onClick={() => setStashFilter('')}
+                  >
+                    {strings.pending.clearSearch}
+                  </button>
+                }
+              />
+            ) : (
+              <div className="gc-pending__sections">
+                <StashList
+                  stashes={visibleStashes}
+                  busy={busy}
+                  language={language}
+                  onApply={(i) => void applyStash(i)}
+                  onDrop={(i) => void dropStash(i)}
+                  onOpenDiff={(index, path) => void openStashDiff(index, path)}
                 />
               </div>
-              {/*
-                Visual affordance only: the input above is the filter, so this
-                button is disabled and exists to signal that the row is the
-                filter row. aria-hidden keeps a dead control out of the tab order
-                and the accessibility tree.
-              */}
-              <button
-                type="button"
-                className="gc-icon-button gc-listbar__filter"
-                aria-hidden="true"
-                tabIndex={-1}
-                disabled
-              >
-                <Icon name="filter" />
-              </button>
-            </div>
-            {needle.length > 0 && (
-              <p className="gc-help-text gc-listbar__count" id={filterCountId} role="status" aria-live="polite">
-                {strings.pending.searchMatched(formatCount(visible.length, language), formatCount(changes.length, language))}
-              </p>
             )}
-          </div>
-
-          {visible.length === 0 ? (
+          </>
+        ) : !hasLoaded && loading && changes.length === 0 ? (
+          <FileListSkeleton rows={8} />
+        ) : changes.length === 0 ? (
+          <>
             <EmptyState
-              title={strings.pending.searchEmptyTitle}
-              action={
-                <button
-                  type="button"
-                  className="gc-button gc-button--quiet"
-                  onClick={() => setFilter('')}
-                >
-                  {strings.pending.clearSearch}
-                </button>
-              }
+              title={strings.pending.emptyTitle}
+              hint={strings.pending.emptyHint}
             />
-          ) : (
-            <div
-              className="gc-pending__sections"
-              ref={scrollRef}
-              aria-busy={loading}
-              onScroll={(event) => saveState({ scrollTop: event.currentTarget.scrollTop })}
-            >
-              {SECTION_ORDER.map((section) => {
-                const entries = groups[section];
-                if (entries.length === 0) return null;
-                const badge = SECTION_BADGES[section];
-                const title = sectionTitles[section];
+            <div className="gc-pending__sections" ref={scrollRef} />
+          </>
+        ) : (
+          <>
+            {/*
+              Search row: a full-width search box with the leading glyph inside the
+              field, and a quiet filter affordance beside it. The sub-tab above
+              already names the list and carries the count, so there is no heading.
+            */}
+            <SearchRow
+              value={filter}
+              onChange={setFilter}
+              placeholder={strings.pending.searchPlaceholder}
+              ariaLabel={strings.pending.searchAria}
+              matchedText={strings.pending.searchMatched(
+                formatCount(visible.length, language),
+                formatCount(changes.length, language),
+              )}
+            />
 
-                // Target semantics for section bulk action:
-                // 1. If files in this section are selected in the global selection store, operate on those.
-                // 2. Fallback to all files in this section if none are selected. This matches VS Code's
-                //    "Stage All Changes" / "Unstage All Changes" behavior when no row checkbox is active,
-                //    preventing dead buttons in default clean selection state while staging remains reversible.
-                const sectionPaths = entries.map((e) => e.path);
-                const sectionSelectedPaths = sectionPaths.filter((p) => selection.has(p));
-                const isSelectionActive = sectionSelectedPaths.length > 0;
-                const targetPaths = isSelectionActive ? sectionSelectedPaths : sectionPaths;
+            {visible.length === 0 ? (
+              <EmptyState
+                title={strings.pending.searchEmptyTitle}
+                action={
+                  <button
+                    type="button"
+                    className="gc-button gc-button--quiet"
+                    onClick={() => setFilter('')}
+                  >
+                    {strings.pending.clearSearch}
+                  </button>
+                }
+              />
+            ) : (
+              <div
+                className="gc-pending__sections"
+                ref={scrollRef}
+                aria-busy={loading}
+                onScroll={(event) => saveState({ scrollTop: event.currentTarget.scrollTop })}
+              >
+                {SECTION_ORDER.map((section) => {
+                  const entries = groups[section];
+                  if (entries.length === 0) return null;
+                  const badge = SECTION_BADGES[section];
+                  const title = sectionTitles[section];
 
-                const isStagedSection = section === 'staged';
-                const validPaths = isStagedSection
-                  ? unstageableFrom(targetPaths, changes, conflicts)
-                  : stageableFrom(targetPaths, changes);
+                  // Target semantics for section bulk action:
+                  // 1. If files in this section are selected in the global selection store, operate on those.
+                  // 2. Fallback to all files in this section if none are selected. This matches VS Code's
+                  //    "Stage All Changes" / "Unstage All Changes" behavior when no row checkbox is active,
+                  //    preventing dead buttons in default clean selection state while staging remains reversible.
+                  const sectionPaths = entries.map((e) => e.path);
+                  const sectionSelectedPaths = sectionPaths.filter((p) => selection.has(p));
+                  const isSelectionActive = sectionSelectedPaths.length > 0;
+                  const targetPaths = isSelectionActive ? sectionSelectedPaths : sectionPaths;
 
-                const countStr = formatCount(validPaths.length, language);
-                const sectionBtnAria = isStagedSection
-                  ? isSelectionActive
-                    ? strings.pending.unstageSectionSelectedAria(countStr, title)
-                    : strings.pending.unstageSectionAllAria(countStr, title)
-                  : isSelectionActive
-                    ? strings.pending.stageSectionSelectedAria(countStr, title)
-                    : strings.pending.stageSectionAllAria(countStr, title);
+                  const isStagedSection = section === 'staged';
+                  const validPaths = isStagedSection
+                    ? unstageableFrom(targetPaths, changes, conflicts)
+                    : stageableFrom(targetPaths, changes);
 
-                const sectionBtnTitle = isStagedSection
-                  ? isSelectionActive
-                    ? strings.pending.unstageSectionSelectedTitle(countStr)
-                    : strings.pending.unstageSectionAllTitle(countStr)
-                  : isSelectionActive
-                    ? strings.pending.stageSectionSelectedTitle(countStr)
-                    : strings.pending.stageSectionAllTitle(countStr);
+                  const countStr = formatCount(validPaths.length, language);
+                  const sectionBtnAria = isStagedSection
+                    ? isSelectionActive
+                      ? strings.pending.unstageSectionSelectedAria(countStr, title)
+                      : strings.pending.unstageSectionAllAria(countStr, title)
+                    : isSelectionActive
+                      ? strings.pending.stageSectionSelectedAria(countStr, title)
+                      : strings.pending.stageSectionAllAria(countStr, title);
 
-                const handleSectionBulk = (): void => {
-                  if (isStagedSection) {
-                    void unstagePaths(targetPaths);
-                  } else {
-                    void stagePaths(targetPaths);
-                  }
-                };
+                  const sectionBtnTitle = isStagedSection
+                    ? isSelectionActive
+                      ? strings.pending.unstageSectionSelectedTitle(countStr)
+                      : strings.pending.unstageSectionAllTitle(countStr)
+                    : isSelectionActive
+                      ? strings.pending.stageSectionSelectedTitle(countStr)
+                      : strings.pending.stageSectionAllTitle(countStr);
 
-                const isCollapsed = collapsedSections.has(section);
+                  const handleSectionBulk = (): void => {
+                    if (isStagedSection) {
+                      void unstagePaths(targetPaths);
+                    } else {
+                      void stagePaths(targetPaths);
+                    }
+                  };
 
-                return (
-                  <section className="gc-section" key={section} aria-label={title}>
-                    <div className="gc-section__head">
-                      {/* Toggle is a real button inside the heading (Enter/Space + aria-expanded come free); the bulk button and count badge stay outside it as siblings, so no button nests in a button and their labels stay out of the heading name. */}
-                      <h3 className="gc-section__title">
+                  const isCollapsed = collapsedSections.has(section);
+
+                  return (
+                    <section className="gc-section" key={section} aria-label={title}>
+                      <div className="gc-section__head">
+                        {/* Toggle is a real button inside the heading (Enter/Space + aria-expanded come free); the bulk button and count badge stay outside it as siblings, so no button nests in a button and their labels stay out of the heading name. */}
+                        <h3 className="gc-section__title">
+                          <button
+                            type="button"
+                            className="gc-section__toggle"
+                            aria-expanded={!isCollapsed}
+                            aria-label={isCollapsed ? strings.pending.expandSectionAria(title) : strings.pending.collapseSectionAria(title)}
+                            onClick={() => toggleSection(section)}
+                          >
+                            <span className="gc-section__twisty" aria-hidden="true">
+                              <Icon name={isCollapsed ? 'chevron-right' : 'chevron-down'} />
+                            </span>
+                            <span
+                              className={`gc-section__badge gc-section__badge--${badge.tone}`}
+                              aria-hidden="true"
+                            >
+                              {badge.letter}
+                            </span>
+                            <span className="gc-section__name">{title}</span>
+                          </button>
+                        </h3>
+                        {/* Bulk staging a section whose rows are folded is an action on unseen files, so the button is disabled while collapsed to prevent action while keeping header composition stable. */}
                         <button
                           type="button"
-                          className="gc-section__toggle"
-                          aria-expanded={!isCollapsed}
-                          aria-label={isCollapsed ? strings.pending.expandSectionAria(title) : strings.pending.collapseSectionAria(title)}
-                          onClick={() => toggleSection(section)}
+                          className="gc-icon-button gc-section__bulk"
+                          aria-label={sectionBtnAria}
+                          title={sectionBtnTitle}
+                          disabled={isSectionBulkDisabled(busy, validPaths.length, isCollapsed)}
+                          onClick={handleSectionBulk}
                         >
-                          <span className="gc-section__twisty" aria-hidden="true">
-                            <Icon name={isCollapsed ? 'chevron-right' : 'chevron-down'} />
-                          </span>
-                          <span
-                            className={`gc-section__badge gc-section__badge--${badge.tone}`}
-                            aria-hidden="true"
-                          >
-                            {badge.letter}
-                          </span>
-                          <span className="gc-section__name">{title}</span>
+                          <Icon name={isStagedSection ? 'dash' : 'add'} />
                         </button>
-                      </h3>
-                      {/* Bulk staging a section whose rows are folded is an action on unseen files, so the button is disabled while collapsed to prevent action while keeping header composition stable. */}
-                      <button
-                        type="button"
-                        className="gc-icon-button gc-section__bulk"
-                        aria-label={sectionBtnAria}
-                        title={sectionBtnTitle}
-                        disabled={isSectionBulkDisabled(busy, validPaths.length, isCollapsed)}
-                        onClick={handleSectionBulk}
-                      >
-                        <Icon name={isStagedSection ? 'dash' : 'add'} />
-                      </button>
-                      <span className="gc-section__count">{formatCount(entries.length, language)}</span>
-                    </div>
-                    {!isCollapsed && (
-                      <ChangeTree
-                        entries={entries}
-                        selection={selection}
-                        collapsed={collapsed}
-                        busy={busy}
-                        label={strings.pending.sectionAria(title, formatCount(entries.length, language))}
-                        churnTruncated={churnTruncated}
-                        onToggleFile={toggle}
-                        onToggleFolder={toggleFolder}
-                        onToggleCollapsed={toggleCollapsed}
-                        onOpenDiff={(entry) => void openDiff(entry)}
-                        fileAction={
-                          section === 'staged'
-                            ? { label: strings.changeTree.unstageLabel, icon: 'dash', ariaLabel: (p) => strings.changeTree.unstageFileAria(p), run: (e) => void unstage([e.path]) }
-                            : { label: strings.changeTree.stageLabel, icon: 'add', ariaLabel: (p) => strings.changeTree.stageFileAria(p), run: (e) => void stage([e.path]) }
-                        }
-                        discardAction={
-                          section === 'unstaged'
-                            ? {
-                                label: strings.changeTree.discardLabel,
-                                icon: 'discard',
-                                ariaLabel: (p) => strings.changeTree.discardFileAria(p),
-                                run: (e) => void runAction({ action: 'discard-file', path: e.path }),
-                              }
-                            : null
-                        }
-                      />
-                    )}
-                  </section>
-                );
-              })}
-            </div>
-          )}
-        </>
-      )}
-
-      {/*
-        The stash sits outside the scrolling sections, pinned to the panel foot like
-        the VS Code SCM graph menu. It renders exactly once in every state (loading,
-        empty, filtered-empty) so its dropdown never unmounts mid-interaction.
-      */}
-      <div className="gc-pending__stash">
-        <StashSection
-          stashes={stashes}
-          isCollapsed={stashesCollapsed}
-          busy={busy}
-          language={language}
-          onToggle={toggleStashesCollapsed}
-          onApply={(i) => void applyStash(i)}
-          onDrop={(i) => void dropStash(i)}
-          onOpenDiff={(index, path) => void openStashDiff(index, path)}
-        />
+                        <span className="gc-section__count">{formatCount(entries.length, language)}</span>
+                      </div>
+                      {!isCollapsed && (
+                        <ChangeTree
+                          entries={entries}
+                          selection={selection}
+                          collapsed={collapsed}
+                          busy={busy}
+                          label={strings.pending.sectionAria(title, formatCount(entries.length, language))}
+                          churnTruncated={churnTruncated}
+                          onToggleFile={toggle}
+                          onToggleFolder={toggleFolder}
+                          onToggleCollapsed={toggleCollapsed}
+                          onOpenDiff={(entry) => void openDiff(entry)}
+                          fileAction={
+                            section === 'staged'
+                              ? { label: strings.changeTree.unstageLabel, icon: 'dash', ariaLabel: (p) => strings.changeTree.unstageFileAria(p), run: (e) => void unstage([e.path]) }
+                              : { label: strings.changeTree.stageLabel, icon: 'add', ariaLabel: (p) => strings.changeTree.stageFileAria(p), run: (e) => void stage([e.path]) }
+                          }
+                          discardAction={
+                            section === 'unstaged'
+                              ? {
+                                  label: strings.changeTree.discardLabel,
+                                  icon: 'discard',
+                                  ariaLabel: (p) => strings.changeTree.discardFileAria(p),
+                                  run: (e) => void runAction({ action: 'discard-file', path: e.path }),
+                                }
+                              : null
+                          }
+                        />
+                      )}
+                    </section>
+                  );
+                })}
+              </div>
+            )}
+          </>
+        )}
       </div>
 
       <GuardDialog />
@@ -512,72 +524,66 @@ export function PendingChangesApp(): JSX.Element {
   );
 }
 
-function parseStashIndex(ref: string): number | null {
-  const match = /^stash@\{(\d+)\}$/.exec(ref);
-  return match !== null && match[1] !== undefined ? parseInt(match[1], 10) : null;
-}
-
-function StashSection({
-  stashes,
-  isCollapsed,
-  busy,
-  language,
-  onToggle,
-  onApply,
-  onDrop,
-  onOpenDiff,
+/**
+ * The one search row, rendered by both sub-tabs so their markup cannot drift.
+ *
+ * `matchedText` is only drawn while the field has text: a "0 of 0 matched" line
+ * under an untouched filter reads as a failure that never happened.
+ */
+function SearchRow({
+  value,
+  onChange,
+  placeholder,
+  ariaLabel,
+  matchedText,
 }: {
-  stashes: readonly StashEntry[];
-  isCollapsed: boolean;
-  busy: boolean;
-  language: Lang;
-  onToggle(): void;
-  onApply(index: number): void;
-  onDrop(index: number): void;
-  onOpenDiff(index: number, path: string): void;
+  value: string;
+  onChange(next: string): void;
+  placeholder: string;
+  ariaLabel: string;
+  matchedText: string;
 }): JSX.Element {
-  const strings = useT();
-  const title = strings.pending.stashesHeader;
-  const toggleAria = isCollapsed
-    ? strings.pending.expandSectionAria(title)
-    : strings.pending.collapseSectionAria(title);
-
+  const countId = useId();
   return (
-    <section className="gc-section" aria-label={title}>
-      <div className="gc-section__head">
-        <h3 className="gc-section__title">
-          <button
-            type="button"
-            className="gc-section__toggle"
-            aria-expanded={!isCollapsed}
-            aria-label={toggleAria}
-            onClick={onToggle}
-          >
-            <span className="gc-section__twisty" aria-hidden="true">
-              <Icon name={isCollapsed ? 'chevron-right' : 'chevron-down'} />
-            </span>
-            <span
-              className="gc-section__badge gc-section__badge--special"
-              aria-hidden="true"
-            >
-              <Icon name="archive" />
-            </span>
-            <span className="gc-section__name">{title}</span>
-          </button>
-        </h3>
-        <span className="gc-section__count">{formatCount(stashes.length, language)}</span>
+    <div className="gc-listbar">
+      <div className="gc-listbar__controls">
+        <div className="gc-listbar__search-wrap">
+          <span className="gc-listbar__search-icon" aria-hidden="true">
+            <Icon name="search" />
+          </span>
+          <input
+            type="search"
+            className="gc-listbar__input"
+            value={value}
+            maxLength={100}
+            placeholder={placeholder}
+            aria-label={ariaLabel}
+            aria-describedby={countId}
+            onChange={(event) => onChange(event.target.value)}
+          />
+        </div>
+        {/*
+          Visual affordance only: the input above is the filter, so this
+          button is disabled and exists to signal that the row is the
+          filter row. aria-hidden keeps a dead control out of the tab order
+          and the accessibility tree.
+        */}
+        <button
+          type="button"
+          className="gc-icon-button gc-listbar__filter"
+          aria-hidden="true"
+          tabIndex={-1}
+          disabled
+        >
+          <Icon name="filter" />
+        </button>
       </div>
-      {!isCollapsed && (
-        <StashList
-          stashes={stashes}
-          busy={busy}
-          language={language}
-          onApply={onApply}
-          onDrop={onDrop}
-          onOpenDiff={onOpenDiff}
-        />
+      {value.trim().length > 0 && (
+        <p className="gc-help-text gc-listbar__count" id={countId} role="status" aria-live="polite">
+          {matchedText}
+        </p>
       )}
-    </section>
+    </div>
   );
 }
 
