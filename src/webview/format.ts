@@ -18,6 +18,7 @@ import type {
   PullRequestInfo,
   Remedy,
   RepoStatus,
+  StashEntry,
 } from '../messages';
 import type { IconName } from './icons';
 import { t, type Lang } from './i18n';
@@ -37,6 +38,41 @@ export function shortHash(hash: string, length: number = SHORT_HASH_LENGTH): str
  */
 export function formatStashLabel(index: number, lang: Lang = 'en'): string {
   return t(lang).pending.stashEntryLabel(index + 1);
+}
+
+/**
+ * Index N of a `stash@{N}` ref, or null for any other string.
+ *
+ * Anchored on both ends so `stash@{1}x`, `xstash@{1}`, and a stray space never
+ * parse. This is the only parser: the row draws the number from it and the
+ * filter matches against it, so a filtered list can never renumber.
+ */
+export function parseStashIndex(ref: string): number | null {
+  const match = /^stash@\{(\d+)\}$/.exec(ref);
+  return match !== null && match[1] !== undefined ? parseInt(match[1], 10) : null;
+}
+
+/**
+ * Stashes whose drawn row text contains the needle.
+ *
+ * The haystack is exactly what the row shows: the localized label ("Stash 2
+ * from") then the 7-character hash. The subject is NOT searched, because the
+ * row does not draw it and a match with no visible reason reads as a bug.
+ * Original objects come back in input order, and a ref without an index never
+ * matches while filtering: it has no number to act on.
+ */
+export function filterStashes(
+  stashes: readonly StashEntry[],
+  needle: string,
+  lang: Lang = 'en',
+): StashEntry[] {
+  const query = needle.trim().toLowerCase();
+  if (query.length === 0) return [...stashes];
+  return stashes.filter((stash) => {
+    const index = parseStashIndex(stash.ref);
+    if (index === null) return false;
+    return `${formatStashLabel(index, lang)} ${shortHash(stash.hash)}`.toLowerCase().includes(query);
+  });
 }
 
 // merge-into.source can be a branch name or a 40-character hash; only shorten hashes,
