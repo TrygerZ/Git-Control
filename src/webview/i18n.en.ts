@@ -35,7 +35,6 @@ const en = {
     switchLanguageAria: (nextLang: string) => `Switch to ${nextLang}`,
     emptyTitle: 'No changes.',
     emptyHint: 'Working tree is clean.',
-    changesHeader: 'Changes',
     searchPlaceholder: 'Search files...',
     searchAria: 'Filter by file name',
     searchMatched: (shown: string, total: string) => `${shown} of ${total} files matched`,

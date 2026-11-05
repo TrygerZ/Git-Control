@@ -31,7 +31,6 @@ const id: Catalog = {
     switchLanguageAria: (nextLang: string) => `Ganti ke ${nextLang}`,
     emptyTitle: 'Tidak ada perubahan.',
     emptyHint: 'Folder kerja bersih.',
-    changesHeader: 'Perubahan',
     searchPlaceholder: 'Cari file...',
     searchAria: 'Saring berdasarkan nama file',
     searchMatched: (shown: string, total: string) => `${shown} dari ${total} file cocok`,

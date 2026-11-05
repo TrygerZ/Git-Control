@@ -251,7 +251,6 @@ export interface ChangesState {
   conflicts: ConflictEntry[];
   stashes: StashEntry[];
   stashesLoading: boolean;
-  stashesCollapsed: boolean;
   stashesExpanded: Set<number>;
   stashContents: Record<number, StashFile[]>;
   stashContentsLoading: Set<number>;
@@ -272,7 +271,6 @@ export interface ChangesState {
   retryPush: (() => Promise<void>) | null;
   load(): Promise<void>;
   loadStashes(): Promise<void>;
-  toggleStashesCollapsed(): void;
   toggleStashExpanded(index: number): Promise<void>;
   applyStash(index: number): Promise<boolean>;
   dropStash(index: number): Promise<boolean>;
@@ -311,7 +309,6 @@ export const useChangesStore = create<ChangesState>((set, get) => ({
   conflicts: [],
   stashes: [],
   stashesLoading: false,
-  stashesCollapsed: false,
   stashesExpanded: new Set<number>(),
   stashContents: {},
   stashContentsLoading: new Set<number>(),
@@ -385,10 +382,6 @@ export const useChangesStore = create<ChangesState>((set, get) => ({
     } catch {
       set({ stashesLoading: false });
     }
-  },
-
-  toggleStashesCollapsed() {
-    set({ stashesCollapsed: !get().stashesCollapsed });
   },
 
   async toggleStashExpanded(index: number) {

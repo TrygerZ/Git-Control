@@ -3132,19 +3132,16 @@ h3 {
 }
 
 /*
- * Stash block pinned to the panel foot. Because `.gc-pending` is a fixed-height
- * flex column and `.gc-pending__sections` grows to fill it, this block stays at
- * the bottom regardless of how many change sections render above. Its own height
- * is capped so a long stash list scrolls internally instead of pushing the commit
- * form off screen.
+ * `.gc-pending` is a flex column and `.gc-pending__sections` grows to fill it,
+ * so the tabpanel wrapper has to be a flex column that grows too, or the list
+ * would collapse to its minimum height.
  */
-.gc-pending__stash {
-  flex: 0 0 auto;
-  max-height: 45%;
-  overflow-y: auto;
-  scrollbar-gutter: stable;
-  border-top: 1px solid var(--gc-border);
-  background: var(--gc-surface-1);
+.gc-pending__panel {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
+  gap: var(--gc-space-2);
 }
 
 .gc-pending__count {
@@ -3155,9 +3152,9 @@ h3 {
 }
 
 /*
- * Header of the file list: title, total count pill, search input with leading
- * glyph, and a quiet filter affordance. Sticky so the filter stays in reach
- * while the sections scroll beneath it.
+ * Search row of the file list: search input with leading glyph, and a quiet
+ * filter affordance. Sticky so the filter stays in reach while the sections
+ * scroll beneath it.
  */
 .gc-listbar {
   position: sticky;
@@ -3169,34 +3166,6 @@ h3 {
   padding: var(--gc-space-2) 0;
   border-bottom: 1px solid var(--gc-border);
   background: var(--gc-surface-1);
-}
-
-.gc-listbar__header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-}
-
-.gc-listbar__title {
-  display: flex;
-  align-items: center;
-  gap: var(--gc-space-2);
-  margin: 0;
-  font-size: var(--gc-fs-md);
-  font-weight: var(--gc-weight-strong);
-}
-
-/* The total is a pill badge, not trailing prose, so it reads as metadata. */
-.gc-listbar__total {
-  display: inline-flex;
-  align-items: center;
-  padding: 0 var(--gc-space-2);
-  border-radius: var(--gc-radius-pill);
-  background: var(--gc-surface-3);
-  color: var(--gc-muted);
-  font-size: var(--gc-fs-2xs);
-  font-weight: normal;
-  font-variant-numeric: tabular-nums;
 }
 
 .gc-listbar__controls {
@@ -3403,10 +3372,6 @@ h3 {
 
 .gc-section__badge--pending {
   color: var(--gc-tone-pending);
-}
-
-.gc-section__badge--special {
-  color: var(--gc-tone-special);
 }
 
 .gc-section__badge .gc-icon {
