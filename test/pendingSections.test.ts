@@ -426,3 +426,32 @@ test('openStashDiff dispatches actions/openStashDiff request with index and path
   assert.equal(requestedKind, 'actions/openStashDiff');
   assert.deepEqual(requestedPayload, { index: 2, path: 'src/app.ts' });
 });
+
+test('pending panel renders SidebarHeader and the toolbar no longer owns branch, refresh, or graph controls', () => {
+  const src = fs.readFileSync(
+    path.join(__dirname, '..', '..', 'src', 'webview', 'PendingChanges.tsx'),
+    'utf8',
+  );
+  assert.match(src, /<SidebarHeader \/>/);
+  assert.doesNotMatch(src, /ContextBar/);
+  assert.doesNotMatch(src, /BranchSelector/);
+  assert.doesNotMatch(src, /strings\.pending\.reloadAria/);
+  assert.doesNotMatch(src, /strings\.pending\.openGraphAria/);
+  assert.match(src, /strings\.pending\.switchLanguageAria/, 'language toggle stays in the toolbar');
+  assert.match(src, /strings\.pending\.selectAll\b/, 'select all stays in the toolbar');
+});
+
+test('sidebar header keeps both icon buttons named and routes checkout through BranchSelector', () => {
+  const src = fs.readFileSync(
+    path.join(__dirname, '..', '..', 'src', 'webview', 'SidebarHeader.tsx'),
+    'utf8',
+  );
+  assert.match(src, /<BranchSelector/);
+  assert.match(src, /aria-label=\{strings\.pending\.reloadAria\}/);
+  assert.match(src, /aria-label=\{strings\.pending\.openGraphAria\}/);
+  assert.match(src, /title=\{strings\.pending\.reloadAria\}/);
+  assert.match(src, /title=\{strings\.pending\.openGraphAria\}/);
+  assert.match(src, /aria-label=\{shell\.headerAria\}/);
+  assert.doesNotMatch(src, /dangerouslySetInnerHTML|innerHTML/);
+  assert.doesNotMatch(src, /quick|help/i, 'no quick-actions or help button before P15 and P17');
+});
