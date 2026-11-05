@@ -5,6 +5,17 @@ All notable changes to the "Git Control" extension will be documented in this fi
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.2.0] - 2026-11-05
+
+### Added
+- Changes and Stashes tabs at the top of the Pending Changes list, with counts.
+- A search row in the Stashes tab that filters by the stash label or hash prefix. A filtered list keeps the original stash numbers, so Apply and Drop still target the right stash.
+
+### Changed
+- Stashes moved from the pinned footer into their own tab. Apply, drop, and file previews work as before.
+- The open tab is remembered when the sidebar is hidden and shown again.
+- Merge, rebase, and conflict banners now appear below the tabs.
+
 ## [3.1.0] - 2026-11-05
 
 ### Changed
