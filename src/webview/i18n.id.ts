@@ -93,6 +93,21 @@ const id: Catalog = {
     notPublished: 'Belum dipublikasikan',
   },
 
+  // Sidebar nav strip: tab labels and accessible names
+  nav: {
+    tablistAria: 'Bagian Git Control',
+    changes: 'Perubahan',
+    prs: 'Pull request',
+    issues: 'Issue',
+    actions: 'Actions',
+    branches: 'Branch',
+    changesAria: (count: string) => `Perubahan, ${count} berkas`,
+    prsAria: (count: string) => `Pull request, ${count} terbuka`,
+    issuesAria: (count: string) => `Issue, ${count} terbuka`,
+    actionsFailingAria: 'Actions, run terakhir gagal',
+    branchesAria: 'Branch',
+  },
+
   // Format and presentation helpers
   format: {
     unknownDate: 'Tanggal tidak diketahui',

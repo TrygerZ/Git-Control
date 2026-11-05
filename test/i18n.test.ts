@@ -243,3 +243,23 @@ test('shell header strings exist in both languages and function entries stay saf
   assert.notEqual(t('en').shell.syncLocal, t('id').shell.syncLocal);
   assert.notEqual(t('en').shell.syncAhead('2'), t('id').shell.syncAhead('2'));
 });
+
+test('nav strings exist in both languages, share keys, and carry the count into the accessible name', () => {
+  assert.deepEqual(
+    Object.keys(t('en').nav).sort(),
+    Object.keys(t('id').nav).sort(),
+    'both catalogs define the same nav keys',
+  );
+  for (const lang of ['en', 'id'] as const) {
+    const nav = t(lang).nav;
+    for (const value of Object.values(nav)) {
+      const text = typeof value === 'function' ? value('1') : value;
+      assert.ok(text.length > 0);
+    }
+    for (const name of [nav.changesAria, nav.prsAria, nav.issuesAria]) {
+      assert.match(name('7'), /7/, 'the count reaches the accessible name');
+    }
+  }
+  assert.notEqual(t('en').nav.changes, t('id').nav.changes);
+  assert.notEqual(t('en').nav.changesAria('2'), t('id').nav.changesAria('2'));
+});
