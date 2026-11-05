@@ -106,6 +106,8 @@ const en = {
     actions: 'Actions',
     branches: 'Branches',
     changesAria: (count: string) => `Changes, ${count} files`,
+    subTabsAria: 'Changes views',
+    subStashesAria: (count: string) => `Stashes, ${count} saved`,
     prsAria: (count: string) => `Pull requests, ${count} open`,
     issuesAria: (count: string) => `Issues, ${count} open`,
     actionsFailingAria: 'Actions, latest run failed',

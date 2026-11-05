@@ -102,6 +102,8 @@ const id: Catalog = {
     actions: 'Actions',
     branches: 'Branch',
     changesAria: (count: string) => `Perubahan, ${count} berkas`,
+    subTabsAria: 'Tampilan perubahan',
+    subStashesAria: (count: string) => `Stash, ${count} tersimpan`,
     prsAria: (count: string) => `Pull request, ${count} terbuka`,
     issuesAria: (count: string) => `Issue, ${count} terbuka`,
     actionsFailingAria: 'Actions, run terakhir gagal',

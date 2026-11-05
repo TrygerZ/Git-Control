@@ -263,3 +263,16 @@ test('nav strings exist in both languages, share keys, and carry the count into 
   assert.notEqual(t('en').nav.changes, t('id').nav.changes);
   assert.notEqual(t('en').nav.changesAria('2'), t('id').nav.changesAria('2'));
 });
+
+test('sub-tab strings exist in both languages, are translated, and carry the count into the accessible name', () => {
+  // The Changes sub-tab reuses `nav.changesAria`: same words, so no duplicate key.
+  for (const lang of ['en', 'id'] as const) {
+    const nav = t(lang).nav;
+    assert.equal(typeof nav.subTabsAria, 'string', `${lang} subTabsAria`);
+    assert.equal(typeof nav.subStashesAria, 'function', `${lang} subStashesAria`);
+    assert.ok(nav.subTabsAria.length > 0);
+    assert.match(nav.subStashesAria('7'), /7/, `${lang}: the count reaches the accessible name`);
+  }
+  assert.notEqual(t('en').nav.subTabsAria, t('id').nav.subTabsAria);
+  assert.notEqual(t('en').nav.subStashesAria('2'), t('id').nav.subStashesAria('2'));
+});
