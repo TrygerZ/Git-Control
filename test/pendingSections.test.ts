@@ -226,11 +226,13 @@ test('the commit form sits in a footer pinned after the list area, in both sub-t
   assert.ok(form > footer, 'the form lives inside the footer body');
   assert.ok(src.indexOf('<ToastRegion />') > footer, 'the toast stack rides with the footer');
 
-  // Banners keep their place above the list and stay ungated by a sub-tab.
+  // Banners keep their place above the list and stay ungated by a sub-tab. The window
+  // ends at the tabpanel: the toolbar between the banners and the list legitimately
+  // branches on the sub-tab, so scanning up to the form would hit it.
   assert.ok(src.indexOf('gc-pending__notifications') < panel, 'the banners are above the panel');
   assert.doesNotMatch(
     src.slice(src.indexOf('gc-pending__notifications'), panel),
-    /sub\s*===/,
+    /(?:ConflictPanel|churnTruncatedTitle|ErrorBanner)[\s\S]{0,200}(?:sub\s*===|===\s*'changes')/,
     'banners are not gated on a sub-tab',
   );
 });
