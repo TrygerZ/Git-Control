@@ -36,12 +36,11 @@ Git Control replaces flat vertical commit lists with an interactive two-dimensio
 * **Pull from Upstream**: Pull active branch from its upstream with dirty working tree guard offering commit, stash, and cancel remedies.
 * **Per-File Discard**: Discard unstaged changes for individual files with two-step destructive confirmation, blocked during active operations and conflicts.
 * **Dense SCM Layout**: Change rows, section headers, and the commit card follow the VS Code Source Control density, keeping the sidebar readable and nearly full width, with the active-row wash flush to both edges and only the row content inset.
-* **Pinned Stash Footer**: The Stash section is docked to the foot of the sidebar as its own dropdown, so it stays in reach while the change list scrolls independently above it.
+* **Changes and Stashes Tabs**: A segmented control above the list switches between the change list and the stash list, each with its count. The open tab is remembered when the sidebar is hidden and shown again.
 
 ### 4. Stash Management
 * **List, Apply, and Drop Stashes**: List all stashes with apply (keeps the entry) and drop actions; drop requires two-step destructive confirmation.
 * **Expandable Stash Entries**: Expand stash entries to view file contents with file icons, line churn counters, and click-to-diff.
-* **Dedicated Archive Icon**: Stash section header displays a dedicated archive icon in its own color tone.
 * **Commit Hash Navigation**: "Stash N from <hash>" labels; clicking the hash opens the Branch Explorer and selects that commit.
 
 ### 5. Node Context Menu and Branch Operations
