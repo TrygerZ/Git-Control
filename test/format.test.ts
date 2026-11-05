@@ -17,6 +17,7 @@ import {
   formatStashLabel,
   gitCommandOf,
   githubConnectionLabel,
+  headerModel,
   linkageChangedRepo,
   operationLabel,
   presentError,
@@ -40,6 +41,7 @@ import type {
   OperationState,
   PullRequestInfo,
   Remedy,
+  RepoStatus,
 } from '../src/messages';
 
 const NOW = Date.parse('2026-06-15T12:00:00.000Z');
@@ -858,5 +860,80 @@ test('linkageChangedRepo returns true when owner or repo differs', () => {
   assert.equal(
     linkageChangedRepo({ owner: 'alice', repo: null }, { owner: 'alice', repo: 'project' }),
     true,
+  );
+});
+
+function headerStatus(patch: Partial<RepoStatus> = {}): RepoStatus {
+  return {
+    repoRoot: 'D:/work/git-control',
+    branch: 'main',
+    head: HASH,
+    detached: false,
+    upstream: 'origin/main',
+    ahead: 0,
+    behind: 0,
+    incoming: 0,
+    outgoing: 0,
+    dirty: false,
+    staged: false,
+    operation: 'idle',
+    changes: [],
+    conflicts: [],
+    churnTruncated: false,
+    statusToken: 'token',
+    lastFetchedAt: null,
+    lastFetchAt: null,
+    ...patch,
+  };
+}
+
+test('headerModel: null status gives null', () => {
+  assert.equal(headerModel(null, 'en'), null);
+});
+
+test('headerModel: sync badge follows upstream, ahead, and behind', () => {
+  const badge = (patch: Partial<RepoStatus>) => headerModel(headerStatus(patch), 'en')?.syncBadge;
+  assert.equal(badge({ upstream: null }), 'local');
+  assert.equal(badge({ upstream: null, ahead: 3 }), 'local');
+  assert.equal(badge({}), 'synced');
+  assert.equal(badge({ ahead: 2 }), 'ahead');
+  assert.equal(badge({ behind: 2 }), 'behind');
+  assert.equal(badge({ ahead: 1, behind: 1 }), 'diverged');
+});
+
+test('headerModel: title, hash, and branch label', () => {
+  const model = headerModel(headerStatus(), 'en');
+  assert.equal(model?.title, 'git-control');
+  assert.equal(model?.branchLabel, 'main');
+  assert.equal(model?.hash, 'abc1234');
+  assert.equal(model?.detached, false);
+
+  const detached = headerModel(headerStatus({ branch: null, detached: true }), 'en');
+  assert.equal(detached?.branchLabel, 'detached abc1234');
+  assert.equal(detached?.detached, true);
+
+  const unborn = headerModel(headerStatus({ branch: null, head: null }), 'en');
+  assert.equal(unborn?.branchLabel, 'no branch');
+  assert.equal(unborn?.hash, null);
+});
+
+test('headerModel: control characters in repo, branch, and upstream are sanitized', () => {
+  const model = headerModel(
+    headerStatus({ repoRoot: 'D:/work/re\u202Epo', branch: 'fe\u0007at', upstream: 'origin/fe\u202Eat' }),
+    'en',
+  );
+  for (const text of [model?.title, model?.branchLabel, model?.upstream, model?.upstreamLine]) {
+    assert.ok(text !== undefined && text !== null);
+    assert.doesNotMatch(text, /[\u0000-\u0008\u202a-\u202e]/);
+  }
+  assert.ok(model?.title.includes(SANITIZED_MARKER));
+});
+
+test('headerModel: upstream sentence follows the language', () => {
+  const status = headerStatus({ ahead: 2 });
+  assert.notEqual(headerModel(status, 'en')?.upstreamLine, headerModel(status, 'id')?.upstreamLine);
+  assert.notEqual(
+    headerModel(headerStatus({ upstream: null }), 'en')?.upstreamLine,
+    headerModel(headerStatus({ upstream: null }), 'id')?.upstreamLine,
   );
 });

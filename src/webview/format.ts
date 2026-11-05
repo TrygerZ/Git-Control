@@ -17,6 +17,7 @@ import type {
   OperationState,
   PullRequestInfo,
   Remedy,
+  RepoStatus,
 } from '../messages';
 import type { IconName } from './icons';
 import { t, type Lang } from './i18n';
@@ -423,6 +424,58 @@ export function syncSummary(
   if (status.behind > 0) parts.push(strings.syncSummaryBehind(formatCount(status.behind, lang)));
   if (parts.length === 0) return strings.syncSummaryInSync(upstream);
   return `${parts.join(', ')} (${upstream}).`;
+}
+
+export type SyncBadge = 'local' | 'synced' | 'ahead' | 'behind' | 'diverged';
+
+export interface HeaderModel {
+  title: string;
+  branchLabel: string;
+  detached: boolean;
+  syncBadge: SyncBadge;
+  ahead: number;
+  behind: number;
+  upstream: string | null;
+  /** Full sentence from {@link syncSummary}: tooltip and screen reader text. */
+  upstreamLine: string;
+  hash: string | null;
+}
+
+/**
+ * View model for the sidebar header. Every git-supplied string passes through
+ * `sanitizeGitText` (directly or via `repoName`/`syncSummary`) before it can be rendered.
+ * `local` means no upstream; `diverged` means commits on both sides.
+ */
+export function headerModel(status: RepoStatus | null, lang: Lang): HeaderModel | null {
+  if (status === null) return null;
+  const strings = t(lang).ui;
+  const branchLabel =
+    status.branch === null
+      ? status.head === null
+        ? strings.noBranch
+        : strings.detachedAt(shortHash(status.head))
+      : sanitizeGitText(status.branch);
+  const syncBadge: SyncBadge =
+    status.upstream === null
+      ? 'local'
+      : status.ahead > 0 && status.behind > 0
+        ? 'diverged'
+        : status.ahead > 0
+          ? 'ahead'
+          : status.behind > 0
+            ? 'behind'
+            : 'synced';
+  return {
+    title: repoName(status.repoRoot),
+    branchLabel,
+    detached: status.detached,
+    syncBadge,
+    ahead: status.ahead,
+    behind: status.behind,
+    upstream: status.upstream === null ? null : sanitizeGitText(status.upstream),
+    upstreamLine: syncSummary(status, lang),
+    hash: status.head === null ? null : shortHash(status.head),
+  };
 }
 
 // ------------------------------------------------------- accessible names

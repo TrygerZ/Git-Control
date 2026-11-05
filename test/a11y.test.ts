@@ -1250,3 +1250,20 @@ test('ConflictPanel and OperationBanner: continue action buttons unify on primar
     assert.equal(match[1], 'gc-button', 'abort button must use neutral tier');
   }
 });
+
+test('sidebar header buttons reuse the hit-area token and chip text carries the sync state', () => {
+  const css = stylesheet();
+  assert.match(css, /\.gc-sidebar-header\b/, 'header rules exist');
+  assert.match(
+    css,
+    /\.gc-icon-button[^{]*\{[^}]*min-width:\s*var\(--gc-hit\)/,
+    'icon buttons size from --gc-hit',
+  );
+  const src = fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'webview', 'SidebarHeader.tsx'), 'utf8');
+  assert.match(src, /<span>\{syncLabel\[model\.syncBadge\]\}<\/span>/, 'sync chip shows text, not only an icon');
+  assert.match(src, /gc-visually-hidden/, 'full sentence stays available to screen readers');
+  for (const lang of ['en', 'id'] as const) {
+    const strings = t(lang);
+    assert.ok(strings.pending.reloadAria.length > 0 && strings.pending.openGraphAria.length > 0);
+  }
+});

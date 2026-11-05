@@ -80,6 +80,19 @@ const id: Catalog = {
     crashReloadTitle: 'Gambar ulang antarmuka; tidak menjalankan git.',
   },
 
+  // Sidebar shell: header rows and sync chip
+  shell: {
+    headerAria: 'Header repositori',
+    titleRowAria: 'Aksi repositori',
+    syncLocal: 'Lokal',
+    syncLocalTitle: 'Branch ini hanya ada di komputer ini',
+    syncSynced: 'Sinkron',
+    syncAhead: (count: string) => `${count} untuk di-push`,
+    syncBehind: (count: string) => `${count} untuk di-pull`,
+    syncDiverged: 'Bercabang',
+    notPublished: 'Belum dipublikasikan',
+  },
+
   // Format and presentation helpers
   format: {
     unknownDate: 'Tanggal tidak diketahui',

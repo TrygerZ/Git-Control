@@ -231,3 +231,15 @@ test('all webview ts and tsx call sites of format.ts helpers with lang parameter
 });
 
 
+
+test('shell header strings exist in both languages and function entries stay safe', () => {
+  for (const lang of ['en', 'id'] as const) {
+    const shell = t(lang).shell;
+    for (const value of Object.values(shell)) {
+      const text = typeof value === 'function' ? value('1') : value;
+      assert.ok(text.length > 0);
+    }
+  }
+  assert.notEqual(t('en').shell.syncLocal, t('id').shell.syncLocal);
+  assert.notEqual(t('en').shell.syncAhead('2'), t('id').shell.syncAhead('2'));
+});
