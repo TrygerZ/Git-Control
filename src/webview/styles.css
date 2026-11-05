@@ -1695,6 +1695,93 @@ h3 {
   }
 }
 
+/* ------------------------------------------------------------------ sub-tabs */
+
+/*
+ * Segmented control from frame 20 (Dark 157:2, node SubTabs 229:602). The frame
+ * track is 30 px high: a 24 px segment plus 2 x 2 px track padding and 2 x 1 px
+ * border. Segments sit 2 px apart, so both the padding and the gap take
+ * --gc-space-1. The segment height derives from --gc-hit (26 px) less the 2 px
+ * border, which keeps the hit target on the same token as every other control
+ * instead of hard-coding 24 px.
+ *
+ * Placement: .gc-pending pads 4 px, so an 8 px side margin lands the track 12 px
+ * from the panel edge. The nav strip and this track are siblings in a 4 px flex
+ * gap, so a 4 px top margin makes 8 px below the nav and leaves the 4 px gap as
+ * the space above the next block.
+ *
+ * No transition: switching segments is instant, so there is nothing to gate on
+ * reduced motion.
+ */
+.gc-subtabs {
+  display: flex;
+  flex: 0 0 auto;
+  box-sizing: border-box;
+  gap: var(--gc-space-1);
+  padding: var(--gc-space-1);
+  margin: var(--gc-space-2) var(--gc-space-3) 0;
+  border: 1px solid var(--gc-border-subtle);
+  border-radius: 7px;
+  background: var(--gc-bg-surface);
+  overflow: hidden;
+}
+
+/*
+ * No font-size here: the type scale is em based, so a size on the tab would
+ * compound into the count, the same trap the nav badge fell into. The label and
+ * the count carry their own steps.
+ */
+.gc-subtabs__tab {
+  appearance: none;
+  background: transparent;
+  border: 0;
+  border-radius: 5px;
+  cursor: pointer;
+  font: inherit;
+  flex: 1 1 0;
+  min-width: 0;
+  min-height: calc(var(--gc-hit) - 2px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: calc(var(--gc-space-2) + var(--gc-space-1));
+  padding: 0 calc(var(--gc-space-3) + var(--gc-space-1));
+  color: var(--gc-text-secondary);
+  line-height: normal;
+}
+
+.gc-subtabs__tab--active {
+  background: var(--gc-bg-raised);
+  color: var(--gc-text-primary);
+}
+
+/* The track clips its overflow, so the ring has to sit inside the segment. */
+.gc-subtabs__tab:focus-visible {
+  outline-offset: -2px;
+}
+
+/* Not in the frame: the pointer needs the same emphasis the nav gives it. */
+.gc-subtabs__tab:hover:not(.gc-subtabs__tab--active) {
+  color: var(--gc-text-primary);
+}
+
+.gc-subtabs__label {
+  font-size: var(--gc-fs-xs);
+  font-weight: 500;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.gc-subtabs__count {
+  font-size: var(--gc-fs-2xs);
+  font-weight: 400;
+  color: var(--gc-text-muted);
+  font-variant-numeric: tabular-nums;
+  flex: 0 0 auto;
+}
+
 /* ------------------------------------------------------------------- avatar */
 
 /*
@@ -5014,6 +5101,16 @@ h3 {
 
   .gc-nav__dot {
     background: Highlight;
+  }
+
+  /* The active segment's raised fill is dropped here, so the system highlight carries it. */
+  .gc-subtabs__tab--active {
+    background: Highlight;
+    color: HighlightText;
+  }
+
+  .gc-subtabs__tab--active .gc-subtabs__count {
+    color: HighlightText;
   }
 }
 

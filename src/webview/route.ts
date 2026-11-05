@@ -45,6 +45,11 @@ export function sameRoute(a: Route, b: Route): boolean {
   return ('sub' in a ? a.sub : undefined) === ('sub' in b ? b.sub : undefined);
 }
 
+/** Which Changes sub-view a route shows; any other view falls back to `changes`. */
+export function changesSubOf(route: Route): ChangesSub {
+  return route.id === 'changes' ? route.sub : 'changes';
+}
+
 /** Startup route: a one-shot from the host wins, then webview state, then the default. */
 export function resolveInitialRoute(input: { pending: Route | null; local: unknown }): Route {
   return input.pending ?? parseRoute(input.local) ?? DEFAULT_ROUTE;

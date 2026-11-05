@@ -6,7 +6,7 @@
  * Ordering lives here rather than in the render tree so the strip and the
  * keyboard model agree on one source of truth.
  */
-import type { Route, RouteId } from '../messages';
+import type { ChangesSub, Route, RouteId } from '../messages';
 import type { Catalog } from './i18n';
 import type { IconName } from './icons';
 import { navBadge, type NavCounts } from './navCounts';
@@ -94,6 +94,49 @@ export function navTabs(
       ariaLabel: dot ? strings.nav.actionsFailingAria : dest.ariaName(strings, count),
     };
   });
+}
+
+export interface ChangesSubTabsInput {
+  changes: number;
+  stashes: number;
+}
+
+/** DOM id of the one tabpanel both Changes sub-tabs control. */
+export const CHANGES_PANEL_ID = 'gc-changes-panel';
+
+/** `idPrefix` the sub-tab `Tablist` is mounted with. */
+export const CHANGES_TABS_PREFIX = 'gc-subtabs';
+
+/** DOM id `Tablist` gives the tab for `sub` (`<prefix>-tab-<id>`). Mirrors that format, do not diverge. */
+export function changesTabId(sub: ChangesSub): string {
+  return `${CHANGES_TABS_PREFIX}-tab-${sub}`;
+}
+
+/**
+ * The two Changes sub-tabs. The count is formatted here so the segment can render
+ * a plain string; zero stays visible so the row does not shift when a stash
+ * appears. Text only: frames 20 and 67 draw no icon in the segmented control.
+ */
+export function changesSubTabs(strings: Catalog, input: ChangesSubTabsInput): TabDef[] {
+  const count = (n: number): string => n.toLocaleString(strings.format.locale);
+  const changes = count(input.changes);
+  const stashes = count(input.stashes);
+  return [
+    {
+      id: 'changes',
+      label: strings.nav.changes,
+      count: changes,
+      ariaLabel: strings.nav.changesAria(changes),
+      panelId: CHANGES_PANEL_ID,
+    },
+    {
+      id: 'stashes',
+      label: strings.pending.stashesHeader,
+      count: stashes,
+      ariaLabel: strings.nav.subStashesAria(stashes),
+      panelId: CHANGES_PANEL_ID,
+    },
+  ];
 }
 
 /** Reuse `parseRoute` so the default sub-tab table stays in one place. */

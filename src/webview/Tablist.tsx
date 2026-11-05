@@ -17,6 +17,8 @@ export interface TabDef {
   icon?: IconName;
   badge?: string | null;
   dot?: boolean;
+  /** Pre-formatted count drawn after the label, for tabs without an icon (sub-tabs). Decoration: the name carries it. */
+  count?: string | null;
   /** Id of the panel this tab controls. Omitted until a panel exists, so no IDREF dangles. */
   panelId?: string;
 }
@@ -69,6 +71,9 @@ export function Tablist(props: {
               </span>
             )}
             <span className={`${classPrefix}__label`}>{tab.label}</span>
+            {typeof tab.count === 'string' && tab.count.length > 0 && (
+              <span className={`${classPrefix}__count`} aria-hidden="true">{tab.count}</span>
+            )}
           </button>
         );
       })}
