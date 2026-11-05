@@ -84,6 +84,19 @@ const en = {
     crashReloadTitle: 'Redraw the interface. Does not run git.',
   },
 
+  // Sidebar shell: header rows and sync chip
+  shell: {
+    headerAria: 'Repository header',
+    titleRowAria: 'Repository actions',
+    syncLocal: 'Local',
+    syncLocalTitle: 'This branch exists only on this computer',
+    syncSynced: 'Synced',
+    syncAhead: (count: string) => `${count} to push`,
+    syncBehind: (count: string) => `${count} to pull`,
+    syncDiverged: 'Diverged',
+    notPublished: 'Not published',
+  },
+
   // Format and presentation helpers
   format: {
     unknownDate: 'Unknown date',
