@@ -1285,21 +1285,6 @@ h3 {
   white-space: nowrap;
 }
 
-/*
- * Inside the column bar this group is itself a column: the branch selector and
- * the selection group each take a full-width row, which is what aligns the
- * dropdown edge with the buttons beneath it. Children stretch to the row.
- */
-.gc-toolbar__secondary-group {
-  display: flex;
-  flex-direction: column;
-  align-items: stretch;
-  gap: var(--gc-space-2);
-  width: 100%;
-  min-width: 0;
-  flex-wrap: nowrap;
-}
-
 .gc-toolbar__end {
   display: flex;
   align-items: center;
@@ -3125,7 +3110,7 @@ h3 {
  */
 .gc-pending__sections {
   flex: 1 1 auto;
-  min-height: 120px;
+  min-height: 64px;
   overflow-y: auto;
   overflow-x: hidden;
   scrollbar-gutter: stable;
@@ -3149,6 +3134,44 @@ h3 {
   color: var(--gc-muted);
   font-size: var(--gc-fs-xs);
   font-variant-numeric: tabular-nums;
+}
+
+/*
+ * Pinned commit form footer: a full-bleed strip after the scrolling list, not a
+ * card. The negative margin cancels the panel padding and gap, so the footer
+ * spans the full panel width and sits flush with the bottom edge. It never
+ * grows (the list scrolls instead) but it can shrink: max-height caps it so a
+ * short panel scrolls inside the footer rather than clipping the buttons. The
+ * separation is a border-top only, which survives forced colours where a
+ * shadow does not.
+ */
+.gc-pending__footer {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  flex: 0 0 auto;
+  max-height: 50%;
+  margin: calc(-1 * var(--gc-space-2));
+  border-top: 1px solid var(--gc-border);
+  background: var(--gc-surface-1);
+}
+
+/* min-height 0 lets the body shrink below its content, so the overflow-y cap works. */
+.gc-pending__footer-body {
+  min-height: 0;
+  padding: var(--gc-space-4);
+  overflow-y: auto;
+}
+
+/*
+ * A fixed toast would sit on top of Commit, Push, and Retry push. Anchoring it
+ * to the footer (which is position: relative) keeps it above the buttons and
+ * outside the scroller that could clip it.
+ */
+.gc-pending__footer .gc-toasts {
+  position: absolute;
+  right: var(--gc-space-4);
+  bottom: calc(100% + var(--gc-space-2));
 }
 
 /*
@@ -3224,6 +3247,18 @@ h3 {
   margin: 0;
   font-size: var(--gc-fs-xs);
   color: var(--gc-muted);
+}
+
+/*
+ * Select all, clear, and the count live in the list bar, not the toolbar: they
+ * act on file paths only, so they appear only in the Changes sub-tab. Wrapping
+ * keeps the count reachable at the panel's narrow 300 px width.
+ */
+.gc-listbar__selection {
+  display: flex;
+  align-items: center;
+  gap: var(--gc-space-2);
+  flex-wrap: wrap;
 }
 
 /*
@@ -3838,28 +3873,15 @@ h3 {
 /* ---------------------------------------------------------------- commit form */
 
 /*
- * The commit card: the one primary action surface on the Pending Changes panel,
- * so it is drawn as an elevated card rather than a bare stack of controls. The
- * elevation ladder (surface 2 on surface 1, large radius, hairline border, the
- * small shadow rung) is what makes Commit read as the destination of the panel.
- * No bottom separator: the toolbar below now carries its own top padding.
- */
-/*
- * Bottom padding is one step tighter than the top/side var(--gc-space-3): the
- * always-reserved gc-commit__status row contributes its own min-height below
- * the actions, so a full bottom padding on top of that reservation reads
- * visibly larger than the top gap. The reduced bottom term restores balance
- * while the reserved status row keeps its pinned px-floor min-height.
+ * The commit form is the pinned footer itself: a plain stack of controls, no
+ * card. The `.gc-pending__footer` wrapper supplies the fill and the top border
+ * (a border survives forced colours, a shadow does not), so the form carries no
+ * chrome of its own and Commit still reads as the destination of the panel.
  */
 .gc-commit {
   display: flex;
   flex-direction: column;
   gap: var(--gc-space-2);
-  padding: var(--gc-space-3) var(--gc-space-3) var(--gc-space-2);
-  border: 1px solid var(--gc-border);
-  border-radius: var(--gc-radius-lg);
-  background: var(--gc-surface-2);
-  box-shadow: var(--gc-shadow-sm);
   flex: 0 0 auto;
 }
 

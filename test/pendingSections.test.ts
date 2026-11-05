@@ -178,8 +178,8 @@ test('the list area is one tabpanel labelled by the active sub-tab, and the two 
   assert.match(src, /===\s*'stashes'/, 'the panel shows the stash list or the change list');
   // Frame 67 draws a search row above the stashes, and the owner chose to make it a real stash
   // filter (see the filter test below). Select all and Clear still act on file paths only, so
-  // they stay Changes only.
-  assert.match(src, /===\s*'changes'\s*&&\s*\(\s*<div className="gc-toolbar__secondary-group">/, 'selection helpers are Changes only');
+  // they stay in the Changes list bar and disappear with it.
+  assert.match(src, /gc-listbar__selection/, 'selection helpers ride in the list bar, which only Changes renders');
   assert.equal(src.match(/className="gc-listbar"/g)?.length, 1);
   assert.equal(src.match(/strings\.pending\.switchLanguageAria/g)?.length, 1, 'the language toggle stays reachable in both sub-tabs');
 });
@@ -210,22 +210,97 @@ test('the Stashes sub-tab filters its own list through the pure helper, with its
   assert.doesNotMatch(src, /saveState\(\{[^}]*(?:stashFilter|filter)/, 'and nothing is persisted');
 });
 
-test('the commit form and the notification block are mounted once, outside the panel, in both sub-tabs', () => {
+test('the commit form sits in a footer pinned after the list area, in both sub-tabs', () => {
   const src = fs.readFileSync(
     path.join(__dirname, '..', '..', 'src', 'webview', 'PendingChanges.tsx'),
     'utf8',
   );
   assert.equal(src.match(/<CommitForm \/>/g)?.length, 1);
   assert.doesNotMatch(src, /sub\s*===\s*'(?:changes|stashes)'\s*(?:&&|\?)\s*\(?\s*<CommitForm/, 'a typed message must survive a tab switch');
+
   const panel = src.search(/role="tabpanel"/);
-  assert.ok(panel > 0);
-  assert.ok(src.indexOf('<CommitForm />') < panel, 'the form stays above the panel, as it is today');
+  const footer = src.indexOf('gc-pending__footer-body');
+  const form = src.indexOf('<CommitForm />');
+  assert.ok(panel > 0, 'the list area exists');
+  assert.ok(footer > panel, 'the footer follows the list area, it does not precede it');
+  assert.ok(form > footer, 'the form lives inside the footer body');
+  assert.ok(src.indexOf('<ToastRegion />') > footer, 'the toast stack rides with the footer');
+
+  // Banners keep their place above the list and stay ungated by a sub-tab.
   assert.ok(src.indexOf('gc-pending__notifications') < panel, 'the banners are above the panel');
   assert.doesNotMatch(
-    src.slice(src.indexOf('gc-pending__notifications'), src.indexOf('<CommitForm />')),
+    src.slice(src.indexOf('gc-pending__notifications'), panel),
     /sub\s*===/,
     'banners are not gated on a sub-tab',
   );
+});
+
+test('the footer is a full-bleed border-topped strip that scrolls internally, and the card chrome is gone', () => {
+  const css = fs
+    .readFileSync(path.join(__dirname, '..', '..', 'src', 'webview', 'styles.css'), 'utf8')
+    .replace(/\/\*[\s\S]*?\*\//g, '');
+  const rule = (selector: string): string =>
+    css.match(new RegExp(`\\${selector}\\s*\\{([^}]*)\\}`))?.[1] ?? '';
+
+  const footer = rule('.gc-pending__footer');
+  assert.match(footer, /flex:\s*0 0 auto/, 'the footer never grows, so the list scrolls instead');
+  assert.match(footer, /border-top:\s*1px solid var\(--gc-border\)/, 'separation is a border, which survives forced colours');
+  assert.match(footer, /max-height:\s*50%/, 'a short panel scrolls the footer rather than clipping the buttons');
+  assert.match(footer, /margin:\s*calc\(-1 \* var\(--gc-space-2\)\)/, 'full bleed over the panel padding and gap');
+  assert.match(footer, /position:\s*relative/, 'the toast stack anchors to it');
+
+  const body = rule('.gc-pending__footer-body');
+  assert.match(body, /overflow-y:\s*auto/, 'the body scrolls inside the cap');
+  assert.match(body, /padding:\s*var\(--gc-space-4\)/, 'frame 20: 12 px inset');
+
+  // A fixed toast would sit on top of Commit, Push, and Retry push. Anchoring it to the
+  // footer keeps it above the buttons and outside the scroller that could clip it.
+  assert.match(
+    css,
+    /\.gc-pending__footer\s+\.gc-toasts\s*\{[^}]*position:\s*absolute/,
+    'the toast stack is positioned against the footer',
+  );
+
+  // The form is the footer now. A card inside a footer reads as two surfaces.
+  const commit = rule('.gc-commit');
+  assert.doesNotMatch(commit, /box-shadow/, 'no elevation inside the footer');
+  assert.doesNotMatch(commit, /border-radius/, 'no card corners');
+  assert.doesNotMatch(commit, /background:/, 'the footer supplies the fill');
+  assert.doesNotMatch(commit, /border:/, 'no card edge');
+
+  // The list keeps a floor, so a short panel cannot push the footer past the clipped edge.
+  const sections = rule('.gc-pending__sections');
+  assert.match(sections, /min-height:\s*64px/, 'the old 120 px floor outgrew a short panel');
+});
+
+test('select all, clear, and the count live in the list bar, not the toolbar', () => {
+  const src = fs.readFileSync(
+    path.join(__dirname, '..', '..', 'src', 'webview', 'PendingChanges.tsx'),
+    'utf8',
+  );
+  const bar = src.indexOf('className="gc-listbar__selection"');
+  const changesBranch = src.indexOf('strings.pending.searchPlaceholder');
+  const scroller = src.indexOf('className="gc-pending__sections"', bar);
+  const selectAll = src.indexOf('onClick={selectAll}');
+  const clear = src.indexOf('onClick={clear}');
+  assert.ok(bar > changesBranch, 'the selection row sits in the Changes branch only, so Stashes has none');
+  assert.ok(selectAll > bar, 'select all moved into the selection row');
+  assert.ok(clear > bar, 'clear moved into the selection row');
+  assert.ok(scroller > clear, 'and both stay outside the scroller, so they never scroll away');
+
+  // The toolbar keeps the language toggle only; the old column group is gone.
+  const toolbar = src.slice(src.indexOf('gc-pending__bar'), bar);
+  assert.doesNotMatch(toolbar, /gc-selection-group/);
+  assert.match(toolbar, /switchLanguageAria/);
+  assert.doesNotMatch(src, /gc-toolbar__secondary-group/, 'no dead wrapper');
+
+  const css = fs
+    .readFileSync(path.join(__dirname, '..', '..', 'src', 'webview', 'styles.css'), 'utf8')
+    .replace(/\/\*[\s\S]*?\*\//g, '');
+  assert.doesNotMatch(css, /gc-toolbar__secondary-group/, 'the wrapper CSS goes with the wrapper');
+  const row = css.match(/\.gc-listbar__selection\s*\{([^}]*)\}/)?.[1] ?? '';
+  assert.match(row, /display:\s*flex/);
+  assert.match(row, /flex-wrap:\s*wrap/, 'at 300 px the count drops below the pair');
 });
 
 test('the segmented control no longer repeats the list heading, and its i18n key is gone', () => {
@@ -549,7 +624,7 @@ test('pending panel renders SidebarHeader and the toolbar no longer owns branch,
   assert.doesNotMatch(src, /strings\.pending\.reloadAria/);
   assert.doesNotMatch(src, /strings\.pending\.openGraphAria/);
   assert.match(src, /strings\.pending\.switchLanguageAria/, 'language toggle stays in the toolbar');
-  assert.match(src, /strings\.pending\.selectAll\b/, 'select all stays in the toolbar');
+  assert.match(src, /strings\.pending\.selectAll\b/, 'select all stays reachable');
 });
 
 test('sidebar header keeps both icon buttons named and routes checkout through BranchSelector', () => {
