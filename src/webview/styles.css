@@ -5068,8 +5068,15 @@ h3 {
     background: Highlight;
   }
 
-  /* The active segment's raised fill is dropped here, so the system highlight carries it. */
+  /*
+   * The active segment's raised fill is dropped here, so the system highlight carries it.
+   * `forced-color-adjust: none` is required, not decoration: Chromium paints a Canvas
+   * backplate behind text in forced colours, so HighlightText on a Highlight fill rendered
+   * as white blocks while the computed colours looked correct. Opting out keeps the system
+   * colours and removes the plate. Checked in the real bundle with forced colours emulated.
+   */
   .gc-subtabs__tab--active {
+    forced-color-adjust: none;
     background: Highlight;
     color: HighlightText;
   }

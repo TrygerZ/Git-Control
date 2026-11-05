@@ -1364,6 +1364,10 @@ test('sub-tabs survive forced colours: the active segment is drawn with system c
   const body = [...raw.matchAll(/@media \(forced-colors: active\)\s*\{([\s\S]*?)\n\}/g)].map((m) => m[1] ?? '').join('\n');
   assert.match(body, /\.gc-subtabs__tab--active\s*\{[^}]*background:\s*Highlight/, 'active segment fill');
   assert.match(body, /\.gc-subtabs__tab--active\s*\{[^}]*color:\s*HighlightText/, 'and its text');
+  // Computed colours looked right and the pixels did not: Chromium paints a Canvas backplate behind
+  // text in forced colours, so HighlightText sat on a white plate and rendered as white blocks.
+  // Opting the segment out keeps the system colours and drops the plate (seen in the real bundle).
+  assert.match(body, /\.gc-subtabs__tab--active\s*\{[^}]*forced-color-adjust:\s*none/, 'no text backplate over the fill');
   assert.match(body, /\.gc-subtabs__tab--active \.gc-subtabs__count\s*\{[^}]*color:\s*HighlightText/, 'the count follows');
 });
 
