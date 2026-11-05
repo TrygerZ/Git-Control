@@ -1282,3 +1282,51 @@ test('Tablist exposes the WAI-ARIA tabs pattern with a roving tabindex and a pur
   assert.doesNotMatch(src, /dangerouslySetInnerHTML|innerHTML/, 'no raw HTML');
   assert.doesNotMatch(src, /#[0-9a-fA-F]{3,8}\b|rgba?\(/, 'no colour literal');
 });
+
+function ruleBody(css: string, selector: string): string {
+  const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const matches = [...css.matchAll(new RegExp(`(?:^|\\n)${escaped}\\s*\\{([^}]*)\\}`, 'g'))];
+  return matches.map((m) => m[1] ?? '').join('\n');
+}
+
+test('nav strip rules size every tab from the hit-area token and draw the active tab without colour alone', () => {
+  const css = stylesheet();
+  const tab = ruleBody(css, '.gc-nav__tab');
+  assert.ok(tab.length > 0, '.gc-nav__tab rule exists');
+  assert.match(tab, /min-height:\s*var\(--gc-hit\)/, 'tab height from --gc-hit');
+  assert.match(tab, /min-width:\s*var\(--gc-hit\)/, 'tab width from --gc-hit');
+  assert.match(tab, /flex:\s*1 1 0/, 'tabs share the strip equally');
+  const active = ruleBody(css, '.gc-nav__tab--active');
+  assert.match(active, /border-bottom-color:\s*var\(--gc-accent-primary\)/, 'active tab has an underline');
+  assert.match(active, /color:\s*var\(--gc-text-primary\)/, 'active label is the primary text colour');
+  assert.doesNotMatch(css, /\.gc-nav[^{]*\{[^}]*transition/, 'no animation, so nothing to gate on reduced motion');
+});
+
+test('nav strip keeps the focus ring inside its bounds and shows the badge ring and failing dot from tokens', () => {
+  const css = stylesheet();
+  assert.match(ruleBody(css, '.gc-nav__tab:focus-visible'), /outline-offset:\s*-2px/, 'ring is not clipped by the strip');
+  const badge = ruleBody(css, '.gc-nav__badge');
+  assert.match(badge, /var\(--gc-bg-sidebar\)/, 'the badge ring takes the sidebar colour');
+  assert.match(badge, /font-size:\s*var\(--gc-fs-2xs\)/, 'badge text is on the type scale');
+  assert.match(ruleBody(css, '.gc-nav__dot'), /background:\s*var\(--gc-state-danger\)/, 'failing dot is the danger tone');
+  assert.match(ruleBody(css, '.gc-nav__tab--active .gc-nav__badge'), /var\(--gc-accent-subtle\)/, 'active badge uses the subtle accent');
+});
+
+test('nav strip hides labels at 360 px and below but leaves the icon, badge, and names alone', () => {
+  const raw = fs.readFileSync(CSS, 'utf8');
+  const media = raw.match(/@media \(max-width: 360px\)\s*\{([\s\S]*?)\n\}/);
+  assert.ok(media, 'a 360 px media block exists');
+  const body = media[1] ?? '';
+  assert.match(body, /\.gc-nav__label\s*\{[^}]*display:\s*none/, 'the label is hidden in narrow mode');
+  assert.doesNotMatch(body, /\.gc-nav__(icon|badge|dot)\s*\{[^}]*display:\s*none/, 'icon, badge, and dot stay');
+});
+
+test('nav strip survives forced colours with a real underline and a bordered badge', () => {
+  const raw = fs.readFileSync(CSS, 'utf8');
+  const bodies = [...raw.matchAll(/@media \(forced-colors: active\)\s*\{([\s\S]*?)\n\}/g)].map((m) => m[1] ?? '');
+  const body = bodies.join('\n');
+  assert.match(body, /\.gc-nav__tab\s*\{[^}]*border-bottom-color:\s*Canvas/, 'a transparent border is drawn in forced colours, so resting tabs must hide it');
+  assert.match(body, /\.gc-nav__tab--active\s*\{[^}]*border-bottom-color:\s*Highlight/, 'active underline uses a system colour');
+  assert.match(body, /\.gc-nav__badge[^{]*\{[^}]*border[^;]*ButtonBorder/, 'the badge keeps an edge');
+  assert.match(body, /\.gc-nav__dot[^{]*\{[^}]*(background:\s*Highlight|border[^;]*ButtonBorder)/, 'the dot stays visible');
+});
