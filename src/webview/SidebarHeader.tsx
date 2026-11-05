@@ -71,7 +71,7 @@ export function SidebarHeader(): JSX.Element | null {
     >
       <div className="gc-sidebar-header__row">
         <span className="gc-sidebar-header__title" title={sanitizeGitText(status.repoRoot)}>
-          {model.title}
+          {sanitizeGitText(model.title)}
         </span>
         <div className="gc-sidebar-header__actions" role="group" aria-label={shell.titleRowAria}>
           <button
