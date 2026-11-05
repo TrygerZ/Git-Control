@@ -1480,17 +1480,18 @@ h3 {
   color: var(--gc-text-secondary);
 }
 
-.gc-sidebar-header__sync--ahead {
+/* Scoped under the header so they outrank `.gc-chip`, which is declared further down. */
+.gc-sidebar-header .gc-sidebar-header__sync--ahead {
   border-color: var(--gc-status-added);
   color: var(--gc-text-primary);
 }
 
-.gc-sidebar-header__sync--behind {
+.gc-sidebar-header .gc-sidebar-header__sync--behind {
   border-color: var(--gc-status-renamed);
   color: var(--gc-text-primary);
 }
 
-.gc-sidebar-header__sync--diverged,
+.gc-sidebar-header .gc-sidebar-header__sync--diverged,
 .gc-sidebar-header--detached .gc-sidebar-header__sync {
   border-color: var(--gc-state-warning);
   color: var(--gc-text-primary);
