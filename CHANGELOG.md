@@ -5,6 +5,12 @@ All notable changes to the "Git Control" extension will be documented in this fi
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.1.0] - 2026-11-05
+
+### Changed
+- The Pending Changes header now has three rows: the repository name with refresh and open-graph buttons, the branch selector with a sync chip, and the upstream name with the short HEAD hash. Branch switching moved from the action toolbar into this header.
+- Added the navigation strip component and its keyboard model for the sidebar. It stays hidden until a second section exists, so it is not visible yet.
+
 ## [3.0.3] - 2026-11-04
 
 ### Changed
