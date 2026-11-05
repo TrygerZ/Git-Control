@@ -1307,7 +1307,13 @@ test('nav strip keeps the focus ring inside its bounds and shows the badge ring 
   assert.match(ruleBody(css, '.gc-nav__tab:focus-visible'), /outline-offset:\s*-2px/, 'ring is not clipped by the strip');
   const badge = ruleBody(css, '.gc-nav__badge');
   assert.match(badge, /var\(--gc-bg-sidebar\)/, 'the badge ring takes the sidebar colour');
-  assert.match(badge, /font-size:\s*var\(--gc-fs-2xs\)/, 'badge text is on the type scale');
+  // The scale is em based and the badge sits inside a tab that already uses --gc-fs-2xs, so
+  // reusing it compounds to about 7.9 px (frame: 9.5 px). --gc-fs-sm of the tab size is 9.3 px.
+  assert.match(badge, /font-size:\s*var\(--gc-fs-sm\)/, 'badge text is one step above the tab label');
+  assert.doesNotMatch(badge, /font-size:\s*var\(--gc-fs-2xs\)/, 'the tab size must not compound');
+  // Frame: 4 px side padding and no fixed width, so one digit is 15 px and two digits are 19 px.
+  // With 2 px padding the min-width stayed in charge and two digits stayed at 15 px.
+  assert.match(badge, /padding:\s*0 var\(--gc-space-2\)/, 'two digits widen the pill');
   assert.match(ruleBody(css, '.gc-nav__dot'), /background:\s*var\(--gc-state-danger\)/, 'failing dot is the danger tone');
   assert.match(ruleBody(css, '.gc-nav__tab--active .gc-nav__badge'), /var\(--gc-accent-subtle\)/, 'active badge uses the subtle accent');
 });

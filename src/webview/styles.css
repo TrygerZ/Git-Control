@@ -1641,6 +1641,11 @@ h3 {
   white-space: nowrap;
 }
 
+/*
+ * The type scale is em based and the tab already sits at --gc-fs-2xs, so the
+ * badge takes one step up (--gc-fs-sm) to land near the frame's 9.5 px instead
+ * of compounding down to 7.9 px.
+ */
 .gc-nav__badge {
   position: absolute;
   left: 9px;
@@ -1651,11 +1656,11 @@ h3 {
   box-sizing: border-box;
   min-width: 15px;
   height: 13px;
-  padding: 0 var(--gc-space-1);
+  padding: 0 var(--gc-space-2);
   border: 1.5px solid var(--gc-bg-sidebar);
   background: var(--gc-bg-raised);
   color: var(--gc-text-secondary);
-  font-size: var(--gc-fs-2xs);
+  font-size: var(--gc-fs-sm);
   font-weight: 500;
   line-height: 1;
   border-radius: 7px;
