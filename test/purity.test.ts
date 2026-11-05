@@ -22,6 +22,8 @@ const PURE_MODULES = [
   'src/webview/hostGuards.ts',
   'src/webview/focusTrap.ts',
   'src/webview/route.ts',
+  'src/webview/navRegistry.ts',
+  'src/webview/navCounts.ts',
 ];
 
 test('pure modules contain no vscode imports', () => {

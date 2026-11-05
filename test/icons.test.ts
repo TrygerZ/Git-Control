@@ -65,6 +65,11 @@ const ALL_ICON_NAMES: readonly IconName[] = [
   'history',
   'branch-add',
   'trash',
+  // Sidebar nav strip (P05). `branch` is not added: the Figma "branches" glyph is `git-branch`.
+  'changes',
+  'issue',
+  'pr',
+  'play',
 ];
 
 test('every IconName has an SVG render function in ICON_PATHS and no orphan paths exist', () => {

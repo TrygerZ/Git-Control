@@ -97,6 +97,21 @@ const en = {
     notPublished: 'Not published',
   },
 
+  // Sidebar nav strip: tab labels and accessible names
+  nav: {
+    tablistAria: 'Git Control sections',
+    changes: 'Changes',
+    prs: 'Pull requests',
+    issues: 'Issues',
+    actions: 'Actions',
+    branches: 'Branches',
+    changesAria: (count: string) => `Changes, ${count} files`,
+    prsAria: (count: string) => `Pull requests, ${count} open`,
+    issuesAria: (count: string) => `Issues, ${count} open`,
+    actionsFailingAria: 'Actions, latest run failed',
+    branchesAria: 'Branches',
+  },
+
   // Format and presentation helpers
   format: {
     unknownDate: 'Unknown date',

@@ -468,4 +468,46 @@ export const ICON_PATHS: Record<IconName, () => JSX.Element> = {
       <path d="M6.75 7.25v4M9.25 7.25v4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
     </>
   ),
+  // Changes: page with a folded corner and a plus, the working tree view of staged and unstaged files.
+  changes: () => (
+    <>
+      <path
+        d="M9.67 1.33H4C3.65 1.33 3.31 1.47 3.06 1.72C2.81 1.97 2.67 2.31 2.67 2.67V13.33C2.67 13.69 2.81 14.03 3.06 14.28C3.31 14.53 3.65 14.67 4 14.67H12C12.35 14.67 12.69 14.53 12.94 14.28C13.19 14.03 13.33 13.69 13.33 13.33V5L9.67 1.33Z"
+        stroke="currentColor"
+        strokeWidth="1.4"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        fill="none"
+      />
+      <path d="M9.33 1.33V5.33H13.33" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" fill="none" />
+      <path d="M6 10H10M8 8V12" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+    </>
+  ),
+  // Issue: ring with a filled centre dot, an open GitHub issue.
+  issue: () => (
+    <>
+      <circle cx="8" cy="8" r="5.75" stroke="currentColor" strokeWidth="1.5" fill="none" />
+      <circle cx="8" cy="8" r="1.25" fill="currentColor" />
+    </>
+  ),
+  // Pull request: two lanes joining, one branch merged back into another.
+  pr: () => (
+    <>
+      <circle cx="4" cy="3.75" r="1.75" stroke="currentColor" strokeWidth="1.5" fill="none" />
+      <circle cx="4" cy="12.25" r="1.75" stroke="currentColor" strokeWidth="1.5" fill="none" />
+      <circle cx="12" cy="12.25" r="1.75" stroke="currentColor" strokeWidth="1.5" fill="none" />
+      <path
+        d="M4 5.5V10.5M12 10.5V6.25C12 5.72 11.79 5.21 11.41 4.84C11.04 4.46 10.53 4.25 10 4.25H7.5M9.25 6L7.5 4.25L9.25 2.5"
+        stroke="currentColor"
+        strokeWidth="1.5"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        fill="none"
+      />
+    </>
+  ),
+  // Play: outline triangle pointing right, the Actions (workflow runs) tab.
+  play: () => (
+    <path d="M5 3.5V12.5L12 8L5 3.5z" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" fill="none" />
+  ),
 };

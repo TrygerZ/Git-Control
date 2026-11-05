@@ -177,6 +177,8 @@ Encodes module purity boundaries (pure logic vs I/O) and execution trust boundar
 | `src/webview/tree.ts` | Pure flat change paths to collapsible tree and tri-state selection maths |
 | `src/webview/hostGuards.ts` | Pure runtime type guards for host-to-webview events and responses |
 | `src/webview/route.ts` | Pure sidebar route model (`parseRoute`, `resolveInitialRoute`, `sameRoute`, `isFresh`). `parseRoute` is the single gate for routes from host events, the pulled pending route, and webview `getState` |
+| `src/webview/navRegistry.ts` | Pure sidebar nav registry and tab model (`createNavRegistry`, shared `navRegistry`, `isNavVisible`, `nextTabIndex`, `routeForNav`, `navTabs`). Views register themselves; the strip hides below two destinations |
+| `src/webview/navCounts.ts` | Pure nav badge text (`formatBadge` caps at `99+`, `navBadge` hides GitHub counts when signed out) and the `NavCounts` type |
 | `src/webview/focusTrap.ts` | Pure Tab-trap maths and shared focusable selector for modal dialogs (`FOCUSABLE_SELECTOR`, `trapTabTarget`) |
 | `src/webview/useDialogFocusTrap.ts` | Hook wiring `focusTrap.ts` and Escape handling into `GuardDialog`, `MergeDialog`, `PromptDialog` |
 | `src/webview/iconFontStyles.ts` | Nonce-bearing `<style>` / adopted stylesheet `@font-face` injector (strict CSP compliant) |
@@ -185,6 +187,8 @@ Encodes module purity boundaries (pure logic vs I/O) and execution trust boundar
 | `src/webview/PendingChanges.tsx` | Tree view for staged, unstaged, and untracked file changes |
 | `src/webview/Inspector.tsx` | Detail inspector for selected commit or file diff |
 | `src/webview/SidebarHeader.tsx` | Sidebar-only header (title row with refresh and open-graph, branch row with sync chip, upstream row). Reads stores and `headerModel`, owns no state. The Explorer keeps `ContextBar` |
+| `src/webview/Tablist.tsx` | Generic WAI-ARIA tabs (roving tabindex, automatic activation, keys through `nextTabIndex`). No nav-specific code; takes a `classPrefix` so the Changes and Stashes sub-tabs can reuse it |
+| `src/webview/NavStrip.tsx` | Sidebar nav strip. Registers Changes, renders nothing below two destinations, selects through `useRouteStore.navigate`. Makes no request; counts come from `useNavStore` and the changes store |
 | `src/webview/CommitForm.tsx` | Commit message authoring, inline validation, and commit/push controls |
 | `src/webview/GuardDialog.tsx` | Blocked-action guard modal offering remedies (commit/stash/fetch/cancel/resolve-conflicts/confirm) and 2-level confirmations |
 

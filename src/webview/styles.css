@@ -1559,6 +1559,142 @@ h3 {
   font-size: var(--gc-fs-xs);
 }
 
+/* ----------------------------------------------------------------- nav strip */
+
+/*
+ * The strip sits directly under the sidebar header and bleeds over the 4 px
+ * padding of `.gc-pending` the same way the header does, so the separator runs
+ * the full panel width. Frame Nav/Wrap: 380 wide, 48 high plus a 1 px separator,
+ * 8 px side padding, items sharing the width equally. An item is a 46 px column
+ * (8 top, 16 icon, 3 gap, label, 6 bottom) over a 2 px underline. The underline
+ * is a transparent border at rest, so the active tab never shifts its content.
+ * The badge hangs off the icon box at left 9, top -8; the failing dot at left 11,
+ * top -3.
+ */
+.gc-nav {
+  display: flex;
+  flex: 0 0 auto;
+  padding: 0 var(--gc-space-3);
+  margin: calc(-1 * var(--gc-space-2)) calc(-1 * var(--gc-space-2)) 0;
+  background: var(--gc-bg-sidebar);
+  border-bottom: 1px solid var(--gc-border-subtle);
+  overflow: hidden;
+}
+
+.gc-nav__tab {
+  appearance: none;
+  background: transparent;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  cursor: pointer;
+  font: inherit;
+  flex: 1 1 0;
+  min-width: var(--gc-hit);
+  min-height: var(--gc-hit);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: calc(var(--gc-space-1) + 1px);
+  padding: var(--gc-space-3) var(--gc-space-2) calc(var(--gc-space-2) + var(--gc-space-1));
+  color: var(--gc-text-secondary);
+  font-size: var(--gc-fs-2xs);
+  font-weight: 500;
+  line-height: normal;
+}
+
+.gc-nav__tab--active {
+  color: var(--gc-text-primary);
+  border-bottom-color: var(--gc-accent-primary);
+}
+
+/* The strip clips its overflow, so the ring has to sit inside the tab. */
+.gc-nav__tab:focus-visible {
+  outline-offset: -2px;
+}
+
+/* Not in the frame: the pointer needs the same emphasis the active tab gets. */
+.gc-nav__tab:hover:not(.gc-nav__tab--active) {
+  color: var(--gc-text-primary);
+}
+
+.gc-nav__icon {
+  position: relative;
+  display: inline-flex;
+  width: 16px;
+  height: 16px;
+  color: var(--gc-text-muted);
+}
+
+.gc-nav__icon .gc-icon {
+  width: 16px;
+  height: 16px;
+}
+
+.gc-nav__tab--active .gc-nav__icon {
+  color: var(--gc-accent-primary);
+}
+
+.gc-nav__label {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/*
+ * The type scale is em based and the tab already sits at --gc-fs-2xs, so the
+ * badge takes one step up (--gc-fs-sm) to land near the frame's 9.5 px instead
+ * of compounding down to 7.9 px.
+ */
+.gc-nav__badge {
+  position: absolute;
+  left: 9px;
+  top: -8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  min-width: 15px;
+  height: 13px;
+  padding: 0 var(--gc-space-2);
+  border: 1.5px solid var(--gc-bg-sidebar);
+  background: var(--gc-bg-raised);
+  color: var(--gc-text-secondary);
+  font-size: var(--gc-fs-sm);
+  font-weight: 500;
+  line-height: 1;
+  border-radius: 7px;
+  pointer-events: none;
+}
+
+.gc-nav__tab--active .gc-nav__badge {
+  background: var(--gc-accent-subtle);
+  color: var(--gc-accent-primary);
+}
+
+.gc-nav__dot {
+  position: absolute;
+  left: 11px;
+  top: -3px;
+  width: 7px;
+  height: 7px;
+  border-radius: var(--gc-radius-pill);
+  background: var(--gc-state-danger);
+  box-shadow: 0 0 0 1.5px var(--gc-bg-sidebar);
+  pointer-events: none;
+}
+
+/* Narrow sidebars keep the glyph and its state, and drop only the word. */
+@media (max-width: 360px) {
+  .gc-nav__label {
+    display: none;
+  }
+
+  .gc-nav__tab {
+    padding: var(--gc-space-3) var(--gc-space-2);
+  }
+}
+
 /* ------------------------------------------------------------------- avatar */
 
 /*
@@ -4861,6 +4997,23 @@ h3 {
   /* The chip's resting border is transparent (the frame uses a fill), and the fill is dropped here. */
   .gc-sidebar-header .gc-sidebar-header__sync {
     border-color: ButtonBorder;
+  }
+
+  /* A transparent underline is still drawn here, so a resting tab would get a stray rule. */
+  .gc-nav__tab {
+    border-bottom-color: Canvas;
+  }
+
+  .gc-nav__tab--active {
+    border-bottom-color: Highlight;
+  }
+
+  .gc-nav__badge {
+    border: 1px solid ButtonBorder;
+  }
+
+  .gc-nav__dot {
+    background: Highlight;
   }
 }
 

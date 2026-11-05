@@ -53,4 +53,8 @@ export type IconName =
   | 'diff'
   | 'history'
   | 'branch-add'
-  | 'trash';
+  | 'trash'
+  | 'changes'
+  | 'issue'
+  | 'pr'
+  | 'play';

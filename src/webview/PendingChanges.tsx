@@ -19,6 +19,7 @@ import { CommitForm } from './CommitForm';
 import { ConflictPanel, OperationBanner } from './ConflictPanel';
 import { GuardDialog } from './GuardDialog';
 import { SidebarHeader } from './SidebarHeader';
+import { NavStrip } from './NavStrip';
 import { ToastRegion } from './Toast';
 import { bridge, loadState, saveState } from './bridge';
 import { baseName, formatCount, formatStashLabel, sanitizeGitText, shortHash, UNKNOWN_CHURN } from './format';
@@ -214,6 +215,7 @@ export function PendingChangesApp(): JSX.Element {
   return (
     <div className="gc-pending">
       <SidebarHeader />
+      <NavStrip />
 
       <div className="gc-pending__notifications">
         <OperationBanner status={status} />

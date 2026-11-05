@@ -14,6 +14,8 @@ import * as path from 'node:path';
 import { useChangesStore, pruneStashCache } from '../src/webview/store';
 import { bridge, loadState, saveState } from '../src/webview/bridge';
 import { t } from '../src/webview/i18n';
+import { isNavVisible, navRegistry } from '../src/webview/navRegistry';
+import '../src/webview/NavStrip';
 
 function reset(): void {
   useChangesStore.setState({
@@ -469,4 +471,26 @@ test('sidebar header keeps the frame 20 geometry: 12 px inset, 28 px select and 
   for (const tone of ['ahead', 'behind', 'diverged']) {
     assert.match(css, new RegExp(`\.gc-sidebar-header \.gc-sidebar-header__sync--${tone}`));
   }
+});
+
+test('pending panel mounts the nav strip directly under the sidebar header', () => {
+  const src = fs.readFileSync(
+    path.join(__dirname, '..', '..', 'src', 'webview', 'PendingChanges.tsx'),
+    'utf8',
+  );
+  assert.match(src, /import \{ NavStrip \} from '\.\/NavStrip';/);
+  assert.match(
+    src,
+    /<SidebarHeader \/>\s*<NavStrip \/>\s*<div className="gc-pending__notifications">/,
+    'header, then strip, then the notifications',
+  );
+  assert.equal(src.match(/<NavStrip \/>/g)?.length, 1, 'mounted once');
+});
+
+test('only Changes is registered in the shipped build, so the strip stays hidden', () => {
+  assert.deepEqual(
+    navRegistry.list().map((d) => d.id),
+    ['changes'],
+  );
+  assert.equal(isNavVisible(navRegistry.list().length), false);
 });
