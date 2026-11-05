@@ -1267,3 +1267,18 @@ test('sidebar header buttons reuse the hit-area token and chip text carries the 
     assert.ok(strings.pending.reloadAria.length > 0 && strings.pending.openGraphAria.length > 0);
   }
 });
+
+test('Tablist exposes the WAI-ARIA tabs pattern with a roving tabindex and a pure key model', () => {
+  const src = fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'webview', 'Tablist.tsx'), 'utf8');
+  assert.match(src, /role="tablist"/, 'container is a tablist');
+  assert.match(src, /role="tab"/, 'each tab has the tab role');
+  assert.match(src, /aria-selected=\{/, 'selection is exposed');
+  assert.match(src, /tabIndex=\{[^}]*\? 0 : -1\}/, 'only the active tab is in the Tab order');
+  assert.match(src, /aria-controls=\{/, 'a tab can point at its panel');
+  assert.match(src, /aria-label=\{/, 'every tab keeps an accessible name');
+  assert.match(src, /title=\{/, 'the label survives as a tooltip when it is hidden visually');
+  assert.match(src, /nextTabIndex\(/, 'keys go through the pure model');
+  assert.match(src, /__badge`\}[^>]*aria-hidden="true"/, 'the badge is decoration, the name carries the count');
+  assert.doesNotMatch(src, /dangerouslySetInnerHTML|innerHTML/, 'no raw HTML');
+  assert.doesNotMatch(src, /#[0-9a-fA-F]{3,8}\b|rgba?\(/, 'no colour literal');
+});
