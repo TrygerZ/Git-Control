@@ -9,7 +9,9 @@
 import type { Route, RouteId } from '../messages';
 import type { Catalog } from './i18n';
 import type { IconName } from './icons';
+import { navBadge, type NavCounts } from './navCounts';
 import { DEFAULT_ROUTE, parseRoute } from './route';
+import type { TabDef } from './Tablist';
 
 export interface NavDestination {
   id: RouteId;
@@ -60,6 +62,38 @@ export function nextTabIndex(current: number, key: string, count: number): numbe
     default:
       return null;
   }
+}
+
+/** What the strip knows about each view before it renders: counts, run state, auth. */
+export interface NavTabInput {
+  counts: NavCounts;
+  failing: boolean;
+  signedIn: boolean;
+}
+
+/**
+ * Turn destinations into tabs. The badge caps at 99+ because the pill is small,
+ * but the accessible name keeps the real number, and a failing Actions run gets
+ * a dot only because its text equivalent rides in `ariaLabel`.
+ */
+export function navTabs(
+  dests: readonly NavDestination[],
+  strings: Catalog,
+  input: NavTabInput,
+): TabDef[] {
+  const { counts, failing, signedIn } = input;
+  return dests.map((dest) => {
+    const count = dest.requiresGitHub && !signedIn ? null : (counts[dest.id] ?? null);
+    const dot = dest.id === 'actions' && failing && (!dest.requiresGitHub || signedIn);
+    return {
+      id: dest.id,
+      label: dest.label(strings),
+      icon: dest.icon,
+      badge: navBadge(dest, counts[dest.id], signedIn),
+      dot,
+      ariaLabel: dot ? strings.nav.actionsFailingAria : dest.ariaName(strings, count),
+    };
+  });
 }
 
 /** Reuse `parseRoute` so the default sub-tab table stays in one place. */

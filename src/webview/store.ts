@@ -14,6 +14,7 @@ import { BridgeRequestError, bridge, fetchContributorIdentity, fetchContributors
 import { unknownErrorBody } from '../errorBody';
 import { linkageChangedRepo, sanitizeGitText } from './format';
 import { DEFAULT_ROUTE, resolveInitialRoute, sameRoute } from './route';
+import type { NavCounts } from './navCounts';
 import { pruneSelection, toggleNode, togglePath, type ChangeSection, type TreeNode } from './tree';
 import { activeLang, setActiveLang, t } from './i18n';
 import type {
@@ -32,6 +33,7 @@ import type {
   RepoGraph,
   RepoStatus,
   Route,
+  RouteId,
   SettingsSnapshot,
   StashEntry,
   StashFile,
@@ -877,6 +879,32 @@ export const useRouteStore = create<RouteState>((set, get) => ({
     } catch {
       // A route is a convenience; the restored one stays.
     }
+  },
+}));
+
+// ---------------------------------------------------------------- navStore
+
+/**
+ * Counts and run state for the sidebar nav strip.
+ *
+ * Nothing polls here: P07, P08, and P13 push their own counts through `setCount`
+ * when they fetch, so the strip stays a pure view of what the host already knows.
+ */
+export interface NavState {
+  counts: NavCounts;
+  failing: boolean;
+  setCount(id: RouteId, count: number | null): void;
+  setFailing(failing: boolean): void;
+}
+
+export const useNavStore = create<NavState>((set) => ({
+  counts: {},
+  failing: false,
+  setCount(id, count) {
+    set((state) => ({ counts: { ...state.counts, [id]: count } }));
+  },
+  setFailing(failing) {
+    set({ failing });
   },
 }));
 

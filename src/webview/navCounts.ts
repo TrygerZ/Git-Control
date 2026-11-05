@@ -1,3 +1,8 @@
+import type { RouteId } from '../messages';
+
+/** Count per view. `null` means unknown or still loading, which draws no badge. */
+export type NavCounts = Partial<Record<RouteId, number | null>>;
+
 /**
  * Pure sidebar nav badge text.
  *
