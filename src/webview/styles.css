@@ -1424,6 +1424,104 @@ h3 {
   white-space: nowrap;
 }
 
+/* ------------------------------------------------------------ sidebar header */
+
+/*
+ * Pending-panel header: title row, branch row with sync chip, upstream row. The
+ * Explorer keeps `.gc-context`. Horizontal padding is 0 so the rows share the left
+ * edge of the list below; frame 20 pads the whole column instead.
+ */
+.gc-sidebar-header {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gc-space-3);
+  padding: var(--gc-space-3) 0;
+  border-bottom: 1px solid var(--gc-border-default);
+  background: var(--gc-bg-editor);
+}
+
+.gc-sidebar-header__row {
+  display: flex;
+  align-items: center;
+  gap: var(--gc-space-3);
+  min-width: 0;
+}
+
+.gc-sidebar-header__title {
+  min-width: 0;
+  flex: 1 1 auto;
+  overflow: hidden;
+  color: var(--gc-text-primary);
+  font-size: var(--gc-fs-md);
+  font-weight: var(--gc-weight-strong);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Later phases append their buttons here; the spacer is the title's `flex: 1`. */
+.gc-sidebar-header__actions {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: var(--gc-space-2);
+}
+
+.gc-sidebar-header__branch {
+  flex-wrap: nowrap;
+}
+
+.gc-sidebar-header__branch .gc-toolbar__branch-wrap {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.gc-sidebar-header__sync {
+  flex: 0 0 auto;
+  color: var(--gc-text-secondary);
+}
+
+.gc-sidebar-header__sync--ahead {
+  border-color: var(--gc-status-added);
+  color: var(--gc-text-primary);
+}
+
+.gc-sidebar-header__sync--behind {
+  border-color: var(--gc-status-renamed);
+  color: var(--gc-text-primary);
+}
+
+.gc-sidebar-header__sync--diverged,
+.gc-sidebar-header--detached .gc-sidebar-header__sync {
+  border-color: var(--gc-state-warning);
+  color: var(--gc-text-primary);
+}
+
+.gc-sidebar-header__upstream {
+  margin: 0;
+  min-height: 15px;
+  color: var(--gc-text-secondary);
+  font-size: var(--gc-fs-xs);
+}
+
+.gc-sidebar-header__upstream-visual {
+  display: flex;
+  align-items: center;
+  gap: var(--gc-space-2);
+  min-width: 0;
+}
+
+.gc-sidebar-header__upstream-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.gc-sidebar-header__hash {
+  flex: 0 0 auto;
+  font-size: var(--gc-fs-2xs);
+}
+
 /* ------------------------------------------------------------------- avatar */
 
 /*
