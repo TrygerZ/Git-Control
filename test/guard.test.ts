@@ -426,8 +426,11 @@ test('amend is blocked when HEAD is published, allowed when it is local only', (
   assert.deepEqual(verdict({ action: 'commit', amend: true }, { headPublished: false }), { allow: true });
 
   for (const [lang, expected] of [
-    ['en', 'Last commit is already on the upstream branch. Amending it would need a force push, which Git Control never does.'],
-    ['id', 'Commit terakhir sudah ada di branch upstream. Amend butuh force push, dan Git Control tidak pernah melakukannya.'],
+    // "may already be" is deliberate: the probe cannot always prove publication
+    // (a pruned upstream leaves no local ref to ask), so the message must not
+    // assert a fact it does not have.
+    ['en', 'Last commit may already be on the upstream branch, and amending it would need a force push, which Git Control never does.'],
+    ['id', 'Commit terakhir mungkin sudah ada di branch upstream, dan amend butuh force push, yang tidak pernah dilakukan Git Control.'],
   ] as const) {
     const res = verdict({ action: 'commit', amend: true }, { headPublished: true }, lang);
     assert.equal(res.allow, false, lang);

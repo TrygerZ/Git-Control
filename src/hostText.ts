@@ -12,7 +12,7 @@ const en = {
     discardFile: 'Discarding local changes is permanent.',
     stashDrop: 'Stash drop discards changes permanently.',
     amendPublished:
-      'Last commit is already on the upstream branch. Amending it would need a force push, which Git Control never does.',
+      'Last commit may already be on the upstream branch, and amending it would need a force push, which Git Control never does.',
     confirm: 'This action requires confirmation.',
   },
   bridge: {
@@ -79,7 +79,7 @@ const id: HostCatalog = {
     discardFile: 'Membuang perubahan lokal bersifat permanen.',
     stashDrop: 'Drop stash membuang perubahan permanen.',
     amendPublished:
-      'Commit terakhir sudah ada di branch upstream. Amend butuh force push, dan Git Control tidak pernah melakukannya.',
+      'Commit terakhir mungkin sudah ada di branch upstream, dan amend butuh force push, yang tidak pernah dilakukan Git Control.',
     confirm: 'Tindakan ini perlu konfirmasi.',
   },
   bridge: {
