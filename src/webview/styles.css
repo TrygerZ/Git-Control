@@ -435,12 +435,11 @@ h3 {
   cursor: not-allowed;
 }
 
-/* Same disabled fade for the non-button controls: tree rows, file rows, PR chips,
+/* Same disabled fade for the non-button controls: tree rows, file rows,
  * and checkboxes read as off with the same opacity the buttons use. */
 .gc-tree__folder:disabled,
 .gc-tree__file:disabled,
 .gc-filelist__button:disabled,
-.gc-chip--pr:disabled,
 .gc-checkbox input:disabled {
   opacity: 0.6;
   cursor: not-allowed;
@@ -4476,143 +4475,6 @@ h3 {
   flex-basis: 100%;
 }
 
-/* -------------------------------------------------------------------- github */
-
-/*
- * Compact metadata panel. Every state carries a word ("offline", "Habis",
- * "cached", "Terbuka"), so nothing depends on colour alone.
- */
-.gc-github {
-  display: flex;
-  flex-direction: column;
-  gap: var(--gc-space-3);
-  padding: var(--gc-space-3);
-  border: 1px solid var(--gc-border);
-  border-radius: var(--gc-radius-lg);
-  background: var(--gc-surface-2);
-}
-
-.gc-github__head {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--gc-space-3);
-}
-
-.gc-github__title {
-  margin: 0;
-  font-size: var(--gc-fs-xs);
-  font-weight: var(--gc-weight-strong);
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  color: var(--gc-muted);
-}
-
-.gc-github__badge {
-  display: inline-flex;
-  align-items: center;
-  min-height: 18px;
-  padding: 0 var(--gc-space-3);
-  border: 1px solid var(--gc-border);
-  border-radius: var(--gc-radius-pill);
-  font-size: var(--gc-fs-xs);
-}
-
-.gc-github__badge--info {
-  color: var(--gc-muted);
-}
-
-/* Warning tone: a rule plus a bold border. The label already says why. */
-.gc-github__badge--warning {
-  border-color: var(--gc-warning);
-  border-width: 2px;
-  color: var(--vscode-foreground);
-  font-weight: var(--gc-weight-strong);
-}
-
-.gc-github__state {
-  margin: 0;
-  font-size: var(--gc-fs-sm);
-}
-
-.gc-github__repo {
-  color: var(--gc-muted);
-}
-
-.gc-github__note {
-  margin: 0;
-  color: var(--gc-muted);
-  font-size: var(--gc-fs-xs);
-}
-
-.gc-github__actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--gc-space-2);
-}
-
-.gc-github__prs {
-  display: flex;
-  flex-direction: column;
-  gap: var(--gc-space-2);
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-
-.gc-chip--pr {
-  display: flex;
-  gap: var(--gc-space-3);
-  align-items: center;
-  max-width: 100%;
-  min-height: var(--gc-hit);
-  padding: var(--gc-space-1) var(--gc-space-2);
-  border-radius: var(--gc-radius);
-  background: transparent;
-  color: var(--vscode-foreground);
-  font-family: inherit;
-  font-size: var(--gc-fs-xs);
-  cursor: pointer;
-  text-align: left;
-  transition: background var(--gc-dur-fast) var(--gc-ease);
-}
-
-.gc-chip--pr:hover {
-  background: var(--vscode-list-hoverBackground);
-}
-
-/*
- * PR state uses border STYLE, not colour: solid+focus border for open, double for
- * merged, dashed for closed. The chip text also spells the state
- * (`Terbuka`/`Digabung`/`Ditutup`), so this is redundancy, not the only signal.
- */
-.gc-chip--pr-open {
-  border-color: var(--vscode-focusBorder);
-}
-
-.gc-chip--pr-merged {
-  border-style: double;
-  border-width: 3px;
-}
-
-.gc-chip--pr-closed {
-  border-style: dashed;
-}
-
-.gc-github__pr-number {
-  flex: 0 0 auto;
-  color: var(--gc-muted);
-  font-variant-numeric: tabular-nums;
-}
-
-.gc-github__pr-title {
-  flex: 1 1 auto;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
 /* -------------------------------------------------------------- pull requests */
 
 /*
@@ -5218,8 +5080,6 @@ h3 {
   .gc-button,
   .gc-icon-button,
   .gc-chip,
-  .gc-chip--pr,
-  .gc-github__badge,
   .gc-menu,
   .gc-modal,
   .gc-toast,
@@ -5229,7 +5089,6 @@ h3 {
   .gc-minimap,
   .gc-minimap-wrap,
   .gc-conflicts,
-  .gc-github,
   .gc-contributors,
   .gc-canvas,
   /* Status glyphs are icon-only; border reappears here so the shape survives without colour. */

@@ -4,7 +4,6 @@
  */
 import { useCallback, useEffect, useId, useState, type JSX } from 'react';
 import { ConflictPanel, OperationBanner } from './ConflictPanel';
-import { GitHubPanel } from './GitHubPanel';
 import { GraphCanvas } from './GraphCanvas';
 import { GuardDialog } from './GuardDialog';
 import { Inspector } from './Inspector';
@@ -76,6 +75,9 @@ export function ExplorerApp(): JSX.Element {
       .request('repos/remotes', {})
       .then((result) => setGithubUrl(githubBaseUrl(result.remotes)))
       .catch(() => setGithubUrl(null));
+    // Commit avatars, the remote linkage, and the context-menu item all read this
+    // slice, so the load stays even though the panel that used to own it is gone.
+    void useGitHubStore.getState().load();
     return off;
   }, [loadIconTheme, loadSettings, refresh, selectCommit]);
 
@@ -188,7 +190,6 @@ export function ExplorerApp(): JSX.Element {
               <>
                 <Inspector hash={selectedHash} />
                 <Contributors />
-                <GitHubPanel />
                 {status !== null && status.conflicts.length > 0 && (
                   <ConflictPanel conflicts={status.conflicts} operation={status.operation} />
                 )}

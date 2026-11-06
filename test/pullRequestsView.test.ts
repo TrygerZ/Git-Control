@@ -71,3 +71,20 @@ test('the sidebar shell renders the view on the prs route and keeps the Changes 
   assert.match(src, /<NavStrip \/>/, 'the strip stays above both views');
   assert.match(src, /<SidebarHeader \/>/, 'and so does the header');
 });
+
+test('the Explorer keeps its GitHub metadata load without the panel', () => {
+  const explorer = read('src/webview/ExplorerApp.tsx');
+  assert.doesNotMatch(explorer, /GitHubPanel/, 'the aside no longer renders the panel');
+  // Precondition 3 of P07: removing the panel must not take the store load with
+  // it, because commit avatars and links resolve from the same slice.
+  assert.match(explorer, /useGitHubStore\.getState\(\)\.load\(\)/, 'the load moves into the mount effect');
+});
+
+test('the old panel is gone and nothing imports it', () => {
+  assert.equal(fs.existsSync(path.join(ROOT, 'src/webview/GitHubPanel.tsx')), false);
+  const files = fs.readdirSync(path.join(ROOT, 'src/webview')).filter((f) => f.endsWith('.tsx') || f.endsWith('.ts'));
+  for (const file of files) {
+    const src = read(`src/webview/${file}`);
+    assert.doesNotMatch(src, /from '\.\/GitHubPanel'/, file);
+  }
+});
