@@ -59,3 +59,57 @@ test('Kasus 8: retry policy, breaker probe, TTL, cap, mappings, and redaction', 
   await cached.gh.repo('o', 'r'); cached.advance(299_999); assert.equal((await cached.gh.repo('o', 'r')).cached, true); cached.advance(2); assert.equal((await cached.gh.repo('o', 'r')).cached, false);
   assert.equal(cached.gh.cacheSize, 1);
 });
+
+// --------------------------------------------- P07: pull request request budget
+
+test('P07: one sidebar load issues one pulls request and a second read inside 60 s sends none', async () => {
+  const h = client([response(200, [], { 'x-ratelimit-remaining': '59' })]);
+  await h.gh.pullRequests('o', 'r');
+  assert.equal(h.calls.length, 1);
+  assert.match(h.calls[0] ?? '', /\/repos\/o\/r\/pulls\?state=open&per_page=50/);
+
+  const second = await h.gh.pullRequests('o', 'r');
+  assert.equal(h.calls.length, 1, 'the 60 s host cache answers, so the anonymous quota is untouched');
+  assert.equal(second.cached, true);
+
+  h.advance(60_001);
+  await h.gh.pullRequests('o', 'r');
+  assert.equal(h.calls.length, 2, 'past the TTL the next read goes to the network');
+});
+
+test('P07: the closed list is a separate cache key and fires once', async () => {
+  const h = client([response(200, []), response(200, [])]);
+  await h.gh.pullRequests('o', 'r', { state: 'open' });
+  await h.gh.pullRequests('o', 'r', { state: 'closed' });
+  assert.equal(h.calls.length, 2, 'open and closed do not share a cache entry');
+  assert.match(h.calls[1] ?? '', /state=closed/);
+
+  await h.gh.pullRequests('o', 'r', { state: 'closed' });
+  assert.equal(h.calls.length, 2, 'a second expand inside the TTL sends nothing');
+});
+
+test('P07: a read without a token carries no Authorization header', async () => {
+  const calls: Array<{ url: string; headers: Record<string, string> }> = [];
+  const gh = new GitHubClient({
+    apiUrl: 'https://api.github.com',
+    token: null,
+    fetchImpl: (url, init) => {
+      calls.push({ url, headers: (init?.headers ?? {}) as Record<string, string> });
+      return Promise.resolve(response(200, []));
+    },
+  });
+  await gh.pullRequests('o', 'r');
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0]?.headers.Authorization, undefined, 'anonymous stays anonymous');
+  assert.equal(calls[0]?.headers['X-GitHub-Api-Version'], '2022-11-28', 'the version header is not the token');
+});
+
+test('P07: a quota refusal reports RATE_LIMITED with the reset timestamp the UI counts down', async () => {
+  const h = client([
+    response(403, { message: 'quota' }, { 'x-ratelimit-remaining': '0', 'x-ratelimit-reset': '1700000600' }),
+  ]);
+  const failure = await h.gh.pullRequests('o', 'r').catch((e: unknown) => e);
+  assert.ok(failure instanceof GitHubError);
+  assert.equal(failure.code, 'RATE_LIMITED');
+  assert.equal(failure.resetAt, 1_700_000_600_000);
+});

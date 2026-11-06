@@ -15,6 +15,7 @@
  */
 import { useEffect, useMemo, useRef, useState, type JSX, type KeyboardEvent } from 'react';
 import { loadState, saveState } from './bridge';
+import { restoreTarget } from './focusTrap';
 import {
   apiQuotaLabel,
   compareUrl,
@@ -79,6 +80,7 @@ export function PullRequestsView(): JSX.Element {
   const [activeRow, setActiveRow] = useState(0);
   const [now, setNow] = useState(() => Date.now());
   const searchRef = useRef<HTMLInputElement>(null);
+  const connectRef = useRef<HTMLButtonElement>(null);
   const rowRefs = useRef<Array<HTMLButtonElement | null>>([]);
 
   // A countdown is the only thing here that moves, so the tick exists only while
@@ -166,6 +168,23 @@ export function PullRequestsView(): JSX.Element {
     searchRef.current?.focus();
   };
 
+  /**
+   * Callback ref for the banner button: `GateBannerView` is a separate component,
+   * so it receives a setter rather than the ref object itself.
+   */
+  const setConnectButton = (element: HTMLButtonElement | null): void => {
+    connectRef.current = element;
+  };
+
+  /**
+   * A cancelled connect resolves normally, so the only signal is whether the
+   * button survived the await. Restore focus only when it did.
+   */
+  const connectAndRestore = async (): Promise<void> => {
+    await connect();
+    if (restoreTarget(connectRef.current !== null) === 'connect') connectRef.current?.focus();
+  };
+
   const toggleGroup = (group: GroupId): void => {
     const opening = !expanded.has(group);
     setExpanded((prev) => {
@@ -213,7 +232,8 @@ export function PullRequestsView(): JSX.Element {
             <button
               type="button"
               className="gc-button gc-button--action"
-              onClick={() => void connect()}
+              ref={connectRef}
+              onClick={() => void connectAndRestore()}
             >
               {strings.prs.signInBannerAction}
             </button>
@@ -222,7 +242,13 @@ export function PullRequestsView(): JSX.Element {
       ) : (
         <>
           {gate.banner !== null && (
-            <GateBannerView banner={gate.banner} now={now} language={language} onConnect={connect} />
+            <GateBannerView
+              banner={gate.banner}
+              now={now}
+              language={language}
+              onConnect={connectAndRestore}
+              setConnectRef={setConnectButton}
+            />
           )}
 
           <div className="gc-listbar">
@@ -422,15 +448,22 @@ function GateBannerView({
   now,
   language,
   onConnect,
+  setConnectRef,
 }: {
   banner: GateBanner;
   now: number;
   language: Lang;
   onConnect(): Promise<void>;
+  setConnectRef(element: HTMLButtonElement | null): void;
 }): JSX.Element {
   const strings = useT();
   const connectButton = (
-    <button type="button" className="gc-button gc-button--action" onClick={() => void onConnect()}>
+    <button
+      type="button"
+      className="gc-button gc-button--action"
+      ref={setConnectRef}
+      onClick={() => void onConnect()}
+    >
       {strings.prs.signInBannerAction}
     </button>
   );

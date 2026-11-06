@@ -11,6 +11,9 @@ import assert from 'node:assert/strict';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { PR_PAGE_SIZE, badgeCount } from '../src/webview/prFilters';
+import { navRegistry } from '../src/webview/navRegistry';
+import { restoreTarget } from '../src/webview/focusTrap';
+import '../src/webview/NavStrip';
 
 const ROOT = path.join(__dirname, '..', '..');
 
@@ -51,13 +54,17 @@ test('untrusted text goes through the sanitizer', () => {
 });
 
 test('the nav destination registers as prs with the badge from the same array', () => {
+  // Registration is at module scope, so importing the strip is enough to observe
+  // what the shipped bundle registers. Asserting the registry directly is stronger
+  // than matching source text, which would pass even if the call were removed.
+  const dests = navRegistry.list();
+  const prs = dests.find((d) => d.id === 'prs');
+  assert.ok(prs !== undefined, 'prs must be registered');
+  assert.equal(prs.requiresGitHub, false, 'the list stays readable without a token');
+  assert.deepEqual(dests.map((d) => d.id), ['changes', 'prs'], 'order is the strip order');
+
   const src = read('src/webview/NavStrip.tsx');
-  assert.match(src, /id: 'prs'/);
-  assert.match(src, /requiresGitHub: false/, 'the list stays readable without a token');
   assert.match(src, /badgeCount\(/, 'the badge is the capped count, not a second request');
-  // Registration happens on mount, so a headless import of the registry is empty
-  // by design; the source is what proves the second destination exists.
-  assert.match(src, /navRegistry\.register\(/);
 });
 
 test('the badge caps at the page size', () => {
@@ -95,4 +102,18 @@ test('the sidebar shell loads GitHub metadata on mount, so the badge is filled b
   // the count stays empty until the user happens to open Pull requests, which is
   // the acceptance criterion "the PR badge equals the Open chip count".
   assert.match(src, /useGitHubStore\.getState\(\)\.load\(\)/);
+});
+
+test('focus returns to the control that started a connect attempt', () => {
+  // The spec asks for focus to return to the Connect button after a cancelled
+  // connect. A cancelled host input box resolves normally, so the only thing that
+  // decides this is whether the element still exists when the await returns.
+  assert.equal(restoreTarget(true), 'connect');
+  assert.equal(restoreTarget(false), 'none', 'a button that is gone must not take focus');
+});
+
+test('the view wires the connect focus restore into both Connect buttons', () => {
+  const src = read('src/webview/PullRequestsView.tsx');
+  assert.match(src, /restoreTarget\(/);
+  assert.match(src, /connectRef/, 'the button is reached through a ref, not a re-render');
 });

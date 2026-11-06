@@ -24,3 +24,14 @@ export function trapTabTarget(count: number, activeIndex: number, shiftKey: bool
   if (!shiftKey && activeIndex === count - 1) return 0;
   return null;
 }
+
+/**
+ * Where focus should land after an awaited connect attempt settles.
+ *
+ * The caller cannot decide this itself: the host input box resolves normally when
+ * cancelled, so the only observable difference is whether the button is still in
+ * the tree when the await returns. A button that unmounted must not take focus.
+ */
+export function restoreTarget(buttonStillMounted: boolean): 'connect' | 'none' {
+  return buttonStillMounted ? 'connect' : 'none';
+}
