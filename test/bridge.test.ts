@@ -2764,3 +2764,132 @@ test('ui/takePendingRoute rejects a non-empty payload without touching the host'
   assert.equal(response.error.status, 400);
   assert.equal(calls, 0);
 });
+
+test('amend of a published HEAD is refused with 409 before git runs', async (t) => {
+  const dir = await makeFixture('remote');
+  t.after(() => cleanup(dir));
+  const repo = new RepositoryService({ folderPath: dir, gitPath: 'git', store: new MemoryStore() });
+  const h = harness(repo);
+  t.after(() => h.bridge.dispose());
+
+  let commits = 0;
+  const realCommit = repo.git.commit.bind(repo.git);
+  repo.git.commit = async (message: string, opts?: { amend?: boolean }): Promise<string | null> => {
+    commits += 1;
+    return realCommit(message, opts);
+  };
+
+  const before = await repo.git.headHash();
+  const token = (await repo.status()).statusToken;
+
+  for (const [lang, h2] of [['en', h], ['id', harness(repo, { settings: () => ({ ...SETTINGS, language: 'id' }) })]] as const) {
+    if (lang === 'id') t.after(() => h2.bridge.dispose());
+    const response = await h2.webview.send(
+      req('actions/commit', { message: 'reword', amend: true, statusToken: token, idempotencyKey: `pub-${lang}` }),
+    );
+    assert.equal(response.ok, false, lang);
+    if (response.ok) return;
+    assert.equal(response.error.status, 409, lang);
+    assert.equal(response.error.code, 'NON_FAST_FORWARD', lang);
+    assert.equal(response.error.message, hostText(lang).guard.amendPublished, lang);
+    assert.deepEqual(response.error.remedies, ['cancel'], lang);
+  }
+
+  assert.equal(commits, 0, 'git commit never ran');
+  assert.equal(await repo.git.headHash(), before, 'HEAD is untouched');
+});
+
+test('amend of an unpublished HEAD rewrites it and leaves the count alone', async (t) => {
+  const dir = await makeFixture('remote');
+  t.after(() => cleanup(dir));
+  const repo = new RepositoryService({ folderPath: dir, gitPath: 'git', store: new MemoryStore() });
+  const h = harness(repo);
+  t.after(() => h.bridge.dispose());
+
+  await fs.writeFile(path.join(dir, 'b.txt'), 'two\n', 'utf8');
+  await repo.git.stage(['b.txt']);
+  const local = await repo.git.commit('local only');
+  repo.invalidate();
+  const before = await repo.git.log({ limit: 100, all: false });
+  const token = (await repo.status()).statusToken;
+
+  const response = await h.webview.send(
+    req('actions/commit', {
+      message: 'local only, reworded',
+      amend: true,
+      statusToken: token,
+      idempotencyKey: 'unpub-1',
+    }),
+  );
+  assert.equal(response.ok, true);
+  if (!response.ok) return;
+  const data = response.data as { success: boolean; commit: string | null; pushed: boolean };
+  assert.equal(data.success, true);
+  assert.ok(data.commit !== null && data.commit !== local, 'the tip hash changed');
+
+  const after = await repo.git.log({ limit: 100, all: false });
+  assert.equal(after.length, before.length, 'the history length is unchanged');
+  assert.equal(after[0]?.subject, 'local only, reworded');
+});
+
+test('a non-boolean amend is rejected with 400 before git runs', async (t) => {
+  const dir = await makeFixture('remote');
+  t.after(() => cleanup(dir));
+  const repo = new RepositoryService({ folderPath: dir, gitPath: 'git', store: new MemoryStore() });
+  const h = harness(repo);
+  t.after(() => h.bridge.dispose());
+
+  let commits = 0;
+  const realCommit = repo.git.commit.bind(repo.git);
+  repo.git.commit = async (message: string, opts?: { amend?: boolean }): Promise<string | null> => {
+    commits += 1;
+    return realCommit(message, opts);
+  };
+
+  // `'yes'` is truthy but not `true`, and the runner tests `opts.amend === true`.
+  // Without this check it would silently become a plain commit.
+  for (const amend of ['yes', 1, {}] as unknown[]) {
+    const response = await h.webview.send(
+      req('actions/commit', { message: 'reword', amend, statusToken: '', idempotencyKey: `bad-${String(amend)}` }),
+    );
+    assert.equal(response.ok, false, JSON.stringify(amend));
+    if (response.ok) return;
+    assert.equal(response.error.status, 400);
+    assert.equal(response.error.code, 'VALIDATION_ERROR');
+    assert.equal(response.error.detail, 'amend');
+  }
+  assert.equal(commits, 0);
+});
+
+test('amend with push on an unpublished commit fast-forwards the upstream', async (t) => {
+  const dir = await makeFixture('remote');
+  t.after(() => cleanup(dir));
+  const repo = new RepositoryService({ folderPath: dir, gitPath: 'git', store: new MemoryStore() });
+  await repo.markFetched(Date.now());
+  const h = harness(repo);
+  t.after(() => h.bridge.dispose());
+
+  await fs.writeFile(path.join(dir, 'b.txt'), 'two\n', 'utf8');
+  await repo.git.stage(['b.txt']);
+  await repo.git.commit('local only');
+  repo.invalidate();
+  const token = (await repo.status()).statusToken;
+
+  const response = await h.webview.send(
+    req('actions/commit', {
+      message: 'local only, reworded',
+      amend: true,
+      push: true,
+      statusToken: token,
+      idempotencyKey: 'amend-push-1',
+    }),
+  );
+  assert.equal(response.ok, true);
+  if (!response.ok) return;
+  const data = response.data as { success: boolean; commit: string | null; pushed: boolean };
+  assert.equal(data.success, true);
+  assert.equal(data.pushed, true, 'a local-only amend pushes as a fast-forward, no force needed');
+
+  const upstream = await repo.git.run(['rev-parse', 'origin/main']);
+  assert.equal(upstream.stdout.trim(), data.commit, 'origin/main now points at the amended commit');
+});

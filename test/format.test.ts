@@ -5,6 +5,7 @@ import * as path from 'node:path';
 import {
   absoluteTime,
   actionTarget,
+  amendBlockedReason,
   actionTitle,
   baseName,
   conflictLabel,
@@ -17,6 +18,7 @@ import {
   formatDateLabel,
   formatStashLabel,
   gitCommandOf,
+  joinCommitMessage,
   githubConnectionLabel,
   headerModel,
   linkageChangedRepo,
@@ -998,4 +1000,33 @@ test('headerModel: upstream sentence follows the language', () => {
     headerModel(headerStatus({ upstream: null }), 'en')?.upstreamLine,
     headerModel(headerStatus({ upstream: null }), 'id')?.upstreamLine,
   );
+});
+
+test('amendBlockedReason names the most fundamental blocker first', () => {
+  const reason = (patch: Partial<RepoStatus> | null) =>
+    amendBlockedReason(patch === null ? null : headerStatus(patch));
+
+  assert.equal(reason(null), 'no-head', 'no status yet');
+  assert.equal(reason({ head: null }), 'no-head', 'an empty repository has nothing to amend');
+  assert.equal(reason({ head: null, operation: 'merge', upstream: 'origin/main', ahead: 0 }), 'no-head', 'no-head wins over everything');
+
+  assert.equal(reason({ operation: 'merge' }), 'operation', 'a half-finished merge must be settled first');
+  assert.equal(
+    reason({ operation: 'merge', upstream: 'origin/main', ahead: 0 }),
+    'operation',
+    'the operation reason wins over the publication reason',
+  );
+
+  assert.equal(reason({ upstream: 'origin/main', ahead: 0 }), 'published', 'nothing ahead means HEAD is on the upstream');
+  assert.equal(reason({ upstream: 'origin/main', ahead: 2 }), null, 'unpushed commits can be amended');
+  assert.equal(reason({ upstream: null, ahead: 0 }), null, 'a branch with no upstream is unpublished by definition');
+  assert.equal(reason({ upstream: null, ahead: 3 }), null);
+});
+
+test('joinCommitMessage keeps a body only when it has content', () => {
+  assert.equal(joinCommitMessage('subject', ''), 'subject');
+  assert.equal(joinCommitMessage('subject', '   \n\t '), 'subject', 'a whitespace body adds nothing');
+  assert.equal(joinCommitMessage('subject', 'body line'), 'subject\n\nbody line');
+  assert.equal(joinCommitMessage('subject', '\n\nbody line\n\n'), 'subject\n\nbody line', 'surrounding blank lines are trimmed');
+  assert.equal(joinCommitMessage('subject', 'line one\n\nline two'), 'subject\n\nline one\n\nline two', 'interior blank lines survive');
 });
