@@ -683,6 +683,7 @@ function toPullRequests(body: unknown): PullRequestInfo[] {
       user?: { login?: unknown };
       updated_at?: unknown;
       merged_at?: unknown;
+      requested_reviewers?: unknown;
     };
     const merged = typeof pr.merged_at === 'string' && pr.merged_at.length > 0;
     return {
@@ -695,6 +696,11 @@ function toPullRequests(body: unknown): PullRequestInfo[] {
       draft: pr.draft === true,
       author: typeof pr.user?.login === 'string' ? pr.user.login : '',
       updatedAt: typeof pr.updated_at === 'string' ? pr.updated_at : '',
+      requestedReviewers: Array.isArray(pr.requested_reviewers)
+        ? pr.requested_reviewers
+            .map((r) => (r as { login?: unknown } | null)?.login)
+            .filter((login): login is string => typeof login === 'string')
+        : [],
     };
   });
 }

@@ -469,9 +469,27 @@ test('pull requests default to open and are mapped to the DTO', async () => {
     draft: true,
     author: 'octocat',
     updatedAt: '2026-08-01T10:00:00Z',
+    requestedReviewers: [],
   });
   // `merged_at` wins over `state: closed` so the chip can say "merged".
   assert.equal(result.data[1]?.state, 'merged');
+});
+
+test('pull requests map requested reviewers to logins only', async () => {
+  const h = client([
+    response(200, [
+      { number: 1, requested_reviewers: [{ login: 'ann' }, { login: 'bob' }, { login: 42 }] },
+      { number: 2, requested_reviewers: [{ slug: 'team-only' }] },
+      { number: 3 },
+      { number: 4, requested_reviewers: 'nope' },
+    ]),
+  ]);
+  const result = await h.gh.pullRequests('o', 'r');
+  assert.deepEqual(
+    result.data.map((pr) => pr.requestedReviewers),
+    [['ann', 'bob'], [], [], []],
+    'teams carry no login, so they never match a viewer',
+  );
 });
 
 test('pullRequestsForCommit hits the commit pulls endpoint', async () => {

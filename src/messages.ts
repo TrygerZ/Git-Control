@@ -493,6 +493,12 @@ export interface PullRequestInfo {
   draft: boolean;
   author: string;
   updatedAt: string;
+  /**
+   * Logins of users with a pending review request, in the order GitHub sent
+   * them. Teams are excluded (they carry `slug`, not `login`), so a team
+   * review request cannot match a viewer.
+   */
+  requestedReviewers: string[];
 }
 
 export interface PullRequestsPayload {
