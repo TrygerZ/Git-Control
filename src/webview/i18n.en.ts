@@ -487,6 +487,7 @@ const en = {
       `Last commit is already on ${remote}. Amending it would need a force push, which Git Control never does.`,
     amendBlockedNoCommit: 'No commit to amend yet.',
     amendBlockedOperation: 'Finish or abort the operation in progress first.',
+    amendStale: 'The last commit changed. Amend is off; check the message and commit again.',
   },
 
   // Conflict panel and operation banner

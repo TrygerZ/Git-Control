@@ -483,6 +483,7 @@ const id: Catalog = {
       `Commit terakhir sudah ada di ${remote}. Amend butuh force push, dan Git Control tidak pernah melakukannya.`,
     amendBlockedNoCommit: 'Belum ada commit untuk di-amend.',
     amendBlockedOperation: 'Selesaikan atau batalkan operasi yang sedang berjalan dulu.',
+    amendStale: 'Commit terakhir berubah. Amend dimatikan; periksa pesan lalu commit lagi.',
   },
 
   // Conflict panel and operation banner

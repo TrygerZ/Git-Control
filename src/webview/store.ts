@@ -520,9 +520,10 @@ export const useChangesStore = create<ChangesState>((set, get) => ({
     set({ amend: true, amendDraft: get().commitMessage });
     try {
       const detail: CommitDetail = await bridge.request('commits/detail', { hash });
-      // The user may have toggled off while the request was in flight; a late
-      // response must not write into a form they already left.
-      if (!get().amend) return;
+      // The user may have toggled off while the request was in flight, or HEAD
+      // may have moved on to a newer commit. Either way this response describes
+      // a commit the form no longer amends, so it must not become the base.
+      if (!get().amend || useRepoStore.getState().status?.head !== hash) return;
       const message = joinCommitMessage(detail.subject, detail.body);
       set({
         amendBase: {
@@ -563,6 +564,15 @@ export const useChangesStore = create<ChangesState>((set, get) => ({
     const ops = useOperationStore.getState();
     try {
       const token = await freshToken();
+      // The payload carries no hash, so git amends whatever HEAD is now. When
+      // HEAD moved since the base was captured, that would rewrite a commit the
+      // note never named: refuse, drop amend mode, and say why.
+      const base = get().amendBase;
+      if (get().amend && base !== null && useRepoStore.getState().status?.head !== base.hash) {
+        set({ busy: false, busyKind: null, amend: false, amendBase: null, amendDraft: null });
+        ops.pushToast({ level: 'warning', message: strings.commitForm.amendStale });
+        return false;
+      }
       // `statusToken` rides in the meta, not the payload: it is part of
       // `MutationMeta` now that every mutation kind honours it.
       const handle = mutation('actions/commit', {
