@@ -1083,6 +1083,8 @@ export class MessageBridge {
       lastFetchAt: status.lastFetchAt,
       now: Date.now(),
       stalenessMs: this.host.settings().fetchStalenessMs || DEFAULT_STALENESS_MS,
+      // Not computed yet: fail closed for amend until the host derives it.
+      headPublished: null,
     };
   }
 

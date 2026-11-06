@@ -19,6 +19,7 @@ function snapshot(overrides: Partial<GuardSnapshot> = {}): GuardSnapshot {
     lastFetchAt: NOW,
     now: NOW,
     stalenessMs: DEFAULT_STALENESS_MS,
+    headPublished: null,
     ...overrides,
   };
 }
@@ -417,4 +418,65 @@ test('pull is blocked on dirty tree and requires level 1 confirmation when clean
   assert.equal(cleanRes.code, 'CONFIRMATION_REQUIRED');
   assert.equal(cleanRes.confirmationLevel, 1);
   assert.deepEqual(cleanRes.remedies, ['confirm', 'cancel']);
+});
+
+test('amend is blocked when HEAD is published, allowed when it is local only', () => {
+  // `headPublished === false` means the last commit is not on the upstream, so
+  // replacing it stays a local rewrite that a later push can still fast-forward.
+  assert.deepEqual(verdict({ action: 'commit', amend: true }, { headPublished: false }), { allow: true });
+
+  for (const [lang, expected] of [
+    ['en', 'Last commit is already on the upstream branch. Amending it would need a force push, which Git Control never does.'],
+    ['id', 'Commit terakhir sudah ada di branch upstream. Amend butuh force push, dan Git Control tidak pernah melakukannya.'],
+  ] as const) {
+    const res = verdict({ action: 'commit', amend: true }, { headPublished: true }, lang);
+    assert.equal(res.allow, false, lang);
+    if (res.allow) return;
+    assert.equal(res.code, 'NON_FAST_FORWARD', lang);
+    assert.deepEqual(res.remedies, ['cancel'], 'fetch cannot make an amend valid');
+    assert.equal(res.requiresConfirmation, undefined, 'no confirmation path exists for a published amend');
+    assert.equal(res.message, expected, lang);
+    assert.equal(res.message, hostText(lang).guard.amendPublished, `${lang} text comes from hostText`);
+  }
+});
+
+test('an uncomputed publication flag blocks the amend instead of allowing it', () => {
+  // Fail closed: a caller that forgets to compute the flag must not silently
+  // turn a published amend into a force-push-shaped rewrite.
+  const res = verdict({ action: 'commit', amend: true }, { headPublished: null });
+  assert.equal(res.allow, false);
+  if (res.allow) return;
+  assert.equal(res.code, 'NON_FAST_FORWARD');
+  assert.deepEqual(res.remedies, ['cancel']);
+});
+
+test('a plain commit ignores the publication flag', () => {
+  for (const headPublished of [true, false, null] as const) {
+    assert.deepEqual(
+      verdict({ action: 'commit' }, { headPublished, staged: true }),
+      { allow: true },
+      `headPublished ${String(headPublished)}`,
+    );
+  }
+});
+
+test('amend during an in-progress operation reports the operation, not the publication', () => {
+  for (const operation of ['merge', 'rebase', 'cherry-pick'] as const) {
+    const res = verdict({ action: 'commit', amend: true }, { operation, headPublished: false }, 'en');
+    assert.equal(res.allow, false, operation);
+    if (res.allow) return;
+    assert.equal(res.code, 'CONFLICT', operation);
+    assert.equal(res.message, hostText('en').guard.conflictInProgress, operation);
+    assert.deepEqual(res.remedies, ['resolve-conflicts', 'cancel'], operation);
+  }
+});
+
+test('unresolved conflicts win over the amend rule', () => {
+  // A half-resolved merge would record conflict markers, so it must be reported
+  // before the publication check even when the commit is also an amend.
+  const res = verdict({ action: 'commit', amend: true }, { operation: 'merge', conflicted: true, headPublished: true });
+  assert.equal(res.allow, false);
+  if (res.allow) return;
+  assert.equal(res.code, 'CONFLICT');
+  assert.equal(res.message, hostText('en').guard.conflictFiles);
 });
