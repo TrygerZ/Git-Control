@@ -7,6 +7,7 @@ import {
   actionTarget,
   amendBlockedReason,
   actionTitle,
+  apiQuotaLabel,
   baseName,
   conflictLabel,
   consequenceOf,
@@ -1045,4 +1046,25 @@ test('joinCommitMessage keeps a body only when it has content', () => {
   assert.equal(joinCommitMessage('subject', 'body line'), 'subject\n\nbody line');
   assert.equal(joinCommitMessage('subject', '\n\nbody line\n\n'), 'subject\n\nbody line', 'surrounding blank lines are trimmed');
   assert.equal(joinCommitMessage('subject', 'line one\n\nline two'), 'subject\n\nline one\n\nline two', 'interior blank lines survive');
+});
+
+test('apiQuotaLabel reads remaining over limit with the catalog locale', () => {
+  assert.equal(
+    apiQuotaLabel({ limit: 5000, remaining: 4812, resetAt: null, cached: false, offline: false }, 'en'),
+    'API 4,812 / 5,000',
+  );
+  assert.equal(
+    apiQuotaLabel({ limit: 5000, remaining: 4812, resetAt: null, cached: false, offline: false }, 'id'),
+    'API 4.812 / 5.000',
+  );
+  assert.equal(apiQuotaLabel(null, 'en'), null, 'nothing known draws nothing');
+  assert.equal(
+    apiQuotaLabel({ limit: null, remaining: 4812, resetAt: null, cached: false, offline: false }, 'en'),
+    null,
+    'half a fraction is not a fraction',
+  );
+  assert.equal(
+    apiQuotaLabel({ limit: 5000, remaining: null, resetAt: null, cached: false, offline: false }, 'en'),
+    null,
+  );
 });

@@ -1097,6 +1097,17 @@ export function rateLimitBadge(
   };
 }
 
+/**
+ * Compact `API remaining / limit` readout for the sidebar footer.
+ *
+ * Returns `null` rather than a partial fraction: half a number tells the user
+ * less than no number at all.
+ */
+export function apiQuotaLabel(rate: GitHubRateLimit | null, lang: Lang = 'en'): string | null {
+  if (rate === null || rate.remaining === null || rate.limit === null) return null;
+  return `API ${formatCount(rate.remaining, lang)} / ${formatCount(rate.limit, lang)}`;
+}
+
 /** `mm:ss` style countdown to a reset timestamp, clamped at zero. */
 export function countdown(resetAt: number | null, now: number = Date.now(), lang: Lang = 'en'): string {
   const strings = t(lang).format.countdown;
