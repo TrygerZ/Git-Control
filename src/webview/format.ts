@@ -817,9 +817,11 @@ export type AmendBlock = 'no-head' | 'operation' | 'published';
  * rewrite of published history.
  *
  * Precedence follows the guard: no commit to amend, then an operation in
- * progress, then publication. `upstream !== null && ahead === 0` equals
- * "HEAD is reachable from the upstream", because `ahead` counts the commits HEAD
- * has that the upstream does not.
+ * progress, then publication. `upstream !== null && ahead === 0` means HEAD is
+ * reachable from the upstream: `ahead` counts the commits HEAD has that the
+ * upstream does not, so a diverged branch has `ahead > 0` and is not published.
+ * `behind` is irrelevant to that question; behind with nothing ahead is still a
+ * fast-forward, so HEAD is on the upstream.
  */
 export function amendBlockedReason(
   status: Pick<RepoStatus, 'head' | 'operation' | 'upstream' | 'ahead'> | null,
