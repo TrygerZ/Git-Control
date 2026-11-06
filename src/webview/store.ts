@@ -504,12 +504,17 @@ export const useChangesStore = create<ChangesState>((set, get) => ({
     if (!on) {
       const base = get().amendBase;
       const restore = base !== null && get().commitMessage === base.message;
+      const nextMessage = restore ? (get().amendDraft ?? '') : get().commitMessage;
       set({
         amend: false,
         amendBase: null,
         amendDraft: null,
-        ...(restore ? { commitMessage: get().amendDraft ?? '' } : {}),
+        ...(restore ? { commitMessage: nextMessage } : {}),
       });
+      // Persist what the box now shows. Without this the stored value stays at
+      // the pre-amend draft, and a rebuild (`retainContextWhenHidden: false`)
+      // silently drops an edit made while amending.
+      saveState({ commitMessage: nextMessage });
       return;
     }
 
