@@ -99,7 +99,10 @@ export function CommitForm(): JSX.Element {
   const amendReason = amendBlockedReason(status);
   const amendOn = amend && amendReason === null;
   const reasonId = 'gc-amend-reason';
-  const remoteName = remote ?? status?.upstream?.split('/')[0] ?? 'remote';
+  // `amendReason === 'published'` requires an upstream, and `remote` is derived
+  // from it first, so this fallback is unreachable today. It exists so a future
+  // change to `remote` cannot render the literal word "remote" as a name.
+  const remoteName = remote ?? 'the remote';
   const reasonText =
     amendReason === 'no-head'
       ? strings.commitForm.amendBlockedNoCommit

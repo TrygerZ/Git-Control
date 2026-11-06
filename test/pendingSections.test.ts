@@ -961,6 +961,31 @@ test('the persisted message is the pre-amend draft, not the loaded HEAD message'
   assert.equal(loadState().commitMessage, 'after amend off', 'once amend is off the live message is persisted again');
 });
 
+test('toggling amend off persists the message the box now shows', async (t) => {
+  // `retainContextWhenHidden: false`, so a rebuild is routine. Anything not
+  // persisted at toggle-off is silently lost on the next reveal.
+  resetAmend();
+  setStatus({ ahead: 2 });
+  stubDetail(t, { hash: 'aaa1111bbb2222ccc3333ddd4444eee5555fff6', subject: 'HEAD message', body: '' });
+
+  useChangesStore.setState({ commitMessage: 'draft' });
+  await useChangesStore.getState().setAmend(true);
+  useChangesStore.getState().setCommitMessage('edited while amending');
+  await useChangesStore.getState().setAmend(false);
+
+  assert.equal(useChangesStore.getState().commitMessage, 'edited while amending');
+  assert.equal(loadState().commitMessage, 'edited while amending', 'the edit survives a rebuild');
+
+  // The restore path persists too. Empty the box so the prefill runs, then
+  // toggle off: the box returns to the empty draft, and so does storage.
+  useChangesStore.getState().setCommitMessage('');
+  await useChangesStore.getState().setAmend(true);
+  assert.equal(useChangesStore.getState().commitMessage, 'HEAD message', 'prefilled because the box was empty');
+  await useChangesStore.getState().setAmend(false);
+  assert.equal(useChangesStore.getState().commitMessage, '');
+  assert.equal(loadState().commitMessage, '', 'the restored draft is persisted, not the HEAD message');
+});
+
 // ------------------------------------------------------- amend toggle markup
 
 test('the commit footer renders an amend toggle bound to the store state', () => {
