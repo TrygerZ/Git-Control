@@ -10,6 +10,7 @@ import {
   apiQuotaLabel,
   baseName,
   conflictLabel,
+  compareUrl,
   consequenceOf,
   countdown,
   displayPath,
@@ -1066,5 +1067,31 @@ test('apiQuotaLabel reads remaining over limit with the catalog locale', () => {
   assert.equal(
     apiQuotaLabel({ limit: 5000, remaining: null, resetAt: null, cached: false, offline: false }, 'en'),
     null,
+  );
+});
+
+test('compareUrl encodes every branch segment so a legal ref keeps its path', () => {
+  // `git check-ref-format --branch 'feat/#123-fix'` accepts this name. Concatenated
+  // raw, the WHATWG parser moves `#123-fix?expand=1` into the fragment and the
+  // browser opens the compare page for `feat/`.
+  const url = compareUrl('https://github.com/o/r', 'feat/#123-fix');
+  assert.equal(new URL(url).pathname, '/o/r/compare/feat/%23123-fix');
+  assert.equal(new URL(url).hash, '');
+  assert.equal(new URL(url).searchParams.get('expand'), '1');
+
+  assert.equal(
+    compareUrl('https://github.com/o/r', 'main'),
+    'https://github.com/o/r/compare/main?expand=1',
+    'a plain branch is unchanged',
+  );
+  assert.equal(
+    new URL(compareUrl('https://github.com/o/r', 'feat/a b')).pathname,
+    '/o/r/compare/feat/a%20b',
+    'a space cannot split the path',
+  );
+  assert.equal(
+    new URL(compareUrl('https://github.com/o/r', 'fix?a=b')).search,
+    '?expand=1',
+    'a question mark in the ref stays in the path, not the query',
   );
 });

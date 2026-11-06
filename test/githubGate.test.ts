@@ -79,9 +79,16 @@ test('AUTH_REQUIRED keeps the PR view readable without a token', () => {
   assert.equal(AUTH_REQUIRED.actions, true);
 });
 
-test('the gate stays loading until auth and linkage both arrive', () => {
-  assert.equal(githubGate(input({ auth: null })).view, 'loading');
-  assert.equal(githubGate(input({ linkage: null })).view, 'loading');
+test('the gate stays loading while the snapshot is still in flight', () => {
+  assert.equal(githubGate(input({ auth: null, loading: true })).view, 'loading');
+  assert.equal(githubGate(input({ linkage: null, loading: true })).view, 'loading');
+});
+
+test('a settled failure to read auth or linkage offers Connect, not a forever skeleton', () => {
+  // `github/auth` or `github/linkage` rejecting leaves both null with `loading` false.
+  // The view must be able to retry, so the gate falls back to the Connect affordance.
+  assert.equal(githubGate(input({ auth: null, loading: false })).view, 'signed-out');
+  assert.equal(githubGate(input({ linkage: null, loading: false })).view, 'signed-out');
 });
 
 test('a repository without a GitHub remote is no-remote, before any auth check', () => {
@@ -167,4 +174,39 @@ test('isStale uses the 60 s host cache TTL, boundary inclusive', () => {
   assert.equal(isStale(1_000_000, 1_060_000), false, 'inclusive');
   assert.equal(isStale(1_000_000, 1_060_001), true);
   assert.equal(isStale(1_000_000, 1_000_001, 0), true, 'explicit TTL wins');
+});
+
+// ------------------------------------------------ quota failures (QA finding 1)
+
+test('a RATE_LIMITED error raises the rate-limited banner, not metadata-incomplete', () => {
+  // The API refuses the read before a successful response can report `remaining: 0`,
+  // so the failure is the ONLY signal the real quota wall produces. The store keeps
+  // the last successful snapshot, which still says 42 remaining.
+  const gate = githubGate(
+    input({
+      auth: SIGNED_OUT,
+      rateLimit: QUOTA,
+      error: { status: 429, code: 'RATE_LIMITED', message: 'GitHub API rate limit reached.', detail: 'resetAt=1800000000000' },
+    }),
+  );
+  assert.equal(gate.view, 'ready', 'the cached list stays visible');
+  assert.deepEqual(gate.banner, {
+    kind: 'rate-limited',
+    resetAt: 1_800_000_000_000,
+    canConnect: true,
+  });
+});
+
+test('a RATE_LIMITED error without a reset time still reports the banner', () => {
+  const gate = githubGate(
+    input({ error: { status: 429, code: 'RATE_LIMITED', message: 'limited' } }),
+  );
+  assert.deepEqual(gate.banner, { kind: 'rate-limited', resetAt: null, canConnect: false });
+});
+
+test('a malformed resetAt detail is not trusted as a timestamp', () => {
+  const gate = githubGate(
+    input({ error: { status: 429, code: 'RATE_LIMITED', message: 'limited', detail: 'resetAt=soon' } }),
+  );
+  assert.deepEqual(gate.banner, { kind: 'rate-limited', resetAt: null, canConnect: false });
 });

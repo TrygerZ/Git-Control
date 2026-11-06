@@ -1017,6 +1017,11 @@ export interface GitHubState {
  */
 const requestedCommitAuthorHashes = new Set<string>();
 
+/** One `load()` in flight at a time; the sidebar shell and the PR view mount in one tick. */
+let inFlightLoad: Promise<void> | null = null;
+let inFlightPullRequests: Promise<void> | null = null;
+let inFlightClosedPullRequests: Promise<void> | null = null;
+
 /**
  * Drop everything learned about commit authors. Avatars belong to one repository and
  * to one auth state, so a disconnect or a switch to another remote has to forget them
@@ -1047,67 +1052,94 @@ export const useGitHubStore = create<GitHubState>((set, get) => ({
   error: null,
 
   async load() {
+    if (inFlightLoad !== null) return inFlightLoad;
     set({ loading: true });
-    try {
-      const [auth, linkage] = await Promise.all([
-        bridge.request('github/auth', {}),
-        bridge.request('github/linkage', {}),
-      ]);
-      const prevLinkage = get().linkage;
-      if (linkageChangedRepo(prevLinkage, linkage)) {
-        resetCommitAuthors(set);
+    inFlightLoad = (async () => {
+      try {
+        const [auth, linkage] = await Promise.all([
+          bridge.request('github/auth', {}),
+          bridge.request('github/linkage', {}),
+        ]);
+        const prevLinkage = get().linkage;
+        const repoChanged = linkageChangedRepo(prevLinkage, linkage);
+        if (repoChanged) {
+          resetCommitAuthors(set);
+        }
+        set({
+          auth,
+          linkage,
+          loading: false,
+          error: null,
+          // The previous repository's rows must not survive a `pickRepository` switch.
+          ...(repoChanged
+            ? {
+                pullRequests: [],
+                pullRequestsLoadedAt: null,
+                closedPullRequests: [],
+                closedLoaded: false,
+              }
+            : {}),
+        });
+        if (linkage.available) await get().loadPullRequests();
+      } catch (err) {
+        const body = toErrorBody(err);
+        set({ loading: false, error: body });
+      } finally {
+        inFlightLoad = null;
       }
-      set({ auth, linkage, loading: false, error: null });
-      if (linkage.available) await get().loadPullRequests();
-    } catch (err) {
-      const body = toErrorBody(err);
-      set({ loading: false, error: body });
-    }
+    })();
+    return inFlightLoad;
   },
 
   async loadPullRequests() {
+    if (inFlightPullRequests !== null) return inFlightPullRequests;
     const linkage = get().linkage;
     if (linkage === null || !linkage.available || linkage.owner === null || linkage.repo === null) return;
-    try {
-      const result = await bridge.request('github/pullRequests', {
-        owner: linkage.owner,
-        repo: linkage.repo,
-        state: 'open',
-      });
-      set({
-        pullRequests: result.pullRequests,
-        pullRequestsLoadedAt: Date.now(),
-        rateLimit: result.rateLimit,
-        error: null,
-      });
-    } catch (err) {
-      // Keep the previous list: stale PR chips beat an empty panel.
-      const body = toErrorBody(err);
-      set({ error: body });
-    }
+    const { owner, repo } = linkage;
+    inFlightPullRequests = (async () => {
+      try {
+        const result = await bridge.request('github/pullRequests', { owner, repo, state: 'open' });
+        set({
+          pullRequests: result.pullRequests,
+          pullRequestsLoadedAt: Date.now(),
+          rateLimit: result.rateLimit,
+          error: null,
+        });
+      } catch (err) {
+        // Keep the previous list: stale PR chips beat an empty panel.
+        const body = toErrorBody(err);
+        set({ error: body });
+      } finally {
+        inFlightPullRequests = null;
+      }
+    })();
+    return inFlightPullRequests;
   },
 
   async loadClosedPullRequests() {
+    if (inFlightClosedPullRequests !== null) return inFlightClosedPullRequests;
     const { linkage, closedLoaded } = get();
     if (closedLoaded) return;
     if (linkage === null || !linkage.available || linkage.owner === null || linkage.repo === null) return;
-    try {
-      const result = await bridge.request('github/pullRequests', {
-        owner: linkage.owner,
-        repo: linkage.repo,
-        state: 'closed',
-      });
-      set({
-        closedPullRequests: result.pullRequests,
-        closedLoaded: true,
-        rateLimit: result.rateLimit,
-        error: null,
-      });
-    } catch (err) {
-      // Leave `closedLoaded` false so the next expand can retry.
-      const body = toErrorBody(err);
-      set({ error: body });
-    }
+    const { owner, repo } = linkage;
+    inFlightClosedPullRequests = (async () => {
+      try {
+        const result = await bridge.request('github/pullRequests', { owner, repo, state: 'closed' });
+        set({
+          closedPullRequests: result.pullRequests,
+          closedLoaded: true,
+          rateLimit: result.rateLimit,
+          error: null,
+        });
+      } catch (err) {
+        // Leave `closedLoaded` false so the next expand can retry.
+        const body = toErrorBody(err);
+        set({ error: body });
+      } finally {
+        inFlightClosedPullRequests = null;
+      }
+    })();
+    return inFlightClosedPullRequests;
   },
 
   async loadCommitAuthors(hashes: string[]) {

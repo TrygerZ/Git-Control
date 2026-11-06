@@ -17,6 +17,7 @@ import { useEffect, useMemo, useRef, useState, type JSX, type KeyboardEvent } fr
 import { loadState, saveState } from './bridge';
 import {
   apiQuotaLabel,
+  compareUrl,
   countdown,
   formatCount,
   pullRequestLabel,
@@ -89,13 +90,8 @@ export function PullRequestsView(): JSX.Element {
     return () => clearTimeout(timer);
   }, [needsTick, now]);
 
-  // Auth and linkage are not pushed by the host, so the first view to mount asks.
-  useEffect(() => {
-    const state = useGitHubStore.getState();
-    if (state.auth === null || state.linkage === null) void state.load();
-  }, []);
-
-  // Mount and every activation of `prs` reload only when the list is stale.
+  // Mount and every activation of `prs` reload only when the list is stale. The
+  // first load belongs to the sidebar shell, which already asked on mount.
   useEffect(() => {
     if (route.id !== 'prs') return;
     if (isStale(pullRequestsLoadedAt, Date.now(), PR_STALE_MS)) void loadPullRequests();
@@ -139,6 +135,8 @@ export function PullRequestsView(): JSX.Element {
 
   const branch = status?.branch ?? null;
   const webUrl = linkage?.webUrl ?? null;
+  /** `origin/main` tracks `main`; the card names the branch the compare runs against. */
+  const baseBranch = status?.upstream?.replace(/^[^/]*\//, '') ?? null;
   const branchHasPr =
     branch !== null && pullRequests.some((pr) => pr.state === 'open' && pr.headRef === branch);
   const showCard = gate.view === 'ready' && branch !== null && webUrl !== null && !branchHasPr;
@@ -210,7 +208,7 @@ export function PullRequestsView(): JSX.Element {
       ) : gate.view === 'signed-out' ? (
         <EmptyState
           title={strings.prs.signedOutTitle}
-          hint={strings.prs.signedOutBody}
+          hint={strings.prs.signedOutPrivateBody}
           action={
             <button
               type="button"
@@ -278,9 +276,9 @@ export function PullRequestsView(): JSX.Element {
                 <code className="gc-prs__card-branch" title={sanitizeGitText(branch)}>
                   {sanitizeGitText(branch)}
                 </code>
-                {status !== null && status.ahead > 0 && (
+                {status !== null && status.ahead > 0 && baseBranch !== null && (
                   <span className="gc-prs__card-text">
-                    {strings.prs.branchCardAhead(formatCount(status.ahead, language))}
+                    {strings.prs.branchCardAhead(formatCount(status.ahead, language), baseBranch)}
                   </span>
                 )}
                 <span className="gc-prs__card-text">{strings.prs.branchCardNone}</span>
@@ -288,7 +286,7 @@ export function PullRequestsView(): JSX.Element {
               <button
                 type="button"
                 className="gc-button gc-button--action"
-                onClick={() => void openUrl(`${webUrl}/compare/${branch}?expand=1`)}
+                onClick={() => void openUrl(compareUrl(webUrl, branch))}
               >
                 {strings.prs.createOnGitHub}
               </button>

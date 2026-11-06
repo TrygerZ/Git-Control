@@ -688,23 +688,10 @@ const en = {
     keyZoom: 'Zoom',
   },
 
-  // GitHub panel
+  // Banner titles shared by the GitHub-backed tabs; `PullRequestsView` is the only consumer.
   github: {
-    panelAria: 'GitHub status',
     scopeWarningTitle: 'Insufficient token scopes.',
     metadataIncompleteTitle: 'GitHub metadata incomplete.',
-    noRemoteNote: 'No GitHub remote. PRs and commit links unavailable.',
-    disconnectButtonTitle: 'Remove GitHub token.',
-    disconnectButton: 'Disconnect GitHub',
-    connectButtonTitle: 'Save token for PRs and commit links.',
-    connectButton: 'Connect GitHub',
-    reloadAria: 'Reload GitHub metadata',
-    reloadButton: 'Reload',
-    noOpenPRsNote: 'No open pull requests.',
-    openPRsListAria: 'Open pull requests',
-    openPRAria: (label: string) => `Open pull request ${label}`,
-    prTooltip: (title: string, head: string, base: string, author: string, updated: string) =>
-      `${title} (${head} → ${base}), by ${author}, updated ${updated}`,
   },
 
   // Pull requests panel
@@ -718,7 +705,7 @@ const en = {
     groupNeedsReview: 'Needs your review',
     groupMine: 'Your pull requests',
     groupRecent: 'Recently updated',
-    branchCardAhead: (n: string) => `${n} ahead of main`,
+    branchCardAhead: (n: string, base: string) => `${n} ahead of ${base}`,
     branchCardNone: 'No pull request for this branch yet. Publish it first, then open one on GitHub.',
     createOnGitHub: 'Create on GitHub',
     openOnGitHub: 'Open on GitHub',
@@ -727,6 +714,8 @@ const en = {
     emptyBody: 'Nothing is open with this filter. Try a broader query or clear the filters.',
     clearFilters: 'Clear filters',
     signedOutTitle: 'Connect GitHub',
+    // Unused by P07: the PR view can only reach signed-out for a private repo or a
+    // refused tokenless read. Issues (P08) and Actions (P13) use this body.
     signedOutBody: 'Save a personal access token to list pull requests, issues and workflow runs for this repository.',
     signedOutPrivateBody: 'This repository needs a GitHub token to list pull requests. Save a personal access token to continue.',
     signInBannerText: 'Sign in for higher limits',
@@ -735,18 +724,9 @@ const en = {
     noRemoteBody: 'Add a GitHub remote to see pull requests here. Changes and Branches still work.',
     rateLimitedTitle: 'GitHub API limit reached',
     rateLimitedBody: (time: string) => `Showing cached results. Requests resume in ${time}.`,
-    menuReload: 'Reload',
-    menuOpenRepo: 'Open repository on GitHub',
-    menuCopyRepoUrl: 'Copy repository URL',
-    menuAccount: 'Account',
-    menuDisconnect: 'Disconnect GitHub',
     filterState: 'State',
-    filterOpen: 'Open',
-    filterClosed: 'Closed',
-    filterMerged: 'Merged',
     footerConnected: (login: string) => `Connected as ${login}`,
     footerNotConnected: 'Not connected',
-    footerQuota: (remaining: string, limit: string) => `API ${remaining} / ${limit}`,
   },
 
   // Explorer root app

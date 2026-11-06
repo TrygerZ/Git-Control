@@ -685,23 +685,10 @@ const id: Catalog = {
     keyZoom: 'Zoom',
   },
 
-  // GitHub panel
+  // Banner titles shared by the GitHub-backed tabs; `PullRequestsView` is the only consumer.
   github: {
-    panelAria: 'Status GitHub',
     scopeWarningTitle: 'Scope token kurang.',
     metadataIncompleteTitle: 'Metadata GitHub tidak lengkap.',
-    noRemoteNote: 'Tidak ada remote GitHub. PR dan tautan commit tidak tersedia.',
-    disconnectButtonTitle: 'Hapus token GitHub.',
-    disconnectButton: 'Putuskan GitHub',
-    connectButtonTitle: 'Simpan token untuk PR dan tautan commit.',
-    connectButton: 'Sambungkan GitHub',
-    reloadAria: 'Muat ulang metadata GitHub',
-    reloadButton: 'Muat ulang',
-    noOpenPRsNote: 'Tidak ada pull request terbuka.',
-    openPRsListAria: 'Pull request terbuka',
-    openPRAria: (label: string) => `Buka pull request ${label}`,
-    prTooltip: (title: string, head: string, base: string, author: string, updated: string) =>
-      `${title} (${head} → ${base}), oleh ${author}, diperbarui ${updated}`,
   },
 
   // Pull requests panel
@@ -715,7 +702,7 @@ const id: Catalog = {
     groupNeedsReview: 'Menunggu review Anda',
     groupMine: 'Pull request Anda',
     groupRecent: 'Baru diperbarui',
-    branchCardAhead: (n: string) => `${n} di depan main`,
+    branchCardAhead: (n: string, base: string) => `${n} di depan ${base}`,
     branchCardNone: 'Belum ada pull request untuk branch ini. Publish dulu, lalu buka satu di GitHub.',
     createOnGitHub: 'Buat di GitHub',
     openOnGitHub: 'Buka di GitHub',
@@ -724,6 +711,8 @@ const id: Catalog = {
     emptyBody: 'Tidak ada yang terbuka dengan filter ini. Coba kata kunci lebih luas atau hapus filter.',
     clearFilters: 'Hapus filter',
     signedOutTitle: 'Hubungkan GitHub',
+    // Unused by P07: the PR view can only reach signed-out for a private repo or a
+    // refused tokenless read. Issues (P08) and Actions (P13) use this body.
     signedOutBody: 'Simpan personal access token untuk menampilkan pull request, issue, dan workflow run repository ini.',
     signedOutPrivateBody: 'Repository ini memerlukan token GitHub untuk menampilkan pull request. Simpan personal access token untuk melanjutkan.',
     signInBannerText: 'Masuk untuk batas lebih tinggi',
@@ -732,18 +721,9 @@ const id: Catalog = {
     noRemoteBody: 'Tambahkan remote GitHub untuk melihat pull request di sini. Changes dan Branches tetap bisa dipakai.',
     rateLimitedTitle: 'Batas API GitHub tercapai',
     rateLimitedBody: (time: string) => `Menampilkan hasil tersimpan. Permintaan dilanjutkan dalam ${time}.`,
-    menuReload: 'Muat ulang',
-    menuOpenRepo: 'Buka repository di GitHub',
-    menuCopyRepoUrl: 'Salin URL repository',
-    menuAccount: 'Akun',
-    menuDisconnect: 'Putuskan GitHub',
     filterState: 'Status',
-    filterOpen: 'Terbuka',
-    filterClosed: 'Ditutup',
-    filterMerged: 'Digabung',
     footerConnected: (login: string) => `Terhubung sebagai ${login}`,
     footerNotConnected: 'Tidak terhubung',
-    footerQuota: (remaining: string, limit: string) => `API ${remaining} / ${limit}`,
   },
 
   // Explorer root app

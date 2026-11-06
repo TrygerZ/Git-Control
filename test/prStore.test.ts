@@ -172,3 +172,92 @@ test('loadPullRequests without a GitHub remote sends nothing', async () => {
   }
   assert.deepEqual(s.calls, []);
 });
+
+// ------------------------------------------------- in-flight guard (QA finding 2)
+
+test('two overlapping load() calls send one auth, linkage and pulls request', async () => {
+  resetStore();
+  useGitHubStore.setState({ auth: null, linkage: null });
+  let pulls = 0;
+  const s = stub((kind) => {
+    if (kind === 'github/pullRequests') {
+      pulls += 1;
+      return { pullRequests: [pr(1)], rateLimit: RATE };
+    }
+    if (kind === 'github/auth') return { connected: true, login: 'me', scopes: [] };
+    return LINKED;
+  });
+  try {
+    await Promise.all([useGitHubStore.getState().load(), useGitHubStore.getState().load()]);
+  } finally {
+    s.restore();
+  }
+  assert.equal(pulls, 1, 'the sidebar mounts the shell and the view in one tick, so both would ask');
+  assert.equal(s.calls.filter((c) => c.kind === 'github/auth').length, 1);
+  assert.equal(s.calls.filter((c) => c.kind === 'github/linkage').length, 1);
+});
+
+test('a second load after the first settled asks again', async () => {
+  resetStore();
+  const s = stub((kind) => {
+    if (kind === 'github/pullRequests') return { pullRequests: [pr(1)], rateLimit: RATE };
+    if (kind === 'github/auth') return { connected: true, login: 'me', scopes: [] };
+    return LINKED;
+  });
+  try {
+    await useGitHubStore.getState().load();
+    await useGitHubStore.getState().load();
+  } finally {
+    s.restore();
+  }
+  assert.equal(s.calls.filter((c) => c.kind === 'github/pullRequests').length, 2, 'a settled load is not cached');
+});
+
+test('two overlapping loadClosedPullRequests calls send one closed request', async () => {
+  resetStore();
+  let closed = 0;
+  const s = stub((kind, payload) => {
+    if (kind !== 'github/pullRequests') return { connected: true, login: 'me', scopes: [] };
+    assert.equal((payload as { state?: string }).state, 'closed');
+    closed += 1;
+    return { pullRequests: [pr(4, 'closed')], rateLimit: RATE };
+  });
+  try {
+    await Promise.all([
+      useGitHubStore.getState().loadClosedPullRequests(),
+      useGitHubStore.getState().loadClosedPullRequests(),
+    ]);
+  } finally {
+    s.restore();
+  }
+  assert.equal(closed, 1, 'collapse and re-expand inside one request must not spend a second unit');
+});
+
+test('switching to another repository drops the previous pull request lists', async () => {
+  resetStore();
+  useGitHubStore.setState({
+    pullRequests: [pr(1)],
+    pullRequestsLoadedAt: 999,
+    closedPullRequests: [pr(4, 'closed')],
+    closedLoaded: true,
+  });
+  const other: GitHubLinkage = { ...LINKED, owner: 'other', repo: 'project' };
+  const s = stub((kind) => {
+    if (kind === 'github/auth') return { connected: true, login: 'me', scopes: [] };
+    if (kind === 'github/linkage') return other;
+    return { pullRequests: [pr(7)], rateLimit: RATE };
+  });
+  try {
+    await useGitHubStore.getState().load();
+  } finally {
+    s.restore();
+  }
+  const state = useGitHubStore.getState();
+  assert.deepEqual(state.closedPullRequests, [], 'the old repository closed rows are gone');
+  assert.equal(state.closedLoaded, false, 'and the latch is released so the new repo can fetch');
+  assert.deepEqual(
+    state.pullRequests.map((p) => p.number),
+    [7],
+    'the new repository list replaces the old one',
+  );
+});

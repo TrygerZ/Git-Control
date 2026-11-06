@@ -392,6 +392,19 @@ export function resolveContributorAvatar(
 }
 
 /**
+ * Compare URL for `branch` against the repository default branch.
+ *
+ * Each `/`-separated segment is encoded on its own. `git check-ref-format --branch
+ * 'feat/#123-fix'` accepts that name, and concatenated raw the `#` becomes a
+ * fragment, so the browser would open the compare page for `feat/` instead.
+ */
+export function compareUrl(webUrl: string, branch: string): string {
+  const base = webUrl.replace(/\/+$/, '');
+  const path = branch.split('/').map(encodeURIComponent).join('/');
+  return `${base}/compare/${path}?expand=1`;
+}
+
+/**
  * Decides whether clicking a contributor opens their GitHub profile or toggles author filter.
  */
 export function contributorActionKind(

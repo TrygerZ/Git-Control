@@ -76,8 +76,6 @@ test('i18n t(lang) returns corresponding catalog', () => {
   );
   assert.equal(t('id').legend.title, 'Panduan simbol grafik');
   assert.equal(t('en').legend.title, 'Graph symbol legend');
-  assert.equal(t('id').github.panelAria, 'Status GitHub');
-  assert.equal(t('en').github.panelAria, 'GitHub status');
   assert.equal(t('id').explorer.asideAria, 'Panel detail');
   assert.equal(t('en').explorer.asideAria, 'Details panel');
   assert.equal(t('id').minimap.ariaLabel, 'Ikhtisar grafik');
@@ -324,8 +322,9 @@ test('the prs namespace exists in both catalogs with the same shape', () => {
   // dash scan and the count formatters call them.
   assert.equal(en.rowAria('#7', 'Title', 'octocat'), '#7, Title, by octocat');
   assert.equal(id.rowAria('#7', 'Title', 'octocat'), '#7, Title, oleh octocat');
-  assert.equal(en.branchCardAhead('3'), '3 ahead of main');
-  assert.equal(id.branchCardAhead('3'), '3 di depan main');
-  assert.equal(en.footerQuota('4,812', '5,000'), 'API 4,812 / 5,000');
+  assert.equal(en.branchCardAhead('3', 'main'), '3 ahead of main');
+  assert.equal(id.branchCardAhead('3', 'main'), '3 di depan main');
+  assert.equal(en.branchCardAhead('2', 'develop'), '2 ahead of develop', 'the base is the branch it tracks');
+  assert.equal(id.branchCardAhead('2', 'develop'), '2 di depan develop');
   assert.equal(en.rateLimitedBody('12:40'), 'Showing cached results. Requests resume in 12:40.');
 });
