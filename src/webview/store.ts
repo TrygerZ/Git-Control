@@ -990,6 +990,11 @@ export interface GitHubState {
   auth: GitHubAuthState | null;
   linkage: GitHubLinkage | null;
   pullRequests: PullRequestInfo[];
+  /** Epoch ms of the last successful open-list read; `null` means never loaded. */
+  pullRequestsLoadedAt: number | null;
+  closedPullRequests: PullRequestInfo[];
+  /** Set once the closed list was fetched; a failed fetch leaves it false so a later expand retries. */
+  closedLoaded: boolean;
   avatars: Record<string, string | null>;
   rateLimit: GitHubRateLimit | null;
   loading: boolean;
@@ -997,6 +1002,7 @@ export interface GitHubState {
   error: ErrorBody | null;
   load(): Promise<void>;
   loadPullRequests(): Promise<void>;
+  loadClosedPullRequests(): Promise<void>;
   loadCommitAuthors(hashes: string[]): Promise<void>;
   connect(): Promise<void>;
   disconnect(): Promise<void>;
@@ -1032,6 +1038,9 @@ export const useGitHubStore = create<GitHubState>((set, get) => ({
   auth: null,
   linkage: null,
   pullRequests: [],
+  pullRequestsLoadedAt: null,
+  closedPullRequests: [],
+  closedLoaded: false,
   avatars: {},
   rateLimit: null,
   loading: false,
@@ -1065,9 +1074,37 @@ export const useGitHubStore = create<GitHubState>((set, get) => ({
         repo: linkage.repo,
         state: 'open',
       });
-      set({ pullRequests: result.pullRequests, rateLimit: result.rateLimit, error: null });
+      set({
+        pullRequests: result.pullRequests,
+        pullRequestsLoadedAt: Date.now(),
+        rateLimit: result.rateLimit,
+        error: null,
+      });
     } catch (err) {
       // Keep the previous list: stale PR chips beat an empty panel.
+      const body = toErrorBody(err);
+      set({ error: body });
+    }
+  },
+
+  async loadClosedPullRequests() {
+    const { linkage, closedLoaded } = get();
+    if (closedLoaded) return;
+    if (linkage === null || !linkage.available || linkage.owner === null || linkage.repo === null) return;
+    try {
+      const result = await bridge.request('github/pullRequests', {
+        owner: linkage.owner,
+        repo: linkage.repo,
+        state: 'closed',
+      });
+      set({
+        closedPullRequests: result.pullRequests,
+        closedLoaded: true,
+        rateLimit: result.rateLimit,
+        error: null,
+      });
+    } catch (err) {
+      // Leave `closedLoaded` false so the next expand can retry.
       const body = toErrorBody(err);
       set({ error: body });
     }
@@ -1130,7 +1167,15 @@ export const useGitHubStore = create<GitHubState>((set, get) => ({
     try {
       const auth = await bridge.request('github/disconnect', {});
       resetCommitAuthors(set);
-      set({ auth, pullRequests: [], rateLimit: null, error: null });
+      set({
+        auth,
+        pullRequests: [],
+        pullRequestsLoadedAt: null,
+        closedPullRequests: [],
+        closedLoaded: false,
+        rateLimit: null,
+        error: null,
+      });
 
     } catch (err) {
       const body = toErrorBody(err);

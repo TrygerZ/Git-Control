@@ -300,3 +300,32 @@ test('sub-tab strings exist in both languages, are translated, and carry the cou
   assert.notEqual(t('en').nav.subTabsAria, t('id').nav.subTabsAria);
   assert.notEqual(t('en').nav.subStashesAria('2'), t('id').nav.subStashesAria('2'));
 });
+
+test('the prs namespace exists in both catalogs with the same shape', () => {
+  const en = t('en').prs;
+  const id = t('id').prs;
+
+  // Structure is enforced by `id` implementing `Catalog`; these pin the strings
+  // that carry meaning a translator could otherwise flip.
+  assert.equal(en.chipOpen, 'Open');
+  assert.equal(id.chipOpen, 'Terbuka');
+  assert.equal(en.chipReview, 'Review requested');
+  assert.equal(id.chipReview, 'Perlu review');
+  assert.equal(en.groupNeedsReview, 'Needs your review');
+  assert.equal(id.groupNeedsReview, 'Menunggu review Anda');
+  assert.equal(en.signInBannerText, 'Sign in for higher limits');
+  assert.equal(id.signInBannerText, 'Masuk untuk batas lebih tinggi');
+  assert.equal(en.noRemoteTitle, 'No GitHub remote');
+  assert.equal(id.noRemoteTitle, 'Tidak ada remote GitHub');
+  assert.equal(en.clearFilters, 'Clear filters');
+  assert.equal(id.clearFilters, 'Hapus filter');
+
+  // Function entries must not throw on numeric-looking input, which is how the
+  // dash scan and the count formatters call them.
+  assert.equal(en.rowAria('#7', 'Title', 'octocat'), '#7, Title, by octocat');
+  assert.equal(id.rowAria('#7', 'Title', 'octocat'), '#7, Title, oleh octocat');
+  assert.equal(en.branchCardAhead('3'), '3 ahead of main');
+  assert.equal(id.branchCardAhead('3'), '3 di depan main');
+  assert.equal(en.footerQuota('4,812', '5,000'), 'API 4,812 / 5,000');
+  assert.equal(en.rateLimitedBody('12:40'), 'Showing cached results. Requests resume in 12:40.');
+});

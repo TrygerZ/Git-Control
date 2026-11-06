@@ -28,6 +28,7 @@ import type {
 } from '../messages';
 import { isValidResponse, validateHostEvent } from './hostGuards';
 import { DEFAULT_ROUTE, parseRoute } from './route';
+import type { PrFilterId } from './prFilters';
 import type { ChangeSection } from './tree';
 import { activeLang, t } from './i18n';
 
@@ -54,7 +55,11 @@ export interface WebviewState {
   pushAfterCommit: boolean;
   showRibbons: boolean;
   route: Route;
+  prFilter: PrFilterId;
+  prQuery: string;
 }
+
+const PR_FILTERS: readonly PrFilterId[] = ['open', 'review-requested', 'mine', 'draft'];
 
 const DEFAULT_STATE: WebviewState = {
   selectedHash: null,
@@ -66,6 +71,8 @@ const DEFAULT_STATE: WebviewState = {
   pushAfterCommit: false,
   showRibbons: true,
   route: DEFAULT_ROUTE,
+  prFilter: 'open',
+  prQuery: '',
 };
 
 /** Rejection carrying the full {@link ErrorBody} so the UI can render remedies. */
@@ -273,6 +280,8 @@ export function loadState(): WebviewState {
     pushAfterCommit: partial.pushAfterCommit === true,
     showRibbons: partial.showRibbons !== false,
     route: parseRoute(partial.route) ?? DEFAULT_ROUTE,
+    prFilter: PR_FILTERS.find((id) => id === partial.prFilter) ?? 'open',
+    prQuery: typeof partial.prQuery === 'string' ? partial.prQuery : '',
   };
 }
 

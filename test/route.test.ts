@@ -16,7 +16,7 @@ import {
   resolveInitialRoute,
   sameRoute,
 } from '../src/webview/route';
-import { bridge, loadState, saveState } from '../src/webview/bridge';
+import { bridge, loadState, saveState, type WebviewState } from '../src/webview/bridge';
 import { useRouteStore, wireHostEvents } from '../src/webview/store';
 import type { Route } from '../src/messages';
 
@@ -187,4 +187,19 @@ test('event/navigate reaches the store in the sidebar only and clears the host q
   } finally {
     restore();
   }
+});
+
+test('prFilter and prQuery survive a saveState/loadState round trip', () => {
+  saveState({ prFilter: 'mine', prQuery: 'graph' });
+  const state = loadState();
+  assert.equal(state.prFilter, 'mine');
+  assert.equal(state.prQuery, 'graph');
+
+  // An unknown filter id and a non-string query fall back to the defaults
+  // rather than reaching the view, for the same reason `parseRoute` drops
+  // unknown ids: the value comes from storage, not from this build.
+  saveState({ prFilter: 'bogus' as unknown as WebviewState['prFilter'], prQuery: 7 as unknown as string });
+  const restored = loadState();
+  assert.equal(restored.prFilter, 'open');
+  assert.equal(restored.prQuery, '');
 });
