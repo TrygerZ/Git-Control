@@ -7,14 +7,15 @@
  * would fold things the user never folded. These tests pin the separation,
  * the default (every section open), and the persist/restore round trip.
  */
-import test from 'node:test';
+import test, { type TestContext } from 'node:test';
 import assert from 'node:assert/strict';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { useChangesStore, pruneStashCache } from '../src/webview/store';
+import { useChangesStore, useOperationStore, useRepoStore, pruneStashCache } from '../src/webview/store';
 import { bridge, loadState, saveState } from '../src/webview/bridge';
 import { t } from '../src/webview/i18n';
 import { isNavVisible, navRegistry } from '../src/webview/navRegistry';
+import type { RepoStatus } from '../src/messages';
 import '../src/webview/NavStrip';
 
 function reset(): void {
@@ -687,4 +688,497 @@ test('only Changes is registered in the shipped build, so the strip stays hidden
     ['changes'],
   );
   assert.equal(isNavVisible(navRegistry.list().length), false);
+});
+
+// ------------------------------------------------------------------- amend
+
+/** Reset the amend slice plus the status it derives from. */
+function resetAmend(): void {
+  useChangesStore.setState({
+    amend: false,
+    amendBase: null,
+    amendDraft: null,
+    commitMessage: '',
+    messageError: null,
+  });
+}
+
+function setStatus(patch: Partial<RepoStatus>): void {
+  useRepoStore.setState({
+    status: {
+      repoRoot: 'D:/work/git-control',
+      branch: 'main',
+      head: 'aaa1111bbb2222ccc3333ddd4444eee5555fff6',
+      detached: false,
+      upstream: 'origin/main',
+      ahead: 2,
+      behind: 0,
+      incoming: 0,
+      outgoing: 2,
+      dirty: false,
+      staged: false,
+      operation: 'idle',
+      changes: [],
+      conflicts: [],
+      churnTruncated: false,
+      statusToken: 'token',
+      lastFetchedAt: null,
+      lastFetchAt: null,
+      ...patch,
+    },
+  });
+}
+
+/** Stub `commits/detail` only; every other request falls through. */
+function stubDetail(
+  t: TestContext,
+  detail: { hash: string; subject: string; body: string } | Error,
+  onRequest?: () => void,
+): void {
+  const original = bridge.request;
+  bridge.request = (async (kind: any, payload: any): Promise<any> => {
+    if (kind === 'commits/detail') {
+      onRequest?.();
+      if (detail instanceof Error) throw detail;
+      return { ...detail, shortHash: detail.hash.slice(0, 7) };
+    }
+    return original.call(bridge, kind, payload);
+  }) as any;
+  t.after(() => {
+    bridge.request = original;
+  });
+}
+
+test('setAmend loads the last commit message when the box is empty', async (t) => {
+  resetAmend();
+  setStatus({ ahead: 2 });
+  stubDetail(t, { hash: 'aaa1111bbb2222ccc3333ddd4444eee5555fff6', subject: 'feat: first', body: 'longer story' });
+
+  await useChangesStore.getState().setAmend(true);
+  const after = useChangesStore.getState();
+  assert.equal(after.amend, true);
+  assert.equal(after.commitMessage, 'feat: first\n\nlonger story', 'subject and body, blank-line separated');
+  assert.equal(after.amendBase?.subject, 'feat: first');
+  assert.equal(after.amendBase?.message, 'feat: first\n\nlonger story');
+  assert.equal(after.amendDraft, '', 'the empty draft is remembered so toggling off restores it');
+});
+
+test('setAmend keeps a typed draft instead of overwriting it', async (t) => {
+  resetAmend();
+  setStatus({ ahead: 2 });
+  useChangesStore.setState({ commitMessage: 'my own message' });
+  stubDetail(t, { hash: 'aaa1111bbb2222ccc3333ddd4444eee5555fff6', subject: 'feat: first', body: '' });
+
+  await useChangesStore.getState().setAmend(true);
+  const after = useChangesStore.getState();
+  assert.equal(after.commitMessage, 'my own message', 'the draft wins, as frame 70 shows');
+  assert.equal(after.amendBase?.message, 'feat: first', 'the base is still recorded for the toggle-off compare');
+  assert.equal(after.amendDraft, 'my own message');
+});
+
+test('setAmend(false) restores the draft only when the message was not edited', async (t) => {
+  resetAmend();
+  setStatus({ ahead: 2 });
+  stubDetail(t, { hash: 'aaa1111bbb2222ccc3333ddd4444eee5555fff6', subject: 'feat: first', body: '' });
+
+  // Untouched: the prefill is dropped and the original draft comes back.
+  await useChangesStore.getState().setAmend(true);
+  await useChangesStore.getState().setAmend(false);
+  let after = useChangesStore.getState();
+  assert.equal(after.amend, false);
+  assert.equal(after.commitMessage, '', 'the empty draft is restored');
+  assert.equal(after.amendBase, null);
+  assert.equal(after.amendDraft, null);
+
+  // Edited: the user typed while amending, so the edit survives the toggle.
+  useChangesStore.setState({ commitMessage: 'typed draft' });
+  await useChangesStore.getState().setAmend(true);
+  useChangesStore.getState().setCommitMessage('edited while amending');
+  await useChangesStore.getState().setAmend(false);
+  after = useChangesStore.getState();
+  assert.equal(after.commitMessage, 'edited while amending', 'an edit is never thrown away');
+  assert.equal(after.amendBase, null);
+});
+
+test('toggling off while the detail request is in flight does not prefill', async (t) => {
+  resetAmend();
+  setStatus({ ahead: 2 });
+
+  let release = (): void => {
+    throw new Error('gate not armed');
+  };
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const original = bridge.request;
+  bridge.request = (async (kind: any, payload: any): Promise<any> => {
+    if (kind === 'commits/detail') {
+      await gate;
+      return { hash: 'aaa1111bbb2222ccc3333ddd4444eee5555fff6', shortHash: 'aaa1111', subject: 'late', body: '' };
+    }
+    return original.call(bridge, kind, payload);
+  }) as any;
+  t.after(() => {
+    bridge.request = original;
+  });
+
+  const pending = useChangesStore.getState().setAmend(true);
+  await useChangesStore.getState().setAmend(false);
+  release();
+  await pending;
+
+  const after = useChangesStore.getState();
+  assert.equal(after.amend, false);
+  assert.equal(after.commitMessage, '', 'the late response must not write into a form the user already left');
+  assert.equal(after.amendBase, null);
+});
+
+test('a blocked status never sends the detail request', async (t) => {
+  resetAmend();
+  for (const patch of [
+    { upstream: 'origin/main', ahead: 0 }, // published
+    { operation: 'merge' as const, ahead: 2 }, // operation in progress
+    { head: null }, // nothing to amend
+  ]) {
+    setStatus(patch);
+    let requested = 0;
+    stubDetail(t, { hash: 'x', subject: 'x', body: '' }, () => {
+      requested += 1;
+    });
+    await useChangesStore.getState().setAmend(true);
+    assert.equal(requested, 0, JSON.stringify(patch));
+    assert.equal(useChangesStore.getState().amend, false, JSON.stringify(patch));
+  }
+});
+
+test('a failed detail request clears the amend state and surfaces the error', async (t) => {
+  resetAmend();
+  setStatus({ ahead: 2 });
+  const originalFail = useOperationStore.getState().fail;
+  let failed = 0;
+  useOperationStore.setState({
+    fail: (err: unknown) => {
+      failed += 1;
+      originalFail.call(useOperationStore.getState(), err);
+    },
+  });
+  t.after(() => {
+    useOperationStore.setState({ fail: originalFail });
+  });
+  stubDetail(t, new Error('boom'));
+
+  await useChangesStore.getState().setAmend(true);
+  const after = useChangesStore.getState();
+  assert.equal(after.amend, false, 'a failed prefill must not leave the toggle on');
+  assert.equal(after.amendDraft, null);
+  assert.equal(failed, 1, 'the failure is reported, not swallowed');
+});
+
+test('commit sends amend only while the toggle is on', async (t) => {
+  const original = bridge.request;
+  const sent: any[] = [];
+  bridge.request = (async (kind: any, payload: any): Promise<any> => {
+    if (kind === 'actions/commit') {
+      sent.push(payload);
+      return { success: true, commit: 'abc', pushed: false, operation: 'idle', statusToken: 'token' };
+    }
+    if (kind === 'repos/status') {
+      return {
+        repoRoot: 'D:/work/git-control',
+        branch: 'main',
+        head: 'abc',
+        detached: false,
+        upstream: 'origin/main',
+        ahead: 2,
+        behind: 0,
+        incoming: 0,
+        outgoing: 2,
+        dirty: false,
+        staged: false,
+        operation: 'idle',
+        changes: [],
+        conflicts: [],
+        churnTruncated: false,
+        statusToken: 'token',
+        lastFetchedAt: null,
+        lastFetchAt: null,
+      };
+    }
+    if (kind === 'stash/list') return [];
+    if (kind === 'repos/graph') {
+      return {
+        nodes: [],
+        edges: [],
+        lanes: [],
+        dateBuckets: [],
+        refs: [],
+        head: null,
+        truncated: false,
+        nextCursor: null,
+        stale: false,
+      };
+    }
+    if (kind === 'repos/contributors') return [];
+    return original.call(bridge, kind, payload);
+  }) as any;
+  t.after(() => {
+    bridge.request = original;
+  });
+
+  resetAmend();
+  useChangesStore.setState({ commitMessage: 'plain commit' });
+  assert.equal(await useChangesStore.getState().commit(), true);
+  assert.equal(sent[0]?.amend, undefined, 'a plain commit carries no amend key at all');
+
+  resetAmend();
+  useChangesStore.setState({ commitMessage: 'reword', amend: true, amendBase: null, amendDraft: '' });
+  assert.equal(await useChangesStore.getState().commit(), true);
+  assert.equal(sent[1]?.amend, true);
+  const after = useChangesStore.getState();
+  assert.equal(after.amend, false, 'a landed commit leaves amend mode');
+  assert.equal(after.amendBase, null);
+  assert.equal(after.amendDraft, null);
+});
+
+test('the persisted message is the pre-amend draft, not the loaded HEAD message', async (t) => {
+  resetAmend();
+  setStatus({ ahead: 2 });
+  useChangesStore.setState({ commitMessage: 'draft in progress' });
+  stubDetail(t, { hash: 'aaa1111bbb2222ccc3333ddd4444eee5555fff6', subject: 'HEAD message', body: '' });
+
+  await useChangesStore.getState().setAmend(true);
+  assert.equal(useChangesStore.getState().commitMessage, 'draft in progress');
+
+  useChangesStore.getState().setCommitMessage('HEAD message edited');
+  assert.equal(
+    loadState().commitMessage,
+    'draft in progress',
+    'hiding and showing the webview must not resurrect the HEAD message with amend off',
+  );
+
+  await useChangesStore.getState().setAmend(false);
+  useChangesStore.getState().setCommitMessage('after amend off');
+  assert.equal(loadState().commitMessage, 'after amend off', 'once amend is off the live message is persisted again');
+});
+
+test('toggling amend off persists the message the box now shows', async (t) => {
+  // `retainContextWhenHidden: false`, so a rebuild is routine. Anything not
+  // persisted at toggle-off is silently lost on the next reveal.
+  resetAmend();
+  setStatus({ ahead: 2 });
+  stubDetail(t, { hash: 'aaa1111bbb2222ccc3333ddd4444eee5555fff6', subject: 'HEAD message', body: '' });
+
+  useChangesStore.setState({ commitMessage: 'draft' });
+  await useChangesStore.getState().setAmend(true);
+  useChangesStore.getState().setCommitMessage('edited while amending');
+  await useChangesStore.getState().setAmend(false);
+
+  assert.equal(useChangesStore.getState().commitMessage, 'edited while amending');
+  assert.equal(loadState().commitMessage, 'edited while amending', 'the edit survives a rebuild');
+
+  // The restore path persists too. Empty the box so the prefill runs, then
+  // toggle off: the box returns to the empty draft, and so does storage.
+  useChangesStore.getState().setCommitMessage('');
+  await useChangesStore.getState().setAmend(true);
+  assert.equal(useChangesStore.getState().commitMessage, 'HEAD message', 'prefilled because the box was empty');
+  await useChangesStore.getState().setAmend(false);
+  assert.equal(useChangesStore.getState().commitMessage, '');
+  assert.equal(loadState().commitMessage, '', 'the restored draft is persisted, not the HEAD message');
+});
+
+// ------------------------------------------------------- amend toggle markup
+
+test('the commit footer renders an amend toggle bound to the store state', () => {
+  const src = fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'webview', 'CommitForm.tsx'), 'utf8');
+
+  // Derived state: the toggle follows `amend` only while the block reason is null,
+  // so a stale `amend: true` cannot render as on.
+  assert.match(src, /amendBlockedReason\(/, 'the reason comes from the pure helper');
+  assert.match(
+    src,
+    /const\s+amendOn\s*=\s*amend\s*&&\s*amendReason\s*===\s*null/,
+    'a blocked status forces the toggle off',
+  );
+
+  // A blocked toggle stays focusable and reachable: aria-disabled, never the
+  // `disabled` attribute, so activation can reveal the reason.
+  const toggle = src.slice(src.indexOf('commitForm.amendToggle') - 900, src.indexOf('commitForm.amendToggle') + 200);
+  assert.match(toggle, /'aria-disabled':\s*true/, 'the attribute is only spread while blocked');
+  assert.match(toggle, /amendReason === null\s*\?\s*\{\}/, 'an unblocked toggle carries no aria-disabled at all');
+  assert.doesNotMatch(toggle, /(?<!-)disabled=\{amendReason/, 'a blocked amend must not be a dead control');
+  assert.match(toggle, /'aria-describedby':\s*reasonId/, 'the description is only referenced while it exists');
+  assert.match(toggle, /setAmend\(/, 'activation goes through the store action');
+
+  // The reason is always reachable to a screen reader while blocked, and the
+  // visible note appears once the user activates the blocked toggle.
+  assert.match(src, /gc-visually-hidden/, 'a hidden description carries the reason');
+  assert.match(src, /showReason/, 'activation of a blocked toggle reveals the note');
+  assert.match(src, /InfoBanner/, 'the note reuses the shared banner');
+
+  // The button relabels and, while amending, no longer needs a staged file.
+  assert.match(src, /amendButton/);
+  assert.match(src, /amendTitle/);
+  assert.match(
+    src,
+    /disabled=\{busy \|\| \(stagedCount === 0 && !amendOn\)\}/,
+    'a message-only reword is the main use, so amend enables the button with nothing staged',
+  );
+});
+
+test('the amend note names the replaced commit and strips bidi controls from it', () => {
+  const src = fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'webview', 'CommitForm.tsx'), 'utf8');
+  // The subject is repository-controlled text, so it goes through the sanitizer
+  // before it reaches the note.
+  assert.match(src, /sanitizeGitText\(/, 'the commit subject is sanitized at the render site');
+  assert.match(src, /amendNote\(/, 'the note text is a catalog function');
+  assert.match(src, /amendBlockedPublished\(/, 'the blocked note is a catalog function');
+});
+
+test('the amend strings exist in both catalogs and keep their function arity', () => {
+  for (const lang of ['en', 'id'] as const) {
+    const form = t(lang).commitForm;
+    assert.equal(typeof form.amendToggle, 'string', lang);
+    assert.equal(typeof form.amendButton, 'string', lang);
+    assert.equal(typeof form.amendTitle, 'string', lang);
+    assert.equal(typeof form.amendNote, 'function', lang);
+    assert.equal(typeof form.amendBlockedPublished, 'function', lang);
+    assert.equal(typeof form.amendBlockedNoCommit, 'string', lang);
+    assert.equal(typeof form.amendBlockedOperation, 'string', lang);
+
+    const note = form.amendNote('4c9e1a2', 'feat(graph): ribbon', 'origin');
+    assert.ok(note.includes('4c9e1a2') && note.includes('feat(graph): ribbon'), lang);
+    assert.ok(note.includes('origin'), lang);
+    assert.ok(form.amendNote('4c9e1a2', 'x', null).length > 0, lang);
+    assert.ok(form.amendBlockedPublished('origin').includes('origin'), lang);
+  }
+});
+
+test('the amend toggle and note use spacing tokens and clip in a narrow footer', () => {
+  const css = fs
+    .readFileSync(path.join(__dirname, '..', '..', 'src', 'webview', 'styles.css'), 'utf8')
+    .replace(/\/\*[\s\S]*?\*\//g, '');
+
+  const meta = css.match(/\.gc-commit__meta\s*\{([^}]*)\}/)?.[1] ?? '';
+  assert.match(meta, /flex-wrap:\s*wrap/, 'two toggles plus the count cannot fit on one row at 300 px');
+
+  const options = css.match(/\.gc-commit__options\s*\{([^}]*)\}/)?.[1] ?? '';
+  assert.match(options, /display:\s*flex/);
+  assert.match(options, /flex-wrap:\s*wrap/, 'the pair wraps as a unit');
+  assert.match(options, /gap:\s*var\(--gc-space-\d\)/, 'no literal spacing');
+
+  // The note IS the banner: a wrapper with its own padding would double the
+  // inset frame 70 draws (8/10 around two lines), so the padding and the radius
+  // live on the banner inside the note slot.
+  const note = css.match(/\.gc-commit__note\s+\.gc-banner\s*\{([^}]*)\}/)?.[1] ?? '';
+  assert.match(note, /border-radius:\s*var\(--gc-radius/, 'frame 70 corner, from the token scale');
+  assert.match(note, /padding:\s*var\(--gc-space-\d\)/, 'frame 70: 8/10 padding, tokenised');
+  assert.match(note, /overflow-wrap:\s*anywhere/, 'a long hash must not overflow the footer');
+  assert.match(note, /background:\s*transparent/, 'the footer supplies the fill');
+  assert.match(note, /border-left:\s*3px solid/, 'the stripe is the only edge the frame keeps');
+});
+
+test('a late detail response for a superseded HEAD does not overwrite amendBase', async (t) => {
+  resetAmend();
+  const HASH_A = 'aaa1111bbb2222ccc3333ddd4444eee5555fff6';
+  const HASH_B = 'bbb2222ccc3333ddd4444eee5555fff6aaa1111';
+  setStatus({ head: HASH_A, ahead: 2 });
+
+  // Hold A's response, move HEAD to B, start a second amend, let B land, then
+  // release A. The guard on `amend` alone is a boolean, so A used to win the
+  // last write and the note named a commit that was no longer HEAD.
+  const releases: Record<string, () => void> = {};
+  const gates: Record<string, Promise<void>> = {};
+  for (const hash of [HASH_A, HASH_B]) {
+    gates[hash] = new Promise<void>((resolve) => {
+      releases[hash] = resolve;
+    });
+  }
+  const original = bridge.request;
+  bridge.request = (async (kind: any, payload: any): Promise<any> => {
+    if (kind === 'commits/detail') {
+      const hash = (payload as { hash: string }).hash;
+      await gates[hash];
+      return { hash, shortHash: hash.slice(0, 7), subject: `subject ${hash.slice(0, 4)}`, body: '' };
+    }
+    return original.call(bridge, kind, payload);
+  }) as any;
+  t.after(() => {
+    bridge.request = original;
+  });
+
+  const pendingA = useChangesStore.getState().setAmend(true);
+  setStatus({ head: HASH_B, ahead: 2 });
+  const pendingB = useChangesStore.getState().setAmend(true);
+
+  releases[HASH_B]?.();
+  await pendingB;
+  assert.equal(useChangesStore.getState().amendBase?.hash, HASH_B, 'B is the live HEAD');
+
+  releases[HASH_A]?.();
+  await pendingA;
+  assert.equal(
+    useChangesStore.getState().amendBase?.hash,
+    HASH_B,
+    'a superseded response must not replace the base with an older commit',
+  );
+});
+
+test('commit refuses to amend when HEAD moved away from the captured base', async (t) => {
+  resetAmend();
+  const HASH_A = 'aaa1111bbb2222ccc3333ddd4444eee5555fff6';
+  const HASH_B = 'bbb2222ccc3333ddd4444eee5555fff6aaa1111';
+  setStatus({ head: HASH_A, ahead: 2 });
+
+  const sent: any[] = [];
+  const original = bridge.request;
+  bridge.request = (async (kind: any, payload: any): Promise<any> => {
+    if (kind === 'actions/commit') {
+      sent.push(payload);
+      return { success: true, commit: 'abc', pushed: false, operation: 'idle', statusToken: 'token' };
+    }
+    if (kind === 'repos/status') {
+      return {
+        repoRoot: 'D:/work/git-control',
+        branch: 'main',
+        head: HASH_B,
+        detached: false,
+        upstream: 'origin/main',
+        ahead: 2,
+        behind: 0,
+        incoming: 0,
+        outgoing: 2,
+        dirty: false,
+        staged: false,
+        operation: 'idle',
+        changes: [],
+        conflicts: [],
+        churnTruncated: false,
+        statusToken: 'token',
+        lastFetchedAt: null,
+        lastFetchAt: null,
+      };
+    }
+    if (kind === 'stash/list') return [];
+    if (kind === 'repos/graph') {
+      return { nodes: [], edges: [], lanes: [], dateBuckets: [], refs: [], head: null, truncated: false, nextCursor: null, stale: false };
+    }
+    if (kind === 'repos/contributors') return [];
+    if (kind === 'commits/detail') {
+      return { hash: HASH_A, shortHash: 'aaa1111', subject: 'subject A', body: '' };
+    }
+    return original.call(bridge, kind, payload);
+  }) as any;
+  t.after(() => {
+    bridge.request = original;
+  });
+
+  await useChangesStore.getState().setAmend(true);
+  assert.equal(useChangesStore.getState().amendBase?.hash, HASH_A);
+  useChangesStore.setState({ commitMessage: 'reword A' });
+
+  // HEAD is B now. The payload carries no hash, so git would amend B while the
+  // note promised A. The store must refuse instead of sending.
+  assert.equal(await useChangesStore.getState().commit(), false);
+  assert.equal(sent.length, 0, 'nothing was sent');
+  assert.equal(useChangesStore.getState().amend, false, 'amend mode drops so the user sees the plain form');
 });

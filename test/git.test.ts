@@ -913,3 +913,60 @@ test('cherryPick conflict flow: abort restores pre-pick state and continue compl
   assert.equal(await git.showFile('HEAD', 'a.txt'), 'resolved change\n');
 });
 
+
+test('amend replaces the last commit and stays local when it was never pushed', async (t) => {
+  const dir = await makeFixture('remote');
+  t.after(() => cleanup(dir));
+  const git = new GitRunner({ gitPath: 'git', cwd: dir });
+
+  // The fixture pushes its only commit, so HEAD starts published.
+  assert.equal(await git.isAncestor('HEAD', 'origin/main'), true, 'a pushed HEAD is reachable from the upstream');
+
+  const first = await git.headHash();
+  await fs.writeFile(path.join(dir, 'b.txt'), 'two\n', 'utf8');
+  await git.stage(['b.txt']);
+  const second = await git.commit('local only');
+  assert.ok(second !== null && first !== null);
+
+  assert.equal(await git.isAncestor('HEAD', 'origin/main'), false, 'a local commit is not on the upstream');
+  const before = await git.log({ limit: 100, all: false });
+  assert.equal(before.length, 2);
+  const parentsBefore = before[0]?.parents ?? [];
+
+  // Message-only reword: nothing staged, so only the message may change.
+  const amended = await git.commit('local only, reworded', { amend: true });
+  assert.ok(amended !== null);
+  assert.notEqual(amended, second, 'the commit hash changes because the message changed');
+  assert.equal(await git.isAncestor('HEAD', 'origin/main'), false, 'still unpublished after the amend');
+
+  const after = await git.log({ limit: 100, all: false });
+  assert.equal(after.length, before.length, 'amend rewrites, it never adds a commit');
+  assert.equal(after[0]?.subject, 'local only, reworded');
+  assert.deepEqual(after[0]?.parents ?? [], parentsBefore, 'the parent chain is unchanged');
+  assert.equal(after[1]?.hash, before[1]?.hash, 'history below HEAD is untouched');
+});
+
+test('the runner amends a published commit too; refusing that is the guard job', async (t) => {
+  const dir = await makeFixture('remote');
+  t.after(() => cleanup(dir));
+  const git = new GitRunner({ gitPath: 'git', cwd: dir });
+
+  const published = await git.headHash();
+  assert.equal(await git.isAncestor('HEAD', 'origin/main'), true);
+
+  // `--amend` is a local rewrite; git does not know or care about the remote.
+  // The refusal lives in SafetyGuard, so this pins the split of responsibility.
+  const amended = await git.commit('initial commit, reworded', { amend: true });
+  assert.ok(amended !== null && amended !== published);
+  assert.equal(await git.isAncestor('HEAD', 'origin/main'), false, 'the rewritten HEAD diverges from the upstream');
+});
+
+test('isAncestor accepts HEAD against the upstream name and rejects options', async (t) => {
+  const dir = await makeFixture('remote');
+  t.after(() => cleanup(dir));
+  const git = new GitRunner({ gitPath: 'git', cwd: dir });
+
+  assert.equal(await git.isAncestor('HEAD', 'origin/main'), true);
+  await assert.rejects(() => git.isAncestor('--exec=x', 'origin/main'), /Invalid ref/);
+  await assert.rejects(() => git.isAncestor('HEAD', '--exec=x'), /Invalid ref/);
+});

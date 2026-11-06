@@ -805,6 +805,39 @@ export function truncate(text: string, max: number): string {
   return `${text.slice(0, Math.max(0, max - 1))}…`;
 }
 
+// -------------------------------------------------------------------- amend
+
+/** Why the "Amend last commit" toggle is unavailable, or `null` when it is not. */
+export type AmendBlock = 'no-head' | 'operation' | 'published';
+
+/**
+ * Mirror of the host's amend rule, so the footer can explain the block before a
+ * request fails. Advisory only: the host recomputes `isAncestor('HEAD', upstream)`
+ * for every amend and fails closed, so a stale `ahead` here cannot unblock a
+ * rewrite of published history.
+ *
+ * Precedence follows the guard: no commit to amend, then an operation in
+ * progress, then publication. `upstream !== null && ahead === 0` means HEAD is
+ * reachable from the upstream: `ahead` counts the commits HEAD has that the
+ * upstream does not, so a diverged branch has `ahead > 0` and is not published.
+ * `behind` is irrelevant to that question; behind with nothing ahead is still a
+ * fast-forward, so HEAD is on the upstream.
+ */
+export function amendBlockedReason(
+  status: Pick<RepoStatus, 'head' | 'operation' | 'upstream' | 'ahead'> | null,
+): AmendBlock | null {
+  if (status === null || status.head === null) return 'no-head';
+  if (status.operation !== 'idle') return 'operation';
+  if (status.upstream !== null && status.ahead === 0) return 'published';
+  return null;
+}
+
+/** Subject, or subject plus body when the body has content. Matches `git log`. */
+export function joinCommitMessage(subject: string, body: string): string {
+  const trimmed = body.trim();
+  return trimmed.length === 0 ? subject : `${subject}\n\n${trimmed}`;
+}
+
 // --------------------------------------------------------------- git actions
 
 /**

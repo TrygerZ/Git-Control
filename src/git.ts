@@ -231,6 +231,37 @@ export class GitRunner {
     return code === 0;
   }
 
+  /**
+   * True when `commitish` may already be on a remote, i.e. rewriting it could
+   * need a force push.
+   *
+   * Asked of the commit, not of the branch's upstream: a branch whose
+   * `@{upstream}` no longer resolves (`git remote prune`, branch deleted
+   * upstream, narrowed refspec) and a detached HEAD both have no upstream, yet
+   * their commits can still sit on a remote. Two independent signals cover
+   * that, and either one answers "cannot prove it is local":
+   *
+   * - a remote-tracking ref reachable from the commit, which is the direct
+   *   answer while the tracking ref still exists;
+   * - `[gone]` on any local branch reachable from the commit, meaning that
+   *   branch had an upstream whose tracking ref vanished. No local ref can
+   *   tell us then whether the remote still holds the commit.
+   */
+  async isPublished(commitish: string): Promise<boolean> {
+    if (!validateHash(commitish) && !validateBranchName(commitish)) {
+      throw new GitError({ code: 'VALIDATION_ERROR', message: `Invalid ref: ${commitish}` });
+    }
+    const { stdout } = await this.run([
+      'for-each-ref',
+      '--contains',
+      sanitizeRefArg(commitish),
+      '--format=%(refname)|%(upstream:track)',
+      'refs/remotes',
+      'refs/heads',
+    ]);
+    return stdout.split('\n').some((line) => line.startsWith('refs/remotes/') || line.includes('[gone]'));
+  }
+
   async version(): Promise<string> {
     const { stdout } = await this.run(['--version']);
     return stdout.trim().replace(/^git version\s*/, '');

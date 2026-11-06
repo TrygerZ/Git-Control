@@ -22,12 +22,19 @@
  * "Push after commit" used to hide behind an "Advanced options" disclosure. It is
  * a common toggle, so it now sits as a quiet always-visible checkbox row under
  * the textarea; the reserved count row beside it keeps the footer height stable.
+ *
+ * Amend follows the same rule the host enforces (`amendBlockedReason`): the host
+ * stays the authority, and the UI mirrors the rule only so the reason arrives
+ * before a failed request. A blocked toggle is never `disabled` - it stays
+ * focusable and reveals the reason when activated, because a dead control
+ * explains nothing. The subject in the note is repository-controlled text, so it
+ * is sanitized at the render site.
  */
-import { useEffect, useRef, type JSX } from 'react';
-import { formatCount } from './format';
+import { useEffect, useRef, useState, type JSX } from 'react';
+import { amendBlockedReason, formatCount, sanitizeGitText } from './format';
 import { useT } from './useT';
 import { COMMIT_MESSAGE_MIN, useChangesStore, useOperationStore, useRepoStore, useSettingsStore } from './store';
-import { Icon, Spinner } from './ui';
+import { Icon, InfoBanner, Spinner } from './ui';
 import { firstRemoteName } from './NodeContextMenu';
 
 export function CommitForm(): JSX.Element {
@@ -45,6 +52,10 @@ export function CommitForm(): JSX.Element {
   const busyKind = useChangesStore((st) => st.busyKind);
   const busy = changesBusy || opBusy;
   const messageError = useChangesStore((st) => st.messageError);
+  const amend = useChangesStore((st) => st.amend);
+  const setAmend = useChangesStore((st) => st.setAmend);
+  const amendBase = useChangesStore((st) => st.amendBase);
+  const [showReason, setShowReason] = useState(false);
   const commit = useChangesStore((st) => st.commit);
   const retryPush = useChangesStore((st) => st.retryPush);
   const changes = useChangesStore((st) => st.changes);
@@ -83,6 +94,32 @@ export function CommitForm(): JSX.Element {
   const branch = status?.branch ?? null;
   const hasUpstream = status?.upstream !== null && status?.upstream !== undefined;
   const setUpstream = !hasUpstream;
+
+  // Amend mirrors the host rule so the reason arrives before a failed request.
+  const amendReason = amendBlockedReason(status);
+  const amendOn = amend && amendReason === null;
+  const reasonId = 'gc-amend-reason';
+  // `amendReason === 'published'` requires an upstream, and `remote` is derived
+  // from it first, so this fallback is unreachable today. It exists so a future
+  // change to `remote` cannot render the literal word "remote" as a name.
+  const remoteName = remote ?? 'the remote';
+  const reasonText =
+    amendReason === 'no-head'
+      ? strings.commitForm.amendBlockedNoCommit
+      : amendReason === 'operation'
+        ? strings.commitForm.amendBlockedOperation
+        : amendReason === 'published'
+          ? strings.commitForm.amendBlockedPublished(remoteName)
+          : undefined;
+
+  // A status change that blocks amend drops the stale flag; a fresh reason also
+  // closes the note so a later block starts from the hidden state again.
+  useEffect(() => {
+    setShowReason(false);
+  }, [amendReason]);
+  useEffect(() => {
+    if (amend && amendReason !== null) void setAmend(false);
+  }, [amend, amendReason, setAmend]);
 
   let pushDisabled = false;
   let pushTitle = '';
@@ -183,18 +220,48 @@ export function CommitForm(): JSX.Element {
         shifts on the first keystroke.
       */}
       <div className="gc-commit__meta">
-        <label className="gc-checkbox gc-checkbox--inline">
-          <input
-            type="checkbox"
-            className="gc-checkbox__input"
-            checked={pushAfter}
-            disabled={busy}
-            onChange={(e) => setPushAfter(e.target.checked)}
-          />
-          <span className="gc-checkbox__text gc-checkbox__text--inline">
-            {strings.commitForm.pushAfter}
+        <div className="gc-commit__options">
+          <label className="gc-checkbox gc-checkbox--inline">
+            <input
+              type="checkbox"
+              className="gc-checkbox__input"
+              checked={pushAfter}
+              disabled={busy}
+              onChange={(e) => setPushAfter(e.target.checked)}
+            />
+            <span className="gc-checkbox__text gc-checkbox__text--inline">
+              {strings.commitForm.pushAfter}
+            </span>
+          </label>
+          {/*
+            A blocked amend stays focusable: `aria-disabled`, never `disabled`,
+            so activating it can reveal the reason instead of doing nothing.
+          */}
+          <label className="gc-checkbox gc-checkbox--inline">
+            <input
+              type="checkbox"
+              className="gc-checkbox__input"
+              checked={amendOn}
+              // Only while blocked: a dangling `aria-describedby` would point at
+              // an element that is not in the DOM.
+              {...(amendReason === null
+                ? {}
+                : { 'aria-disabled': true, 'aria-describedby': reasonId, title: reasonText })}
+              onChange={() => {
+                if (amendReason === null) void setAmend(!amendOn);
+                else setShowReason(true);
+              }}
+            />
+            <span className="gc-checkbox__text gc-checkbox__text--inline">
+              {strings.commitForm.amendToggle}
+            </span>
+          </label>
+        </div>
+        {amendReason !== null && (
+          <span id={reasonId} className="gc-visually-hidden">
+            {reasonText}
           </span>
-        </label>
+        )}
         <span
           className="gc-commit__count"
           aria-live="off"
@@ -206,15 +273,38 @@ export function CommitForm(): JSX.Element {
         </span>
       </div>
 
+      {/*
+        One note at a time: a blocked toggle explains itself first, otherwise a
+        live amend names the commit it replaces. The subject is repository text,
+        so it is sanitized here, at the render site.
+      */}
+      {showReason && amendReason !== null ? (
+        <div className="gc-commit__note">
+          <InfoBanner tone="info" glyph="info">
+            {reasonText}
+          </InfoBanner>
+        </div>
+      ) : amendOn && amendBase !== null ? (
+        <div className="gc-commit__note">
+          <InfoBanner tone="info" glyph="info">
+            {strings.commitForm.amendNote(
+              amendBase.shortHash,
+              sanitizeGitText(amendBase.subject),
+              remote,
+            )}
+          </InfoBanner>
+        </div>
+      ) : null}
+
       <div className="gc-commit__actions">
         <button
           type="submit"
           className="gc-button gc-button--primary"
-          title={commitButtonTitle}
-          disabled={busy || stagedCount === 0}
+          title={amendOn ? strings.commitForm.amendTitle : commitButtonTitle}
+          disabled={busy || (stagedCount === 0 && !amendOn)}
         >
           <Icon name="commit" />
-          {strings.commitForm.commitButton}
+          {amendOn ? strings.commitForm.amendButton : strings.commitForm.commitButton}
         </button>
         {remote !== null && (
           <button

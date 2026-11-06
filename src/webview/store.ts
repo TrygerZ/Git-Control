@@ -12,13 +12,14 @@
 import { create } from 'zustand';
 import { BridgeRequestError, bridge, fetchContributorIdentity, fetchContributors, isBridgeError, mutation, saveState } from './bridge';
 import { unknownErrorBody } from '../errorBody';
-import { linkageChangedRepo, sanitizeGitText } from './format';
+import { amendBlockedReason, joinCommitMessage, linkageChangedRepo, sanitizeGitText } from './format';
 import { DEFAULT_ROUTE, resolveInitialRoute, sameRoute } from './route';
 import type { NavCounts } from './navCounts';
 import { pruneSelection, toggleNode, togglePath, type ChangeSection, type TreeNode } from './tree';
 import { activeLang, setActiveLang, t } from './i18n';
 import type {
   ChangeEntry,
+  CommitDetail,
   CommitResult,
   ConflictEntry,
   ContributorIdentity,
@@ -246,6 +247,14 @@ export const useRepoStore = create<RepoState>((set, get) => ({
 
 // ------------------------------------------------------------- changesStore
 
+/** The HEAD commit the form is amending, captured when the toggle turns on. */
+export interface AmendBase {
+  hash: string;
+  shortHash: string;
+  subject: string;
+  message: string;
+}
+
 export interface ChangesState {
   changes: ChangeEntry[];
   conflicts: ConflictEntry[];
@@ -259,6 +268,10 @@ export interface ChangesState {
   collapsedSections: Set<ChangeSection>;
   commitMessage: string;
   pushAfterCommit: boolean;
+  amend: boolean;
+  amendBase: AmendBase | null;
+  /** The draft that was in the box before amend turned on; restored on toggle off. */
+  amendDraft: string | null;
   busy: boolean;
   /** Which changes-store mutation is running; `null` while `busy` comes only from `opBusy`. */
   busyKind: 'stage' | 'commit' | null;
@@ -282,6 +295,7 @@ export interface ChangesState {
   clear(): void;
   setCommitMessage(message: string): void;
   setPushAfterCommit(value: boolean): void;
+  setAmend(on: boolean): Promise<void>;
   stage(paths: string[]): Promise<void>;
   unstage(paths: string[]): Promise<void>;
   commit(): Promise<boolean>;
@@ -317,6 +331,9 @@ export const useChangesStore = create<ChangesState>((set, get) => ({
   collapsedSections: new Set<ChangeSection>(),
   commitMessage: '',
   pushAfterCommit: false,
+  amend: false,
+  amendBase: null,
+  amendDraft: null,
   busy: false,
   busyKind: null,
   loading: false,
@@ -472,12 +489,60 @@ export const useChangesStore = create<ChangesState>((set, get) => ({
       commitMessage: message,
       messageError: message.trim().length >= COMMIT_MESSAGE_MIN ? null : get().messageError,
     });
-    saveState({ commitMessage: message });
+    // While amending, the box holds the HEAD message. Persist the pre-amend draft
+    // instead, so hiding and showing the webview with amend off does not
+    // resurrect a message the user never typed.
+    saveState({ commitMessage: get().amend ? (get().amendDraft ?? '') : message });
   },
 
   setPushAfterCommit(value) {
     set({ pushAfterCommit: value });
     saveState({ pushAfterCommit: value });
+  },
+
+  async setAmend(on) {
+    if (!on) {
+      const base = get().amendBase;
+      const restore = base !== null && get().commitMessage === base.message;
+      const nextMessage = restore ? (get().amendDraft ?? '') : get().commitMessage;
+      set({
+        amend: false,
+        amendBase: null,
+        amendDraft: null,
+        ...(restore ? { commitMessage: nextMessage } : {}),
+      });
+      // Persist what the box now shows. Without this the stored value stays at
+      // the pre-amend draft, and a rebuild (`retainContextWhenHidden: false`)
+      // silently drops an edit made while amending.
+      saveState({ commitMessage: nextMessage });
+      return;
+    }
+
+    const status = useRepoStore.getState().status;
+    if (status === null || status.head === null || amendBlockedReason(status) !== null) return;
+    const hash = status.head;
+
+    set({ amend: true, amendDraft: get().commitMessage });
+    try {
+      const detail: CommitDetail = await bridge.request('commits/detail', { hash });
+      // The user may have toggled off while the request was in flight, or HEAD
+      // may have moved on to a newer commit. Either way this response describes
+      // a commit the form no longer amends, so it must not become the base.
+      if (!get().amend || useRepoStore.getState().status?.head !== hash) return;
+      const message = joinCommitMessage(detail.subject, detail.body);
+      set({
+        amendBase: {
+          hash: detail.hash,
+          shortHash: detail.shortHash,
+          subject: detail.subject,
+          message,
+        },
+        ...(get().commitMessage.trim().length === 0 ? { commitMessage: message } : {}),
+      });
+    } catch (err) {
+      set({ amend: false, amendDraft: null, amendBase: null });
+      useOperationStore.getState().fail(err);
+    }
   },
 
   async stage(paths) {
@@ -504,14 +569,32 @@ export const useChangesStore = create<ChangesState>((set, get) => ({
     const ops = useOperationStore.getState();
     try {
       const token = await freshToken();
+      // The payload carries no hash, so git amends whatever HEAD is now. When
+      // HEAD moved since the base was captured, that would rewrite a commit the
+      // note never named: refuse, drop amend mode, and say why.
+      const base = get().amendBase;
+      if (get().amend && base !== null && useRepoStore.getState().status?.head !== base.hash) {
+        set({ busy: false, busyKind: null, amend: false, amendBase: null, amendDraft: null });
+        ops.pushToast({ level: 'warning', message: strings.commitForm.amendStale });
+        return false;
+      }
       // `statusToken` rides in the meta, not the payload: it is part of
       // `MutationMeta` now that every mutation kind honours it.
       const handle = mutation('actions/commit', {
         message,
         push: get().pushAfterCommit,
+        ...(get().amend ? { amend: true } : {}),
       });
       const result: CommitResult = await handle.send({ statusToken: token });
-      set({ busy: false, busyKind: null, commitMessage: '', selection: new Set<string>() });
+      set({
+        busy: false,
+        busyKind: null,
+        commitMessage: '',
+        selection: new Set<string>(),
+        amend: false,
+        amendBase: null,
+        amendDraft: null,
+      });
       saveState({ commitMessage: '', selectedPaths: [] });
       if (get().pushAfterCommit && !result.pushed) {
         ops.pushToast({

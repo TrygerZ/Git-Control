@@ -15,7 +15,7 @@ import type { ErrorCode, GitActionRequest, Lang, OperationState, Remedy } from '
 import { hostText } from './hostText';
 
 /** Index/commit actions are not part of {@link GitActionRequest} but are guarded too. */
-export type GuardAction = GitActionRequest | { action: 'stage' } | { action: 'commit' };
+export type GuardAction = GitActionRequest | { action: 'stage' } | { action: 'commit'; amend?: boolean };
 
 export interface GuardSnapshot {
   /** Unstaged or untracked changes present. */
@@ -34,6 +34,11 @@ export interface GuardSnapshot {
   now: number;
   /** Age after which remote data counts as stale. */
   stalenessMs: number;
+  /**
+   * HEAD is reachable from the upstream. `false` also covers "no upstream".
+   * `null` means the caller did not compute it, which blocks an amend.
+   */
+  headPublished: boolean | null;
 }
 
 export type GuardVerdict =
@@ -121,6 +126,27 @@ export function evaluate(action: GuardAction, snapshot: GuardSnapshot, lang: Lan
       message: text.conflictFiles,
       remedies: ['resolve-conflicts', 'cancel'],
     };
+  }
+
+  // Amending a commit that is already on the upstream would need a force push.
+  // `headPublished === null` means the caller did not compute the flag, so fail closed.
+  if (action.action === 'commit' && action.amend === true) {
+    if (inProgress) {
+      return {
+        allow: false,
+        code: 'CONFLICT',
+        message: text.conflictInProgress,
+        remedies: ['resolve-conflicts', 'cancel'],
+      };
+    }
+    if (snapshot.headPublished !== false) {
+      return {
+        allow: false,
+        code: 'NON_FAST_FORWARD',
+        message: text.amendPublished,
+        remedies: ['cancel'],
+      };
+    }
   }
 
   if (snapshot.dirty && DIRTY_BLOCKED.has(action.action)) {

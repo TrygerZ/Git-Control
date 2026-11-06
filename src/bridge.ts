@@ -777,9 +777,16 @@ export class MessageBridge {
     if (typeof payload.message !== 'string') {
       fail(400, 'VALIDATION_ERROR', this.text().invalid, { detail: 'message' });
     }
+    // The runner tests `opts.amend === true`, so a truthy non-boolean would
+    // silently degrade into a plain commit.
+    if (payload.amend !== undefined && typeof payload.amend !== 'boolean') {
+      fail(400, 'VALIDATION_ERROR', this.text().invalid, { detail: 'amend' });
+    }
+    const amend = payload.amend === true;
     const repo = await this.repository();
     const status = await this.assertToken(repo, payload.statusToken);
-    this.gate({ action: 'commit' }, status, payload);
+    const headPublished = amend ? await this.isHeadPublished(repo) : null;
+    this.gate({ action: 'commit', ...(amend ? { amend: true } : {}) }, status, payload, headPublished);
 
     this.progress(operationId, 'commit', 'started');
     let commit: string | null;
@@ -1048,9 +1055,14 @@ export class MessageBridge {
    * (and `forceAcknowledgement: true` at level 2), so omitting a flag can never
    * be a bypass.
    */
-  private gate(action: GuardAction, status: RepoStatus, meta: MutationMeta): void {
+  private gate(
+    action: GuardAction,
+    status: RepoStatus,
+    meta: MutationMeta,
+    headPublished: boolean | null = null,
+  ): void {
     const lang = this.host.settings().language ?? 'en';
-    const verdict = SafetyGuard.evaluate(action, this.snapshotOf(status), lang);
+    const verdict = SafetyGuard.evaluate(action, this.snapshotOf(status, headPublished), lang);
     if (verdict.allow) return;
     if (verdict.requiresConfirmation === true && this.confirmed(verdict, meta)) return;
     fail(verdictStatus(verdict), verdict.code, verdict.message, {
@@ -1071,7 +1083,18 @@ export class MessageBridge {
     return true;
   }
 
-  private snapshotOf(status: RepoStatus): GuardSnapshot {
+  /**
+   * Whether HEAD is already published, i.e. rewriting it would need a force
+   * push. Publication is asked of the commit itself, not of the branch's
+   * upstream, so a missing tracking ref and a detached HEAD both answer
+   * correctly. A failed probe fails closed: an unanswerable check must not
+   * unblock a rewrite of published history.
+   */
+  private async isHeadPublished(repo: RepositoryService): Promise<boolean> {
+    return repo.git.isPublished('HEAD').catch(() => true);
+  }
+
+  private snapshotOf(status: RepoStatus, headPublished: boolean | null = null): GuardSnapshot {
     return {
       dirty: status.dirty,
       staged: status.staged,
@@ -1083,6 +1106,7 @@ export class MessageBridge {
       lastFetchAt: status.lastFetchAt,
       now: Date.now(),
       stalenessMs: this.host.settings().fetchStalenessMs || DEFAULT_STALENESS_MS,
+      headPublished,
     };
   }
 
