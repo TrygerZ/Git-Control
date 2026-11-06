@@ -5,6 +5,19 @@ All notable changes to the "Git Control" extension will be documented in this fi
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.5.0] - 2026-11-06
+
+### Added
+- Pull requests view in the sidebar with Open, Review requested, Mine and Draft filters, a current branch card and a text filter.
+- Navigation strip with Changes and Pull requests tabs and a pull request count badge.
+- Command "Git Control: Open Pull Requests".
+- Clear states for loading, no GitHub remote, empty results, API rate limit and private repositories without a token.
+- Banner "Sign in for higher limits" with a Connect GitHub button above the pull request list when signed out.
+
+### Changed
+- The sidebar view is now named "Git Control".
+- Pull requests moved from the Explorer details panel to the sidebar. They still load without sign-in for public repositories.
+
 ## [3.4.0] - 2026-11-06
 
 ### Added
