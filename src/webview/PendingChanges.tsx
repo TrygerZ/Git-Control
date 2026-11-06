@@ -20,6 +20,7 @@ import { ConflictPanel, OperationBanner } from './ConflictPanel';
 import { GuardDialog } from './GuardDialog';
 import { SidebarHeader } from './SidebarHeader';
 import { NavStrip } from './NavStrip';
+import { PullRequestsView } from './PullRequestsView';
 import { Tablist } from './Tablist';
 import { CHANGES_PANEL_ID, CHANGES_TABS_PREFIX, changesSubTabs, changesTabId } from './navRegistry';
 import { changesSubOf, parseRoute } from './route';
@@ -162,7 +163,13 @@ export function PendingChangesApp(): JSX.Element {
 
   const route = useRouteStore((s) => s.route);
   const sub = changesSubOf(route);
-  const subTabs = changesSubTabs(strings, { changes: changes.length, stashes: stashes.length });
+  /*
+   * The shell keeps its sub-tab slot for every destination. Destinations without
+   * sub-tabs pass an empty set and `Tablist` renders nothing, so the strip above
+   * and the body below never move between routes.
+   */
+  const subTabs =
+    route.id === 'prs' ? [] : changesSubTabs(strings, { changes: changes.length, stashes: stashes.length });
   /**
    * A tab id comes from the DOM, so it is parsed, never cast: `parseRoute` drops
    * anything the route model does not know and `navigate` persists the result.
@@ -254,6 +261,16 @@ export function PendingChangesApp(): JSX.Element {
         )}
       </div>
 
+      {/*
+        The strip, the header, and the notification slot are the shell; the route
+        decides what fills the rest. Pull requests is a whole destination, so it
+        takes the body in place of the Changes toolbar, list, and commit footer.
+        The sub-tab row above collapses on its own because it has no tabs there.
+      */}
+      {route.id === 'prs' ? (
+        <PullRequestsView />
+      ) : (
+        <>
       <div
         className="gc-pending__bar gc-toolbar--actions"
         role="toolbar"
@@ -522,6 +539,8 @@ export function PendingChangesApp(): JSX.Element {
         </div>
         <ToastRegion />
       </div>
+        </>
+      )}
 
       <GuardDialog />
     </div>

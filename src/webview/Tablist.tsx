@@ -30,9 +30,13 @@ export function Tablist(props: {
   ariaLabel: string;
   idPrefix: string;
   classPrefix: string;
-}): JSX.Element {
+}): JSX.Element | null {
   const { tabs, activeId, onSelect, ariaLabel, idPrefix, classPrefix } = props;
   const ref = useRef<HTMLDivElement>(null);
+
+  // A tablist with no tabs is a dead landmark and an empty track. The sidebar
+  // passes an empty set on destinations that have no sub-tabs of their own.
+  if (tabs.length === 0) return null;
 
   return (
     <div role="tablist" aria-label={ariaLabel} className={classPrefix} ref={ref}>

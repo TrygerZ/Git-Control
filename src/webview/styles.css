@@ -4613,6 +4613,214 @@ h3 {
   white-space: nowrap;
 }
 
+/* -------------------------------------------------------------- pull requests */
+
+/*
+ * The view fills the shell the way `.gc-pending__panel` does: it is the only
+ * growing child, and only the list scrolls, so the search row, the chips, and
+ * the branch card stay in reach while rows move. `min-width: 0` keeps a long
+ * branch name from pushing the column wider than the 300 px sidebar.
+ */
+.gc-prs {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  gap: var(--gc-space-2);
+  min-height: 0;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.gc-prs__chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--gc-space-2);
+}
+
+/* A chip is a toggle here, so the pressed state must not rely on colour alone. */
+.gc-prs__chip {
+  gap: var(--gc-space-2);
+  border-radius: var(--gc-radius-pill);
+  background: transparent;
+  font-family: inherit;
+  cursor: pointer;
+}
+
+.gc-prs__chip:hover {
+  background: var(--gc-bg-hover);
+}
+
+.gc-prs__chip[aria-pressed='true'] {
+  border-color: var(--gc-accent-primary);
+  background: var(--gc-accent-subtle);
+  color: var(--gc-text-primary);
+  font-weight: var(--gc-weight-strong);
+}
+
+.gc-prs__chip-count {
+  color: var(--gc-text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.gc-prs__card {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--gc-space-3);
+  padding: var(--gc-space-3);
+  border: 1px solid var(--gc-border-subtle);
+  border-radius: var(--gc-radius-lg);
+  background: var(--gc-bg-surface);
+}
+
+.gc-prs__card-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gc-space-1);
+  flex: 1 1 12em;
+  min-width: 0;
+}
+
+.gc-prs__card-branch {
+  overflow: hidden;
+  color: var(--gc-text-primary);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.gc-prs__card-text {
+  color: var(--gc-text-secondary);
+  font-size: var(--gc-fs-xs);
+}
+
+.gc-prs__groups {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 64px;
+  overflow-x: hidden;
+  overflow-y: auto;
+  scrollbar-gutter: stable;
+}
+
+.gc-prs__rows {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+/*
+ * The row is the hit area; the hover link sits beside it and never widens the
+ * row past the column. The state glyph is the first channel, the state word in
+ * the row's accessible name is the second.
+ */
+.gc-prs__row {
+  display: flex;
+  align-items: center;
+  gap: var(--gc-space-1);
+  min-width: 0;
+  border-radius: var(--gc-radius);
+}
+
+.gc-prs__row:hover {
+  background: var(--gc-bg-hover);
+}
+
+.gc-prs__open {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--gc-space-3);
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: var(--gc-hit);
+  padding: var(--gc-space-2) var(--gc-space-3);
+  border: none;
+  border-radius: var(--gc-radius);
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.gc-prs__state {
+  flex: 0 0 auto;
+  color: var(--gc-text-muted);
+  font-size: var(--gc-fs-md);
+}
+
+.gc-prs__body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gc-space-1);
+  min-width: 0;
+}
+
+.gc-prs__title {
+  overflow: hidden;
+  color: var(--gc-text-primary);
+  font-size: var(--gc-fs-sm);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.gc-prs__meta,
+.gc-prs__refs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--gc-space-2);
+  color: var(--gc-text-muted);
+  font-size: var(--gc-fs-2xs);
+}
+
+.gc-prs__refs {
+  overflow-wrap: anywhere;
+}
+
+/* Decoration for the pointer: the row itself opens the same URL and is the tab stop. */
+.gc-prs__link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  min-width: var(--gc-hit);
+  min-height: var(--gc-hit);
+  padding: 0;
+  border: none;
+  border-radius: var(--gc-radius);
+  background: transparent;
+  color: var(--gc-text-muted);
+  cursor: pointer;
+  opacity: 0;
+}
+
+.gc-prs__row:hover .gc-prs__link,
+.gc-prs__row:focus-within .gc-prs__link {
+  opacity: 1;
+}
+
+.gc-prs__link:hover {
+  color: var(--gc-text-primary);
+}
+
+.gc-prs__footer {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--gc-space-2);
+  flex: 0 0 auto;
+  padding-top: var(--gc-space-2);
+  border-top: 1px solid var(--gc-border-subtle);
+  color: var(--gc-text-muted);
+  font-size: var(--gc-fs-xs);
+}
+
+.gc-prs__quota {
+  margin-left: auto;
+  font-variant-numeric: tabular-nums;
+}
+
 /* -------------------------------------------------------------- contributors */
 
 .gc-contributors {
