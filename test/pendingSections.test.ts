@@ -804,7 +804,9 @@ test('toggling off while the detail request is in flight does not prefill', asyn
   resetAmend();
   setStatus({ ahead: 2 });
 
-  let release: (() => void) | null = null;
+  let release = (): void => {
+    throw new Error('gate not armed');
+  };
   const gate = new Promise<void>((resolve) => {
     release = resolve;
   });
@@ -822,7 +824,7 @@ test('toggling off while the detail request is in flight does not prefill', asyn
 
   const pending = useChangesStore.getState().setAmend(true);
   await useChangesStore.getState().setAmend(false);
-  release?.();
+  release();
   await pending;
 
   const after = useChangesStore.getState();
