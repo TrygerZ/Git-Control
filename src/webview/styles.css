@@ -3938,8 +3938,42 @@ h3 {
  */
 .gc-commit__meta {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: var(--gc-space-2);
+}
+
+/* The two toggles wrap as one unit, so the count keeps the trailing edge. */
+.gc-commit__options {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--gc-space-2) var(--gc-space-3);
+}
+
+/*
+ * A blocked amend is still a live control (aria-disabled, not disabled), so the
+ * faded look comes from the attribute rather than the browser's disabled state.
+ */
+.gc-checkbox__input[aria-disabled='true'] {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/*
+ * Frame 70: the amend note sits under the options row and pushes the buttons
+ * down one row. The note is the banner itself - a wrapper with its own padding
+ * would double the inset the frame draws (8/10 around two lines of text). The
+ * footer supplies the fill, so the banner drops its surface and its border,
+ * keeping the leading stripe and the radius.
+ */
+.gc-commit__note .gc-banner {
+  padding: var(--gc-space-2) var(--gc-space-3);
+  border: 0;
+  border-left: 3px solid var(--vscode-editorInfo-foreground, var(--vscode-focusBorder));
+  border-radius: var(--gc-radius);
+  background: transparent;
+  overflow-wrap: anywhere;
 }
 
 .gc-checkbox--inline {
