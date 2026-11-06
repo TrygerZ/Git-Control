@@ -1019,6 +1019,21 @@ test('amendBlockedReason names the most fundamental blocker first', () => {
 
   assert.equal(reason({ upstream: 'origin/main', ahead: 0 }), 'published', 'nothing ahead means HEAD is on the upstream');
   assert.equal(reason({ upstream: 'origin/main', ahead: 2 }), null, 'unpushed commits can be amended');
+
+  // `ahead === 0` alone is NOT the same question as "is HEAD reachable from the
+  // upstream". On a diverged branch the counts are 1/1, `ahead` is 1, and
+  // `merge-base --is-ancestor HEAD origin/main` is false, so the commit is not
+  // published and the amend is allowed. This case is the mirror of the host.
+  assert.equal(
+    reason({ upstream: 'origin/main', ahead: 1, behind: 1 }),
+    null,
+    'a diverged branch is not published: HEAD is not reachable from the upstream',
+  );
+  assert.equal(
+    reason({ upstream: 'origin/main', ahead: 0, behind: 1 }),
+    'published',
+    'behind with nothing ahead still means HEAD is reachable, so it is published',
+  );
   assert.equal(reason({ upstream: null, ahead: 0 }), null, 'a branch with no upstream is unpublished by definition');
   assert.equal(reason({ upstream: null, ahead: 3 }), null);
 });

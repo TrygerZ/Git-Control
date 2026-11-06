@@ -480,3 +480,14 @@ test('unresolved conflicts win over the amend rule', () => {
   assert.equal(res.code, 'CONFLICT');
   assert.equal(res.message, hostText('en').guard.conflictFiles);
 });
+
+test('amend is blocked in a detached HEAD, where no branch upstream exists', () => {
+  // A detached HEAD has no branch, so `status.upstream` is null and the old
+  // check waved the amend through even when the commit sat on a remote ref.
+  // The snapshot carries the host's own answer; `true` here means published.
+  const res = verdict({ action: 'commit', amend: true }, { headPublished: true, upstream: null }, 'en');
+  assert.equal(res.allow, false);
+  if (res.allow) return;
+  assert.equal(res.code, 'NON_FAST_FORWARD');
+  assert.deepEqual(res.remedies, ['cancel']);
+});

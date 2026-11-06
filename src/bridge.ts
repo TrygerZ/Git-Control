@@ -785,7 +785,7 @@ export class MessageBridge {
     const amend = payload.amend === true;
     const repo = await this.repository();
     const status = await this.assertToken(repo, payload.statusToken);
-    const headPublished = amend ? await this.isHeadPublished(repo, status) : null;
+    const headPublished = amend ? await this.isHeadPublished(repo) : null;
     this.gate({ action: 'commit', ...(amend ? { amend: true } : {}) }, status, payload, headPublished);
 
     this.progress(operationId, 'commit', 'started');
@@ -1084,13 +1084,14 @@ export class MessageBridge {
   }
 
   /**
-   * Whether HEAD is already on the upstream, i.e. rewriting it would need a
-   * force push. A failed probe fails closed: an unanswerable check must not
+   * Whether HEAD is already published, i.e. rewriting it would need a force
+   * push. Publication is asked of the commit itself, not of the branch's
+   * upstream, so a missing tracking ref and a detached HEAD both answer
+   * correctly. A failed probe fails closed: an unanswerable check must not
    * unblock a rewrite of published history.
    */
-  private async isHeadPublished(repo: RepositoryService, status: RepoStatus): Promise<boolean> {
-    if (status.upstream === null) return false;
-    return repo.git.isAncestor('HEAD', status.upstream).catch(() => true);
+  private async isHeadPublished(repo: RepositoryService): Promise<boolean> {
+    return repo.git.isPublished('HEAD').catch(() => true);
   }
 
   private snapshotOf(status: RepoStatus, headPublished: boolean | null = null): GuardSnapshot {

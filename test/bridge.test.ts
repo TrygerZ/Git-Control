@@ -2893,3 +2893,114 @@ test('amend with push on an unpublished commit fast-forwards the upstream', asyn
   const upstream = await repo.git.run(['rev-parse', 'origin/main']);
   assert.equal(upstream.stdout.trim(), data.commit, 'origin/main now points at the amended commit');
 });
+
+test('amend is refused when the upstream is configured but its tracking ref is missing', async (t) => {
+  const dir = await makeFixture('remote');
+  t.after(() => cleanup(dir));
+  const repo = new RepositoryService({ folderPath: dir, gitPath: 'git', store: new MemoryStore() });
+  const h = harness(repo);
+  t.after(() => h.bridge.dispose());
+
+  // `git remote prune`, a branch deleted upstream, or a narrowed refspec leave
+  // `branch.<name>.remote` in place while the remote-tracking ref is gone.
+  // `@{upstream}` then fails to resolve, which used to read as "no upstream"
+  // and let the amend through against a commit the remote still has.
+  const published = await repo.git.headHash();
+  assert.ok(published !== null);
+  await repo.git.run(['update-ref', '-d', 'refs/remotes/origin/main']);
+  repo.invalidate();
+  const status = await repo.status();
+  assert.equal(status.upstream, null, 'the fixture reproduces the collapsed null');
+
+  let commits = 0;
+  const realCommit = repo.git.commit.bind(repo.git);
+  repo.git.commit = async (message: string, opts?: { amend?: boolean }): Promise<string | null> => {
+    commits += 1;
+    return realCommit(message, opts);
+  };
+
+  const response = await h.webview.send(
+    req('actions/commit', {
+      message: 'reword',
+      amend: true,
+      statusToken: status.statusToken,
+      idempotencyKey: 'gone-upstream',
+    }),
+  );
+  assert.equal(response.ok, false, 'a configured upstream with no tracking ref must fail closed');
+  if (response.ok) return;
+  assert.equal(response.error.code, 'NON_FAST_FORWARD');
+  assert.equal(commits, 0, 'git commit never ran');
+  assert.equal(await repo.git.headHash(), published, 'HEAD is untouched');
+});
+
+test('amend is refused in a detached HEAD sitting on a published commit', async (t) => {
+  const dir = await makeFixture('remote');
+  t.after(() => cleanup(dir));
+  const repo = new RepositoryService({ folderPath: dir, gitPath: 'git', store: new MemoryStore() });
+  const h = harness(repo);
+  t.after(() => h.bridge.dispose());
+
+  // `checkout-commit` from the graph context menu is a first-class route into
+  // this state. A detached HEAD has no branch, so `upstream` is null, but the
+  // commit it points at can still be on a remote ref.
+  const published = await repo.git.headHash();
+  assert.ok(published !== null);
+  await repo.git.checkoutDetached(published);
+  repo.invalidate();
+  const status = await repo.status();
+  assert.equal(status.branch, null);
+  assert.equal(status.detached, true);
+  assert.equal(status.upstream, null);
+
+  let commits = 0;
+  const realCommit = repo.git.commit.bind(repo.git);
+  repo.git.commit = async (message: string, opts?: { amend?: boolean }): Promise<string | null> => {
+    commits += 1;
+    return realCommit(message, opts);
+  };
+
+  const response = await h.webview.send(
+    req('actions/commit', {
+      message: 'reword',
+      amend: true,
+      statusToken: status.statusToken,
+      idempotencyKey: 'detached-amend',
+    }),
+  );
+  assert.equal(response.ok, false, 'rewriting a published commit while detached must be refused');
+  if (response.ok) return;
+  assert.equal(response.error.code, 'NON_FAST_FORWARD');
+  assert.equal(commits, 0, 'git commit never ran');
+  assert.equal(await repo.git.headHash(), published);
+});
+
+test('amend in a detached HEAD on a local-only commit is still allowed', async (t) => {
+  const dir = await makeFixture('remote');
+  t.after(() => cleanup(dir));
+  const repo = new RepositoryService({ folderPath: dir, gitPath: 'git', store: new MemoryStore() });
+  const h = harness(repo);
+  t.after(() => h.bridge.dispose());
+
+  await fs.writeFile(path.join(dir, 'b.txt'), 'two\n', 'utf8');
+  await repo.git.stage(['b.txt']);
+  const local = await repo.git.commit('local only');
+  assert.ok(local !== null);
+  await repo.git.checkoutDetached(local);
+  repo.invalidate();
+  const status = await repo.status();
+  assert.equal(status.detached, true);
+
+  const response = await h.webview.send(
+    req('actions/commit', {
+      message: 'local only, reworded',
+      amend: true,
+      statusToken: status.statusToken,
+      idempotencyKey: 'detached-local',
+    }),
+  );
+  assert.equal(response.ok, true, 'nothing on a remote ref means the rewrite is local');
+  if (!response.ok) return;
+  const data = response.data as { commit: string | null };
+  assert.notEqual(data.commit, local);
+});

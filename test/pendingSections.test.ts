@@ -1051,3 +1051,109 @@ test('the amend toggle and note use spacing tokens and clip in a narrow footer',
   assert.match(note, /background:\s*transparent/, 'the footer supplies the fill');
   assert.match(note, /border-left:\s*3px solid/, 'the stripe is the only edge the frame keeps');
 });
+
+test('a late detail response for a superseded HEAD does not overwrite amendBase', async (t) => {
+  resetAmend();
+  const HASH_A = 'aaa1111bbb2222ccc3333ddd4444eee5555fff6';
+  const HASH_B = 'bbb2222ccc3333ddd4444eee5555fff6aaa1111';
+  setStatus({ head: HASH_A, ahead: 2 });
+
+  // Hold A's response, move HEAD to B, start a second amend, let B land, then
+  // release A. The guard on `amend` alone is a boolean, so A used to win the
+  // last write and the note named a commit that was no longer HEAD.
+  const releases: Record<string, () => void> = {};
+  const gates: Record<string, Promise<void>> = {};
+  for (const hash of [HASH_A, HASH_B]) {
+    gates[hash] = new Promise<void>((resolve) => {
+      releases[hash] = resolve;
+    });
+  }
+  const original = bridge.request;
+  bridge.request = (async (kind: any, payload: any): Promise<any> => {
+    if (kind === 'commits/detail') {
+      const hash = (payload as { hash: string }).hash;
+      await gates[hash];
+      return { hash, shortHash: hash.slice(0, 7), subject: `subject ${hash.slice(0, 4)}`, body: '' };
+    }
+    return original.call(bridge, kind, payload);
+  }) as any;
+  t.after(() => {
+    bridge.request = original;
+  });
+
+  const pendingA = useChangesStore.getState().setAmend(true);
+  setStatus({ head: HASH_B, ahead: 2 });
+  const pendingB = useChangesStore.getState().setAmend(true);
+
+  releases[HASH_B]?.();
+  await pendingB;
+  assert.equal(useChangesStore.getState().amendBase?.hash, HASH_B, 'B is the live HEAD');
+
+  releases[HASH_A]?.();
+  await pendingA;
+  assert.equal(
+    useChangesStore.getState().amendBase?.hash,
+    HASH_B,
+    'a superseded response must not replace the base with an older commit',
+  );
+});
+
+test('commit refuses to amend when HEAD moved away from the captured base', async (t) => {
+  resetAmend();
+  const HASH_A = 'aaa1111bbb2222ccc3333ddd4444eee5555fff6';
+  const HASH_B = 'bbb2222ccc3333ddd4444eee5555fff6aaa1111';
+  setStatus({ head: HASH_A, ahead: 2 });
+
+  const sent: any[] = [];
+  const original = bridge.request;
+  bridge.request = (async (kind: any, payload: any): Promise<any> => {
+    if (kind === 'actions/commit') {
+      sent.push(payload);
+      return { success: true, commit: 'abc', pushed: false, operation: 'idle', statusToken: 'token' };
+    }
+    if (kind === 'repos/status') {
+      return {
+        repoRoot: 'D:/work/git-control',
+        branch: 'main',
+        head: HASH_B,
+        detached: false,
+        upstream: 'origin/main',
+        ahead: 2,
+        behind: 0,
+        incoming: 0,
+        outgoing: 2,
+        dirty: false,
+        staged: false,
+        operation: 'idle',
+        changes: [],
+        conflicts: [],
+        churnTruncated: false,
+        statusToken: 'token',
+        lastFetchedAt: null,
+        lastFetchAt: null,
+      };
+    }
+    if (kind === 'stash/list') return [];
+    if (kind === 'repos/graph') {
+      return { nodes: [], edges: [], lanes: [], dateBuckets: [], refs: [], head: null, truncated: false, nextCursor: null, stale: false };
+    }
+    if (kind === 'repos/contributors') return [];
+    if (kind === 'commits/detail') {
+      return { hash: HASH_A, shortHash: 'aaa1111', subject: 'subject A', body: '' };
+    }
+    return original.call(bridge, kind, payload);
+  }) as any;
+  t.after(() => {
+    bridge.request = original;
+  });
+
+  await useChangesStore.getState().setAmend(true);
+  assert.equal(useChangesStore.getState().amendBase?.hash, HASH_A);
+  useChangesStore.setState({ commitMessage: 'reword A' });
+
+  // HEAD is B now. The payload carries no hash, so git would amend B while the
+  // note promised A. The store must refuse instead of sending.
+  assert.equal(await useChangesStore.getState().commit(), false);
+  assert.equal(sent.length, 0, 'nothing was sent');
+  assert.equal(useChangesStore.getState().amend, false, 'amend mode drops so the user sees the plain form');
+});
