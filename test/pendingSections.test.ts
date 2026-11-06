@@ -979,7 +979,7 @@ test('the commit footer renders an amend toggle bound to the store state', () =>
   // `disabled` attribute, so activation can reveal the reason.
   const toggle = src.slice(src.indexOf('commitForm.amendToggle') - 900, src.indexOf('commitForm.amendToggle') + 200);
   assert.match(toggle, /aria-disabled=\{amendReason !== null\}/);
-  assert.doesNotMatch(toggle, /\bdisabled=\{amendReason/, 'a blocked amend must not be a dead control');
+  assert.doesNotMatch(toggle, /(?<!-)disabled=\{amendReason/, 'a blocked amend must not be a dead control');
   assert.match(toggle, /aria-describedby=\{reasonId\}/);
   assert.match(toggle, /setAmend\(/, 'activation goes through the store action');
 
@@ -1040,13 +1040,13 @@ test('the amend toggle and note use spacing tokens and clip in a narrow footer',
   assert.match(options, /flex-wrap:\s*wrap/, 'the pair wraps as a unit');
   assert.match(options, /gap:\s*var\(--gc-space-\d\)/, 'no literal spacing');
 
-  const note = css.match(/\.gc-commit__note\s*\{([^}]*)\}/)?.[1] ?? '';
-  assert.match(note, /border-radius:\s*var\(--gc-radius/, 'frame 70 uses a 6 px corner, from the token scale');
+  // The note IS the banner: a wrapper with its own padding would double the
+  // inset frame 70 draws (8/10 around two lines), so the padding and the radius
+  // live on the banner inside the note slot.
+  const note = css.match(/\.gc-commit__note\s+\.gc-banner\s*\{([^}]*)\}/)?.[1] ?? '';
+  assert.match(note, /border-radius:\s*var\(--gc-radius/, 'frame 70 corner, from the token scale');
   assert.match(note, /padding:\s*var\(--gc-space-\d\)/, 'frame 70: 8/10 padding, tokenised');
-  assert.match(note, /word-break:\s*break-word|overflow-wrap:\s*anywhere/, 'a long hash must not overflow the footer');
-
-  // The banner is reused inside the footer, so it must not bring its own
-  // surface or a second border-left stripe on top of the footer fill.
-  const inline = css.match(/\.gc-commit__note\s+\.gc-banner\s*\{([^}]*)\}/)?.[1] ?? '';
-  assert.match(inline, /background:\s*none|background:\s*transparent/, 'the footer supplies the fill');
+  assert.match(note, /overflow-wrap:\s*anywhere/, 'a long hash must not overflow the footer');
+  assert.match(note, /background:\s*transparent/, 'the footer supplies the fill');
+  assert.match(note, /border-left:\s*3px solid/, 'the stripe is the only edge the frame keeps');
 });
