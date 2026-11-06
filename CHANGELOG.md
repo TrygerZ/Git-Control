@@ -5,6 +5,17 @@ All notable changes to the "Git Control" extension will be documented in this fi
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.4.0] - 2026-11-06
+
+### Added
+- "Amend last commit" toggle in the commit footer. It loads the last commit message and replaces that commit with the staged changes and the message.
+
+### Changed
+- The commit message box, "Push to remote after commit", and the Commit, Push, and Pull buttons now sit in a footer pinned to the bottom of the Pending Changes view. The file list scrolls above it.
+- Select all and Clear moved from the toolbar into the list header.
+- Notifications now appear above the footer.
+- Amend is blocked when the last commit may already be on the upstream branch, because pushing it would need a force push. The footer explains why.
+
 ## [3.2.0] - 2026-11-05
 
 ### Added
