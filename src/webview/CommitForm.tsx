@@ -239,9 +239,11 @@ export function CommitForm(): JSX.Element {
               type="checkbox"
               className="gc-checkbox__input"
               checked={amendOn}
-              aria-disabled={amendReason !== null}
-              aria-describedby={reasonId}
-              title={reasonText}
+              // Only while blocked: a dangling `aria-describedby` would point at
+              // an element that is not in the DOM.
+              {...(amendReason === null
+                ? {}
+                : { 'aria-disabled': true, 'aria-describedby': reasonId, title: reasonText })}
               onChange={() => {
                 if (amendReason === null) void setAmend(!amendOn);
                 else setShowReason(true);
