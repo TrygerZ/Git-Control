@@ -179,12 +179,16 @@ Encodes module purity boundaries (pure logic vs I/O) and execution trust boundar
 | `src/webview/route.ts` | Pure sidebar route model (`parseRoute`, `resolveInitialRoute`, `sameRoute`, `isFresh`, `changesSubOf`). `parseRoute` is the single gate for routes from host events, the pulled pending route, and webview `getState` |
 | `src/webview/navRegistry.ts` | Pure sidebar nav registry and tab model (`createNavRegistry`, shared `navRegistry`, `isNavVisible`, `nextTabIndex`, `routeForNav`, `navTabs`, `changesSubTabs`, `changesTabId`). Views register themselves; the strip hides below two destinations. `changesSubTabs` builds the Changes and Stashes sub-tabs |
 | `src/webview/navCounts.ts` | Pure nav badge text (`formatBadge` caps at `99+`, `navBadge` hides GitHub counts when signed out) and the `NavCounts` type |
+| `src/webview/githubGate.ts` | Pure GitHub gate mapping the host snapshot to one view (`loading`, `no-remote`, `signed-out`, `ready`) and one banner per GitHub-backed tab (`githubGate`, `isStale`, `AUTH_REQUIRED`, `PR_STALE_MS`). Never hides cached data |
+| `src/webview/prFilters.ts` | Pure pull request filters, counts, grouping, and badge maths (`filterPullRequests`, `countByFilter`, `matchesText`, `groupPullRequests`, `badgeCount`, `PR_PAGE_SIZE`) |
+| `src/webview/listNav.ts` | Pure roving-focus key model for the PR list (`nextIndex`), reused by Issues and Actions |
 | `src/webview/focusTrap.ts` | Pure Tab-trap maths and shared focusable selector for modal dialogs (`FOCUSABLE_SELECTOR`, `trapTabTarget`) |
 | `src/webview/useDialogFocusTrap.ts` | Hook wiring `focusTrap.ts` and Escape handling into `GuardDialog`, `MergeDialog`, `PromptDialog` |
 | `src/webview/iconFontStyles.ts` | Nonce-bearing `<style>` / adopted stylesheet `@font-face` injector (strict CSP compliant) |
 | `src/webview/ui.tsx` | Shared webview UI primitives (skeletons, banners, icons, error boundary) |
 | `src/webview/GraphCanvas.tsx` | Canvas/SVG renderer for 2D git commit graph and lane routing |
 | `src/webview/PendingChanges.tsx` | Sidebar panel. Changes and Stashes sub-tabs (route `sub`) over one tabpanel that swaps the tree view for staged, unstaged, and untracked changes and the stash list. `CommitForm` and the banners stay mounted in both |
+| `src/webview/PullRequestsView.tsx` | Sidebar Pull requests view. Banners, search row, filter chips, current-branch card, grouped list, footer. Reads only through store actions; reloads on mount and on `prs` activation while stale, no polling |
 | `src/webview/Inspector.tsx` | Detail inspector for selected commit or file diff |
 | `src/webview/SidebarHeader.tsx` | Sidebar-only header (title row with refresh and open-graph, branch row with sync chip, upstream row). Reads stores and `headerModel`, owns no state. The Explorer keeps `ContextBar` |
 | `src/webview/Tablist.tsx` | Generic WAI-ARIA tabs (roving tabindex, automatic activation, keys through `nextTabIndex`). No nav-specific code; takes a `classPrefix`, so the nav strip (`gc-nav`) and the Changes and Stashes sub-tabs (`gc-subtabs`) share it. A tab may carry a decorative `count` |

@@ -161,3 +161,19 @@ test('command icons point to valid resource files', () => {
     }
   }
 });
+
+test('the sidebar view is named Git Control and keeps its id', () => {
+  const views = (manifest() as unknown as { contributes?: { views?: Record<string, Array<{ id?: string; name?: string }>> } })
+    .contributes?.views;
+  const sidebar = views?.gitControl ?? [];
+  const entry = sidebar.find((v) => v.id === 'gitControl.pendingChanges');
+  assert.ok(entry !== undefined, 'the view id is a public API and must not change');
+  assert.equal(entry.name, 'Git Control');
+});
+
+test('the open pull requests command is declared with a title', () => {
+  const commands = manifest().contributes?.commands ?? [];
+  const command = commands.find((c) => c.command === 'gitControl.openPullRequests');
+  assert.ok(command !== undefined, 'gitControl.openPullRequests must be contributed');
+  assert.ok(command.title && command.title.length > 0);
+});

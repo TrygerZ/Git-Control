@@ -62,6 +62,10 @@
         "title": "Git Control: Open Pending Changes"
       },
       {
+        "command": "gitControl.openPullRequests",
+        "title": "Git Control: Open Pull Requests"
+      },
+      {
         "command": "gitControl.refresh",
         "title": "Git Control: Refresh"
       },
@@ -156,7 +160,7 @@
       "gitControl": [
         {
           "id": "gitControl.pendingChanges",
-          "name": "Pending Changes",
+          "name": "Git Control",
           "type": "webview"
         }
       ]

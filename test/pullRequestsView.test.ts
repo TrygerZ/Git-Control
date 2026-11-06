@@ -88,3 +88,11 @@ test('the old panel is gone and nothing imports it', () => {
     assert.doesNotMatch(src, /from '\.\/GitHubPanel'/, file);
   }
 });
+
+test('the sidebar shell loads GitHub metadata on mount, so the badge is filled before the view opens', () => {
+  const src = read('src/webview/PendingChanges.tsx');
+  // The badge lives in the strip, which renders on every route. Without this call
+  // the count stays empty until the user happens to open Pull requests, which is
+  // the acceptance criterion "the PR badge equals the Open chip count".
+  assert.match(src, /useGitHubStore\.getState\(\)\.load\(\)/);
+});

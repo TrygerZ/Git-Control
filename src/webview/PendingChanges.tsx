@@ -32,6 +32,7 @@ import { groupBySection, isSectionBulkDisabled, stageableFrom, unstageableFrom, 
 import {
   toErrorBody,
   useChangesStore,
+  useGitHubStore,
   useIconThemeStore,
   useOperationStore,
   useRepoStore,
@@ -143,6 +144,9 @@ export function PendingChangesApp(): JSX.Element {
     void load();
     void loadStatus();
     void loadGraph();
+    // The nav badge counts open pull requests on every route, so the slice is
+    // fetched here rather than by the view that happens to draw it.
+    void useGitHubStore.getState().load();
     return off;
   }, [load, loadIconTheme, loadSettings, loadStatus, loadGraph]);
 

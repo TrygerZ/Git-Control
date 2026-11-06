@@ -24,6 +24,9 @@ const PURE_MODULES = [
   'src/webview/route.ts',
   'src/webview/navRegistry.ts',
   'src/webview/navCounts.ts',
+  'src/webview/githubGate.ts',
+  'src/webview/prFilters.ts',
+  'src/webview/listNav.ts',
 ];
 
 test('pure modules contain no vscode imports', () => {
@@ -34,5 +37,11 @@ test('pure modules contain no vscode imports', () => {
       /(?:from\s+|require\(\s*)['"]vscode['"]|import\s+['"]vscode['"]/, 
       relativePath,
     );
+  }
+});
+
+test('the P07 pure modules are listed', () => {
+  for (const relativePath of ['src/webview/githubGate.ts', 'src/webview/prFilters.ts', 'src/webview/listNav.ts']) {
+    assert.ok(PURE_MODULES.includes(relativePath), relativePath);
   }
 });
