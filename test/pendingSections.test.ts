@@ -978,9 +978,10 @@ test('the commit footer renders an amend toggle bound to the store state', () =>
   // A blocked toggle stays focusable and reachable: aria-disabled, never the
   // `disabled` attribute, so activation can reveal the reason.
   const toggle = src.slice(src.indexOf('commitForm.amendToggle') - 900, src.indexOf('commitForm.amendToggle') + 200);
-  assert.match(toggle, /aria-disabled=\{amendReason !== null\}/);
+  assert.match(toggle, /'aria-disabled':\s*true/, 'the attribute is only spread while blocked');
+  assert.match(toggle, /amendReason === null\s*\?\s*\{\}/, 'an unblocked toggle carries no aria-disabled at all');
   assert.doesNotMatch(toggle, /(?<!-)disabled=\{amendReason/, 'a blocked amend must not be a dead control');
-  assert.match(toggle, /aria-describedby=\{reasonId\}/);
+  assert.match(toggle, /'aria-describedby':\s*reasonId/, 'the description is only referenced while it exists');
   assert.match(toggle, /setAmend\(/, 'activation goes through the store action');
 
   // The reason is always reachable to a screen reader while blocked, and the
