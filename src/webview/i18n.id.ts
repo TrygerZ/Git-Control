@@ -472,6 +472,17 @@ const id: Catalog = {
     commitPushFailed: 'Commit berhasil, push gagal.',
     retryPushTitle: 'Kirim ulang ke remote.',
     retryPush: 'Coba push lagi',
+    amendToggle: 'Amend commit terakhir',
+    amendButton: 'Amend commit terakhir',
+    amendTitle: 'Ganti commit terakhir dengan isi staging area dan pesan ini.',
+    amendNote: (hash: string, subject: string, remote: string | null) =>
+      remote === null
+        ? `Menggantikan ${hash} ${subject}. Boleh karena hanya ada di komputer ini.`
+        : `Menggantikan ${hash} ${subject}. Boleh karena belum ada di ${remote}.`,
+    amendBlockedPublished: (remote: string) =>
+      `Commit terakhir sudah ada di ${remote}. Amend butuh force push, dan Git Control tidak pernah melakukannya.`,
+    amendBlockedNoCommit: 'Belum ada commit untuk di-amend.',
+    amendBlockedOperation: 'Selesaikan atau batalkan operasi yang sedang berjalan dulu.',
   },
 
   // Conflict panel and operation banner

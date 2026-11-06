@@ -476,6 +476,17 @@ const en = {
     commitPushFailed: 'Commit succeeded, push failed.',
     retryPushTitle: 'Retry sending to remote.',
     retryPush: 'Retry push',
+    amendToggle: 'Amend last commit',
+    amendButton: 'Amend last commit',
+    amendTitle: 'Replace the last commit with the staging area and this message.',
+    amendNote: (hash: string, subject: string, remote: string | null) =>
+      remote === null
+        ? `Replaces ${hash} ${subject}. Allowed because it exists only on this machine.`
+        : `Replaces ${hash} ${subject}. Allowed because it is not on ${remote} yet.`,
+    amendBlockedPublished: (remote: string) =>
+      `Last commit is already on ${remote}. Amending it would need a force push, which Git Control never does.`,
+    amendBlockedNoCommit: 'No commit to amend yet.',
+    amendBlockedOperation: 'Finish or abort the operation in progress first.',
   },
 
   // Conflict panel and operation banner
