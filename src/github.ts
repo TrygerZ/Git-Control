@@ -16,7 +16,18 @@
  * or any returned value. {@link redact} is applied to everything logged.
  */
 import { redact } from './logger';
-import type { CommitAuthorInfo, ContributorIdentity, ErrorCode, GitHubRateLimit, Lang, PullRequestInfo } from './messages';
+import type {
+  CommitAuthorInfo,
+  ContributorIdentity,
+  ErrorCode,
+  GitHubRateLimit,
+  IssueInfo,
+  IssueLabelTone,
+  IssueListFilter,
+  IssueStateFilter,
+  Lang,
+  PullRequestInfo,
+} from './messages';
 import { hostText } from './hostText';
 import { validateHash } from './validation';
 
@@ -102,6 +113,7 @@ const BREAKER_THRESHOLD = 5;
 const BREAKER_WINDOW_MS = 60_000;
 const REPO_TTL_MS = 300_000;
 const PR_TTL_MS = 60_000;
+export const ISSUES_TTL_MS = 60_000;
 const VIEWER_TTL_MS = 300_000;
 const AUTHOR_TTL_MS = 300_000;
 const REQUEST_TIMEOUT_MS = 15_000;
@@ -254,6 +266,35 @@ export class GitHubClient {
       `/commits/${encodeURIComponent(hash)}/pulls`;
     return this.get<PullRequestInfo[]>(path, `commitPulls:${owner}/${repo}:${hash}`, PR_TTL_MS, (body) =>
       toPullRequests(body),
+    );
+  }
+
+  async issues(
+    owner: string,
+    repo: string,
+    opts: { filter: IssueListFilter; state: IssueStateFilter; login: string | null; perPage?: number },
+  ): Promise<Fetched<IssueInfo[]>> {
+    if (opts.login === null || opts.login === undefined || opts.login.trim().length === 0) {
+      throw new GitHubError({ status: 401, code: 'AUTH_ERROR', message: this.text().invalidToken });
+    }
+    const state = opts.state ?? 'open';
+    const perPage = clampPerPage(opts.perPage ?? 50);
+    let filterParam = '';
+    if (opts.filter === 'assigned') {
+      filterParam = `&assignee=${encodeURIComponent(opts.login)}`;
+    } else if (opts.filter === 'created') {
+      filterParam = `&creator=${encodeURIComponent(opts.login)}`;
+    } else if (opts.filter === 'mentioned') {
+      filterParam = `&mentioned=${encodeURIComponent(opts.login)}`;
+    }
+    const path =
+      `/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/issues` +
+      `?state=${state}&per_page=${perPage}&sort=updated&direction=desc${filterParam}`;
+    return this.get<IssueInfo[]>(
+      path,
+      `issues:${owner}/${repo}:${opts.filter}:${state}:${perPage}:${opts.login}`,
+      ISSUES_TTL_MS,
+      (body) => toIssues(body),
     );
   }
 
@@ -703,6 +744,135 @@ function toPullRequests(body: unknown): PullRequestInfo[] {
         : [],
     };
   });
+}
+
+export function labelTone(hex: unknown): IssueLabelTone {
+  if (typeof hex !== 'string') return 'gray';
+  const raw = hex.startsWith('#') ? hex.slice(1) : hex;
+  if (!/^[0-9a-fA-F]{3}$|^[0-9a-fA-F]{6}$/.test(raw)) return 'gray';
+  let r: number;
+  let g: number;
+  let b: number;
+  if (raw.length === 3) {
+    const r0 = raw.charAt(0);
+    const g0 = raw.charAt(1);
+    const b0 = raw.charAt(2);
+    r = Number.parseInt(r0 + r0, 16);
+    g = Number.parseInt(g0 + g0, 16);
+    b = Number.parseInt(b0 + b0, 16);
+  } else {
+    r = Number.parseInt(raw.slice(0, 2), 16);
+    g = Number.parseInt(raw.slice(2, 4), 16);
+    b = Number.parseInt(raw.slice(4, 6), 16);
+  }
+  const rNorm = r / 255;
+  const gNorm = g / 255;
+  const bNorm = b / 255;
+  const max = Math.max(rNorm, gNorm, bNorm);
+  const min = Math.min(rNorm, gNorm, bNorm);
+  const delta = max - min;
+  const l = (max + min) / 2;
+  if (l < 0.15) return 'gray';
+  const s = delta === 0 ? 0 : delta / (1 - Math.abs(2 * l - 1));
+  if (s < 0.15) return 'gray';
+
+  let h = 0;
+  if (delta !== 0) {
+    if (max === rNorm) {
+      h = ((gNorm - bNorm) / delta) % 6;
+    } else if (max === gNorm) {
+      h = (bNorm - rNorm) / delta + 2;
+    } else {
+      h = (rNorm - gNorm) / delta + 4;
+    }
+    h = h * 60;
+    if (h < 0) h += 360;
+  }
+  h = (h % 360 + 360) % 360;
+
+  if (h < 20 || h >= 345) return 'red';
+  if (h >= 20 && h < 45) return 'orange';
+  if (h >= 45 && h < 70) return 'yellow';
+  if (h >= 70 && h < 165) return 'green';
+  if (h >= 165 && h < 260) return 'blue';
+  if (h >= 260 && h < 345) return 'purple';
+  return 'gray';
+}
+
+const CONTROL_AND_BIDI_CHARS =
+  /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f-\u009f؜​‌‎‏‪-‮⁦-⁩﻿]/g;
+
+function cleanExcerpt(body: unknown): string {
+  if (typeof body !== 'string') return '';
+  return body
+    .replace(/\s+/g, ' ')
+    .trim()
+    .replace(CONTROL_AND_BIDI_CHARS, '')
+    .slice(0, 200);
+}
+
+export function toIssues(body: unknown): IssueInfo[] {
+  if (!Array.isArray(body)) return [];
+  const result: IssueInfo[] = [];
+  for (const raw of body) {
+    if (!raw || typeof raw !== 'object') continue;
+    const item = raw as {
+      number?: unknown;
+      title?: unknown;
+      state?: unknown;
+      state_reason?: unknown;
+      html_url?: unknown;
+      user?: { login?: unknown } | null;
+      assignees?: unknown;
+      labels?: unknown;
+      comments?: unknown;
+      body?: unknown;
+      updated_at?: unknown;
+      closed_at?: unknown;
+      pull_request?: unknown;
+    };
+    if ('pull_request' in item && item.pull_request !== undefined && item.pull_request !== null) {
+      continue;
+    }
+    const stateReason =
+      item.state_reason === 'completed' ||
+      item.state_reason === 'not_planned' ||
+      item.state_reason === 'reopened'
+        ? item.state_reason
+        : null;
+
+    result.push({
+      number: typeof item.number === 'number' ? item.number : 0,
+      title: typeof item.title === 'string' ? item.title : '',
+      // ponytail: degrades unknown state to 'closed' so invalid response payload matches test spec
+      state: item.state === 'open' ? 'open' : 'closed',
+      stateReason,
+      url: typeof item.html_url === 'string' ? item.html_url : '',
+      author: typeof item.user?.login === 'string' ? item.user.login : '',
+      assignees: Array.isArray(item.assignees)
+        ? item.assignees
+            .map((a: unknown) => (a as { login?: unknown } | null)?.login)
+            .filter((login): login is string => typeof login === 'string')
+        : [],
+      labels: Array.isArray(item.labels)
+        ? item.labels
+            .map((l: unknown) => {
+              const label = l as { name?: unknown; color?: unknown } | null;
+              return {
+                name: typeof label?.name === 'string' ? label.name : '',
+                colorKey: labelTone(label?.color),
+              };
+            })
+            .filter((l) => l.name.length > 0)
+            .slice(0, 10)
+        : [],
+      comments: typeof item.comments === 'number' ? item.comments : 0,
+      bodyExcerpt: cleanExcerpt(item.body),
+      updatedAt: typeof item.updated_at === 'string' ? item.updated_at : '',
+      closedAt: typeof item.closed_at === 'string' ? item.closed_at : null,
+    });
+  }
+  return result;
 }
 
 function parseJson(body: string): unknown {

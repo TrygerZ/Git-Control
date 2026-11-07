@@ -113,3 +113,50 @@ test('P07: a quota refusal reports RATE_LIMITED with the reset timestamp the UI 
   assert.equal(failure.code, 'RATE_LIMITED');
   assert.equal(failure.resetAt, 1_700_000_600_000);
 });
+
+// ---------------------------------------------------- P08: issues request budget
+
+test('P08: bridge github/issues drops PR items, serves second call from cache, and maps RATE_LIMITED', async (t) => {
+  const repo = await makeRepo({ label: 'p08-bridge' });
+  const rawIssues = [
+    { number: 1, title: 'Bug one', state: 'open', html_url: 'u', user: { login: 'me' } },
+    { number: 2, title: 'A pull request', state: 'open', pull_request: { url: 'pr-url' } },
+  ];
+  const h = client([
+    response(200, rawIssues, { 'x-ratelimit-remaining': '49' }),
+    response(403, { message: 'quota' }, { 'x-ratelimit-remaining': '0', 'x-ratelimit-reset': '1700000700' }),
+  ]);
+  const bridge = repo.harness({
+    host: {
+      githubIssues: async (payload) => {
+        const result = await h.gh.issues(payload.owner, payload.repo, {
+          filter: payload.filter,
+          state: payload.state ?? 'open',
+          login: 'me',
+        });
+        return { issues: result.data, rateLimit: result.rateLimit };
+      },
+    },
+  });
+  own(t, repo, bridge);
+
+  const first = await bridge.send('github/issues', { owner: 'o', repo: 'r', filter: 'assigned' });
+  assert.equal(first.ok, true);
+  if (!first.ok) return;
+  const data = first.data as { issues: Array<{ number: number; title: string }> };
+  assert.equal(data.issues.length, 1, 'PR item is dropped');
+  assert.equal(data.issues[0]?.number, 1);
+
+  // Second call within TTL served from cache
+  const second = await bridge.send('github/issues', { owner: 'o', repo: 'r', filter: 'assigned' });
+  assert.equal(second.ok, true);
+  assert.equal(h.calls.length, 1, 'served from cache, no network hit');
+
+  // Rate limit mapped to RATE_LIMITED
+  const rateLimitFailure = await h.gh
+    .issues('other', 'r', { filter: 'created', state: 'open', login: 'me' })
+    .catch((e: unknown) => e);
+  assert.ok(rateLimitFailure instanceof GitHubError);
+  assert.equal(rateLimitFailure.code, 'RATE_LIMITED');
+  assert.equal(rateLimitFailure.resetAt, 1_700_000_700_000);
+});

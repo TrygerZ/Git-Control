@@ -21,6 +21,7 @@ import { GuardDialog } from './GuardDialog';
 import { SidebarHeader } from './SidebarHeader';
 import { NavStrip } from './NavStrip';
 import { PullRequestsView } from './PullRequestsView';
+import { IssuesView } from './IssuesView';
 import { Tablist } from './Tablist';
 import { CHANGES_PANEL_ID, CHANGES_TABS_PREFIX, changesSubTabs, changesTabId } from './navRegistry';
 import { changesSubOf, parseRoute } from './route';
@@ -173,7 +174,9 @@ export function PendingChangesApp(): JSX.Element {
    * and the body below never move between routes.
    */
   const subTabs =
-    route.id === 'prs' ? [] : changesSubTabs(strings, { changes: changes.length, stashes: stashes.length });
+    route.id === 'prs' || route.id === 'issues'
+      ? []
+      : changesSubTabs(strings, { changes: changes.length, stashes: stashes.length });
   /**
    * A tab id comes from the DOM, so it is parsed, never cast: `parseRoute` drops
    * anything the route model does not know and `navigate` persists the result.
@@ -273,6 +276,8 @@ export function PendingChangesApp(): JSX.Element {
       */}
       {route.id === 'prs' ? (
         <PullRequestsView />
+      ) : route.id === 'issues' ? (
+        <IssuesView />
       ) : (
         <>
       <div

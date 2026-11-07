@@ -9,7 +9,7 @@ import type { JSX } from 'react';
 import { isNavVisible, navRegistry, navTabs, routeForNav, type NavDestination } from './navRegistry';
 import { PR_PAGE_SIZE, badgeCount, countByFilter } from './prFilters';
 import { Tablist } from './Tablist';
-import { useChangesStore, useGitHubStore, useNavStore, useRouteStore } from './store';
+import { useChangesStore, useGitHubStore, useIssuesStore, useNavStore, useRouteStore } from './store';
 import { useT } from './useT';
 
 navRegistry.register({
@@ -38,6 +38,16 @@ const PRS_DESTINATION: NavDestination = {
 // so a headless import reports the same destinations the strip will draw.
 navRegistry.register(PRS_DESTINATION);
 
+const ISSUES_DESTINATION: NavDestination = {
+  id: 'issues',
+  order: 30,
+  icon: 'issue',
+  label: (s) => s.nav.issues,
+  ariaName: (s, count) => (count === null ? s.nav.issues : s.nav.issuesAria(String(count))),
+  requiresGitHub: true,
+};
+navRegistry.register(ISSUES_DESTINATION);
+
 export function NavStrip(): JSX.Element | null {
   const strings = useT();
   const route = useRouteStore((s) => s.route);
@@ -47,6 +57,8 @@ export function NavStrip(): JSX.Element | null {
   const counts = useNavStore((s) => s.counts);
   const failing = useNavStore((s) => s.failing);
   const signedIn = useGitHubStore((s) => s.auth?.connected === true);
+  const assignedIssues = useIssuesStore((s) => s.issuesByFilter.assigned.open.length);
+  const issuesLoaded = useIssuesStore((s) => s.loadedAt.assigned.open !== null);
 
   const dests = navRegistry.list();
   if (!isNavVisible(dests.length)) return null;
@@ -54,11 +66,17 @@ export function NavStrip(): JSX.Element | null {
   // A full page means "at least this many", which the shared 99+ cap cannot say.
   const openPrs = countByFilter(pullRequests, { viewerLogin }).open;
   const prBadge = badgeCount(openPrs, PR_PAGE_SIZE);
+  const issuesCount = issuesLoaded ? assignedIssues : (counts.issues ?? null);
+  const issueBadge = issuesCount !== null ? badgeCount(issuesCount, 50) : null;
   const tabs = navTabs(dests, strings, {
-    counts: { ...counts, changes: changesCount, prs: openPrs },
+    counts: { ...counts, changes: changesCount, prs: openPrs, issues: issuesCount },
     failing,
     signedIn,
-  }).map((tab) => (tab.id === 'prs' ? { ...tab, badge: prBadge } : tab));
+  }).map((tab) => {
+    if (tab.id === 'prs') return { ...tab, badge: prBadge };
+    if (tab.id === 'issues' && signedIn) return { ...tab, badge: issueBadge };
+    return tab;
+  });
 
   return (
     <Tablist

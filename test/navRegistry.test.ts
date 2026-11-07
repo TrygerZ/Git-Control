@@ -27,6 +27,7 @@ import { formatBadge, navBadge } from '../src/webview/navCounts';
 import { t } from '../src/webview/i18n';
 import { useNavStore } from '../src/webview/store';
 import type { Route } from '../src/messages';
+import '../src/webview/NavStrip';
 
 function dest(id: NavDestination['id'], order: number, extra: Partial<NavDestination> = {}): NavDestination {
   return {
@@ -76,6 +77,17 @@ test('each registry is independent, and the shared one is a registry', () => {
   assert.equal(b.list().length, 0);
   assert.equal(typeof navRegistry.register, 'function');
   assert.ok(Array.isArray(navRegistry.list()));
+});
+
+test('the shared navRegistry registers changes, prs, and issues in order', () => {
+  assert.deepEqual(
+    navRegistry.list().map((d) => d.id),
+    ['changes', 'prs', 'issues'],
+  );
+  const issues = navRegistry.list().find((d) => d.id === 'issues');
+  assert.ok(issues !== undefined);
+  assert.equal(issues.requiresGitHub, true);
+  assert.equal(issues.icon, 'issue');
 });
 
 test('the strip needs at least two destinations to show', () => {

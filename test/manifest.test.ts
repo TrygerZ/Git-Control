@@ -177,3 +177,10 @@ test('the open pull requests command is declared with a title', () => {
   assert.ok(command !== undefined, 'gitControl.openPullRequests must be contributed');
   assert.ok(command.title && command.title.length > 0);
 });
+
+test('the open issues command is declared with a title', () => {
+  const commands = manifest().contributes?.commands ?? [];
+  const command = commands.find((c) => c.command === 'gitControl.openIssues');
+  assert.ok(command !== undefined, 'gitControl.openIssues must be contributed');
+  assert.equal(command.title, 'Git Control: Open Issues');
+});

@@ -10,7 +10,7 @@
  *     the host's own 500 ms watcher debounce
  */
 import { create } from 'zustand';
-import { BridgeRequestError, bridge, fetchContributorIdentity, fetchContributors, isBridgeError, mutation, saveState } from './bridge';
+import { BridgeRequestError, bridge, fetchContributorIdentity, fetchContributors, isBridgeError, loadState, mutation, saveState } from './bridge';
 import { unknownErrorBody } from '../errorBody';
 import { amendBlockedReason, joinCommitMessage, linkageChangedRepo, sanitizeGitText } from './format';
 import { DEFAULT_ROUTE, resolveInitialRoute, sameRoute } from './route';
@@ -29,6 +29,9 @@ import type {
   GitHubAuthState,
   GitHubLinkage,
   GitHubRateLimit,
+  IssueInfo,
+  IssueListFilter,
+  IssueStateFilter,
   MutationMeta,
   PullRequestInfo,
   RepoGraph,
@@ -1064,6 +1067,7 @@ export const useGitHubStore = create<GitHubState>((set, get) => ({
         const repoChanged = linkageChangedRepo(prevLinkage, linkage);
         if (repoChanged) {
           resetCommitAuthors(set);
+          useIssuesStore.getState().reset();
         }
         set({
           auth,
@@ -1080,7 +1084,12 @@ export const useGitHubStore = create<GitHubState>((set, get) => ({
               }
             : {}),
         });
-        if (linkage.available) await get().loadPullRequests();
+        if (linkage.available) {
+          await get().loadPullRequests();
+          if (auth.connected) {
+            void useIssuesStore.getState().load('assigned', 'open');
+          }
+        }
       } catch (err) {
         const body = toErrorBody(err);
         set({ loading: false, error: body });
@@ -1199,6 +1208,7 @@ export const useGitHubStore = create<GitHubState>((set, get) => ({
     try {
       const auth = await bridge.request('github/disconnect', {});
       resetCommitAuthors(set);
+      useIssuesStore.getState().reset();
       set({
         auth,
         pullRequests: [],
@@ -1231,6 +1241,129 @@ export const useGitHubStore = create<GitHubState>((set, get) => ({
         message: toErrorBody(err).message,
       });
     }
+  },
+}));
+
+// -------------------------------------------------------------- issuesStore
+
+export interface IssuesState {
+  /** Rows for the current selection only. */
+  issues: IssueInfo[];
+  /** filter -> state -> rows */
+  issuesByFilter: Record<IssueListFilter, Record<IssueStateFilter, IssueInfo[]>>;
+  /** filter -> state -> epoch ms of the last successful read */
+  loadedAt: Record<IssueListFilter, Record<IssueStateFilter, number | null>>;
+  filter: IssueListFilter;
+  state: IssueStateFilter;
+  loading: boolean;
+  error: ErrorBody | null;
+  /** Change the selection and show its cached rows, or an empty list. No request. */
+  select(filter: IssueListFilter, state?: IssueStateFilter): void;
+  load(filter: IssueListFilter, state: IssueStateFilter, force?: boolean): Promise<void>;
+  reset(): void;
+}
+
+function emptyGrid(): Record<IssueListFilter, Record<IssueStateFilter, IssueInfo[]>> {
+  return {
+    assigned: { open: [], closed: [] },
+    created: { open: [], closed: [] },
+    mentioned: { open: [], closed: [] },
+  };
+}
+
+function emptyStamps(): Record<IssueListFilter, Record<IssueStateFilter, number | null>> {
+  return {
+    assigned: { open: null, closed: null },
+    created: { open: null, closed: null },
+    mentioned: { open: null, closed: null },
+  };
+}
+
+/** Keyed by `${filter}:${state}`, so the open and closed reads never share a slot. */
+const inFlightIssues = new Map<string, Promise<void>>();
+
+export const useIssuesStore = create<IssuesState>((set, get) => ({
+  issues: [],
+  issuesByFilter: emptyGrid(),
+  loadedAt: emptyStamps(),
+  filter: loadState().issueFilter,
+  state: 'open',
+  loading: false,
+  error: null,
+
+  select(filter, state = get().state) {
+    set({
+      filter,
+      state,
+      issues: get().issuesByFilter[filter]?.[state] ?? [],
+      error: null,
+    });
+  },
+
+  async load(filter, state, force = false) {
+    const key = `${filter}:${state}`;
+    const inFlight = inFlightIssues.get(key);
+    if (inFlight !== undefined) return inFlight;
+    const auth = useGitHubStore.getState().auth;
+    if (auth?.connected !== true) return;
+    const linkage = useGitHubStore.getState().linkage;
+    if (!linkage || !linkage.available || !linkage.owner || !linkage.repo) return;
+    const { owner, repo } = linkage;
+    const stamp = get().loadedAt[filter][state];
+    if (!force && stamp !== null && Date.now() - stamp <= 60_000) {
+      // A cache hit still has to repaint: the rendered rows follow the selection.
+      get().select(filter, state);
+      return;
+    }
+    set({ loading: true });
+    const promise = (async () => {
+      try {
+        const result = await bridge.request('github/issues', { owner, repo, filter, state });
+        set((s) => {
+          const nextByFilter = {
+            ...s.issuesByFilter,
+            [filter]: { ...s.issuesByFilter[filter], [state]: result.issues },
+          };
+          const nextLoadedAt = {
+            ...s.loadedAt,
+            [filter]: { ...s.loadedAt[filter], [state]: Date.now() },
+          };
+          // Only repaint when the reply still matches the live selection.
+          const stillSelected = s.filter === filter && s.state === state;
+          return {
+            issuesByFilter: nextByFilter,
+            loadedAt: nextLoadedAt,
+            loading: false,
+            error: null,
+            ...(stillSelected ? { issues: result.issues } : {}),
+          };
+        });
+        useGitHubStore.setState({ rateLimit: result.rateLimit });
+        if (filter === 'assigned' && state === 'open') {
+          useNavStore.getState().setCount('issues', result.issues.length);
+        }
+      } catch (err) {
+        set({ loading: false, error: toErrorBody(err) });
+      } finally {
+        inFlightIssues.delete(key);
+      }
+    })();
+    inFlightIssues.set(key, promise);
+    return promise;
+  },
+
+  reset() {
+    inFlightIssues.clear();
+    set({
+      issues: [],
+      issuesByFilter: emptyGrid(),
+      loadedAt: emptyStamps(),
+      filter: 'assigned',
+      state: 'open',
+      loading: false,
+      error: null,
+    });
+    useNavStore.getState().setCount('issues', null);
   },
 }));
 

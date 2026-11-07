@@ -1,4 +1,4 @@
-import type { ErrorCode, GitActionPayload, Request, RequestKind } from './messages';
+import type { ErrorCode, GitActionPayload, IssueListFilter, IssueStateFilter, Request, RequestKind } from './messages';
 import { validateBranchName, validateHash, validateRemoteName, validateRepoRelativePath, validateStashIndex } from './validation';
 
 export type Outcome = { ok: true; data: unknown } | { ok: false; error: { code: ErrorCode } };
@@ -74,4 +74,10 @@ export function isPositiveInt(value: unknown): boolean { return typeof value ===
 export function isNonNegativeInt(value: unknown): boolean { return typeof value === 'number' && Number.isInteger(value) && value >= 0; }
 export function isSlug(value: unknown): boolean {
   return typeof value === 'string' && value.length > 0 && value.length <= 100 && /^[A-Za-z0-9._-]+$/.test(value);
+}
+export function isIssueFilter(value: unknown): value is IssueListFilter {
+  return value === 'assigned' || value === 'created' || value === 'mentioned';
+}
+export function isIssueState(value: unknown): value is IssueStateFilter {
+  return value === 'open' || value === 'closed';
 }
