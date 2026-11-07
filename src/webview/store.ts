@@ -1083,7 +1083,12 @@ export const useGitHubStore = create<GitHubState>((set, get) => ({
               }
             : {}),
         });
-        if (linkage.available) await get().loadPullRequests();
+        if (linkage.available) {
+          await get().loadPullRequests();
+          if (auth.connected) {
+            void useIssuesStore.getState().load('assigned');
+          }
+        }
       } catch (err) {
         const body = toErrorBody(err);
         set({ loading: false, error: body });
