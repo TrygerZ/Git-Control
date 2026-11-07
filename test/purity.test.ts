@@ -29,6 +29,7 @@ const PURE_MODULES = [
   'src/webview/listNav.ts',
   'src/webview/issueFilters.ts',
   'src/webview/issueText.ts',
+  'src/webview/issueBranch.ts',
 ];
 
 test('pure modules contain no vscode imports', () => {
@@ -50,6 +51,12 @@ test('the P07 pure modules are listed', () => {
 
 test('the P08 pure modules are listed', () => {
   for (const relativePath of ['src/webview/issueFilters.ts', 'src/webview/issueText.ts']) {
+    assert.ok(PURE_MODULES.includes(relativePath), relativePath);
+  }
+});
+
+test('the P09 pure modules are listed', () => {
+  for (const relativePath of ['src/webview/issueBranch.ts']) {
     assert.ok(PURE_MODULES.includes(relativePath), relativePath);
   }
 });

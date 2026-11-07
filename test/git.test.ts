@@ -970,3 +970,34 @@ test('isAncestor accepts HEAD against the upstream name and rejects options', as
   await assert.rejects(() => git.isAncestor('--exec=x', 'origin/main'), /Invalid ref/);
   await assert.rejects(() => git.isAncestor('HEAD', '--exec=x'), /Invalid ref/);
 });
+
+/**
+ * P09 documents "your uncommitted changes move with you" in the Start work dialog.
+ * That promise is git's own behaviour, not something the extension arranges, so it
+ * is pinned against a real repository: if a future change stashed or discarded the
+ * tree before switching, this test is the one that notices.
+ */
+test('createBranch carries uncommitted changes onto the new branch', async (t) => {
+  const dir = await makeRepo();
+  t.after(() => cleanup(dir));
+  const git = new GitRunner({ gitPath: 'git', cwd: dir });
+
+  const headBefore = await git.headHash();
+  await fs.writeFile(path.join(dir, 'a.txt'), 'uncommitted edit\n', 'utf8');
+  await fs.writeFile(path.join(dir, 'untracked.txt'), 'new file\n', 'utf8');
+  assert.equal((await git.status()).length, 2);
+
+  await git.createBranch('feat/97-lane-gutter', headBefore as string);
+
+  const { branch } = await git.currentBranch();
+  assert.equal(branch, 'feat/97-lane-gutter');
+  assert.equal(await git.headHash(), headBefore, 'the branch starts at the same commit');
+
+  const status = await git.status();
+  assert.deepEqual(
+    status.map((c) => c.path).sort(),
+    ['a.txt', 'untracked.txt'],
+    'the working tree is still dirty on the new branch',
+  );
+  assert.equal(await fs.readFile(path.join(dir, 'a.txt'), 'utf8'), 'uncommitted edit\n');
+});

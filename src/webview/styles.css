@@ -435,6 +435,22 @@ h3 {
   cursor: not-allowed;
 }
 
+/*
+ * A blocked button stays focusable so its reason is reachable, which means the
+ * `:disabled` selectors above never match it. Without this rule it looks and
+ * hovers like a live control and a click does nothing. It sits after every
+ * variant hover on purpose: those all carry equal specificity, so source order
+ * is what keeps `primary`, `danger`, and `quiet` from lighting up while blocked.
+ */
+.gc-button[aria-disabled='true'] {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.gc-button[aria-disabled='true']:hover {
+  background: transparent;
+}
+
 /* Same disabled fade for the non-button controls: tree rows, file rows,
  * and checkboxes read as off with the same opacity the buttons use. */
 .gc-tree__folder:disabled,
@@ -5463,7 +5479,110 @@ h3 {
 
 .gc-issues__preview-actions {
   display: flex;
+  flex-wrap: wrap;
   gap: var(--gc-space-2);
+}
+
+/* ------------------------------------------------------------------ start work
+ *
+ * Frame 93 is a 340 px sidebar dialog: icon badge, two-line title block, one field,
+ * a command preview, and a footer split off by a rule. The shared `.gc-modal` is
+ * 38em wide because the guard dialogs need the room; this one narrows to the
+ * sidebar's own width so it reads as part of the panel it came from.
+ */
+.gc-modal--start-work {
+  width: min(22em, 100%);
+  gap: 0;
+  padding: 0;
+}
+
+.gc-start-work__header {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--gc-space-4);
+  padding: var(--gc-space-5) var(--gc-space-5) var(--gc-space-4);
+}
+
+/*
+ * The badge is the only filled surface in the dialog, which is what makes it read
+ * as the subject rather than decoration. `--gc-accent-subtle` already shares its
+ * hue with the primary button below, so the two stay on one palette.
+ */
+.gc-start-work__badge {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: var(--gc-radius-lg);
+  background: var(--gc-accent-subtle);
+  color: var(--gc-accent);
+  font-size: var(--gc-fs-xl);
+}
+
+.gc-start-work__titles {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: var(--gc-space-1);
+  min-width: 0;
+}
+
+.gc-start-work__subtitle {
+  margin: 0;
+  color: var(--gc-text-secondary);
+  font-size: var(--gc-fs-xs);
+  line-height: 1.4;
+}
+
+/* The issue this branch is for. Truncated, because a GitHub title can be long. */
+.gc-start-work__issue {
+  margin: 0;
+  overflow: hidden;
+  color: var(--gc-text-muted);
+  font-size: var(--gc-fs-xs);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.gc-start-work__body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gc-space-3);
+  padding: var(--gc-space-4) var(--gc-space-5) var(--gc-space-5);
+  border-top: 1px solid var(--gc-border-subtle);
+}
+
+/* The field fills the dialog: a 340 px column has no room for a half-width input. */
+.gc-start-work__body .gc-field {
+  display: flex;
+}
+
+.gc-start-work__dirty {
+  margin: 0;
+}
+
+.gc-start-work__command {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gc-space-2);
+  padding: var(--gc-space-3);
+  border: 1px solid var(--gc-border-subtle);
+  border-radius: var(--gc-radius);
+  background: var(--vscode-textCodeBlock-background, var(--vscode-editor-background));
+}
+
+.gc-start-work__command-label {
+  color: var(--gc-text-muted);
+  font-size: var(--gc-fs-xs);
+}
+
+/* Wraps rather than scrolls: the whole command has to be readable at 340 px. */
+.gc-start-work__command code {
+  overflow-wrap: anywhere;
+  font-family: var(--vscode-editor-font-family, monospace);
+  font-size: var(--gc-fs-xs);
 }
 
 .gc-issues__filter-wrap {

@@ -766,6 +766,26 @@ const en = {
     footerNotConnected: 'Not connected',
   },
 
+  // Start work from an issue (P09)
+  startWork: {
+    button: 'Start work',
+    buttonAria: (n: string) => `Start work on issue #${n}`,
+    buttonDisabledNoHead: 'Open a repository with at least one commit to start work.',
+    buttonDisabledBusy: 'Finish the current Git operation first.',
+    title: (n: string) => `Start work on #${n}`,
+    subtitle: 'Creates a branch from the current commit and switches to it.',
+    closeAria: 'Close',
+    fieldLabel: 'New branch name',
+    fieldHint: 'Suggested from the issue number and title.',
+    commandLabel: 'Command that will run',
+    dirtyNote: 'Your uncommitted changes move with you to the new branch.',
+    submit: 'Create branch',
+    problemEmpty: 'Branch name cannot be empty.',
+    problemInvalid: 'This is not a valid branch name.',
+    problemExists: 'A local branch with this name already exists.',
+    doneToast: (name: string) => `Created ${name} and switched to it`,
+  },
+
   // Explorer root app
   explorer: {
     toastCopyFailed: 'Could not copy to clipboard.',

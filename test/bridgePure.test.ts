@@ -10,6 +10,7 @@ import {
   messageOf,
   parseRequest,
   shouldRemember,
+  validateAction,
   validateEmptyPayload,
   type Outcome,
 } from '../src/bridgePure';
@@ -218,4 +219,39 @@ test('primitive guards and helpers', () => {
   assert.equal(isIssueState('all'), false);
   assert.equal(isIssueState('merged'), false);
   assert.equal(isIssueState(undefined), false);
+});
+
+test('validateAction accepts the suggested branch names and rejects option-like names', () => {
+  const fail = (detail: string): never => {
+    throw new Error(`failed:${detail}`);
+  };
+
+  assert.doesNotThrow(() => {
+    validateAction(
+      {
+        action: 'create-branch',
+        name: 'feat/97-lane-gutter-push-state',
+        startPoint: '4c9e1a2',
+        idempotencyKey: 'k-1',
+      },
+      fail,
+    );
+  });
+
+  assert.doesNotThrow(() => {
+    validateAction(
+      { action: 'create-branch', name: 'fix/97', startPoint: '4c9e1a2', idempotencyKey: 'k-2' },
+      fail,
+    );
+  });
+
+  assert.throws(
+    () => {
+      validateAction(
+        { action: 'create-branch', name: '--upload-pack=x', startPoint: '4c9e1a2', idempotencyKey: 'k-3' },
+        fail,
+      );
+    },
+    /failed:name/,
+  );
 });

@@ -1095,3 +1095,14 @@ test('compareUrl encodes every branch segment so a legal ref keeps its path', ()
     'a question mark in the ref stays in the path, not the query',
   );
 });
+
+/**
+ * The Start work dialog shows the user the exact argv it is about to run. If the
+ * preview and the request ever drift, the dialog becomes a promise it does not keep.
+ */
+test('gitCommandOf renders the start work command exactly', () => {
+  assert.equal(
+    gitCommandOf({ action: 'create-branch', name: 'feat/97-lane-gutter-push-state', startPoint: HASH }),
+    'git switch --create feat/97-lane-gutter-push-state abc1234',
+  );
+});

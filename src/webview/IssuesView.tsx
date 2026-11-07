@@ -29,7 +29,16 @@ import { filterIssues, labelOptions, matchesText } from './issueFilters';
 import { issueExcerpt } from './issueText';
 import { nextIndex } from './listNav';
 import { badgeCount } from './prFilters';
-import { useGitHubStore, useIssuesStore, useRouteStore, useSettingsStore } from './store';
+import { StartWorkDialog } from './StartWorkDialog';
+import {
+  useChangesStore,
+  useGitHubStore,
+  useIssuesStore,
+  useOperationStore,
+  useRepoStore,
+  useRouteStore,
+  useSettingsStore,
+} from './store';
 import { useT } from './useT';
 import { EmptyState, FileListSkeleton, Icon, InfoBanner } from './ui';
 import type { IssueInfo, IssueListFilter, IssueStateFilter, Lang } from '../messages';
@@ -68,6 +77,13 @@ export function IssuesView(): JSX.Element {
   const load = useIssuesStore((s) => s.load);
 
   const route = useRouteStore((s) => s.route);
+
+  const status = useRepoStore((s) => s.status);
+  const graph = useRepoStore((s) => s.graph);
+  const busyChanges = useChangesStore((s) => s.busy);
+  const opState = useOperationStore((s) => s.state);
+
+  const [startWorkFor, setStartWorkFor] = useState<IssueInfo | null>(null);
 
   const [query, setQuery] = useState(() => loadState().issueQuery);
   const [labelFilter, setLabelFilter] = useState<string | null>(() => loadState().issueLabel);
@@ -190,6 +206,23 @@ export function IssuesView(): JSX.Element {
   const active = Math.min(activeRow, Math.max(0, flatRows.length - 1));
 
   const quota = apiQuotaLabel(rateLimit, language);
+
+  /**
+   * Why Start work cannot run right now, or `null` when it can. The button stays
+   * focusable with `aria-disabled` so the reason is reachable, never a dead control
+   * that silently does nothing.
+   */
+  const startWorkBlocker: string | null =
+    status !== null && (status.operation !== 'idle' || busyChanges || opState === 'loading')
+      ? strings.startWork.buttonDisabledBusy
+      : status === null || status.head === null
+        ? strings.startWork.buttonDisabledNoHead
+        : null;
+
+  /** Local branch names only: a tag or a remote branch cannot collide with a new local one. */
+  const existingLocal = (graph?.refs ?? [])
+    .filter((ref) => ref.kind === 'local')
+    .map((ref) => ref.shortName);
 
   const setQueryAndPersist = (next: string): void => {
     setQuery(next);
@@ -590,6 +623,7 @@ export function IssuesView(): JSX.Element {
                           const index = rowIndex.get(issue.number) ?? 0;
                           const isExpanded = expandedIssues.has(issue.number);
                           const previewId = `gc-issue-preview-${issue.number}`;
+                          const startWorkReasonId = `gc-issue-start-work-reason-${issue.number}`;
                           const title = sanitizeGitText(issue.title);
                           const author = sanitizeGitText(issue.author);
                           const labelNames = issue.labels.map((l) => sanitizeGitText(l.name)).join(', ');
@@ -678,6 +712,31 @@ export function IssuesView(): JSX.Element {
                                     <button
                                       type="button"
                                       className="gc-button gc-button--action"
+                                      aria-label={strings.startWork.buttonAria(String(issue.number))}
+                                      // Focusable while blocked so the reason is reachable:
+                                      // a `disabled` button announces nothing.
+                                      {...(startWorkBlocker === null
+                                        ? {}
+                                        : {
+                                            'aria-disabled': true,
+                                            'aria-describedby': startWorkReasonId,
+                                            title: startWorkBlocker,
+                                          })}
+                                      onClick={() => {
+                                        if (startWorkBlocker === null) setStartWorkFor(issue);
+                                      }}
+                                    >
+                                      <Icon name="git-branch" />
+                                      {strings.startWork.button}
+                                    </button>
+                                    {startWorkBlocker !== null && (
+                                      <span className="gc-visually-hidden" id={startWorkReasonId}>
+                                        {startWorkBlocker}
+                                      </span>
+                                    )}
+                                    <button
+                                      type="button"
+                                      className="gc-button gc-button--quiet"
                                       onClick={() => void openUrl(issue.url)}
                                     >
                                       {strings.issues.openOnGitHub}
@@ -696,6 +755,23 @@ export function IssuesView(): JSX.Element {
             </div>
           )}
         </>
+      )}
+
+      {startWorkFor !== null && (
+        <StartWorkDialog
+          issue={{
+            number: startWorkFor.number,
+            title: startWorkFor.title,
+            labels: startWorkFor.labels.map((l) => l.name),
+          }}
+          headHash={status?.head ?? null}
+          existingLocal={existingLocal}
+          dirty={status?.dirty === true || status?.staged === true}
+          onCancel={() => setStartWorkFor(null)}
+          // No navigation: the Changes view is where the new branch shows up, and
+          // moving the user out of a list they were reading is not a reward.
+          onDone={() => setStartWorkFor(null)}
+        />
       )}
 
       <footer className="gc-issues__footer">

@@ -494,3 +494,24 @@ test('amend is blocked in a detached HEAD, where no branch upstream exists', () 
   assert.equal(res.code, 'NON_FAST_FORWARD');
   assert.deepEqual(res.remedies, ['cancel']);
 });
+
+/**
+ * P09 relies on git's own behaviour: `git switch --create` carries uncommitted
+ * changes onto the new branch. So the guard must NOT block branch creation on a
+ * dirty tree, or the dialog's "your changes move with you" note would be a lie.
+ * An operation in progress is still a hard stop: switching mid-merge would strand it.
+ */
+test('create-branch is allowed on a dirty tree and blocked only by an in-progress operation', () => {
+  const action: GuardAction = { action: 'create-branch', name: 'feat/97-lane-gutter', startPoint: 'abcdef1' };
+
+  assert.deepEqual(verdict(action, { dirty: true }), { allow: true });
+  assert.deepEqual(verdict(action, { dirty: true, staged: true }), { allow: true });
+
+  for (const operation of ['merge', 'rebase', 'cherry-pick', 'revert', 'bisect'] as const) {
+    const res = verdict(action, { operation });
+    assert.equal(res.allow, false, operation);
+    if (res.allow) return;
+    assert.equal(res.code, 'CONFLICT', operation);
+    assert.deepEqual(res.remedies, ['resolve-conflicts', 'cancel'], operation);
+  }
+});
