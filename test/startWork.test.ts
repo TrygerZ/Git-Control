@@ -118,3 +118,30 @@ test('the toast stack is mounted on the GitHub routes, not only in the commit fo
     'the second mount is route-gated so it never doubles up on the Changes route',
   );
 });
+
+/**
+ * Escape, Cancel, the X, and a successful submit all unmount the dialog while the
+ * row that opened it stays on screen. Without a captured `activeElement` the next
+ * Tab restarts at the top of the webview instead of the button the user pressed.
+ * Every sibling dialog in this codebase restores it; this one has to as well.
+ */
+test('the dialog returns focus to whatever opened it', () => {
+  const src = read('src/webview/StartWorkDialog.tsx');
+  assert.match(src, /returnFocus/, 'the opener is captured in a ref');
+  assert.match(src, /document\.activeElement/, 'the opener is read from the document');
+  assert.match(src, /return \(\) => \{[\s\S]{0,200}\.focus\(\)/, 'the cleanup restores focus');
+});
+
+test('a blocked Start work button looks blocked, not merely inert', () => {
+  const css = read('src/webview/styles.css');
+  assert.match(
+    css,
+    /\.gc-button\[aria-disabled='true'\]\s*\{[^}]*cursor:\s*not-allowed/,
+    'the pointer says the control is unavailable',
+  );
+  assert.match(
+    css,
+    /\.gc-button\[aria-disabled='true'\]:hover\s*\{[^}]*background:\s*transparent/,
+    'a blocked button must not light up like a live one',
+  );
+});

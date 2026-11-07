@@ -32,7 +32,7 @@ export interface StartWorkDialogProps {
   /** `status.dirty || status.staged`. The note only appears when it is true. */
   dirty: boolean;
   onCancel: () => void;
-  /** Called after the action settles, whether it succeeded or not. */
+  /** Called before the action is sent, so a host guard verdict has an empty stage to draw on. */
   onDone: () => void;
 }
 
@@ -53,17 +53,13 @@ export function StartWorkDialog({
   );
   const { dialogRef, onKeyDown } = useDialogFocusTrap(onCancel);
   const inputRef = useRef<HTMLInputElement | null>(null);
+  const returnFocus = useRef<Element | null>(null);
 
   const titleId = useId();
   const hintId = useId();
   const problemId = useId();
   const commandLabelId = useId();
   const dirtyId = useId();
-
-  useEffect(() => {
-    inputRef.current?.focus();
-    inputRef.current?.select();
-  }, []);
 
   const title = sanitizeGitText(issue.title);
   const request = startWorkRequest(name, headHash);
@@ -99,6 +95,16 @@ export function StartWorkDialog({
       if (ok) pushToast({ level: 'info', message: strings.startWork.doneToast(created) });
     });
   };
+
+  useEffect(() => {
+    returnFocus.current = document.activeElement;
+    inputRef.current?.focus();
+    inputRef.current?.select();
+    return () => {
+      const previous = returnFocus.current;
+      if (previous instanceof HTMLElement) previous.focus();
+    };
+  }, []);
 
   return (
     <div className="gc-modal-backdrop">
