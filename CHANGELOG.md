@@ -5,6 +5,13 @@ All notable changes to the "Git Control" extension will be documented in this fi
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.7.0] - 2026-11-07
+
+### Added
+- "Start work" on an expanded issue creates a branch named from the issue number and title (for example `feat/97-lane-gutter-push-state`) and switches to it, with a preview of the Git command.
+- The suggested name uses `fix/` when the issue carries a `bug` label and `feat/` otherwise. It can be edited before the branch is created.
+- A note appears when the working tree is dirty, because uncommitted changes move to the new branch with you.
+
 ## [3.6.0] - 2026-11-07
 
 ### Added
