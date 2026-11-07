@@ -322,6 +322,22 @@ test('parseRefs splits for-each-ref fields', () => {
   assert.equal(refs[1]?.upstream, null);
 });
 
+test('parseRefs reads the optional creator date and keeps five-field lines working', () => {
+  const date = '2026-11-07T20:22:06+07:00';
+  const raw = [
+    ['refs/heads/main', HASH_A, 'refs/remotes/origin/main', '[ahead 2]', '*', date].join(FS),
+    // A line from an older REFS_FORMAT without the sixth field.
+    ['refs/remotes/origin/main', HASH_B, '', '', ''].join(FS),
+    // git prints an empty field for an object with no creator date.
+    ['refs/heads/odd', HASH_B, '', '', '', ''].join(FS),
+  ].join('\n');
+  const refs = parseRefs(raw);
+  assert.equal(refs.length, 3);
+  assert.equal(refs[0]?.committedAt, date);
+  assert.equal(refs[1]?.committedAt, null);
+  assert.equal(refs[2]?.committedAt, null);
+});
+
 test('parseRemotes dedupes fetch and push URLs', () => {
   const raw = [
     'origin\thttps://example.com/a.git\t(fetch)',
