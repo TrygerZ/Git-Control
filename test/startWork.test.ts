@@ -101,3 +101,20 @@ test('the close button is labelled as closing, not as cancelling', () => {
     'an X labelled Cancel is a different promise from the Cancel button',
   );
 });
+
+/**
+ * The commit footer carries the only toast stack, and that footer is rendered on
+ * the Changes route alone. Start work pushes its success message from the Issues
+ * route, so without a second mount the user gets no confirmation at all: the
+ * dialog closes and nothing else happens.
+ */
+test('the toast stack is mounted on the GitHub routes, not only in the commit footer', () => {
+  const src = read('src/webview/PendingChanges.tsx');
+  const mounts = src.match(/<ToastRegion \/>/g) ?? [];
+  assert.equal(mounts.length, 2, 'one rides the commit footer, one serves the GitHub routes');
+  assert.match(
+    src,
+    /route\.id === 'prs' \|\| route\.id === 'issues'[\s\S]{0,120}<ToastRegion \/>/,
+    'the second mount is route-gated so it never doubles up on the Changes route',
+  );
+});

@@ -551,6 +551,12 @@ export function PendingChangesApp(): JSX.Element {
         </>
       )}
 
+      {/*
+        The commit footer is Changes-only; a toast pushed from the GitHub
+        views (prs, issues) would otherwise have no live region.
+      */}
+      {(route.id === 'prs' || route.id === 'issues') && <ToastRegion />}
+
       <GuardDialog />
     </div>
   );
