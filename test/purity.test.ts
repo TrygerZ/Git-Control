@@ -27,6 +27,8 @@ const PURE_MODULES = [
   'src/webview/githubGate.ts',
   'src/webview/prFilters.ts',
   'src/webview/listNav.ts',
+  'src/webview/issueFilters.ts',
+  'src/webview/issueText.ts',
 ];
 
 test('pure modules contain no vscode imports', () => {
@@ -34,7 +36,7 @@ test('pure modules contain no vscode imports', () => {
     const source = fs.readFileSync(path.join(__dirname, '..', '..', relativePath), 'utf8');
     assert.doesNotMatch(
       source,
-      /(?:from\s+|require\(\s*)['"]vscode['"]|import\s+['"]vscode['"]/, 
+      /(?:from\s+|require\(\s*)['"]vscode['"]|import\s+['"]vscode['"]/,
       relativePath,
     );
   }
@@ -42,6 +44,12 @@ test('pure modules contain no vscode imports', () => {
 
 test('the P07 pure modules are listed', () => {
   for (const relativePath of ['src/webview/githubGate.ts', 'src/webview/prFilters.ts', 'src/webview/listNav.ts']) {
+    assert.ok(PURE_MODULES.includes(relativePath), relativePath);
+  }
+});
+
+test('the P08 pure modules are listed', () => {
+  for (const relativePath of ['src/webview/issueFilters.ts', 'src/webview/issueText.ts']) {
     assert.ok(PURE_MODULES.includes(relativePath), relativePath);
   }
 });
