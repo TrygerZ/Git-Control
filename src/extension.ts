@@ -33,6 +33,8 @@ import type {
   GitHubRepoInfo,
   GitHubRepoPayload,
   IconThemeSnapshot,
+  IssuesPayload,
+  IssuesResult,
   Lang,
   OpenDiffPayload,
   OpenDiffResult,
@@ -713,6 +715,7 @@ class Controller implements vscode.Disposable {
       openExternal: (url) => this.openExternal(url),
       githubRepo: (payload) => this.githubRepo(payload),
       githubPullRequests: (payload) => this.githubPullRequests(payload),
+      githubIssues: (payload) => this.githubIssues(payload),
       githubCommitAuthors: (payload) => this.githubCommitAuthors(payload),
       githubContributorIdentity: (payload) => this.githubContributorIdentity(payload),
       githubLinkage: () => this.githubLinkage(),
@@ -1004,6 +1007,17 @@ class Controller implements vscode.Disposable {
       state: payload.state ?? 'open',
     });
     return { pullRequests: result.data, rateLimit: client.rateLimit(result.cached) };
+  }
+
+  private async githubIssues(payload: IssuesPayload): Promise<IssuesResult> {
+    const { client } = await this.githubClient();
+    const viewer = await client.viewer();
+    const result = await client.issues(payload.owner, payload.repo, {
+      filter: payload.filter,
+      state: payload.state ?? 'open',
+      login: viewer.data.login,
+    });
+    return { issues: result.data, rateLimit: client.rateLimit(result.cached) };
   }
 
   private async githubCommitAuthors(payload: CommitAuthorsPayload): Promise<CommitAuthorsResult> {
