@@ -91,3 +91,13 @@ test('a successful start leaves the route alone, so the Changes view can show th
   const after = src.slice(src.indexOf('onDone='), src.indexOf('onDone=') + 400);
   assert.doesNotMatch(after, /navigate\(/, 'P09 does not auto-navigate');
 });
+
+test('the close button is labelled as closing, not as cancelling', () => {
+  const src = read('src/webview/StartWorkDialog.tsx');
+  assert.match(src, /strings\.startWork\.closeAria/);
+  assert.doesNotMatch(
+    src,
+    /aria-label=\{strings\.guard\.cancelButton\}/,
+    'an X labelled Cancel is a different promise from the Cancel button',
+  );
+});
