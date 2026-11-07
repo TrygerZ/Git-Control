@@ -774,6 +774,7 @@ const en = {
     buttonDisabledBusy: 'Finish the current Git operation first.',
     title: (n: string) => `Start work on #${n}`,
     subtitle: 'Creates a branch from the current commit and switches to it.',
+    closeAria: 'Close',
     fieldLabel: 'New branch name',
     fieldHint: 'Suggested from the issue number and title.',
     commandLabel: 'Command that will run',

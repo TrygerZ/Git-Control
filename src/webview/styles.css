@@ -5534,9 +5534,8 @@ h3 {
   display: flex;
   flex-direction: column;
   gap: var(--gc-space-3);
-  padding: 0 var(--gc-space-5) var(--gc-space-5);
+  padding: var(--gc-space-4) var(--gc-space-5) var(--gc-space-5);
   border-top: 1px solid var(--gc-border-subtle);
-  padding-top: var(--gc-space-4);
 }
 
 /* The field fills the dialog: a 340 px column has no room for a half-width input. */

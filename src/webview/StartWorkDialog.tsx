@@ -124,8 +124,8 @@ export function StartWorkDialog({
           <button
             type="button"
             className="gc-icon-button"
-            aria-label={strings.guard.cancelButton}
-            title={strings.guard.cancelButton}
+            aria-label={strings.startWork.closeAria}
+            title={strings.startWork.closeAria}
             onClick={onCancel}
           >
             <Icon name="close" />

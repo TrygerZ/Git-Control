@@ -771,6 +771,7 @@ const id: Catalog = {
     buttonDisabledBusy: 'Selesaikan operasi Git yang sedang berjalan dulu.',
     title: (n: string) => `Mulai kerja pada #${n}`,
     subtitle: 'Membuat branch dari commit saat ini lalu berpindah ke branch itu.',
+    closeAria: 'Tutup',
     fieldLabel: 'Nama branch baru',
     fieldHint: 'Disarankan dari nomor dan judul issue.',
     commandLabel: 'Perintah yang akan dijalankan',
