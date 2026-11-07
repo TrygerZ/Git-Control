@@ -513,6 +513,54 @@ export interface PullRequestsResult {
   rateLimit: GitHubRateLimit;
 }
 
+export type IssueListFilter = 'assigned' | 'created' | 'mentioned';
+export type IssueStateFilter = 'open' | 'closed';
+
+/**
+ * Label colour, reduced to one of seven tones by the host.
+ *
+ * GitHub sends an arbitrary hex per label. Passing it through would put a foreign
+ * colour value into the stylesheet and break the theme-token rule (`a11y.test.ts`
+ * scans for hardcoded colours), so the mapper snaps it to a tone instead. The
+ * label name carries the meaning; the tone is decoration.
+ */
+export type IssueLabelTone = 'red' | 'orange' | 'yellow' | 'green' | 'blue' | 'purple' | 'gray';
+
+export interface IssueLabel {
+  name: string;
+  colorKey: IssueLabelTone;
+}
+
+export interface IssueInfo {
+  number: number;
+  title: string;
+  state: IssueStateFilter;
+  stateReason: 'completed' | 'not_planned' | 'reopened' | null;
+  url: string;
+  author: string;
+  assignees: string[];
+  /** At most 10, capped in the host mapper. */
+  labels: IssueLabel[];
+  comments: number;
+  /** At most 200 characters, control and bidi characters neutralised. */
+  bodyExcerpt: string;
+  updatedAt: string;
+  closedAt: string | null;
+}
+
+export interface IssuesPayload {
+  owner: string;
+  repo: string;
+  filter: IssueListFilter;
+  /** Default `open`. */
+  state?: IssueStateFilter;
+}
+
+export interface IssuesResult {
+  issues: IssueInfo[];
+  rateLimit: GitHubRateLimit;
+}
+
 export interface CommitAuthorInfo {
   hash: string;
   login: string | null;
@@ -611,6 +659,8 @@ export interface RequestMap {
   'github/disconnect': { payload: Record<string, never>; response: GitHubAuthState };
   'github/repo': { payload: GitHubRepoPayload; response: GitHubRepoInfo };
   'github/pullRequests': { payload: PullRequestsPayload; response: PullRequestsResult };
+  /** Issues assigned to, created by, or mentioning the viewer. Sign-in required. */
+  'github/issues': { payload: IssuesPayload; response: IssuesResult };
   /**
    * Fetch author profile avatars and logins for a set of commit hashes.
    * Host-side metadata query so the webview can decorate commit authors with

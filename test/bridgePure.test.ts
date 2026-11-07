@@ -2,6 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   idempotencyKeyOf,
+  isIssueFilter,
+  isIssueState,
   isNonNegativeInt,
   isPositiveInt,
   isSlug,
@@ -201,4 +203,19 @@ test('primitive guards and helpers', () => {
   assert.equal(isSlug('bad slug with spaces'), false);
   assert.equal(isSlug('a'.repeat(101)), false);
   assert.equal(isSlug(123), false);
+
+  // isIssueFilter
+  assert.equal(isIssueFilter('assigned'), true);
+  assert.equal(isIssueFilter('created'), true);
+  assert.equal(isIssueFilter('mentioned'), true);
+  assert.equal(isIssueFilter('all'), false);
+  assert.equal(isIssueFilter(''), false);
+  assert.equal(isIssueFilter(null), false);
+
+  // isIssueState
+  assert.equal(isIssueState('open'), true);
+  assert.equal(isIssueState('closed'), true);
+  assert.equal(isIssueState('all'), false);
+  assert.equal(isIssueState('merged'), false);
+  assert.equal(isIssueState(undefined), false);
 });
