@@ -28,12 +28,16 @@ import { githubGate, isStale, type GateBanner } from './githubGate';
 import { filterIssues, labelOptions, matchesText } from './issueFilters';
 import { issueExcerpt } from './issueText';
 import { nextIndex } from './listNav';
+import { badgeCount } from './prFilters';
 import { useGitHubStore, useIssuesStore, useRouteStore, useSettingsStore } from './store';
 import { useT } from './useT';
 import { EmptyState, FileListSkeleton, Icon, InfoBanner } from './ui';
 import type { IssueInfo, IssueListFilter, IssueStateFilter, Lang } from '../messages';
 
 const CHIP_ORDER: readonly IssueListFilter[] = ['assigned', 'created', 'mentioned'];
+
+/** The host requests 50 issues per page, so a full page means "50+". */
+const ISSUES_PAGE_SIZE = 50;
 
 type GroupId = 'active' | 'closed';
 
@@ -165,6 +169,13 @@ export function IssuesView(): JSX.Element {
         : [],
     [state, issuesByFilter, filter, labelFilter, query],
   );
+
+  /*
+   * `select()` empties the list for an uncached (filter, state) pair, so a
+   * row-count check alone would claim "No issues match" mid-flight. Only an
+   * empty list is busy; a refresh that already has rows keeps them on screen.
+   */
+  const busy = visible.length === 0 && closedVisible.length === 0 && issuesLoading;
 
   const groups: readonly GroupId[] = state === 'closed' ? ['active'] : GROUP_ORDER;
 
@@ -489,8 +500,11 @@ export function IssuesView(): JSX.Element {
               const label = chipLabels[id];
               // Assigned, Created, and Mentioned are the open lists.
               const rows = issuesByFilter[id].open;
+              // A full page means "at least this many"; cap it like the nav badge.
               const count =
-                loadedAt[id].open !== null ? formatCount(rows.length, language) : null;
+                loadedAt[id].open !== null
+                  ? (badgeCount(rows.length, ISSUES_PAGE_SIZE) ?? formatCount(rows.length, language))
+                  : null;
               const name = count !== null ? `${label}, ${count}` : label;
               return (
                 <button
@@ -513,7 +527,9 @@ export function IssuesView(): JSX.Element {
             })}
           </div>
 
-          {visible.length === 0 && closedVisible.length === 0 ? (
+          {busy ? (
+            <FileListSkeleton rows={6} />
+          ) : visible.length === 0 && closedVisible.length === 0 ? (
             <EmptyState
               title={
                 filter === 'assigned' && state === 'open' && query === '' && labelFilter === null
@@ -534,7 +550,7 @@ export function IssuesView(): JSX.Element {
               }
             />
           ) : (
-            <div className="gc-issues__groups">
+            <div className="gc-issues__groups" aria-busy={busy}>
               {groups.map((group) => {
                 const rows = rowsByGroup[group];
                 if (group === 'active' && rows.length === 0) return null;

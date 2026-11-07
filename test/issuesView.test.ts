@@ -127,3 +127,26 @@ test('the filter trigger announces a menu, not a disclosure', () => {
   const trigger = src.slice(src.indexOf('gc-issues__filter-wrap'), src.indexOf('gc-issues__filter-wrap') + 900);
   assert.match(trigger, /aria-haspopup="menu"/);
 });
+
+test('a chip switch in flight shows a busy list, never the empty state', () => {
+  const src = read('src/webview/IssuesView.tsx');
+  // `select()` empties the rendered list for an uncached pair, so a row-count
+  // branch alone would announce "No issues match" and offer Clear filters.
+  const body = src.slice(src.indexOf('gc-issues__groups'), src.indexOf('gc-issues__footer'));
+  assert.match(body, /aria-busy/, 'the list region says it is busy');
+  const emptyBranch = src.slice(src.indexOf('visible.length === 0'), src.indexOf('gc-issues__groups'));
+  assert.match(emptyBranch, /issuesLoading|loading/, 'the empty branch is gated on the load flag');
+});
+
+test('chip counts cap at the page size like the nav badge', () => {
+  const src = read('src/webview/IssuesView.tsx');
+  assert.match(src, /badgeCount\(/, 'a full page reads "50+", not "50"');
+});
+
+test('NavStrip reads every store hook before its early return', () => {
+  const src = read('src/webview/NavStrip.tsx');
+  const earlyReturn = src.indexOf('if (!isNavVisible(dests.length)) return null;');
+  assert.ok(earlyReturn > 0, 'the early return still exists');
+  const after = src.slice(earlyReturn);
+  assert.doesNotMatch(after, /useIssuesStore\(|useNavStore\(|useChangesStore\(|useGitHubStore\(/, 'no hook below the return');
+});
