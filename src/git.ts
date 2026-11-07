@@ -26,6 +26,7 @@ import {
   LOG_FORMAT,
   REFS_FORMAT,
   parseLog,
+  parseRefNameList,
   parseRefs,
   parseRemoteList,
   parseRemotes,
@@ -35,6 +36,7 @@ import {
   parseShowStat,
   parseStashList,
   parseStatus,
+  parseWorktrees,
   type AheadBehind,
   type ParsedCommit,
   type ParsedContributor,
@@ -42,6 +44,7 @@ import {
   type ParsedRef,
   type ParsedStashEntry,
   type ParsedStatusEntry,
+  type ParsedWorktree,
 } from './gitParse';
 import {
   assertValidBranchName,
@@ -313,6 +316,39 @@ export class GitRunner {
   async refs(): Promise<ParsedRef[]> {
     const { stdout } = await this.run(['for-each-ref', `--format=${REFS_FORMAT}`]);
     return parseRefs(stdout);
+  }
+
+  /** Full ref names under `refs/heads` reachable from `base`. */
+  async mergedBranches(base: string): Promise<Set<string>> {
+    if (!validateBranchName(base)) {
+      throw new GitError({ code: 'VALIDATION_ERROR', message: `Invalid base branch: ${base}` });
+    }
+    const { stdout } = await this.run([
+      'for-each-ref',
+      `--merged=refs/heads/${base}`,
+      '--format=%(refname)',
+      'refs/heads',
+    ]);
+    return new Set(parseRefNameList(stdout));
+  }
+
+  /** Short name of the remote's default branch, e.g. `origin/main`, or `null` when unset. */
+  async originHead(remote = 'origin'): Promise<string | null> {
+    if (!validateRemoteName(remote)) {
+      throw new GitError({ code: 'VALIDATION_ERROR', message: `Invalid remote name: ${remote}` });
+    }
+    const { stdout, code } = await this.run(
+      ['symbolic-ref', '--quiet', '--short', `refs/remotes/${remote}/HEAD`],
+      { allowedExitCodes: [0, 1] },
+    );
+    if (code === 1) return null;
+    const trimmed = stdout.trim();
+    return trimmed.length > 0 ? trimmed : null;
+  }
+
+  async worktrees(): Promise<ParsedWorktree[]> {
+    const { stdout } = await this.run(['worktree', 'list', '--porcelain']);
+    return parseWorktrees(stdout);
   }
 
   async remotes(): Promise<Array<{ name: string; url: string }>> {
