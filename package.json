@@ -66,6 +66,10 @@
         "title": "Git Control: Open Pull Requests"
       },
       {
+        "command": "gitControl.openIssues",
+        "title": "Git Control: Open Issues"
+      },
+      {
         "command": "gitControl.refresh",
         "title": "Git Control: Refresh"
       },
