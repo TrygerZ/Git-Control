@@ -62,3 +62,13 @@ test('row preview expands with accessible aria attributes', () => {
   assert.match(src, /aria-expanded=/);
   assert.match(src, /aria-controls=/);
 });
+
+test('clearFilters resets chip filter to assigned in addition to text and label', () => {
+  const src = read('src/webview/IssuesView.tsx');
+  assert.match(src, /setFilterAndPersist\(['"]assigned['"]\)/);
+});
+
+test('view does not load issues when signed out', () => {
+  const src = read('src/webview/IssuesView.tsx');
+  assert.match(src, /auth\?\.connected === true/);
+});

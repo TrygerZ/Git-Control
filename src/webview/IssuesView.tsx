@@ -83,8 +83,10 @@ export function IssuesView(): JSX.Element {
   }, [needsTick, now]);
 
   useEffect(() => {
-    if (route.id === 'issues' && isStale(loadedAt[filter], Date.now(), 60_000)) void load(filter);
-  }, [route.id, filter, loadedAt, load]);
+    if (route.id === 'issues' && auth?.connected === true && isStale(loadedAt[filter], Date.now(), 60_000)) {
+      void load(filter);
+    }
+  }, [route.id, auth?.connected, filter, loadedAt, load]);
 
   useEffect(() => {
     if (!menuOpen) return undefined;
@@ -165,6 +167,7 @@ export function IssuesView(): JSX.Element {
 
   const clearFilters = (): void => {
     setQueryAndPersist('');
+    setFilterAndPersist('assigned');
     setLabelFilterAndPersist(null);
     searchRef.current?.focus();
   };
@@ -322,7 +325,7 @@ export function IssuesView(): JSX.Element {
                           </button>
                         ))
                       )}
-                      {(labelFilter !== null || query.length > 0) && (
+                      {(labelFilter !== null || query.length > 0 || filter !== 'assigned') && (
                         <>
                           <div className="gc-menu__separator" />
                           <button
@@ -390,7 +393,7 @@ export function IssuesView(): JSX.Element {
                   : strings.issues.emptyBody
               }
               action={
-                query !== '' || labelFilter !== null ? (
+                query !== '' || labelFilter !== null || filter !== 'assigned' ? (
                   <button type="button" className="gc-button gc-button--quiet" onClick={clearFilters}>
                     {strings.issues.clearFilters}
                   </button>

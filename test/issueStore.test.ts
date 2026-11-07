@@ -189,6 +189,20 @@ test('disconnect clears issues and nav badge', async () => {
   assert.equal(useNavStore.getState().counts.issues, null);
 });
 
+test('load does not fetch when signed out', async () => {
+  resetAll();
+  useGitHubStore.setState({ auth: { connected: false, login: null, scopes: [] } });
+  const s = stub(() => ({ issues: [issue(1)], rateLimit: RATE }));
+  try {
+    await useIssuesStore.getState().load('assigned');
+    assert.equal(s.calls.length, 0, 'no request sent when signed out');
+    await useIssuesStore.getState().loadClosed();
+    assert.equal(s.calls.length, 0, 'no closed request sent when signed out');
+  } finally {
+    s.restore();
+  }
+});
+
 test('loadState restores persisted issue filter, query, and label', () => {
   saveState({ issueFilter: 'mentioned', issueQuery: 'bug', issueLabel: 'auth' });
   const restored = loadState();

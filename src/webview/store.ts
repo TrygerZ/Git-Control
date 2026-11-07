@@ -1276,6 +1276,8 @@ export const useIssuesStore = create<IssuesState>((set, get) => ({
     const filter = targetFilter ?? get().filter;
     const inFlight = inFlightIssues.get(filter);
     if (inFlight !== undefined) return inFlight;
+    const auth = useGitHubStore.getState().auth;
+    if (auth?.connected !== true) return;
     const linkage = useGitHubStore.getState().linkage;
     if (!linkage || !linkage.available || !linkage.owner || !linkage.repo) return;
     const { owner, repo } = linkage;
@@ -1317,6 +1319,8 @@ export const useIssuesStore = create<IssuesState>((set, get) => ({
   async loadClosed() {
     if (inFlightClosedIssues !== null) return inFlightClosedIssues;
     if (get().closedLoaded) return;
+    const auth = useGitHubStore.getState().auth;
+    if (auth?.connected !== true) return;
     const linkage = useGitHubStore.getState().linkage;
     if (!linkage || !linkage.available || !linkage.owner || !linkage.repo) return;
     const { owner, repo } = linkage;
