@@ -1245,6 +1245,11 @@ test('github handlers reach the host and report UNAVAILABLE without one', async 
         pullRequests: [],
         rateLimit: { limit: 5000, remaining: 4999, resetAt: null, cached: false, offline: false },
       }),
+    githubIssues: () =>
+      Promise.resolve({
+        issues: [],
+        rateLimit: { limit: 5000, remaining: 4999, resetAt: null, cached: false, offline: false },
+      }),
     githubCommitAuthors: () =>
       Promise.resolve({
         authors: [{ hash: 'a'.repeat(40), login: 'octocat', avatarUrl: 'https://avatars.githubusercontent.com/u/1' }],
@@ -1276,6 +1281,23 @@ test('github handlers reach the host and report UNAVAILABLE without one', async 
 
   const prs = await withHost.webview.send(req('github/pullRequests', { owner: 'o', repo: 'r' }));
   assert.equal(prs.ok, true);
+
+  const issues = await withHost.webview.send(
+    req('github/issues', { owner: 'o', repo: 'r', filter: 'assigned', state: 'open' }),
+  );
+  assert.equal(issues.ok, true);
+
+  const badIssues = await withHost.webview.send(
+    req('github/issues', { owner: 'o', repo: 'r', filter: 'invalid-filter' }),
+  );
+  assert.equal(badIssues.ok, false);
+  if (!badIssues.ok) assert.equal(badIssues.error.code, 'VALIDATION_ERROR');
+
+  const badIssuesState = await withHost.webview.send(
+    req('github/issues', { owner: 'o', repo: 'r', filter: 'assigned', state: 'invalid-state' }),
+  );
+  assert.equal(badIssuesState.ok, false);
+  if (!badIssuesState.ok) assert.equal(badIssuesState.error.code, 'VALIDATION_ERROR');
 
   const authors = await withHost.webview.send(
     req('github/commitAuthors', { owner: 'o', repo: 'r', hashes: ['a'.repeat(40)] }),
@@ -1333,6 +1355,13 @@ test('github handlers reach the host and report UNAVAILABLE without one', async 
   assert.equal(stubIdentity.ok, false);
   if (stubIdentity.ok) return;
   assert.equal(stubIdentity.error.status, 503);
+
+  const stubIssues = await withoutHost.webview.send(
+    req('github/issues', { owner: 'o', repo: 'r', filter: 'assigned' }),
+  );
+  assert.equal(stubIssues.ok, false);
+  if (stubIssues.ok) return;
+  assert.equal(stubIssues.error.status, 503);
 });
 
 test('persisted zoom is normalized to valid range host-side', async (t) => {

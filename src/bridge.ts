@@ -21,6 +21,8 @@ import { redact, type Logger } from './logger';
 import { parseRemoteUrl, stripCredentials } from './remoteUrl';
 import {
   idempotencyKeyOf,
+  isIssueFilter,
+  isIssueState,
   isNonNegativeInt,
   isPositiveInt,
   isSlug,
@@ -65,6 +67,8 @@ import type {
   HostEvent,
   HostMessage,
   IconThemeSnapshot,
+  IssuesPayload,
+  IssuesResult,
   Lang,
   MutationMeta,
   OpenDiffPayload,
@@ -128,6 +132,7 @@ export interface BridgeHost {
   openExternal?(url: string): Promise<boolean>;
   githubRepo?(payload: GitHubRepoPayload): Promise<GitHubRepoInfo>;
   githubPullRequests?(payload: PullRequestsPayload): Promise<PullRequestsResult>;
+  githubIssues?(payload: IssuesPayload): Promise<IssuesResult>;
   githubCommitAuthors?(payload: CommitAuthorsPayload): Promise<CommitAuthorsResult>;
   githubContributorIdentity?(payload: ContributorIdentityPayload): Promise<ContributorIdentity>;
   githubLinkage?(): Promise<GitHubLinkage>;
@@ -363,6 +368,8 @@ export class MessageBridge {
         return this.handleGitHubRepo(request.payload as GitHubRepoPayload);
       case 'github/pullRequests':
         return this.handleGitHubPullRequests(request.payload as PullRequestsPayload);
+      case 'github/issues':
+        return this.handleGitHubIssues(request.payload as IssuesPayload);
       case 'github/commitAuthors':
         return this.handleGitHubCommitAuthors(request.payload as CommitAuthorsPayload);
       case 'github/contributorIdentity':
@@ -666,6 +673,21 @@ export class MessageBridge {
       fail(400, 'VALIDATION_ERROR', this.text().invalid, { detail: 'state' });
     }
     const list = this.host.githubPullRequests;
+    if (list === undefined) fail(503, 'UNAVAILABLE', this.text().githubPending);
+    return list(payload);
+  }
+
+  private async handleGitHubIssues(payload: IssuesPayload): Promise<IssuesResult> {
+    if (!isSlug(payload.owner) || !isSlug(payload.repo)) {
+      fail(400, 'VALIDATION_ERROR', this.text().invalid, { detail: 'owner/repo' });
+    }
+    if (!isIssueFilter(payload.filter)) {
+      fail(400, 'VALIDATION_ERROR', this.text().invalid, { detail: 'filter' });
+    }
+    if (payload.state !== undefined && !isIssueState(payload.state)) {
+      fail(400, 'VALIDATION_ERROR', this.text().invalid, { detail: 'state' });
+    }
+    const list = this.host.githubIssues;
     if (list === undefined) fail(503, 'UNAVAILABLE', this.text().githubPending);
     return list(payload);
   }
