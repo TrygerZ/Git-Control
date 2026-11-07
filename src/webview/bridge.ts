@@ -18,6 +18,7 @@ import type {
   EventKind,
   EventMap,
   HostMessage,
+  IssueListFilter,
   MutationMeta,
   Request,
   RequestKind,
@@ -57,6 +58,9 @@ export interface WebviewState {
   route: Route;
   prFilter: PrFilterId;
   prQuery: string;
+  issueFilter: IssueListFilter;
+  issueQuery: string;
+  issueLabel: string | null;
 }
 
 const PR_FILTERS: readonly PrFilterId[] = ['open', 'review-requested', 'mine', 'draft'];
@@ -73,6 +77,9 @@ const DEFAULT_STATE: WebviewState = {
   route: DEFAULT_ROUTE,
   prFilter: 'open',
   prQuery: '',
+  issueFilter: 'assigned',
+  issueQuery: '',
+  issueLabel: null,
 };
 
 /** Rejection carrying the full {@link ErrorBody} so the UI can render remedies. */
@@ -264,6 +271,7 @@ export function loadState(): WebviewState {
   const raw = api.getState();
   if (typeof raw !== 'object' || raw === null) return { ...DEFAULT_STATE };
   const partial = raw as Partial<WebviewState>;
+  const ISSUE_FILTERS: readonly IssueListFilter[] = ['assigned', 'created', 'mentioned'];
   return {
     selectedHash: typeof partial.selectedHash === 'string' ? partial.selectedHash : null,
     scrollTop: typeof partial.scrollTop === 'number' ? partial.scrollTop : 0,
@@ -282,6 +290,9 @@ export function loadState(): WebviewState {
     route: parseRoute(partial.route) ?? DEFAULT_ROUTE,
     prFilter: PR_FILTERS.find((id) => id === partial.prFilter) ?? 'open',
     prQuery: typeof partial.prQuery === 'string' ? partial.prQuery : '',
+    issueFilter: ISSUE_FILTERS.find((id) => id === partial.issueFilter) ?? 'assigned',
+    issueQuery: typeof partial.issueQuery === 'string' ? partial.issueQuery : '',
+    issueLabel: typeof partial.issueLabel === 'string' && partial.issueLabel.length > 0 ? partial.issueLabel : null,
   };
 }
 

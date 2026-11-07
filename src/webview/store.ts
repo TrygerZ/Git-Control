@@ -29,6 +29,8 @@ import type {
   GitHubAuthState,
   GitHubLinkage,
   GitHubRateLimit,
+  IssueInfo,
+  IssueListFilter,
   MutationMeta,
   PullRequestInfo,
   RepoGraph,
@@ -1064,6 +1066,7 @@ export const useGitHubStore = create<GitHubState>((set, get) => ({
         const repoChanged = linkageChangedRepo(prevLinkage, linkage);
         if (repoChanged) {
           resetCommitAuthors(set);
+          useIssuesStore.getState().reset();
         }
         set({
           auth,
@@ -1199,6 +1202,7 @@ export const useGitHubStore = create<GitHubState>((set, get) => ({
     try {
       const auth = await bridge.request('github/disconnect', {});
       resetCommitAuthors(set);
+      useIssuesStore.getState().reset();
       set({
         auth,
         pullRequests: [],
@@ -1231,6 +1235,118 @@ export const useGitHubStore = create<GitHubState>((set, get) => ({
         message: toErrorBody(err).message,
       });
     }
+  },
+}));
+
+// -------------------------------------------------------------- issuesStore
+
+export interface IssuesState {
+  issues: IssueInfo[];
+  issuesByFilter: Record<IssueListFilter, IssueInfo[]>;
+  loadedAt: Record<IssueListFilter, number | null>;
+  closed: IssueInfo[];
+  closedLoaded: boolean;
+  filter: IssueListFilter;
+  loading: boolean;
+  error: ErrorBody | null;
+  load(filter?: IssueListFilter, force?: boolean): Promise<void>;
+  loadClosed(): Promise<void>;
+  reset(): void;
+}
+
+const inFlightIssues = new Map<IssueListFilter, Promise<void>>();
+let inFlightClosedIssues: Promise<void> | null = null;
+
+export const useIssuesStore = create<IssuesState>((set, get) => ({
+  issues: [],
+  issuesByFilter: { assigned: [], created: [], mentioned: [] },
+  loadedAt: { assigned: null, created: null, mentioned: null },
+  closed: [],
+  closedLoaded: false,
+  filter: 'assigned',
+  loading: false,
+  error: null,
+
+  async load(targetFilter?: IssueListFilter, force = false) {
+    const filter = targetFilter ?? get().filter;
+    const inFlight = inFlightIssues.get(filter);
+    if (inFlight !== undefined) return inFlight;
+    const linkage = useGitHubStore.getState().linkage;
+    if (!linkage || !linkage.available || !linkage.owner || !linkage.repo) return;
+    const { owner, repo } = linkage;
+    if (!force && get().loadedAt[filter] !== null && Date.now() - (get().loadedAt[filter] ?? 0) <= 60_000) {
+      if (filter !== get().filter) set({ filter, issues: get().issuesByFilter[filter] ?? [] });
+      return;
+    }
+    set({ loading: true });
+    const promise = (async () => {
+      try {
+        const result = await bridge.request('github/issues', {
+          owner,
+          repo,
+          filter,
+          state: 'open',
+        });
+        set((s) => ({
+          filter,
+          issues: result.issues,
+          issuesByFilter: { ...s.issuesByFilter, [filter]: result.issues },
+          loadedAt: { ...s.loadedAt, [filter]: Date.now() },
+          loading: false,
+          error: null,
+        }));
+        useGitHubStore.setState({ rateLimit: result.rateLimit });
+        if (filter === 'assigned') {
+          useNavStore.getState().setCount('issues', result.issues.length);
+        }
+      } catch (err) {
+        set({ loading: false, error: toErrorBody(err) });
+      } finally {
+        inFlightIssues.delete(filter);
+      }
+    })();
+    inFlightIssues.set(filter, promise);
+    return promise;
+  },
+
+  async loadClosed() {
+    if (inFlightClosedIssues !== null) return inFlightClosedIssues;
+    if (get().closedLoaded) return;
+    const linkage = useGitHubStore.getState().linkage;
+    if (!linkage || !linkage.available || !linkage.owner || !linkage.repo) return;
+    const { owner, repo } = linkage;
+    inFlightClosedIssues = (async () => {
+      try {
+        const result = await bridge.request('github/issues', {
+          owner,
+          repo,
+          filter: 'assigned',
+          state: 'closed',
+        });
+        set({ closed: result.issues, closedLoaded: true, error: null });
+        useGitHubStore.setState({ rateLimit: result.rateLimit });
+      } catch (err) {
+        set({ error: toErrorBody(err) });
+      } finally {
+        inFlightClosedIssues = null;
+      }
+    })();
+    return inFlightClosedIssues;
+  },
+
+  reset() {
+    inFlightIssues.clear();
+    inFlightClosedIssues = null;
+    set({
+      issues: [],
+      issuesByFilter: { assigned: [], created: [], mentioned: [] },
+      loadedAt: { assigned: null, created: null, mentioned: null },
+      closed: [],
+      closedLoaded: false,
+      loading: false,
+      error: null,
+    });
+    useNavStore.getState().setCount('issues', null);
   },
 }));
 
