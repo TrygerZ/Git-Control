@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { GitRunner } from '../src/git';
+import { RepositoryService } from '../src/repository';
 import { parseRefNameList, parseTrack, parseWorktrees } from '../src/gitParse';
 import { pickBaseBranch } from '../src/repository';
 import { cleanup, makeFixture } from './repoFixture';
@@ -183,4 +184,30 @@ test('worktrees lists a linked worktree with exactly one current entry', async (
     assert.equal(entry.locked, null);
     assert.equal(entry.prunable, null);
   }
+});
+
+/**
+ * Criterion 6: the service route, not just the runner, marks exactly one entry
+ * as the current worktree when a linked one exists beside it.
+ */
+test('worktrees service marks exactly one of two entries as current', async (t) => {
+  const dir = await makeFixture('single');
+  const linked = `${dir}-linked2`;
+  t.after(() => cleanup(linked));
+  t.after(() => cleanup(dir));
+  const git = new GitRunner({ gitPath: 'git', cwd: dir });
+  await git.run(['worktree', 'add', '--quiet', '-b', 'linked-branch-2', linked]);
+
+  const repo = new RepositoryService({
+    folderPath: dir,
+    gitPath: 'git',
+    store: { get: (_k, d) => d, update: () => Promise.resolve() },
+  });
+  const entries = await repo.worktrees();
+  assert.equal(entries.length, 2);
+  assert.equal(entries.filter((e) => e.isCurrent).length, 1);
+  const current = entries.find((e) => e.isCurrent);
+  assert.equal(current?.branch, 'main');
+  assert.deepEqual(entries.map((e) => e.locked), [false, false]);
+  assert.deepEqual(entries.map((e) => e.prunable), [false, false]);
 });
