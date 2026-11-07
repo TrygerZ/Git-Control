@@ -369,3 +369,44 @@ test('the issues namespace exists in both catalogs with the same shape', () => {
   assert.equal(commentsCountEn('3'), '3 comments');
   assert.equal(commentsCountId('3'), '3 komentar');
 });
+
+test('the startWork namespace exists in both catalogs with the same shape', () => {
+  const en = (t('en') as Record<string, unknown>).startWork as Record<string, unknown>;
+  const id = (t('id') as Record<string, unknown>).startWork as Record<string, unknown>;
+
+  assert.ok(en !== undefined, 'en.startWork must exist');
+  assert.ok(id !== undefined, 'id.startWork must exist');
+  assert.deepEqual(Object.keys(en).sort(), Object.keys(id).sort());
+
+  assert.equal(en.button, 'Start work');
+  assert.equal(id.button, 'Mulai kerja');
+  assert.equal(en.fieldLabel, 'New branch name');
+  assert.equal(id.fieldLabel, 'Nama branch baru');
+  assert.equal(en.commandLabel, 'Command that will run');
+  assert.equal(id.commandLabel, 'Perintah yang akan dijalankan');
+  assert.equal(en.submit, 'Create branch');
+  assert.equal(id.submit, 'Buat branch');
+  assert.equal(en.problemEmpty, 'Branch name cannot be empty.');
+  assert.equal(id.problemEmpty, 'Nama branch tidak boleh kosong.');
+  assert.equal(en.problemExists, 'A local branch with this name already exists.');
+  assert.equal(id.problemExists, 'Branch lokal dengan nama ini sudah ada.');
+
+  // Function entries must not throw on numeric-looking input, which is how the
+  // dash scan and the count formatters call them.
+  const titleEn = en.title as (n: string) => string;
+  const titleId = id.title as (n: string) => string;
+  assert.equal(titleEn('97'), 'Start work on #97');
+  assert.equal(titleId('97'), 'Mulai kerja pada #97');
+
+  const doneEn = en.doneToast as (name: string) => string;
+  const doneId = id.doneToast as (name: string) => string;
+  assert.equal(doneEn('feat/97-x'), 'Created feat/97-x and switched to it');
+  assert.equal(doneId('feat/97-x'), 'Membuat feat/97-x dan berpindah ke branch itu');
+
+  // Every row offers the same label, so the accessible name has to say which issue.
+  const buttonAriaEn = en.buttonAria as (n: string) => string;
+  const buttonAriaId = id.buttonAria as (n: string) => string;
+  assert.match(buttonAriaEn('97'), /97/);
+  assert.match(buttonAriaId('97'), /97/);
+  assert.notEqual(buttonAriaEn('97'), buttonAriaId('97'));
+});

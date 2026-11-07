@@ -763,6 +763,25 @@ const id: Catalog = {
     footerNotConnected: 'Tidak terhubung',
   },
 
+  // Start work from an issue (P09)
+  startWork: {
+    button: 'Mulai kerja',
+    buttonAria: (n: string) => `Mulai kerja pada issue #${n}`,
+    buttonDisabledNoHead: 'Buka repository dengan minimal satu commit untuk mulai kerja.',
+    buttonDisabledBusy: 'Selesaikan operasi Git yang sedang berjalan dulu.',
+    title: (n: string) => `Mulai kerja pada #${n}`,
+    subtitle: 'Membuat branch dari commit saat ini lalu berpindah ke branch itu.',
+    fieldLabel: 'Nama branch baru',
+    fieldHint: 'Disarankan dari nomor dan judul issue.',
+    commandLabel: 'Perintah yang akan dijalankan',
+    dirtyNote: 'Perubahan yang belum di-commit ikut berpindah ke branch baru.',
+    submit: 'Buat branch',
+    problemEmpty: 'Nama branch tidak boleh kosong.',
+    problemInvalid: 'Ini bukan nama branch yang valid.',
+    problemExists: 'Branch lokal dengan nama ini sudah ada.',
+    doneToast: (name: string) => `Membuat ${name} dan berpindah ke branch itu`,
+  },
+
   // Explorer root app
   explorer: {
     toastCopyFailed: 'Tidak bisa menyalin ke clipboard.',
