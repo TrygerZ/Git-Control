@@ -10,7 +10,7 @@
  *     the host's own 500 ms watcher debounce
  */
 import { create } from 'zustand';
-import { BridgeRequestError, bridge, fetchContributorIdentity, fetchContributors, isBridgeError, mutation, saveState } from './bridge';
+import { BridgeRequestError, bridge, fetchContributorIdentity, fetchContributors, isBridgeError, loadState, mutation, saveState } from './bridge';
 import { unknownErrorBody } from '../errorBody';
 import { amendBlockedReason, joinCommitMessage, linkageChangedRepo, sanitizeGitText } from './format';
 import { DEFAULT_ROUTE, resolveInitialRoute, sameRoute } from './route';
@@ -31,6 +31,7 @@ import type {
   GitHubRateLimit,
   IssueInfo,
   IssueListFilter,
+  IssueStateFilter,
   MutationMeta,
   PullRequestInfo,
   RepoGraph,
@@ -1086,7 +1087,7 @@ export const useGitHubStore = create<GitHubState>((set, get) => ({
         if (linkage.available) {
           await get().loadPullRequests();
           if (auth.connected) {
-            void useIssuesStore.getState().load('assigned');
+            void useIssuesStore.getState().load('assigned', 'open');
           }
         }
       } catch (err) {
@@ -1246,112 +1247,119 @@ export const useGitHubStore = create<GitHubState>((set, get) => ({
 // -------------------------------------------------------------- issuesStore
 
 export interface IssuesState {
+  /** Rows for the current selection only. */
   issues: IssueInfo[];
-  issuesByFilter: Record<IssueListFilter, IssueInfo[]>;
-  loadedAt: Record<IssueListFilter, number | null>;
-  closed: IssueInfo[];
-  closedLoaded: boolean;
+  /** filter -> state -> rows */
+  issuesByFilter: Record<IssueListFilter, Record<IssueStateFilter, IssueInfo[]>>;
+  /** filter -> state -> epoch ms of the last successful read */
+  loadedAt: Record<IssueListFilter, Record<IssueStateFilter, number | null>>;
   filter: IssueListFilter;
+  state: IssueStateFilter;
   loading: boolean;
   error: ErrorBody | null;
-  load(filter?: IssueListFilter, force?: boolean): Promise<void>;
-  loadClosed(): Promise<void>;
+  /** Change the selection and show its cached rows, or an empty list. No request. */
+  select(filter: IssueListFilter, state?: IssueStateFilter): void;
+  load(filter: IssueListFilter, state: IssueStateFilter, force?: boolean): Promise<void>;
   reset(): void;
 }
 
-const inFlightIssues = new Map<IssueListFilter, Promise<void>>();
-let inFlightClosedIssues: Promise<void> | null = null;
+function emptyGrid(): Record<IssueListFilter, Record<IssueStateFilter, IssueInfo[]>> {
+  return {
+    assigned: { open: [], closed: [] },
+    created: { open: [], closed: [] },
+    mentioned: { open: [], closed: [] },
+  };
+}
+
+function emptyStamps(): Record<IssueListFilter, Record<IssueStateFilter, number | null>> {
+  return {
+    assigned: { open: null, closed: null },
+    created: { open: null, closed: null },
+    mentioned: { open: null, closed: null },
+  };
+}
+
+/** Keyed by `${filter}:${state}`, so the open and closed reads never share a slot. */
+const inFlightIssues = new Map<string, Promise<void>>();
 
 export const useIssuesStore = create<IssuesState>((set, get) => ({
   issues: [],
-  issuesByFilter: { assigned: [], created: [], mentioned: [] },
-  loadedAt: { assigned: null, created: null, mentioned: null },
-  closed: [],
-  closedLoaded: false,
-  filter: 'assigned',
+  issuesByFilter: emptyGrid(),
+  loadedAt: emptyStamps(),
+  filter: loadState().issueFilter,
+  state: 'open',
   loading: false,
   error: null,
 
-  async load(targetFilter?: IssueListFilter, force = false) {
-    const filter = targetFilter ?? get().filter;
-    const inFlight = inFlightIssues.get(filter);
+  select(filter, state = get().state) {
+    set({
+      filter,
+      state,
+      issues: get().issuesByFilter[filter]?.[state] ?? [],
+      error: null,
+    });
+  },
+
+  async load(filter, state, force = false) {
+    const key = `${filter}:${state}`;
+    const inFlight = inFlightIssues.get(key);
     if (inFlight !== undefined) return inFlight;
     const auth = useGitHubStore.getState().auth;
     if (auth?.connected !== true) return;
     const linkage = useGitHubStore.getState().linkage;
     if (!linkage || !linkage.available || !linkage.owner || !linkage.repo) return;
     const { owner, repo } = linkage;
-    if (!force && get().loadedAt[filter] !== null && Date.now() - (get().loadedAt[filter] ?? 0) <= 60_000) {
-      if (filter !== get().filter) set({ filter, issues: get().issuesByFilter[filter] ?? [] });
+    const stamp = get().loadedAt[filter][state];
+    if (!force && stamp !== null && Date.now() - stamp <= 60_000) {
+      // A cache hit still has to repaint: the rendered rows follow the selection.
+      get().select(filter, state);
       return;
     }
     set({ loading: true });
     const promise = (async () => {
       try {
-        const result = await bridge.request('github/issues', {
-          owner,
-          repo,
-          filter,
-          state: 'open',
+        const result = await bridge.request('github/issues', { owner, repo, filter, state });
+        set((s) => {
+          const nextByFilter = {
+            ...s.issuesByFilter,
+            [filter]: { ...s.issuesByFilter[filter], [state]: result.issues },
+          };
+          const nextLoadedAt = {
+            ...s.loadedAt,
+            [filter]: { ...s.loadedAt[filter], [state]: Date.now() },
+          };
+          // Only repaint when the reply still matches the live selection.
+          const stillSelected = s.filter === filter && s.state === state;
+          return {
+            issuesByFilter: nextByFilter,
+            loadedAt: nextLoadedAt,
+            loading: false,
+            error: null,
+            ...(stillSelected ? { issues: result.issues } : {}),
+          };
         });
-        set((s) => ({
-          filter,
-          issues: result.issues,
-          issuesByFilter: { ...s.issuesByFilter, [filter]: result.issues },
-          loadedAt: { ...s.loadedAt, [filter]: Date.now() },
-          loading: false,
-          error: null,
-        }));
         useGitHubStore.setState({ rateLimit: result.rateLimit });
-        if (filter === 'assigned') {
+        if (filter === 'assigned' && state === 'open') {
           useNavStore.getState().setCount('issues', result.issues.length);
         }
       } catch (err) {
         set({ loading: false, error: toErrorBody(err) });
       } finally {
-        inFlightIssues.delete(filter);
+        inFlightIssues.delete(key);
       }
     })();
-    inFlightIssues.set(filter, promise);
+    inFlightIssues.set(key, promise);
     return promise;
-  },
-
-  async loadClosed() {
-    if (inFlightClosedIssues !== null) return inFlightClosedIssues;
-    if (get().closedLoaded) return;
-    const auth = useGitHubStore.getState().auth;
-    if (auth?.connected !== true) return;
-    const linkage = useGitHubStore.getState().linkage;
-    if (!linkage || !linkage.available || !linkage.owner || !linkage.repo) return;
-    const { owner, repo } = linkage;
-    inFlightClosedIssues = (async () => {
-      try {
-        const result = await bridge.request('github/issues', {
-          owner,
-          repo,
-          filter: 'assigned',
-          state: 'closed',
-        });
-        set({ closed: result.issues, closedLoaded: true, error: null });
-        useGitHubStore.setState({ rateLimit: result.rateLimit });
-      } catch (err) {
-        set({ error: toErrorBody(err) });
-      } finally {
-        inFlightClosedIssues = null;
-      }
-    })();
-    return inFlightClosedIssues;
   },
 
   reset() {
     inFlightIssues.clear();
-    inFlightClosedIssues = null;
     set({
       issues: [],
-      issuesByFilter: { assigned: [], created: [], mentioned: [] },
-      loadedAt: { assigned: null, created: null, mentioned: null },
-      closed: [],
-      closedLoaded: false,
+      issuesByFilter: emptyGrid(),
+      loadedAt: emptyStamps(),
+      filter: 'assigned',
+      state: 'open',
       loading: false,
       error: null,
     });

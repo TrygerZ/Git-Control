@@ -181,7 +181,7 @@ Encodes module purity boundaries (pure logic vs I/O) and execution trust boundar
 | `src/webview/navCounts.ts` | Pure nav badge text (`formatBadge` caps at `99+`, `navBadge` hides GitHub counts when signed out) and the `NavCounts` type |
 | `src/webview/githubGate.ts` | Pure GitHub gate mapping the host snapshot to one view (`loading`, `no-remote`, `signed-out`, `ready`) and one banner per GitHub-backed tab (`githubGate`, `isStale`, `AUTH_REQUIRED`, `PR_STALE_MS`). Never hides cached data |
 | `src/webview/prFilters.ts` | Pure pull request filters, counts, grouping, and badge maths (`filterPullRequests`, `countByFilter`, `matchesText`, `groupPullRequests`, `badgeCount`, `PR_PAGE_SIZE`) |
-| `src/webview/issueFilters.ts` | Pure issue list filters, label options, and text matching (`filterIssues`, `labelOptions`, `matchesText`, `nextIssueBadge`) |
+| `src/webview/issueFilters.ts` | Pure issue list filters, label options, and text matching (`filterIssues`, `labelOptions`, `matchesText`) |
 | `src/webview/issueText.ts` | Pure issue body preview helpers (`issueExcerpt`, `EXCERPT_MAX`) with whitespace collapsing and bidi/control neutralization |
 | `src/webview/listNav.ts` | Pure roving-focus key model for the PR list (`nextIndex`), reused by Issues and Actions |
 | `src/webview/focusTrap.ts` | Pure Tab-trap maths and shared focusable selector for modal dialogs (`FOCUSABLE_SELECTOR`, `trapTabTarget`) |

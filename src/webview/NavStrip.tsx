@@ -64,8 +64,8 @@ export function NavStrip(): JSX.Element | null {
   // A full page means "at least this many", which the shared 99+ cap cannot say.
   const openPrs = countByFilter(pullRequests, { viewerLogin }).open;
   const prBadge = badgeCount(openPrs, PR_PAGE_SIZE);
-  const assignedIssues = useIssuesStore((s) => s.issuesByFilter.assigned.length);
-  const issuesLoaded = useIssuesStore((s) => s.loadedAt.assigned !== null);
+  const assignedIssues = useIssuesStore((s) => s.issuesByFilter.assigned.open.length);
+  const issuesLoaded = useIssuesStore((s) => s.loadedAt.assigned.open !== null);
   const issuesCount = issuesLoaded ? assignedIssues : (counts.issues ?? null);
   const issueBadge = issuesCount !== null ? badgeCount(issuesCount, 50) : null;
   const tabs = navTabs(dests, strings, {

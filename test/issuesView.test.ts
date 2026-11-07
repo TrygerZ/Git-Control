@@ -63,12 +63,39 @@ test('row preview expands with accessible aria attributes', () => {
   assert.match(src, /aria-controls=/);
 });
 
-test('clearFilters resets chip filter to assigned in addition to text and label', () => {
+test('clearFilters resets chip, state, text, and label', () => {
   const src = read('src/webview/IssuesView.tsx');
-  assert.match(src, /setFilterAndPersist\(['"]assigned['"]\)/);
+  const body = src.slice(src.indexOf('const clearFilters'), src.indexOf('const setConnectButton'));
+  assert.match(body, /select\(\s*['"]assigned['"]\s*,\s*['"]open['"]\s*\)/, 'the selection returns to Assigned, Open');
+  assert.match(body, /setQuery\(/);
+  assert.match(body, /setLabelFilter\(/);
 });
 
 test('view does not load issues when signed out', () => {
   const src = read('src/webview/IssuesView.tsx');
   assert.match(src, /auth\?\.connected === true/);
+});
+
+test('the filter menu implements the shared menu keyboard model', () => {
+  const src = read('src/webview/IssuesView.tsx');
+  for (const key of ['ArrowDown', 'ArrowUp', 'Home', 'End', 'Escape']) {
+    assert.match(src, new RegExp(`['"]${key}['"]`), `${key} is handled`);
+  }
+  assert.match(src, /role="menu"/);
+  // The first item takes focus on open, or a keyboard user never reaches the items.
+  assert.match(src, /\.focus\(\)/);
+});
+
+test('the State filter renders Open and Closed from the catalog', () => {
+  const src = read('src/webview/IssuesView.tsx');
+  assert.match(src, /strings\.issues\.filterOpen/);
+  assert.match(src, /strings\.issues\.filterClosed/);
+  assert.match(src, /strings\.issues\.filterState/);
+});
+
+test('the external link button is decorative for assistive tech', () => {
+  const src = read('src/webview/IssuesView.tsx');
+  const link = src.slice(src.indexOf('gc-issues__link'), src.indexOf('gc-issues__link') + 400);
+  assert.match(link, /aria-hidden="true"/, 'the row already names Open on GitHub');
+  assert.match(link, /tabIndex=\{-1\}/);
 });

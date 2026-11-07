@@ -1,8 +1,9 @@
 /**
  * Issues store slice (P08).
  *
- * Each chip filter loads on demand and stamps its own load time (D-P08-1),
- * while the nav badge reflects the Assigned count without an extra request.
+ * The chip and the state menu are the only selection, and both live in the store
+ * so a background reply for a selection the user has left can never repaint the
+ * list under the wrong heading. Each `(filter, state)` pair caches independently.
  */
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -71,33 +72,101 @@ function resetAll(): void {
   useIssuesStore.getState().reset();
 }
 
-test('load fetches issues for the requested filter, stamps loadedAt, and updates nav count', async () => {
+test('load fetches the requested filter and state, stamps loadedAt, and updates the nav count', async () => {
   resetAll();
   const before = Date.now();
   const s = stub((kind, payload) => {
     if (kind === 'github/issues') {
-      const p = payload as { filter?: string };
+      const p = payload as { filter?: string; state?: string };
       assert.equal(p.filter, 'assigned');
+      assert.equal(p.state, 'open');
       return { issues: [issue(1), issue(2)], rateLimit: RATE };
     }
     return { connected: true, login: 'me', scopes: [] };
   });
   try {
-    await useIssuesStore.getState().load('assigned');
+    await useIssuesStore.getState().load('assigned', 'open');
   } finally {
     s.restore();
   }
   const after = Date.now();
-  const loadedAt = useIssuesStore.getState().loadedAt.assigned;
+  const loadedAt = useIssuesStore.getState().loadedAt.assigned.open;
   assert.ok(loadedAt !== null && loadedAt >= before && loadedAt <= after, 'a real timestamp');
   assert.deepEqual(
     useIssuesStore.getState().issues.map((i) => i.number),
     [1, 2],
   );
-  assert.equal(useNavStore.getState().counts.issues, 2, 'nav count is updated from Assigned');
+  assert.equal(useNavStore.getState().counts.issues, 2, 'nav count comes from Assigned open');
 });
 
-test('load is cached within TTL per filter and switching filters requests on demand', async () => {
+test('the cache is keyed by filter and state, and switching either requests on demand', async () => {
+  resetAll();
+  const s = stub((kind, payload) => {
+    const p = payload as { filter?: string; state?: string };
+    if (p.filter === 'created') return { issues: [issue(10)], rateLimit: RATE };
+    if (p.state === 'closed') return { issues: [issue(7, 'closed')], rateLimit: RATE };
+    return { issues: [issue(1)], rateLimit: RATE };
+  });
+  try {
+    await useIssuesStore.getState().load('assigned', 'open');
+    assert.equal(s.calls.length, 1);
+
+    await useIssuesStore.getState().load('assigned', 'open');
+    assert.equal(s.calls.length, 1, 'cached within TTL');
+
+    await useIssuesStore.getState().load('created', 'open');
+    assert.equal(s.calls.length, 2, 'a different chip is a different cache entry');
+
+    await useIssuesStore.getState().load('assigned', 'closed');
+    assert.equal(s.calls.length, 3, 'a different state is a different cache entry');
+    assert.equal(useIssuesStore.getState().issuesByFilter.assigned.closed[0]?.number, 7);
+    assert.equal(
+      useIssuesStore.getState().issuesByFilter.assigned.open[0]?.number,
+      1,
+      'the open rows survive',
+    );
+  } finally {
+    s.restore();
+  }
+});
+
+test('a reply for a selection the user has left fills the cache but never the rendered list', async () => {
+  resetAll();
+  let resolveAssigned: ((value: unknown) => void) | undefined;
+  const assignedReply = new Promise<unknown>((resolve) => {
+    resolveAssigned = resolve;
+  });
+  const s = stub((kind, payload) => {
+    const p = payload as { filter?: string };
+    if (p.filter === 'assigned') return assignedReply;
+    return { issues: [issue(50)], rateLimit: RATE };
+  });
+  try {
+    // The shell prefetches Assigned for the badge; the user is on Mentioned.
+    const slow = useIssuesStore.getState().load('assigned', 'open');
+    useIssuesStore.getState().select('mentioned', 'open');
+    await useIssuesStore.getState().load('mentioned', 'open');
+
+    resolveAssigned?.({ issues: [issue(99)], rateLimit: RATE });
+    await slow;
+
+    assert.equal(useIssuesStore.getState().filter, 'mentioned', 'the chip the user chose stays selected');
+    assert.deepEqual(
+      useIssuesStore.getState().issues.map((i) => i.number),
+      [50],
+      'the late Assigned reply does not repaint the Mentioned list',
+    );
+    assert.equal(
+      useIssuesStore.getState().issuesByFilter.assigned.open[0]?.number,
+      99,
+      'the reply is still cached for the badge and a later switch',
+    );
+  } finally {
+    s.restore();
+  }
+});
+
+test('select switches to cached rows without a request', async () => {
   resetAll();
   const s = stub((kind, payload) => {
     const p = payload as { filter?: string };
@@ -105,20 +174,16 @@ test('load is cached within TTL per filter and switching filters requests on dem
     return { issues: [issue(1)], rateLimit: RATE };
   });
   try {
-    await useIssuesStore.getState().load('assigned');
-    assert.equal(s.calls.length, 1);
+    await useIssuesStore.getState().load('assigned', 'open');
+    await useIssuesStore.getState().load('created', 'open');
+    const sent = s.calls.length;
 
-    // Second call for assigned does not hit network
-    await useIssuesStore.getState().load('assigned');
-    assert.equal(s.calls.length, 1, 'cached within TTL');
+    useIssuesStore.getState().select('assigned', 'open');
+    assert.equal(s.calls.length, sent, 'a cached switch sends nothing');
+    assert.deepEqual(useIssuesStore.getState().issues.map((i) => i.number), [1]);
 
-    // Switch to created: issues a separate request
-    await useIssuesStore.getState().load('created');
-    assert.equal(s.calls.length, 2);
-    assert.deepEqual(
-      useIssuesStore.getState().issues.map((i) => i.number),
-      [10],
-    );
+    useIssuesStore.getState().select('mentioned', 'open');
+    assert.deepEqual(useIssuesStore.getState().issues, [], 'an unloaded selection starts empty');
   } finally {
     s.restore();
   }
@@ -128,13 +193,17 @@ test('a failed load preserves previous issues and records error', async () => {
   resetAll();
   useIssuesStore.setState({
     issues: [issue(99)],
-    loadedAt: { assigned: 1234, created: null, mentioned: null },
+    loadedAt: {
+      assigned: { open: 1234, closed: null },
+      created: { open: null, closed: null },
+      mentioned: { open: null, closed: null },
+    },
   });
   const s = stub(() => {
     throw new Error('network down');
   });
   try {
-    await useIssuesStore.getState().load('assigned', true);
+    await useIssuesStore.getState().load('assigned', 'open', true);
   } finally {
     s.restore();
   }
@@ -143,38 +212,49 @@ test('a failed load preserves previous issues and records error', async () => {
     [99],
     'stale issues beat an empty list',
   );
-  assert.equal(useIssuesStore.getState().loadedAt.assigned, 1234, 'failed read does not stamp load time');
+  assert.equal(
+    useIssuesStore.getState().loadedAt.assigned.open,
+    1234,
+    'failed read does not stamp load time',
+  );
   assert.ok(useIssuesStore.getState().error !== null);
 });
 
-test('loadClosed fetches closed issues once and caches', async () => {
+test('the closed state is its own cache entry, so the Recently closed group costs one request', async () => {
   resetAll();
   const s = stub((kind, payload) => {
-    const p = payload as { state?: string };
+    const p = payload as { filter?: string; state?: string };
     assert.equal(p.state, 'closed');
-    return { issues: [issue(42, 'closed')], rateLimit: RATE };
+    return { issues: [issue(p.filter === 'created' ? 43 : 42, 'closed')], rateLimit: RATE };
   });
   try {
-    await useIssuesStore.getState().loadClosed();
-    assert.equal(useIssuesStore.getState().closedLoaded, true);
-    assert.deepEqual(
-      useIssuesStore.getState().closed.map((i) => i.number),
-      [42],
-    );
+    await useIssuesStore.getState().load('assigned', 'closed');
+    assert.equal(useIssuesStore.getState().issuesByFilter.assigned.closed[0]?.number, 42);
 
     const count = s.calls.length;
-    await useIssuesStore.getState().loadClosed();
-    assert.equal(s.calls.length, count, 'second expand sends nothing');
+    await useIssuesStore.getState().load('assigned', 'closed');
+    assert.equal(s.calls.length, count, 'a second expand sends nothing');
+
+    await useIssuesStore.getState().load('created', 'closed');
+    assert.equal(
+      useIssuesStore.getState().issuesByFilter.created.closed[0]?.number,
+      43,
+      'each chip has its own closed rows',
+    );
   } finally {
     s.restore();
   }
 });
 
-test('disconnect clears issues and nav badge', async () => {
+test('disconnect clears the cache and the nav badge', async () => {
   resetAll();
   useIssuesStore.setState({
     issues: [issue(5)],
-    loadedAt: { assigned: 9999, created: null, mentioned: null },
+    loadedAt: {
+      assigned: { open: 9999, closed: null },
+      created: { open: null, closed: null },
+      mentioned: { open: null, closed: null },
+    },
   });
   useNavStore.getState().setCount('issues', 1);
 
@@ -185,7 +265,8 @@ test('disconnect clears issues and nav badge', async () => {
     s.restore();
   }
   assert.deepEqual(useIssuesStore.getState().issues, []);
-  assert.equal(useIssuesStore.getState().loadedAt.assigned, null);
+  assert.equal(useIssuesStore.getState().loadedAt.assigned.open, null);
+  assert.deepEqual(useIssuesStore.getState().issuesByFilter.assigned.closed, []);
   assert.equal(useNavStore.getState().counts.issues, null);
 });
 
@@ -194,9 +275,9 @@ test('load does not fetch when signed out', async () => {
   useGitHubStore.setState({ auth: { connected: false, login: null, scopes: [] } });
   const s = stub(() => ({ issues: [issue(1)], rateLimit: RATE }));
   try {
-    await useIssuesStore.getState().load('assigned');
+    await useIssuesStore.getState().load('assigned', 'open');
     assert.equal(s.calls.length, 0, 'no request sent when signed out');
-    await useIssuesStore.getState().loadClosed();
+    await useIssuesStore.getState().load('assigned', 'closed');
     assert.equal(s.calls.length, 0, 'no closed request sent when signed out');
   } finally {
     s.restore();
