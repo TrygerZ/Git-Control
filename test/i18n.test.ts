@@ -328,3 +328,44 @@ test('the prs namespace exists in both catalogs with the same shape', () => {
   assert.equal(id.branchCardAhead('2', 'develop'), '2 di depan develop');
   assert.equal(en.rateLimitedBody('12:40'), 'Showing cached results. Requests resume in 12:40.');
 });
+
+test('the issues namespace exists in both catalogs with the same shape', () => {
+  const en = (t('en') as Record<string, unknown>).issues as Record<string, unknown>;
+  const id = (t('id') as Record<string, unknown>).issues as Record<string, unknown>;
+
+  assert.ok(en !== undefined, 'en.issues must exist');
+  assert.ok(id !== undefined, 'id.issues must exist');
+  assert.deepEqual(Object.keys(en).sort(), Object.keys(id).sort());
+
+  assert.equal(en.panelAria, 'Issues');
+  assert.equal(id.panelAria, 'Issue');
+  assert.equal(en.chipAssigned, 'Assigned');
+  assert.equal(id.chipAssigned, 'Ditugaskan');
+  assert.equal(en.chipCreated, 'Created');
+  assert.equal(id.chipCreated, 'Dibuat saya');
+  assert.equal(en.chipMentioned, 'Mentioned');
+  assert.equal(id.chipMentioned, 'Menyebut saya');
+  assert.equal(en.groupAssigned, 'Assigned to you');
+  assert.equal(id.groupAssigned, 'Ditugaskan kepada Anda');
+  assert.equal(en.groupClosed, 'Recently closed');
+  assert.equal(id.groupClosed, 'Baru ditutup');
+  assert.equal(en.openOnGitHub, 'Open on GitHub');
+  assert.equal(id.openOnGitHub, 'Buka di GitHub');
+  assert.equal(en.clearFilters, 'Clear filters');
+  assert.equal(id.clearFilters, 'Hapus filter');
+
+  const rowAriaEn = en.rowAria as (n: string, t: string, l: string) => string;
+  const rowAriaId = id.rowAria as (n: string, t: string, l: string) => string;
+  assert.equal(rowAriaEn('97', 'Login fails', ', labels bug'), 'Issue #97, Login fails, labels bug');
+  assert.equal(rowAriaId('97', 'Login fails', ', label bug'), 'Issue #97, Login fails, label bug');
+
+  const labelsJoinEn = en.labelsJoin as (names: string) => string;
+  const labelsJoinId = id.labelsJoin as (names: string) => string;
+  assert.equal(labelsJoinEn('bug, auth'), ', labels bug, auth');
+  assert.equal(labelsJoinId('bug, auth'), ', label bug, auth');
+
+  const commentsCountEn = en.commentsCount as (n: string) => string;
+  const commentsCountId = id.commentsCount as (n: string) => string;
+  assert.equal(commentsCountEn('3'), '3 comments');
+  assert.equal(commentsCountId('3'), '3 komentar');
+});
