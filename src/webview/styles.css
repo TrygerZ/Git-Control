@@ -5471,14 +5471,6 @@ h3 {
   display: inline-flex;
 }
 
-.gc-issues__menu {
-  position: absolute;
-  top: 100%;
-  right: 0;
-  z-index: 20;
-  margin-top: var(--gc-space-1);
-}
-
 .gc-issues__menu-empty {
   padding: var(--gc-space-2) var(--gc-space-3);
   color: var(--gc-text-muted);

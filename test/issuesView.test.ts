@@ -99,3 +99,31 @@ test('the external link button is decorative for assistive tech', () => {
   assert.match(link, /aria-hidden="true"/, 'the row already names Open on GitHub');
   assert.match(link, /tabIndex=\{-1\}/);
 });
+
+test('every menu item closes through closeMenu so focus returns to the trigger', () => {
+  const src = read('src/webview/IssuesView.tsx');
+  // The raw setter leaves focus on an unmounted node, which drops it to body.
+  const menuBody = src.slice(src.indexOf('className="gc-menu gc-issues__menu"'), src.indexOf('className="gc-issues__chips"'));
+  assert.doesNotMatch(menuBody, /setMenuOpen\(false\)/, 'items close through closeMenu()');
+  const closes = menuBody.match(/closeMenu\(\)/g) ?? [];
+  assert.ok(closes.length >= 3, 'state, label, and clear items all restore focus');
+});
+
+test('the filter menu escapes the view clip instead of being cut by it', () => {
+  const css = read('src/webview/styles.css');
+  // `.gc-issues` declares overflow: hidden, so an absolutely positioned menu inside
+  // it is clipped and its own overflow: auto never scrolls. The shared `.gc-menu`
+  // is position: fixed; an override here would put the menu back inside the clip.
+  assert.equal(css.indexOf('.gc-issues__menu {'), -1, 'no rule overrides the shared menu position');
+  assert.match(css, /\.gc-menu \{[^}]*position:\s*fixed/, 'the shared menu is fixed');
+
+  const src = read('src/webview/IssuesView.tsx');
+  assert.match(src, /className="gc-menu gc-issues__menu"/, 'the element still takes the shared chrome');
+  assert.match(src, /getBoundingClientRect\(\)/, 'fixed positioning needs the trigger rect');
+});
+
+test('the filter trigger announces a menu, not a disclosure', () => {
+  const src = read('src/webview/IssuesView.tsx');
+  const trigger = src.slice(src.indexOf('gc-issues__filter-wrap'), src.indexOf('gc-issues__filter-wrap') + 900);
+  assert.match(trigger, /aria-haspopup="menu"/);
+});

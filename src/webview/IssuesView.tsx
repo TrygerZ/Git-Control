@@ -6,7 +6,15 @@
  * preview, and footer. Every decision routes through pure helpers (`githubGate`,
  * `issueFilters`, `issueText`, `listNav`).
  */
-import { useEffect, useMemo, useRef, useState, type JSX, type KeyboardEvent } from 'react';
+import {
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type JSX,
+  type KeyboardEvent,
+} from 'react';
 import { loadState, saveState } from './bridge';
 import { restoreTarget } from './focusTrap';
 import {
@@ -60,6 +68,7 @@ export function IssuesView(): JSX.Element {
   const [query, setQuery] = useState(() => loadState().issueQuery);
   const [labelFilter, setLabelFilter] = useState<string | null>(() => loadState().issueLabel);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [menuPos, setMenuPos] = useState({ x: 0, y: 0 });
   const [expandedGroups, setExpandedGroups] = useState<ReadonlySet<GroupId>>(
     () => new Set<GroupId>(['active']),
   );
@@ -91,6 +100,26 @@ export function IssuesView(): JSX.Element {
       void load(filter, state);
     }
   }, [route.id, auth?.connected, filter, state, loadedAt, load]);
+
+  /*
+   * `.gc-issues` clips its overflow, so the menu cannot be an absolutely positioned
+   * descendant. It is `position: fixed` (from `.gc-menu`) and placed from the
+   * trigger rect instead. Nothing between here and the sidebar shell declares a
+   * transform/filter/contain, so fixed escapes the clip.
+   */
+  useLayoutEffect(() => {
+    if (!menuOpen) return;
+    const trigger = filterButtonRef.current;
+    if (trigger === null) return;
+    const box = trigger.getBoundingClientRect();
+    const menu = menuRef.current?.querySelector<HTMLElement>('.gc-menu');
+    const width = menu?.offsetWidth ?? 240;
+    const height = menu?.offsetHeight ?? 0;
+    const margin = 8;
+    const x = Math.max(margin, Math.min(box.right - width, window.innerWidth - width - margin));
+    const y = Math.min(box.bottom + 4, Math.max(margin, window.innerHeight - height - margin));
+    setMenuPos({ x, y });
+  }, [menuOpen]);
 
   useEffect(() => {
     if (!menuOpen) return undefined;
@@ -350,6 +379,7 @@ export function IssuesView(): JSX.Element {
                   aria-label={strings.issues.filterLabel}
                   title={strings.issues.filterLabel}
                   aria-expanded={menuOpen}
+                  aria-haspopup="menu"
                   onClick={() => setMenuOpen((v) => !v)}
                 >
                   <Icon name="filter" />
@@ -359,6 +389,7 @@ export function IssuesView(): JSX.Element {
                     className="gc-menu gc-issues__menu"
                     role="menu"
                     aria-label={strings.issues.filterLabel}
+                    style={{ left: `${menuPos.x}px`, top: `${menuPos.y}px` }}
                     onKeyDown={onMenuKey}
                   >
                     <div className="gc-menu__group" role="group">
@@ -372,7 +403,7 @@ export function IssuesView(): JSX.Element {
                           aria-checked={state === id}
                           onClick={() => {
                             selectAndPersist(filter, id);
-                            setMenuOpen(false);
+                            closeMenu();
                           }}
                         >
                           <span className="gc-menu__icon" aria-hidden="true">
@@ -383,7 +414,7 @@ export function IssuesView(): JSX.Element {
                               <span>
                                 {id === 'open' ? strings.issues.filterOpen : strings.issues.filterClosed}
                               </span>
-                              {id === 'open' && (
+                              {id === 'open' && loadedAt[filter].open !== null && (
                                 <span className="gc-issues__chip-count" aria-hidden="true">
                                   ({formatCount(issuesByFilter[filter].open.length, language)})
                                 </span>
@@ -408,7 +439,7 @@ export function IssuesView(): JSX.Element {
                             onClick={() => {
                               const next = labelFilter === item.name ? null : item.name;
                               setLabelFilterAndPersist(next);
-                              setMenuOpen(false);
+                              closeMenu();
                             }}
                           >
                             <span className="gc-menu__icon" aria-hidden="true">
@@ -437,7 +468,7 @@ export function IssuesView(): JSX.Element {
                             role="menuitem"
                             onClick={() => {
                               clearFilters();
-                              setMenuOpen(false);
+                              closeMenu();
                             }}
                           >
                             <span className="gc-menu__body">
