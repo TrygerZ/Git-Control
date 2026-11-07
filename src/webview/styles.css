@@ -395,6 +395,20 @@ h3 {
 }
 
 /*
+ * A blocked button stays focusable so its reason is reachable, which means the
+ * `:disabled` selectors above never match it. Without this rule it looks and
+ * hovers like a live control and a click does nothing.
+ */
+.gc-button[aria-disabled='true'] {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.gc-button[aria-disabled='true']:hover {
+  background: transparent;
+}
+
+/*
  * Destructive buttons carry the danger colour AND an inset rule, so the
  * difference from a primary button survives a monochrome high-contrast theme.
  * The word on the button (`Konfirmasi`, next to `sangat berisiko` in the dialog)
