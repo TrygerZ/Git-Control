@@ -8,8 +8,10 @@
  * Delete branch (P20), New tag (P28), Compare and Add worktree (P29). No
  * control ships without behaviour.
  *
- * The sidebar owns its own prompt, merge, and guard hosts. `ExplorerApp` keeps
- * its own copies of that state; importing it would tie two roots together.
+ * The sidebar owns its own prompt and merge hosts. `ExplorerApp` keeps its own
+ * copies of that state; importing it would tie two roots together. The guard
+ * dialog is not duplicated here: the sidebar shell already hosts one, and a
+ * second host would render two modal dialogs for a single verdict.
  */
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type JSX, type KeyboardEvent } from 'react';
 import { MergeDialog, mergeActionPayload } from './MergeDialog';
@@ -157,12 +159,17 @@ export function BranchesView(): JSX.Element {
     if (ok) await load();
   };
 
-  const copyName = (name: string): void => {
+  /**
+   * One copy path for every row, so a worktree path reports the same success and
+   * failure a branch name does. `message` is what the toast says on success.
+   */
+  const copyText = (text: string, message: string): void => {
     void navigator.clipboard
-      .writeText(name)
-      .then(() => pushToast({ level: 'info', message: strings.branches.copied }))
+      .writeText(text)
+      .then(() => pushToast({ level: 'info', message }))
       .catch(() => pushToast({ level: 'warning', message: strings.explorer.toastCopyFailed }));
   };
+  const copyName = (name: string): void => copyText(name, strings.branches.copied);
 
   const checkout = (name: string): void => {
     const payload = checkoutActionPayload(name, currentBranch, false);
@@ -358,7 +365,7 @@ function LocalList(props: {
   onToggleSection(key: BranchesSectionKey): void;
   onSort(sort: BranchSort): void;
   onMenu(anchor: MenuAnchor): void;
-  onCopy(text: string): void;
+  onCopy(text: string, message: string): void;
 }): JSX.Element {
   const strings = useT();
   const {
@@ -480,7 +487,7 @@ function LocalList(props: {
               row={branchRow(currentRef)}
               ref_={currentRef}
               isCurrent
-              expanded={false}
+              expanded={props.openMenuKey === currentRef.refName}
               language={language}
               onMenu={onMenu}
             />
@@ -544,7 +551,7 @@ function LocalList(props: {
                     className="gc-icon-button gc-branches__more"
                     aria-label={strings.branches.worktreePathAria(safePath)}
                     title={safePath}
-                    onClick={() => onCopy(worktree.path)}
+                    onClick={() => onCopy(worktree.path, strings.branches.copiedPath)}
                   >
                     <Icon name="copy" />
                   </button>
@@ -655,7 +662,7 @@ function RemoteList(props: {
                 <button
                   type="button"
                   className="gc-icon-button gc-branches__more"
-                  aria-label={strings.branches.rowMenuAria(sanitizeGitText(row.shortName))}
+                  aria-label={strings.branches.menuCopyName}
                   title={strings.branches.menuCopyName}
                   onClick={() => props.onCopy(row.shortName)}
                 >

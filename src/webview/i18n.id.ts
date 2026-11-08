@@ -147,6 +147,7 @@ const id: Catalog = {
     menuMerge: 'Merge ke branch saat ini...',
     menuCopyName: 'Salin nama branch',
     copied: 'Nama branch disalin',
+    copiedPath: 'Path worktree disalin',
     newBranch: 'Branch baru',
     newBranchAria: 'Buat branch dari commit saat ini',
     fetchedAgo: (when: string) => `Fetch ${when}`,

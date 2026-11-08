@@ -151,6 +151,7 @@ const en = {
     menuMerge: 'Merge into current...',
     menuCopyName: 'Copy branch name',
     copied: 'Branch name copied',
+    copiedPath: 'Worktree path copied',
     newBranch: 'New branch',
     newBranchAria: 'Create a branch from the current commit',
     fetchedAgo: (when: string) => `Fetched ${when}`,
