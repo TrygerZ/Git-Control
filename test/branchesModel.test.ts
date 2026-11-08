@@ -19,46 +19,50 @@ import {
 import type { BranchRef, WorktreeInfo } from '../src/messages';
 
 function ref(over: Partial<BranchRef> & { shortName: string }): BranchRef {
-  const kind = over.kind ?? (over.shortName.includes('/') ? 'remote' : 'local');
+  // A slash in the name is common for local branches too (`feat/x`), so the kind
+  // is never guessed from it.
+  const kind = over.kind ?? 'local';
+  const prefix = kind === 'remote' ? 'refs/remotes/' : kind === 'tag' ? 'refs/tags/' : 'refs/heads/';
   return {
-    refName: over.refName ?? `refs/heads/${over.shortName}`,
+    ...over,
+    refName: over.refName ?? `${prefix}${over.shortName}`,
     shortName: over.shortName,
     kind,
     objectName: over.objectName ?? '0123456789abcdef0123456789abcdef01234567',
-    upstream: null,
-    ahead: 0,
-    behind: 0,
-    isHead: false,
-    gone: false,
-    committedAt: null,
-    merged: false,
-    ...over,
+    upstream: over.upstream ?? null,
+    ahead: over.ahead ?? 0,
+    behind: over.behind ?? 0,
+    isHead: over.isHead ?? false,
+    gone: over.gone ?? false,
+    committedAt: over.committedAt ?? null,
+    merged: over.merged ?? false,
   };
 }
 
 function row(over: Partial<BranchRowModel> & { shortName: string }): BranchRowModel {
   return {
+    ...over,
     key: over.key ?? `refs/heads/${over.shortName}`,
     shortName: over.shortName,
-    isCurrent: false,
-    ahead: 0,
-    behind: 0,
-    chips: [],
-    committedAt: null,
-    ...over,
+    isCurrent: over.isCurrent ?? false,
+    ahead: over.ahead ?? 0,
+    behind: over.behind ?? 0,
+    chips: over.chips ?? [],
+    committedAt: over.committedAt ?? null,
   };
 }
 
 function worktree(over: Partial<WorktreeInfo> & { path: string }): WorktreeInfo {
   return {
-    head: null,
-    branch: null,
-    detached: false,
-    bare: false,
-    locked: false,
-    prunable: false,
-    isCurrent: false,
     ...over,
+    path: over.path,
+    head: over.head ?? null,
+    branch: over.branch ?? null,
+    detached: over.detached ?? false,
+    bare: over.bare ?? false,
+    locked: over.locked ?? false,
+    prunable: over.prunable ?? false,
+    isCurrent: over.isCurrent ?? false,
   };
 }
 

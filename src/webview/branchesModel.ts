@@ -10,6 +10,11 @@ import type { BranchRef, WorktreeInfo } from '../messages';
 export type BranchesTab = 'local' | 'remote' | 'tags';
 export type BranchSort = 'recent' | 'name' | 'aheadBehind';
 export type BranchChip = 'merged' | 'localOnly' | 'upstreamGone';
+export type BranchesSectionKey = 'current' | 'local' | 'worktrees' | 'tags';
+
+export const BRANCHES_TABS: readonly BranchesTab[] = ['local', 'remote', 'tags'];
+export const BRANCH_SORTS: readonly BranchSort[] = ['recent', 'name', 'aheadBehind'];
+export const BRANCHES_SECTIONS: readonly BranchesSectionKey[] = ['current', 'local', 'worktrees', 'tags'];
 
 export interface BranchRowModel {
   /** `refName`: unique even when two remotes carry the same short name. */
