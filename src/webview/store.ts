@@ -39,12 +39,16 @@ import type {
   RepoStatus,
   Route,
   RouteId,
+  RunJobInfo,
   SettingsSnapshot,
   StashEntry,
   StashFile,
   IconThemeSnapshot,
+  WorkflowInfo,
+  WorkflowRunInfo,
   WorktreeInfo,
 } from '../messages';
+import { failingDot } from './actionsModel';
 import type { BranchesSectionKey, BranchSort } from './branchesModel';
 import { clampZoom, COLUMN_WIDTH, LANE_HEIGHT, partitionUnrequestedHashes } from './viewport';
 
@@ -1071,6 +1075,8 @@ export const useGitHubStore = create<GitHubState>((set, get) => ({
         if (repoChanged) {
           resetCommitAuthors(set);
           useIssuesStore.getState().reset();
+          // Runs belong to one repository and one branch set; the next read fills them.
+          useActionsStore.getState().reset();
         }
         set({
           auth,
@@ -1375,6 +1381,232 @@ export const useIssuesStore = create<IssuesState>((set, get) => ({
     useNavStore.getState().setCount('issues', null);
   },
 }));
+
+// ------------------------------------------------------------- actionsStore
+
+/**
+ * Actions view slice (P13).
+ *
+ * Runs are keyed by the filter that produced them, not merged into one list: a
+ * reply for a branch the user has already left must not repaint the list under
+ * the new heading, the same rule the Issues slice follows.
+ */
+export interface ActionsState {
+  runs: WorkflowRunInfo[];
+  workflows: WorkflowInfo[];
+  /** filter -> rows, so a filter switch repaints without a request. */
+  runsByFilter: Record<string, WorkflowRunInfo[]>;
+  /** filter -> epoch ms of the last successful read. */
+  loadedAt: Record<string, number>;
+  branch: string | null;
+  workflowId: number | null;
+  expanded: Set<number>;
+  jobsByRun: Record<number, RunJobInfo[]>;
+  jobsLoading: Set<number>;
+  jobsError: Set<number>;
+  loading: boolean;
+  error: ErrorBody | null;
+  load(opts: { branch?: string | null; workflowId?: number | null; force?: boolean }): Promise<void>;
+  loadJobs(runId: number): Promise<void>;
+  toggleRun(runId: number): void;
+  selectBranch(branch: string | null): void;
+  selectWorkflow(workflowId: number | null): void;
+  /** Bounded dot refresh: five rows, current branch only, never while signed out. */
+  refreshDot(branch: string | null): Promise<void>;
+  reset(): void;
+}
+
+/** `per_page` for the list. 30 matches the phase contract; the cap is 50. */
+export const ACTIONS_PAGE_SIZE = 30;
+/** The dot only needs the newest few rows. */
+const DOT_PAGE_SIZE = 5;
+const ACTIONS_STALE_MS = 60_000;
+
+const inFlightActions = new Map<string, Promise<void>>();
+const inFlightJobs = new Map<number, Promise<void>>();
+let inFlightDot: Promise<void> | null = null;
+
+function actionsFilterKey(branch: string | null, workflowId: number | null): string {
+  return `${branch ?? '*'}:${workflowId ?? '*'}`;
+}
+
+export const useActionsStore = create<ActionsState>((set, get) => {
+  const initial = loadState();
+  return {
+    runs: [],
+    workflows: [],
+    runsByFilter: {},
+    loadedAt: {},
+    branch: initial.actionsBranch,
+    workflowId: initial.actionsWorkflow,
+    expanded: new Set<number>(),
+    jobsByRun: {},
+    jobsLoading: new Set<number>(),
+    jobsError: new Set<number>(),
+    loading: false,
+    error: null,
+
+    async load(opts) {
+      const branch = opts.branch === undefined ? get().branch : opts.branch;
+      const workflowId = opts.workflowId === undefined ? get().workflowId : opts.workflowId;
+      const key = actionsFilterKey(branch, workflowId);
+      // The selection is applied here, before any await: one place decides what
+      // the list is showing, so a reply can be matched against it afterwards.
+      set({ branch, workflowId });
+      const inFlight = inFlightActions.get(key);
+      if (inFlight !== undefined) return inFlight;
+
+      const auth = useGitHubStore.getState().auth;
+      if (auth?.connected !== true) return;
+      const linkage = useGitHubStore.getState().linkage;
+      if (!linkage || !linkage.available || !linkage.owner || !linkage.repo) return;
+      const { owner, repo } = linkage;
+
+      const stamp = get().loadedAt[key];
+      if (opts.force !== true && stamp !== undefined && Date.now() - stamp <= ACTIONS_STALE_MS) {
+        set({ runs: get().runsByFilter[key] ?? [], branch, workflowId, error: null });
+        return;
+      }
+
+      set({ loading: true });
+      const promise = (async () => {
+        try {
+          const result = await bridge.request('github/actionsRuns', {
+            owner,
+            repo,
+            ...(branch === null ? {} : { branch }),
+            ...(workflowId === null ? {} : { workflowId }),
+            perPage: ACTIONS_PAGE_SIZE,
+          });
+          set((s) => {
+            const stillSelected = s.branch === branch && s.workflowId === workflowId;
+            return {
+              runsByFilter: { ...s.runsByFilter, [key]: result.runs },
+              loadedAt: { ...s.loadedAt, [key]: Date.now() },
+              loading: false,
+              error: null,
+              ...(stillSelected ? { runs: result.runs } : {}),
+              // The workflow list only arrives on an unfiltered read; keep the last one.
+              ...(result.workflows.length > 0 ? { workflows: result.workflows } : {}),
+            };
+          });
+          useGitHubStore.setState({ rateLimit: result.rateLimit });
+          // The dot is only meaningful for the branch the user is on.
+          if (branch !== null) useNavStore.getState().setFailing(failingDot(result.runs, branch));
+        } catch (err) {
+          set({ loading: false, error: toErrorBody(err) });
+        } finally {
+          inFlightActions.delete(key);
+        }
+      })();
+      inFlightActions.set(key, promise);
+      return promise;
+    },
+
+    async loadJobs(runId) {
+      if (get().jobsByRun[runId] !== undefined) return;
+      const inFlight = inFlightJobs.get(runId);
+      if (inFlight !== undefined) return inFlight;
+      const linkage = useGitHubStore.getState().linkage;
+      if (!linkage || !linkage.available || !linkage.owner || !linkage.repo) return;
+      const { owner, repo } = linkage;
+      set((s) => ({ jobsLoading: new Set(s.jobsLoading).add(runId) }));
+      const promise = (async () => {
+        try {
+          const result = await bridge.request('github/actionsJobs', { owner, repo, runId });
+          set((s) => ({
+            jobsByRun: { ...s.jobsByRun, [runId]: result.jobs },
+            jobsLoading: without(s.jobsLoading, runId),
+            jobsError: without(s.jobsError, runId),
+          }));
+          useGitHubStore.setState({ rateLimit: result.rateLimit });
+        } catch {
+          // A failed expand keeps the row usable; the message sits under it.
+          set((s) => ({
+            jobsLoading: without(s.jobsLoading, runId),
+            jobsError: new Set(s.jobsError).add(runId),
+          }));
+        } finally {
+          inFlightJobs.delete(runId);
+        }
+      })();
+      inFlightJobs.set(runId, promise);
+      return promise;
+    },
+
+    toggleRun(runId) {
+      set((s) => {
+        const next = new Set(s.expanded);
+        if (next.has(runId)) next.delete(runId);
+        else next.add(runId);
+        return { expanded: next };
+      });
+    },
+
+    selectBranch(branch) {
+      set({ branch });
+      saveState({ actionsBranch: branch });
+      void get().load({ branch });
+    },
+
+    selectWorkflow(workflowId) {
+      set({ workflowId });
+      saveState({ actionsWorkflow: workflowId });
+      void get().load({ workflowId });
+    },
+
+    async refreshDot(branch) {
+      if (branch === null || inFlightDot !== null) return inFlightDot ?? undefined;
+      const auth = useGitHubStore.getState().auth;
+      if (auth?.connected !== true) return;
+      const linkage = useGitHubStore.getState().linkage;
+      if (!linkage || !linkage.available || !linkage.owner || !linkage.repo) return;
+      const { owner, repo } = linkage;
+      inFlightDot = (async () => {
+        try {
+          const result = await bridge.request('github/actionsRuns', {
+            owner,
+            repo,
+            branch,
+            perPage: DOT_PAGE_SIZE,
+          });
+          useNavStore.getState().setFailing(failingDot(result.runs, branch));
+        } catch {
+          // A dot is decoration: a failed probe leaves the last verdict in place.
+        } finally {
+          inFlightDot = null;
+        }
+      })();
+      return inFlightDot;
+    },
+
+    reset() {
+      inFlightActions.clear();
+      inFlightJobs.clear();
+      inFlightDot = null;
+      set({
+        runs: [],
+        workflows: [],
+        runsByFilter: {},
+        loadedAt: {},
+        expanded: new Set<number>(),
+        jobsByRun: {},
+        jobsLoading: new Set<number>(),
+        jobsError: new Set<number>(),
+        loading: false,
+        error: null,
+      });
+      useNavStore.getState().setFailing(false);
+    },
+  };
+});
+
+/** Copy of `set` without `value`. Sets are compared by identity, so never mutate one. */
+function without<T>(set: ReadonlySet<T>, value: T): Set<T> {
+  const next = new Set(set);
+  next.delete(value);
+  return next;
+}
 
 // ------------------------------------------------------------ branchesStore
 

@@ -69,6 +69,10 @@ export interface WebviewState {
   issueLabel: string | null;
   branchSort: BranchSort;
   collapsedBranchSections: BranchesSectionKey[];
+  /** Actions branch filter. `null` means every branch. */
+  actionsBranch: string | null;
+  /** Actions workflow filter. `null` means every workflow. */
+  actionsWorkflow: number | null;
 }
 
 const PR_FILTERS: readonly PrFilterId[] = ['open', 'review-requested', 'mine', 'draft'];
@@ -90,6 +94,8 @@ const DEFAULT_STATE: WebviewState = {
   issueLabel: null,
   branchSort: 'recent',
   collapsedBranchSections: [],
+  actionsBranch: null,
+  actionsWorkflow: null,
 };
 
 /** Rejection carrying the full {@link ErrorBody} so the UI can render remedies. */
@@ -309,6 +315,16 @@ export function loadState(): WebviewState {
           (k): k is BranchesSectionKey => (BRANCHES_SECTIONS as readonly unknown[]).includes(k),
         )
       : [],
+    // A persisted branch is a filter, not a ref, so only its shape is checked here;
+    // the host validates it again before it can reach a URL.
+    actionsBranch:
+      typeof partial.actionsBranch === 'string' && partial.actionsBranch.length > 0
+        ? partial.actionsBranch
+        : null,
+    actionsWorkflow:
+      typeof partial.actionsWorkflow === 'number' && Number.isSafeInteger(partial.actionsWorkflow) && partial.actionsWorkflow > 0
+        ? partial.actionsWorkflow
+        : null,
   };
 }
 
