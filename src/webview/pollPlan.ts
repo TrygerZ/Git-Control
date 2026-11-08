@@ -1,6 +1,9 @@
 /**
- * Poll scheduler core (P12). Stub: the signature the tests import.
- * Body throws until the implementation lands.
+ * Poll scheduler core (P12).
+ *
+ * Owns no timers: it answers whether to poll and after how long, and the caller
+ * owns the `setTimeout`. One scheduling policy for every view instead of one per
+ * view, and every rule is testable without fake clocks.
  */
 export interface PollConfig {
   baseMs: number;
