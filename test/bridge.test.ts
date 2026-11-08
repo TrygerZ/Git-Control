@@ -1364,6 +1364,41 @@ test('github handlers reach the host and report UNAVAILABLE without one', async 
   assert.equal(stubIssues.error.status, 503);
 });
 
+test('github/pullRequests forwards a boolean refresh and rejects any other type', async (t) => {
+  const seen: Array<{ refresh?: unknown }> = [];
+  const withHost = harness(null, {
+    githubPullRequests: (payload) => {
+      seen.push(payload);
+      return Promise.resolve({
+        pullRequests: [],
+        rateLimit: { limit: 5000, remaining: 4999, resetAt: null, cached: false, offline: false },
+      });
+    },
+  });
+  t.after(() => withHost.bridge.dispose());
+
+  const plain = await withHost.webview.send(req('github/pullRequests', { owner: 'o', repo: 'r' }));
+  assert.equal(plain.ok, true);
+  assert.equal(seen[0]?.refresh, undefined, 'absent stays absent, so the client keeps its default');
+
+  const refreshing = await withHost.webview.send(
+    req('github/pullRequests', { owner: 'o', repo: 'r', refresh: true }),
+  );
+  assert.equal(refreshing.ok, true);
+  assert.equal(seen[1]?.refresh, true, 'the flag reaches the host');
+
+  for (const bad of ['true', 1, {}, null]) {
+    const response = await withHost.webview.send(
+      req('github/pullRequests', { owner: 'o', repo: 'r', refresh: bad }),
+    );
+    assert.equal(response.ok, false, `refresh: ${JSON.stringify(bad)} must be refused`);
+    if (response.ok) return;
+    assert.equal(response.error.code, 'VALIDATION_ERROR');
+    assert.equal(response.error.detail, 'refresh');
+  }
+  assert.equal(seen.length, 2, 'a rejected payload never reaches the host');
+});
+
 test('persisted zoom is normalized to valid range host-side', async (t) => {
   const store = new MemoryStore();
   // Simulate an out-of-range legacy stored zoom value (e.g. 0.25 when MIN_ZOOM is now 0.35)

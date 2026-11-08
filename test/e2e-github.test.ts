@@ -160,3 +160,89 @@ test('P08: bridge github/issues drops PR items, serves second call from cache, a
   assert.equal(rateLimitFailure.code, 'RATE_LIMITED');
   assert.equal(rateLimitFailure.resetAt, 1_700_000_700_000);
 });
+
+// ------------------------------------------- P12: bridge refresh + revalidate
+
+test('P12: github/pullRequests with refresh sends a conditional request and keeps cached false', async (t) => {
+  const repo = await makeRepo({ label: 'p12-refresh' });
+  const sent: Array<Record<string, string>> = [];
+  let n = 0;
+  const gh = new GitHubClient({
+    apiUrl: 'https://api.github.com',
+    token: TOKEN,
+    sleep: async () => undefined,
+    fetchImpl: (_url, init) => {
+      sent.push(init.headers);
+      n += 1;
+      if (n === 1) {
+        return Promise.resolve(
+          response(200, [{ number: 1, title: 'one', state: 'open', html_url: 'u' }], {
+            etag: 'W/"abc123"',
+            'x-ratelimit-remaining': '49',
+          }),
+        );
+      }
+      return Promise.resolve(response(304, '', { 'x-ratelimit-remaining': '49' }));
+    },
+  });
+  const bridge = repo.harness({
+    host: {
+      githubPullRequests: async (payload) => {
+        const result = await gh.pullRequests(payload.owner, payload.repo, {
+          state: payload.state ?? 'open',
+          ...(payload.refresh === true ? { refresh: true } : {}),
+        });
+        return { pullRequests: result.data, rateLimit: gh.rateLimit(result.cached) };
+      },
+    },
+  });
+  own(t, repo, bridge);
+
+  const first = await bridge.send('github/pullRequests', { owner: 'o', repo: 'r' });
+  assert.equal(first.ok, true);
+  assert.equal(sent[0]?.['If-None-Match'], undefined, 'the first read has nothing to revalidate');
+
+  const refreshed = await bridge.send('github/pullRequests', { owner: 'o', repo: 'r', refresh: true });
+  assert.equal(refreshed.ok, true);
+  if (!refreshed.ok) return;
+  const data = refreshed.data as { pullRequests: unknown[]; rateLimit: { cached: boolean } };
+  assert.equal(sent.length, 2, 'refresh inside the TTL still goes to the network');
+  assert.equal(sent[1]?.['If-None-Match'], 'W/"abc123"', 'and it is conditional');
+  assert.equal(data.rateLimit.cached, false, 'a 304 is confirmed fresh, not a cache replay');
+  assert.equal(data.pullRequests.length, 1, 'the stored payload still comes back');
+});
+
+test('P12: a 304 is not a failure, so repeated reloads never open the breaker', async (t) => {
+  const repo = await makeRepo({ label: 'p12-breaker' });
+  let n = 0;
+  const gh = new GitHubClient({
+    apiUrl: 'https://api.github.com',
+    token: TOKEN,
+    sleep: async () => undefined,
+    fetchImpl: () =>
+      Promise.resolve(
+        n++ === 0
+          ? response(200, [], { etag: 'W/"keep"' })
+          : response(304, ''),
+      ),
+  });
+  const bridge = repo.harness({
+    host: {
+      githubPullRequests: async (payload) => {
+        const result = await gh.pullRequests(payload.owner, payload.repo, {
+          state: payload.state ?? 'open',
+          ...(payload.refresh === true ? { refresh: true } : {}),
+        });
+        return { pullRequests: result.data, rateLimit: gh.rateLimit(result.cached) };
+      },
+    },
+  });
+  own(t, repo, bridge);
+
+  await bridge.send('github/pullRequests', { owner: 'o', repo: 'r' });
+  for (let i = 0; i < 6; i += 1) {
+    const reload = await bridge.send('github/pullRequests', { owner: 'o', repo: 'r', refresh: true });
+    assert.equal(reload.ok, true, `reload ${i + 1} must succeed`);
+  }
+  assert.equal(gh.circuitOpen, false, 'a 304 is a success');
+});

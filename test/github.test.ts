@@ -1,7 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
+  AUTHOR_CACHE_MAX_ENTRIES,
+  AUTHOR_ETAG_MAX_ENTRIES,
   CACHE_MAX_ENTRIES,
+  ETAG_MAX_ENTRIES,
   GitHubClient,
   GitHubError,
   hasPrivateScope,
@@ -756,3 +759,309 @@ test('contributorIdentity handles empty or whitespace email without network requ
   });
   assert.equal(h.calls.length, 0);
 });
+
+// ------------------------------------------------------- P12: ETag and 304
+
+const REPO_BODY = { default_branch: 'main', private: false, html_url: 'u' };
+const ETAG = 'W/"33a64df551425fcc55e4d42a148795d9f25f89d4"';
+
+/** Past the repo TTL (5 min) and the PR TTL (60 s). */
+function expire(h: { advance(ms: number): void }): void {
+  h.advance(301_000);
+}
+
+test('a read past its TTL sends If-None-Match and a 304 returns the stored data', async () => {
+  const h = client([
+    response(200, REPO_BODY, { etag: ETAG }),
+    response(304, ''),
+  ]);
+  const first = await h.gh.repo('o', 'r');
+  assert.equal(first.cached, false);
+  assert.equal(first.revalidated, undefined, 'a 200 is a plain read');
+
+  expire(h);
+  const second = await h.gh.repo('o', 'r');
+  assert.equal(h.calls.length, 2, 'the expired read still costs exactly one request');
+  assert.equal(h.calls[1]?.headers['If-None-Match'], ETAG, 'the stored etag travels on the retry');
+  assert.deepEqual(second.data, first.data);
+  assert.equal(second.cached, false, 'the server confirmed freshness, so it is not a cache replay');
+  assert.equal(second.revalidated, true);
+});
+
+test('five consecutive 304s leave the breaker closed', async () => {
+  const h = client([response(200, REPO_BODY, { etag: ETAG }), response(304, '')]);
+  await h.gh.repo('o', 'r');
+  for (let i = 0; i < 5; i += 1) {
+    expire(h);
+    const read = await h.gh.repo('o', 'r');
+    assert.equal(read.revalidated, true);
+  }
+  assert.equal(h.gh.circuitOpen, false, 'a 304 is a success, never a failure');
+});
+
+test('a 304 refreshes the rate-limit snapshot from its headers', async () => {
+  const h = client([
+    response(200, REPO_BODY, { etag: ETAG, 'x-ratelimit-remaining': '4999' }),
+    response(304, '', { 'x-ratelimit-remaining': '4998' }),
+  ]);
+  await h.gh.repo('o', 'r');
+  expire(h);
+  const read = await h.gh.repo('o', 'r');
+  assert.equal(read.rateLimit.remaining, 4998);
+});
+
+test('a 304 whose stored value vanished mid-flight retries once without the header', async () => {
+  const calls: Array<Record<string, string>> = [];
+  let clock = 1_700_000_000_000;
+  let gh!: GitHubClient;
+  let firstRead = true;
+  gh = new GitHubClient({
+    apiUrl: 'https://api.github.com',
+    token: TOKEN,
+    now: () => clock,
+    sleep: () => Promise.resolve(),
+    fetchImpl: (_url, init) => {
+      calls.push(init.headers);
+      if (firstRead) {
+        firstRead = false;
+        return Promise.resolve(response(200, REPO_BODY, { etag: ETAG }));
+      }
+      if (calls.length === 2) {
+        // A concurrent read evicts the validator at the bound while this one is
+        // in flight, so the 304 can no longer be answered from the store.
+        (gh as unknown as { etags: Map<string, unknown> }).etags.clear();
+        return Promise.resolve(response(304, ''));
+      }
+      return Promise.resolve(response(200, REPO_BODY));
+    },
+  });
+
+  await gh.repo('o', 'r');
+  clock += 301_000;
+  const read = await gh.repo('o', 'r');
+  assert.equal(calls.length, 3, 'the 304 is retried exactly once');
+  assert.equal(calls[2]?.['If-None-Match'], undefined, 'the retry is unconditional');
+  assert.equal(read.data.defaultBranch, 'main');
+  assert.equal(read.revalidated, undefined);
+});
+
+test('refresh skips the fresh cache but keeps the conditional request', async () => {
+  const h = client([response(200, [], { etag: ETAG }), response(304, '')]);
+  await h.gh.pullRequests('o', 'r');
+  const insideTtl = await h.gh.pullRequests('o', 'r', { refresh: true });
+  assert.equal(h.calls.length, 2, 'refresh is a request even inside the TTL');
+  assert.equal(h.calls[1]?.headers['If-None-Match'], ETAG);
+  assert.equal(insideTtl.revalidated, true);
+  assert.equal(insideTtl.cached, false);
+});
+
+test('the etag store is bounded and evicts in insertion order', async () => {
+  const h = client([response(200, [])]);
+  assert.equal(h.gh.etagSize, 0);
+  for (let i = 0; i < ETAG_MAX_ENTRIES; i += 1) {
+    await h.gh.pullRequestsForCommit('o', 'r', `${i}`.padStart(40, '0'));
+  }
+  assert.equal(h.gh.etagSize, 0, 'a response without an etag header stores nothing');
+
+  const tagged = client([response(200, [], { etag: ETAG })]);
+  for (let i = 0; i < ETAG_MAX_ENTRIES; i += 1) {
+    await tagged.gh.pullRequestsForCommit('o', 'r', `${i}`.padStart(40, '0'));
+  }
+  assert.equal(tagged.gh.etagSize, ETAG_MAX_ENTRIES);
+  for (let i = 0; i < 50; i += 1) {
+    await tagged.gh.pullRequestsForCommit('o', 'r', `${1000 + i}`.padStart(40, '0'));
+  }
+  assert.equal(tagged.gh.etagSize, ETAG_MAX_ENTRIES, 'the bound holds');
+});
+
+test('commit avatar traffic cannot evict the pull request validator', async () => {
+  // Both webviews share one client, so a graph scroll on the Explorer fires
+  // `commitAuthors` for every visible hash through the same `get()` path. Those
+  // keys are unbounded in distinct hashes; if they shared one map with the list
+  // validators, a single scroll would silently turn Reload into a full read.
+  const calls: Array<{ url: string; headers: Record<string, string> }> = [];
+  const LIST = /\/repos\/o\/r\/pulls\?/;
+  const gh = new GitHubClient({
+    apiUrl: 'https://api.github.com',
+    token: TOKEN,
+    sleep: () => Promise.resolve(),
+    fetchImpl: (url, init) => {
+      calls.push({ url, headers: init.headers });
+      if (LIST.test(url) && init.headers['If-None-Match'] === ETAG) {
+        return Promise.resolve(response(304, ''));
+      }
+      return Promise.resolve(response(200, LIST.test(url) ? [] : { author: { login: 'a', avatar_url: 'u' } }, { etag: ETAG }));
+    },
+  });
+
+  await gh.pullRequests('o', 'r');
+  // Far past both bounds, the way a long graph session behaves.
+  for (let i = 0; i < AUTHOR_CACHE_MAX_ENTRIES + 50; i += 1) {
+    await gh.commitAuthors('o', 'r', [`${i}`.padStart(40, '0')]);
+  }
+
+  const before = calls.length;
+  const read = await gh.pullRequests('o', 'r', { refresh: true });
+  assert.equal(calls[before]?.headers['If-None-Match'], ETAG, 'the list validator survived the avatar traffic');
+  assert.equal(read.revalidated, true);
+});
+
+test('the author etag store is bounded on its own', async () => {
+  const h = client([response(200, { author: { login: 'a', avatar_url: 'u' } }, { etag: ETAG })]);
+  for (let i = 0; i < AUTHOR_ETAG_MAX_ENTRIES + 50; i += 1) {
+    await h.gh.commitAuthors('o', 'r', [`${i}`.padStart(40, '0')]);
+  }
+  assert.equal(h.gh.authorEtagSize, AUTHOR_ETAG_MAX_ENTRIES, 'the author bound holds');
+  assert.equal(h.gh.etagSize, 0, 'and it does not spill into the list store');
+});
+
+test('a revalidated etag is not evicted as if it were the oldest', async () => {
+  const calls: Array<{ url: string; headers: Record<string, string> }> = [];
+  const LIST = /\/repos\/o\/r\/pulls\?/;
+  const gh = new GitHubClient({
+    apiUrl: 'https://api.github.com',
+    token: TOKEN,
+    sleep: () => Promise.resolve(),
+    fetchImpl: (url, init) => {
+      calls.push({ url, headers: init.headers });
+      if (LIST.test(url) && init.headers['If-None-Match'] === ETAG) {
+        return Promise.resolve(response(304, ''));
+      }
+      return Promise.resolve(response(200, [], { etag: ETAG }));
+    },
+  });
+
+  // The pulls key goes in first, so it starts at the head of the eviction order.
+  await gh.pullRequests('o', 'r');
+  // One more key behind it, so re-inserting the pulls key actually moves it.
+  await gh.pullRequestsForCommit('o', 'r', 'a'.repeat(40));
+  // A 304 must move the pulls key to the back. Mutating its timestamp in place
+  // would leave the list the user is looking at as the next eviction candidate.
+  assert.equal((await gh.pullRequests('o', 'r', { refresh: true })).revalidated, true);
+
+  // Fill exactly to the bound, then one past it: only the head is dropped.
+  for (let i = 0; i < ETAG_MAX_ENTRIES - 2; i += 1) {
+    await gh.pullRequestsForCommit('o', 'r', `${i}`.padStart(40, '0'));
+  }
+  assert.equal(gh.etagSize, ETAG_MAX_ENTRIES);
+  await gh.pullRequestsForCommit('o', 'r', 'b'.repeat(40));
+  assert.equal(gh.etagSize, ETAG_MAX_ENTRIES, 'the bound holds');
+
+  const before = calls.length;
+  const stillValidated = await gh.pullRequests('o', 'r', { refresh: true });
+  assert.equal(calls.length, before + 1);
+  assert.equal(calls[before]?.headers['If-None-Match'], ETAG, 'the revalidated key kept its validator');
+  assert.equal(stillValidated.revalidated, true);
+});
+
+test('clearCache also clears the etag store', async () => {
+  const h = client([response(200, REPO_BODY, { etag: ETAG })]);
+  await h.gh.repo('o', 'r');
+  assert.equal(h.gh.etagSize, 1);
+  h.gh.clearCache();
+  assert.equal(h.gh.etagSize, 0);
+});
+
+test('two clients with different tokens never share an etag', async () => {
+  const queue = [response(200, REPO_BODY, { etag: ETAG }), response(200, REPO_BODY, { etag: ETAG })];
+  const a = client(queue, { token: 'ghp_first_token_000000000000000000' });
+  const b = client(queue, { token: 'ghp_second_token_111111111111111111' });
+  await a.gh.repo('o', 'r');
+  await b.gh.repo('o', 'r');
+  assert.equal(a.gh.etagSize, 1);
+  assert.equal(b.gh.etagSize, 1);
+  assert.equal(b.calls[0]?.headers['If-None-Match'], undefined, 'a fresh client sends no etag');
+});
+
+test('a 200 without an etag drops the stored validator, so a later 304 cannot revert the list', async () => {
+  const calls: Array<Record<string, string>> = [];
+  let read = 0;
+  const gh = new GitHubClient({
+    apiUrl: 'https://api.github.com',
+    token: TOKEN,
+    sleep: () => Promise.resolve(),
+    fetchImpl: (_url, init) => {
+      calls.push(init.headers);
+      read += 1;
+      if (read === 1) return Promise.resolve(response(200, [{ number: 1 }], { etag: ETAG }));
+      if (read === 2) return Promise.resolve(response(200, [{ number: 2 }]));
+      // A server only answers 304 to a conditional request.
+      if (init.headers['If-None-Match'] !== undefined) return Promise.resolve(response(304, ''));
+      return Promise.resolve(response(200, [{ number: 2 }]));
+    },
+  });
+
+  await gh.pullRequests('o', 'r');
+  // A 200 with a new body but no validator must not leave the old etag paired
+  // with the old value; the next conditional read would then answer from it.
+  const second = await gh.pullRequests('o', 'r', { refresh: true });
+  assert.deepEqual(second.data.map((p) => p.number), [2]);
+
+  const third = await gh.pullRequests('o', 'r', { refresh: true });
+  assert.equal(calls[2]?.['If-None-Match'], undefined, 'the stale validator is gone');
+  assert.equal(third.revalidated, undefined);
+  assert.deepEqual(third.data.map((p) => p.number), [2], 'the list never reverts');
+});
+
+test('a response without an etag header stores no etag', async () => {
+  const h = client([response(200, REPO_BODY)]);
+  await h.gh.repo('o', 'r');
+  assert.equal(h.gh.etagSize, 0);
+  expire(h);
+  await h.gh.repo('o', 'r');
+  assert.equal(h.calls[1]?.headers['If-None-Match'], undefined);
+});
+
+test('x-poll-interval becomes pollIntervalMs in milliseconds', async () => {
+  const h = client([response(200, REPO_BODY, { 'x-poll-interval': '60' })]);
+  await h.gh.repo('o', 'r');
+  assert.equal(h.gh.pollIntervalMs, 60_000);
+  assert.equal(h.gh.rateLimit().pollIntervalMs, 60_000);
+
+  const absent = client([response(200, REPO_BODY)]);
+  await absent.gh.repo('o', 'r');
+  assert.equal(absent.gh.pollIntervalMs, null);
+  assert.equal(absent.gh.rateLimit().pollIntervalMs, undefined, 'the field only appears when known');
+});
+
+test('the token and its fingerprint never appear in an etag key or a log line', async () => {
+  const lines: string[] = [];
+  const rec = recorder([response(200, REPO_BODY, { etag: ETAG })]);
+  const gh = new GitHubClient({
+    apiUrl: 'https://api.github.com',
+    token: TOKEN,
+    fetchImpl: rec.fetchImpl,
+    logger: (line) => lines.push(line),
+    sleep: () => Promise.resolve(),
+  });
+  await gh.repo('o', 'r');
+  const keys = [...(gh as unknown as { etags: Map<string, unknown> }).etags.keys()].join(' ');
+  assert.ok(keys.length > 0);
+  assert.ok(!keys.includes(TOKEN), 'the raw token is never a key');
+  assert.ok(!lines.join('\n').includes(TOKEN));
+  assert.ok(!lines.join('\n').includes(ETAG), 'etag values stay out of the log');
+});
+
+test('the breaker still serves stale cache and sends no request while open', async () => {
+  const queue: Array<FetchResponseLike | Error> = [response(200, REPO_BODY, { etag: ETAG })];
+  const rec = recorder(queue);
+  let clock = 1_700_000_000_000;
+  const gh = new GitHubClient({
+    apiUrl: 'https://api.github.com',
+    token: TOKEN,
+    fetchImpl: rec.fetchImpl,
+    now: () => clock,
+    sleep: () => Promise.resolve(),
+  });
+  await gh.repo('o', 'r');
+  queue[0] = response(500, { message: 'boom' });
+  for (let i = 0; i < 5; i += 1) await assert.rejects(() => gh.repo(`x${i}`, 'r'));
+  assert.equal(gh.circuitOpen, true);
+  const before = rec.calls.length;
+  clock += 600_000;
+  const stale = await gh.repo('o', 'r');
+  assert.equal(rec.calls.length, before, 'no request while the circuit is open');
+  assert.equal(stale.cached, true);
+  assert.equal(stale.data.defaultBranch, 'main');
+});
+

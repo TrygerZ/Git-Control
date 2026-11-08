@@ -31,6 +31,7 @@ const PURE_MODULES = [
   'src/webview/issueText.ts',
   'src/webview/issueBranch.ts',
   'src/webview/branchesModel.ts',
+  'src/webview/pollPlan.ts',
 ];
 
 test('pure modules contain no vscode imports', () => {

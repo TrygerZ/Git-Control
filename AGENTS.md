@@ -158,7 +158,7 @@ Encodes module purity boundaries (pure logic vs I/O) and execution trust boundar
 | `src/repository.ts` | Repository state cache, commit graph layout invocation, commit pagination |
 | `src/watcher.ts` | Dual-source file watcher (`vscode.workspace` + `fs.watch` for `.git`) with 500ms debounce |
 | `src/logger.ts` | Diagnostic logger with regex credential redaction |
-| `src/github.ts` | GitHub REST client with bounded response cache (`CACHE_MAX_ENTRIES = 200`, `AUTHOR_CACHE_MAX_ENTRIES = 1000`) and circuit breaker (5 failures / 60s) |
+| `src/github.ts` | GitHub REST client with bounded response cache (`CACHE_MAX_ENTRIES = 200`, `AUTHOR_CACHE_MAX_ENTRIES = 1000`), bounded ETag stores (`ETAG_MAX_ENTRIES = 200`, `AUTHOR_ETAG_MAX_ENTRIES = 1000`, split like the response cache) for conditional reads, and circuit breaker (5 failures / 60s). A 304 is a success, never a breaker failure |
 | `src/remoteUrl.ts` | Remote URL parser and credential stripper |
 | `src/layout.ts` | Deterministic DAG layout engine (pure: no DOM, no git, no vscode; identical inputs yield byte-identical output; used only by `src/repository.ts`) |
 | `src/iconTheme.ts` | Extension-host icon theme extractor (reads active JSON/JSONC, merges overlays, resolves asset URIs via `vscode.workspace.fs` + `vscode.Uri.joinPath` only) |
@@ -185,6 +185,7 @@ Encodes module purity boundaries (pure logic vs I/O) and execution trust boundar
 | `src/webview/issueText.ts` | Pure issue body preview helpers (`issueExcerpt`, `EXCERPT_MAX`) with whitespace collapsing and bidi/control neutralization |
 | `src/webview/issueBranch.ts` | Pure branch name suggestion for Start work (`slugifyTitle`, `suggestBranchName`, `branchNameProblem`, `startWorkRequest`, `BRANCH_SLUG_MAX`). Folds the untrusted GitHub title to `[a-z0-9-]` before it can reach an argv |
 | `src/webview/branchesModel.ts` | Pure Branches view model (`chipsFor`, `branchRow`, `sortLocals`, `filterRows`, `groupRemotes`, `tagRows`, `visibleWorktrees`, `canCheckout`) plus the literal tables the state parser validates against |
+| `src/webview/pollPlan.ts` | Pure poll scheduler core (`nextPoll`, `applyResult`, `DEFAULT_POLL_CONFIG`). Owns no timers: it returns the next delay and the caller owns the `setTimeout`. Visible-only, in-flight guard, error backoff, server `x-poll-interval` floor |
 | `src/webview/listNav.ts` | Pure roving-focus key model for the PR list (`nextIndex`), reused by Issues and Actions |
 | `src/webview/focusTrap.ts` | Pure Tab-trap maths and shared focusable selector for modal dialogs (`FOCUSABLE_SELECTOR`, `trapTabTarget`) |
 | `src/webview/useDialogFocusTrap.ts` | Hook wiring `focusTrap.ts` and Escape handling into `GuardDialog`, `MergeDialog`, `PromptDialog` |

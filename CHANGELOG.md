@@ -5,6 +5,15 @@ All notable changes to the "Git Control" extension will be documented in this fi
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.8.1] - 2026-11-08
+
+### Changed
+- GitHub requests now use conditional requests, so unchanged pull request and repository data no longer consumes API quota.
+- Reload in the Pull requests view revalidates against GitHub instead of showing a cached copy.
+
+### Fixed
+- A 304 Not Modified response is no longer treated as a GitHub failure.
+
 ## [3.8.0] - 2026-11-08
 
 ### Added

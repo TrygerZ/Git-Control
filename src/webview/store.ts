@@ -1007,7 +1007,7 @@ export interface GitHubState {
   /** Set when GitHub itself failed; git keeps working regardless. */
   error: ErrorBody | null;
   load(): Promise<void>;
-  loadPullRequests(): Promise<void>;
+  loadPullRequests(opts?: { refresh?: boolean }): Promise<void>;
   loadClosedPullRequests(): Promise<void>;
   loadCommitAuthors(hashes: string[]): Promise<void>;
   connect(): Promise<void>;
@@ -1103,14 +1103,20 @@ export const useGitHubStore = create<GitHubState>((set, get) => ({
     return inFlightLoad;
   },
 
-  async loadPullRequests() {
+  async loadPullRequests(opts?: { refresh?: boolean }) {
     if (inFlightPullRequests !== null) return inFlightPullRequests;
     const linkage = get().linkage;
     if (linkage === null || !linkage.available || linkage.owner === null || linkage.repo === null) return;
     const { owner, repo } = linkage;
     inFlightPullRequests = (async () => {
       try {
-        const result = await bridge.request('github/pullRequests', { owner, repo, state: 'open' });
+        const payload: { owner: string; repo: string; state: 'open'; refresh?: boolean } = {
+          owner,
+          repo,
+          state: 'open',
+          ...(opts?.refresh === true ? { refresh: true } : {}),
+        };
+        const result = await bridge.request('github/pullRequests', payload);
         set({
           pullRequests: result.pullRequests,
           pullRequestsLoadedAt: Date.now(),

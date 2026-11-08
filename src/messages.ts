@@ -498,6 +498,8 @@ export interface GitHubRateLimit {
   resetAt: number | null;
   cached: boolean;
   offline: boolean;
+  /** `x-poll-interval` in ms. Only present when GitHub sent one. */
+  pollIntervalMs?: number;
 }
 
 export interface GitHubRepoInfo {
@@ -532,6 +534,8 @@ export interface PullRequestsPayload {
   repo: string;
   /** Default `open`, per the PRD. */
   state?: 'open' | 'closed' | 'all';
+  /** Bypass the TTL and revalidate with `If-None-Match`. Manual Reload only. */
+  refresh?: boolean;
 }
 
 export interface PullRequestsResult {

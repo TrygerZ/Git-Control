@@ -233,6 +233,25 @@ test('two overlapping loadClosedPullRequests calls send one closed request', asy
   assert.equal(closed, 1, 'collapse and re-expand inside one request must not spend a second unit');
 });
 
+test('a refresh load asks the host to revalidate instead of replaying the cache', async () => {
+  resetStore();
+  const payloads: Array<Record<string, unknown>> = [];
+  const s = stub((kind, payload) => {
+    if (kind !== 'github/pullRequests') return { connected: true, login: 'me', scopes: [] };
+    payloads.push(payload as Record<string, unknown>);
+    return { pullRequests: [pr(1)], rateLimit: RATE };
+  });
+  try {
+    await useGitHubStore.getState().loadPullRequests();
+    await useGitHubStore.getState().loadPullRequests({ refresh: true });
+  } finally {
+    s.restore();
+  }
+  assert.equal(payloads[0]?.refresh, undefined, 'a plain load keeps the host default');
+  assert.equal(payloads[1]?.refresh, true, 'Reload revalidates');
+  assert.equal(payloads[1]?.state, 'open');
+});
+
 test('switching to another repository drops the previous pull request lists', async () => {
   resetStore();
   useGitHubStore.setState({
