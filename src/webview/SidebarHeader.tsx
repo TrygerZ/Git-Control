@@ -10,7 +10,15 @@ import { BranchSelector } from './BranchLegend';
 import { bridge } from './bridge';
 import { formatCount, headerModel, sanitizeGitText, type SyncBadge } from './format';
 import type { IconName } from './icons';
-import { toErrorBody, useChangesStore, useOperationStore, useRepoStore, useSettingsStore } from './store';
+import {
+  toErrorBody,
+  useChangesStore,
+  useGitHubStore,
+  useOperationStore,
+  useRepoStore,
+  useRouteStore,
+  useSettingsStore,
+} from './store';
 import { Icon } from './ui';
 import { useT } from './useT';
 
@@ -33,15 +41,24 @@ export function SidebarHeader(): JSX.Element | null {
   const loading = useChangesStore((s) => s.loading);
   const busy = useChangesStore((s) => s.busy);
   const pushToast = useOperationStore((s) => s.pushToast);
+  const loadPullRequests = useGitHubStore((s) => s.loadPullRequests);
+  const route = useRouteStore((s) => s.route);
 
   const model = headerModel(status, language);
   if (status === null || model === null) return null;
   const shell = strings.shell;
 
+  /**
+   * The header reload is the only Reload the user has (the "..." menu is still
+   * deferred), so it covers whichever list is on screen. On `prs` it asks the
+   * host to revalidate with `If-None-Match`, which costs one conditional request
+   * instead of a full payload and does not consume primary quota on a 304.
+   */
   const refresh = (): void => {
     void load();
     void loadStatus();
     void loadGraph();
+    if (route.id === 'prs') void loadPullRequests({ refresh: true });
   };
 
   const openExplorer = async (): Promise<void> => {

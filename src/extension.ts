@@ -1007,6 +1007,7 @@ class Controller implements vscode.Disposable {
     const { client } = await this.githubClient();
     const result = await client.pullRequests(payload.owner, payload.repo, {
       state: payload.state ?? 'open',
+      refresh: payload.refresh === true,
     });
     return { pullRequests: result.data, rateLimit: client.rateLimit(result.cached) };
   }

@@ -692,6 +692,9 @@ export class MessageBridge {
     if (payload.state !== undefined && !['open', 'closed', 'all'].includes(payload.state)) {
       fail(400, 'VALIDATION_ERROR', this.text().invalid, { detail: 'state' });
     }
+    if (payload.refresh !== undefined && typeof payload.refresh !== 'boolean') {
+      fail(400, 'VALIDATION_ERROR', this.text().invalid, { detail: 'refresh' });
+    }
     const list = this.host.githubPullRequests;
     if (list === undefined) fail(503, 'UNAVAILABLE', this.text().githubPending);
     return list(payload);
