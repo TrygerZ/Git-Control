@@ -591,6 +591,114 @@ export interface IssuesResult {
   rateLimit: GitHubRateLimit;
 }
 
+// ------------------------------------------------------------ actions (P13)
+
+/**
+ * Lifecycle state of a workflow run or job.
+ *
+ * `completed` alone says nothing about the outcome: read `conclusion` for that.
+ * Unknown strings from the API map to `pending`, never throw.
+ */
+export type RunStatus =
+  | 'queued'
+  | 'in_progress'
+  | 'completed'
+  | 'waiting'
+  | 'requested'
+  | 'pending';
+
+/** Outcome of a completed run or job. `null` while it is still running. */
+export type RunConclusion =
+  | 'success'
+  | 'failure'
+  | 'cancelled'
+  | 'skipped'
+  | 'timed_out'
+  | 'neutral'
+  | 'action_required'
+  | 'stale'
+  | 'startup_failure'
+  | null;
+
+export interface WorkflowRunInfo {
+  id: number;
+  workflowId: number;
+  /** Workflow name, e.g. `CI`. */
+  name: string;
+  /** `display_title`, falling back to the head commit subject. */
+  title: string;
+  runNumber: number;
+  /** `push`, `pull_request`, `workflow_dispatch`, ... */
+  event: string;
+  status: RunStatus;
+  conclusion: RunConclusion;
+  /** `head_branch`. `null` for a tag or an unknown ref. */
+  branch: string | null;
+  /** 40 hex head commit. */
+  sha: string;
+  /** `html_url`, kept only when it is an `https:` URL. Empty otherwise. */
+  url: string;
+  createdAt: string;
+  /** `run_started_at`. `null` for a run that never started. */
+  startedAt: string | null;
+  updatedAt: string;
+  attempt: number;
+}
+
+export interface WorkflowInfo {
+  id: number;
+  name: string;
+  path: string;
+  state: string;
+}
+
+export interface ActionsRunsPayload {
+  owner: string;
+  repo: string;
+  /** Validated with `validateBranchName`; absent means every branch. */
+  branch?: string;
+  /** Switches the request to the per-workflow route. */
+  workflowId?: number;
+  /** 1..50, default 30. */
+  perPage?: number;
+}
+
+export interface ActionsRunsResult {
+  runs: WorkflowRunInfo[];
+  /** Only populated when neither `branch` nor `workflowId` was given. */
+  workflows: WorkflowInfo[];
+  rateLimit: GitHubRateLimit;
+}
+
+export interface RunJobStep {
+  number: number;
+  name: string;
+  status: string;
+  conclusion: string | null;
+}
+
+export interface RunJobInfo {
+  id: number;
+  name: string;
+  status: RunStatus;
+  conclusion: RunConclusion;
+  startedAt: string | null;
+  completedAt: string | null;
+  url: string;
+  steps: RunJobStep[];
+}
+
+export interface ActionsJobsPayload {
+  owner: string;
+  repo: string;
+  runId: number;
+}
+
+export interface ActionsJobsResult {
+  jobs: RunJobInfo[];
+  rateLimit: GitHubRateLimit;
+}
+
 export interface CommitAuthorInfo {
   hash: string;
   login: string | null;
@@ -708,6 +816,10 @@ export interface RequestMap {
     response: ContributorIdentity;
   };
   'github/linkage': { payload: Record<string, never>; response: GitHubLinkage };
+  /** Workflow runs for a repository, optionally filtered by branch or workflow. */
+  'github/actionsRuns': { payload: ActionsRunsPayload; response: ActionsRunsResult };
+  /** Jobs of one workflow run. Sign-in required, like every Actions read. */
+  'github/actionsJobs': { payload: ActionsJobsPayload; response: ActionsJobsResult };
   'settings/get': { payload: SettingsGetPayload; response: SettingsSnapshot };
   'settings/set': { payload: SettingsSetPayload; response: SettingsSnapshot };
   /**
