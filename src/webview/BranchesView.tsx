@@ -98,10 +98,13 @@ export function BranchesView(): JSX.Element {
   const [mergeFor, setMergeFor] = useState<string | null>(null);
 
   /*
-   * The sidebar shell already wired the host events; this call is a no-op there
-   * and keeps the view usable when a test mounts it alone.
+   * The sidebar shell already wired the host events, so this call is a no-op
+   * there. It returns no cleanup on purpose: the subscription is process-wide,
+   * and unsubscribing on route change would tear down the shell's own wiring.
    */
-  useEffect(() => wireHostEvents('pending'), []);
+  useEffect(() => {
+    wireHostEvents('pending');
+  }, []);
 
   const sub: BranchesTab = route.id === 'branches' ? route.sub : 'local';
 

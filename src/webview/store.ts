@@ -1473,6 +1473,13 @@ export function wireHostEvents(mode: 'explorer' | 'pending'): () => void {
       else {
         void useChangesStore.getState().load();
         void useRepoStore.getState().refresh();
+        // Refs and worktrees move with the repository too, so an open Branches
+        // view would otherwise show a stale list after a checkout made
+        // elsewhere. Guarded by the route: reading refs costs two git spawns and
+        // nothing else on this panel displays them.
+        if (useRouteStore.getState().route.id === 'branches') {
+          void useBranchesStore.getState().load();
+        }
       }
     }, REFRESH_DEBOUNCE_MS);
   });

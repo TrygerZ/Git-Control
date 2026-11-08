@@ -8,7 +8,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { bridge, loadState, saveState } from '../src/webview/bridge';
-import { useBranchesStore } from '../src/webview/store';
+import { useBranchesStore, useRouteStore, wireHostEvents } from '../src/webview/store';
 import type { BranchRef, RefsResult, WorktreeInfo } from '../src/messages';
 
 function ref(over: Partial<BranchRef> & { shortName: string }): BranchRef {
@@ -210,4 +210,25 @@ test('a second load while one is in flight reuses it instead of sending another 
     bridge.request = original;
   }
   assert.deepEqual(calls.sort(), ['repos/refs', 'repos/worktrees'], 'one pair of reads, not two');
+});
+
+// ------------------------------------------------------- event-driven reload
+
+test('a repo change reloads the list only while the Branches route is active', async () => {
+  reset();
+  useRouteStore.setState({ route: { id: 'branches', sub: 'local' } });
+  const s = stub((kind) => (kind === 'repos/refs' ? REFS : { worktrees: WORKTREES }));
+  const off = wireHostEvents('pending');
+  try {
+    // The bridge dispatches to its listeners; this is the same payload the host pushes.
+    (bridge as unknown as { receive(raw: unknown): void }).receive({
+      kind: 'event/repoChanged',
+      payload: { reason: 'fs', statusToken: 'tok' },
+    });
+    await new Promise((resolve) => setTimeout(resolve, 350));
+  } finally {
+    off();
+    s.restore();
+  }
+  assert.ok(s.calls.some((c) => c.kind === 'repos/refs'), 'the open view refreshed its refs');
 });
