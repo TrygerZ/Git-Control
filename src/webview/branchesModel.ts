@@ -163,3 +163,8 @@ export function tagRows(refs: readonly BranchRef[], limit?: number): TagRowModel
 export function visibleWorktrees(list: readonly WorktreeInfo[]): WorktreeInfo[] {
   return list.length <= 1 ? [] : (list as WorktreeInfo[]);
 }
+
+/** D-P11-3: only a local branch can be checked out in this phase. */
+export function canCheckout(ref: BranchRef): boolean {
+  return ref.kind === 'local';
+}
