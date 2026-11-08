@@ -906,7 +906,6 @@ const en = {
     openOnGitHub: 'Open on GitHub',
     jobsLoading: 'Loading jobs...',
     jobsFailed: 'Jobs could not be loaded',
-    jobDuration: (when: string) => when,
     emptyTitle: 'No workflow runs yet',
     emptyBody: 'Runs appear here after a push triggers a workflow in this repository',
     emptyBranch: 'No runs for this branch yet',

@@ -1491,11 +1491,11 @@ export const useActionsStore = create<ActionsState>((set, get) => {
             };
           });
           useGitHubStore.setState({ rateLimit: result.rateLimit });
-          // The dot is about the branch the user is on, which is not the same as
-          // the filter: an unfiltered list still answers it, and a filter on some
-          // other branch must not move it.
+          // The dot is about the branch the user is on, which only an unfiltered
+          // read (branch filter null) can answer: a filter on some other branch
+          // must not move it.
           const repoBranch = useRepoStore.getState().status?.branch ?? null;
-          if (repoBranch !== null) {
+          if (branch === null && repoBranch !== null) {
             useNavStore.getState().setFailing(failingDot(result.runs, repoBranch));
           }
         } catch (err) {
@@ -1707,6 +1707,7 @@ export function wireHostEvents(mode: 'explorer' | 'pending'): () => void {
     refreshTimer = setTimeout(() => {
       if (mode === 'explorer') void useRepoStore.getState().refresh();
       else {
+        void useGitHubStore.getState().load();
         void useChangesStore.getState().load();
         void useRepoStore.getState().refresh();
         // Refs and worktrees move with the repository too, so an open Branches

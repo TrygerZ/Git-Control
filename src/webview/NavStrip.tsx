@@ -57,7 +57,7 @@ const ACTIONS_DESTINATION: NavDestination = {
   order: 35,
   icon: 'play',
   label: (s) => s.nav.actions,
-  ariaName: (s, _count) => s.nav.actionsFailingAria,
+  ariaName: (s, _count) => s.nav.actions,
   requiresGitHub: true,
 };
 navRegistry.register(ACTIONS_DESTINATION);

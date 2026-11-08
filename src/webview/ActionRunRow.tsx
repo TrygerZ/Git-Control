@@ -82,6 +82,7 @@ export function ActionRunRow({ run, now }: ActionRunRowProps): JSX.Element {
   const tone = toneOf(run);
   const icon = runStatusIcon(tone);
   const word = runStatusWord(run.status, run.conclusion, strings);
+  const title = sanitizeGitText(run.title || run.name);
 
   const handleToggle = (): void => {
     if (!expanded) {
@@ -98,6 +99,11 @@ export function ActionRunRow({ run, now }: ActionRunRowProps): JSX.Element {
           className="gc-actions__toggle"
           aria-expanded={expanded}
           aria-controls={expanded ? jobsId : undefined}
+          aria-label={
+            expanded
+              ? strings.actions.collapseRun(title)
+              : strings.actions.expandRun(title)
+          }
           onClick={handleToggle}
         >
           <span className="gc-actions__twisty" aria-hidden="true">
@@ -108,7 +114,7 @@ export function ActionRunRow({ run, now }: ActionRunRowProps): JSX.Element {
           </span>
           <span className="gc-visually-hidden">{word}</span>
           <span className="gc-actions__body">
-            <span className="gc-actions__title">{sanitizeGitText(run.title || run.name)}</span>
+            <span className="gc-actions__title">{title}</span>
             <span className="gc-actions__meta">{metaLine(run, language)}</span>
           </span>
           <span className="gc-actions__duration">{durationText(run, now, language)}</span>

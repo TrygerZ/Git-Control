@@ -45,9 +45,8 @@ export function ActionsFilters(): JSX.Element {
     const trigger = openMenu === 'branch' ? branchButtonRef.current : workflowButtonRef.current;
     if (trigger === null) return;
     const box = trigger.getBoundingClientRect();
-    const menu = menuRef.current?.querySelector<HTMLElement>('.gc-menu');
-    const width = menu?.offsetWidth ?? 240;
-    const height = menu?.offsetHeight ?? 0;
+    const width = menuRef.current?.offsetWidth ?? 240;
+    const height = menuRef.current?.offsetHeight ?? 0;
     const margin = 8;
     const x = Math.max(margin, Math.min(box.right - width, window.innerWidth - width - margin));
     const y = Math.min(box.bottom + 4, Math.max(margin, window.innerHeight - height - margin));
@@ -116,7 +115,7 @@ export function ActionsFilters(): JSX.Element {
   };
 
   return (
-    <div className="gc-actions__filters">
+    <div className="gc-actions__filters" aria-label={strings.actions.filterMenuAria}>
       <button
         ref={branchButtonRef}
         type="button"
@@ -237,26 +236,34 @@ export function ActionsFilters(): JSX.Element {
                 <span className="gc-menu__label">{strings.actions.allWorkflows}</span>
               </span>
             </button>
-            {workflows.map((w) => (
-              <button
-                key={w.id}
-                type="button"
-                className="gc-menu__item"
-                role="menuitemradio"
-                aria-checked={workflowId === w.id}
-                onClick={() => {
-                  selectWorkflow(w.id);
-                  closeMenu();
-                }}
-              >
-                <span className="gc-menu__icon" aria-hidden="true">
-                  {workflowId === w.id ? <Icon name="check" /> : null}
-                </span>
+            {workflows.length === 0 ? (
+              <div className="gc-menu__item" role="menuitem" aria-disabled="true" tabIndex={-1}>
                 <span className="gc-menu__body">
-                  <span className="gc-menu__label">{sanitizeGitText(w.name)}</span>
+                  <span className="gc-menu__label">{strings.actions.noWorkflows}</span>
                 </span>
-              </button>
-            ))}
+              </div>
+            ) : (
+              workflows.map((w) => (
+                <button
+                  key={w.id}
+                  type="button"
+                  className="gc-menu__item"
+                  role="menuitemradio"
+                  aria-checked={workflowId === w.id}
+                  onClick={() => {
+                    selectWorkflow(w.id);
+                    closeMenu();
+                  }}
+                >
+                  <span className="gc-menu__icon" aria-hidden="true">
+                    {workflowId === w.id ? <Icon name="check" /> : null}
+                  </span>
+                  <span className="gc-menu__body">
+                    <span className="gc-menu__label">{sanitizeGitText(w.name)}</span>
+                  </span>
+                </button>
+              ))
+            )}
           </div>
         </div>
       )}

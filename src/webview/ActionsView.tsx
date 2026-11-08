@@ -96,25 +96,27 @@ export function ActionsView(): JSX.Element {
 
       timer = setTimeout(async () => {
         if (cancelled) return;
-        const prev = useActionsStore.getState().runs;
         pollState = { ...pollState, inFlight: true };
         try {
           await load({ force: true });
-          const current = useActionsStore.getState().runs;
+          const currentError = useActionsStore.getState().error;
           const currentRl = useGitHubStore.getState().rateLimit;
-          const changed =
-            current !== prev &&
-            (current.length !== prev.length ||
-              current.some(
-                (r, i) =>
-                  r.id !== prev[i]?.id ||
-                  r.status !== prev[i]?.status ||
-                  r.conclusion !== prev[i]?.conclusion,
-              ));
-          pollState = applyResult(pollState, changed ? 'changed' : 'unchanged', {
-            rateLimited: currentRl?.remaining === 0,
-            offline: currentRl?.offline === true,
-          });
+          if (currentError !== null) {
+            pollState = applyResult(pollState, 'error', {
+              rateLimited: currentRl?.remaining === 0,
+              offline: currentRl?.offline === true,
+            });
+          } else {
+            const current = useActionsStore.getState().runs;
+            // Acceptance 7: poll active runs about every 15 s. Passing 'changed'
+            // resets consecutiveUnchanged so nextPoll does not back off to 120 s
+            // while a run stays in_progress. Pass 'unchanged' only when finished.
+            const stillActive = needsPolling(current);
+            pollState = applyResult(pollState, stillActive ? 'changed' : 'unchanged', {
+              rateLimited: currentRl?.remaining === 0,
+              offline: currentRl?.offline === true,
+            });
+          }
         } catch {
           const currentRl = useGitHubStore.getState().rateLimit;
           pollState = applyResult(pollState, 'error', {
@@ -211,7 +213,23 @@ export function ActionsView(): JSX.Element {
 
           <ActionsFilters />
 
-          {filteredRuns.length === 0 ? (
+          {actionsLoading && runs.length === 0 ? (
+            <FileListSkeleton rows={8} />
+          ) : actionsError !== null && runs.length === 0 ? (
+            <EmptyState
+              title={strings.actions.loadFailed}
+              hint={actionsError.code === 'FORBIDDEN' ? strings.actions.permissionHint : undefined}
+              action={
+                <button
+                  type="button"
+                  className="gc-button gc-button--quiet"
+                  onClick={() => void load({ force: true })}
+                >
+                  {strings.actions.retry}
+                </button>
+              }
+            />
+          ) : filteredRuns.length === 0 ? (
             <EmptyState
               title={
                 workflowId !== null

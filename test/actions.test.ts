@@ -215,12 +215,12 @@ test('workflowRuns adds the branch filter and encodes it', async () => {
   );
 });
 
-test('a workflowId switches to the per-workflow route and skips the branch query', async () => {
+test('a workflowId switches to the per-workflow route and includes the branch query', async () => {
   const h = fakeClient([response(200, { workflow_runs: [] })]);
   await h.gh.workflowRuns('o', 'r', { workflowId: 12, branch: 'main', perPage: 30 });
   assert.equal(
     h.calls[0]?.url,
-    'https://api.github.com/repos/o/r/actions/workflows/12/runs?per_page=30',
+    'https://api.github.com/repos/o/r/actions/workflows/12/runs?per_page=30&branch=main',
   );
 });
 
@@ -589,6 +589,11 @@ test('durationText drops the seconds once the duration reaches an hour', () => {
   assert.equal(durationText(r, 0, 'en'), '1h 2m');
 });
 
+test('durationText handles a completed run with garbage updatedAt', () => {
+  const r = run({ startedAt: '2026-11-01T10:00:00Z', updatedAt: 'garbage' });
+  assert.equal(durationText(r, 0, 'en'), '0s');
+});
+
 // ------------------------------------------------------------------- metaLine
 
 test('metaLine reads workflow, run number, trigger, and short sha', () => {
@@ -598,6 +603,11 @@ test('metaLine reads workflow, run number, trigger, and short sha', () => {
 
 test('metaLine omits a missing event instead of leaving a stray separator', () => {
   assert.equal(metaLine(run({ event: '' })), 'CI #482 - 9f8e7d6');
+});
+
+test('metaLine sanitizes bidi control characters in name and event', () => {
+  const line = metaLine(run({ name: 'CI‮evil' }));
+  assert.ok(!line.includes('‮'));
 });
 
 // ------------------------------------------------------------ formatDuration

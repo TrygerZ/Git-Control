@@ -343,9 +343,8 @@ export class GitHubClient {
   /**
    * Workflow runs, newest first.
    *
-   * `workflowId` switches to the per-workflow route, which is the only way the
-   * API offers to filter by workflow; `branch` then has no place there and is
-   * dropped rather than sent twice.
+   * `workflowId` switches to the per-workflow route. Both routes support the
+   * `branch` query.
    */
   async workflowRuns(
     owner: string,
@@ -354,11 +353,11 @@ export class GitHubClient {
   ): Promise<Fetched<WorkflowRunInfo[]>> {
     const perPage = clampPerPage(opts.perPage ?? 30);
     const base = `/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}`;
+    const branchPart = opts.branch === undefined ? '' : `&branch=${encodeURIComponent(opts.branch)}`;
     const path =
       opts.workflowId === undefined
-        ? `${base}/actions/runs?per_page=${perPage}&exclude_pull_requests=false` +
-          (opts.branch === undefined ? '' : `&branch=${encodeURIComponent(opts.branch)}`)
-        : `${base}/actions/workflows/${opts.workflowId}/runs?per_page=${perPage}`;
+        ? `${base}/actions/runs?per_page=${perPage}&exclude_pull_requests=false${branchPart}`
+        : `${base}/actions/workflows/${opts.workflowId}/runs?per_page=${perPage}${branchPart}`;
     const key = `runs:${owner}/${repo}:${opts.branch ?? '*'}:${opts.workflowId ?? '*'}:${perPage}`;
     // The TTL depends on what is cached, not on the request: a list with a run
     // still going is stale in seconds, a finished one is history.

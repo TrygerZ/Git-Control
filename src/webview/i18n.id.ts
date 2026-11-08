@@ -903,7 +903,6 @@ const id: Catalog = {
     openOnGitHub: 'Buka di GitHub',
     jobsLoading: 'Memuat job...',
     jobsFailed: 'Job tidak dapat dimuat',
-    jobDuration: (when: string) => when,
     emptyTitle: 'Belum ada run workflow',
     emptyBody: 'Run muncul di sini setelah push memicu workflow di repository ini',
     emptyBranch: 'Belum ada run untuk branch ini',

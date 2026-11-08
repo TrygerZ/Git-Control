@@ -230,7 +230,7 @@ test('the failing dot follows the newest completed run on the current branch', a
     rateLimit: RATE,
   }));
   try {
-    await useActionsStore.getState().load({ branch: 'main' });
+    await useActionsStore.getState().load({});
   } finally {
     fail.restore();
   }
@@ -244,11 +244,27 @@ test('the failing dot follows the newest completed run on the current branch', a
   try {
     // `force` because the first read is still inside the 60 s cache window and a
     // cached hit correctly returns the old verdict without a request.
-    await useActionsStore.getState().load({ branch: 'main', force: true });
+    await useActionsStore.getState().load({ force: true });
   } finally {
     pass.restore();
   }
   assert.equal(useNavStore.getState().failing, false);
+});
+
+test('a filter on another branch leaves an existing failing dot intact', async () => {
+  resetAll();
+  useNavStore.setState({ failing: true });
+  const pass = stub(() => ({
+    runs: [run({ branch: 'feat/a', status: 'completed', conclusion: 'success' })],
+    workflows: [],
+    rateLimit: RATE,
+  }));
+  try {
+    await useActionsStore.getState().load({ branch: 'feat/a' });
+  } finally {
+    pass.restore();
+  }
+  assert.equal(useNavStore.getState().failing, true);
 });
 
 test('the dot request is bounded and only sent when signed in', async () => {
@@ -282,4 +298,22 @@ test('reset drops runs, jobs, and the dot', () => {
   assert.deepEqual(useActionsStore.getState().runs, []);
   assert.equal(useActionsStore.getState().expanded.size, 0);
   assert.equal(useNavStore.getState().failing, false);
+});
+
+test('a repository switch clears the actions slice through linkage change', async () => {
+  resetAll();
+  useActionsStore.setState({ runs: [run()] });
+  const s = stub((kind) => {
+    if (kind === 'github/auth') return { connected: true, login: 'me', scopes: ['repo'] };
+    if (kind === 'github/linkage') return { ...LINKED, owner: 'other-owner' };
+    if (kind === 'github/pullRequests') return { pullRequests: [], rateLimit: RATE };
+    if (kind === 'github/issues') return { issues: [], rateLimit: RATE };
+    return {};
+  });
+  try {
+    await useGitHubStore.getState().load();
+  } finally {
+    s.restore();
+  }
+  assert.deepEqual(useActionsStore.getState().runs, []);
 });

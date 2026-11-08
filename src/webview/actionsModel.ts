@@ -6,7 +6,7 @@
  * testable without a browser.
  */
 import type { Lang, WorkflowRunInfo } from '../messages';
-import { shortHash } from './format';
+import { sanitizeGitText, shortHash } from './format';
 import { t } from './i18n';
 
 export type RunTone = 'success' | 'danger' | 'running' | 'queued' | 'neutral' | 'warning';
@@ -115,7 +115,10 @@ export function formatDuration(
 ): string {
   const strings = t(lang).actions;
   if (startedAt === null) return strings.durationQueued;
-  const totalSeconds = Math.max(0, Math.floor((endMs - Date.parse(startedAt)) / 1000));
+  const startMs = Date.parse(startedAt);
+  if (Number.isNaN(startMs)) return strings.durationQueued;
+  const validEnd = Number.isNaN(endMs) ? startMs : endMs;
+  const totalSeconds = Math.max(0, Math.floor((validEnd - startMs) / 1000));
   let formatted: string;
   if (totalSeconds < 60) {
     formatted = `${totalSeconds}s`;
@@ -137,8 +140,10 @@ export function metaLine(run: WorkflowRunInfo, lang: Lang = 'en'): string {
   const strings = t(lang).actions;
   const sha = shortHash(run.sha);
   const num = String(run.runNumber);
+  const name = sanitizeGitText(run.name);
   if (!run.event) {
-    return `${run.name} #${num} - ${sha}`;
+    return `${name} #${num} - ${sha}`;
   }
-  return strings.runMeta(run.name, num, run.event, sha);
+  const event = sanitizeGitText(run.event);
+  return strings.runMeta(name, num, event, sha);
 }

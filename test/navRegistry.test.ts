@@ -98,6 +98,27 @@ test('the shared navRegistry registers changes, prs, issues, actions, and branch
   assert.equal(branches.icon, 'git-branch');
 });
 
+test('actions destination uses resting accessible name and navTabs reflects failing state', () => {
+  const actions = navRegistry.list().find((d) => d.id === 'actions');
+  assert.ok(actions !== undefined);
+  const stringsEn = t('en');
+  assert.equal(actions.ariaName(stringsEn, null), stringsEn.nav.actions);
+
+  const tabsFailing = navTabs([actions], stringsEn, {
+    counts: {},
+    failing: true,
+    signedIn: true,
+  });
+  assert.equal(tabsFailing[0]?.ariaLabel, stringsEn.nav.actionsFailingAria);
+
+  const tabsOk = navTabs([actions], stringsEn, {
+    counts: {},
+    failing: false,
+    signedIn: true,
+  });
+  assert.equal(tabsOk[0]?.ariaLabel, stringsEn.nav.actions);
+});
+
 test('the strip needs at least two destinations to show', () => {
   assert.equal(MIN_VISIBLE_DESTINATIONS, 2);
   assert.equal(isNavVisible(0), false);
