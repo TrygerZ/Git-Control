@@ -70,6 +70,10 @@
         "title": "Git Control: Open Issues"
       },
       {
+        "command": "gitControl.openBranches",
+        "title": "Git Control: Open Branches"
+      },
+      {
         "command": "gitControl.refresh",
         "title": "Git Control: Refresh"
       },

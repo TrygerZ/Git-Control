@@ -48,6 +48,17 @@ const ISSUES_DESTINATION: NavDestination = {
 };
 navRegistry.register(ISSUES_DESTINATION);
 
+/* Frame 11 draws no badge on Branches, so the destination carries none. */
+const BRANCHES_DESTINATION: NavDestination = {
+  id: 'branches',
+  order: 40,
+  icon: 'git-branch',
+  label: (s) => s.nav.branches,
+  ariaName: (s, _count) => s.nav.branchesAria,
+  requiresGitHub: false,
+};
+navRegistry.register(BRANCHES_DESTINATION);
+
 export function NavStrip(): JSX.Element | null {
   const strings = useT();
   const route = useRouteStore((s) => s.route);

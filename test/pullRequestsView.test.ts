@@ -61,7 +61,7 @@ test('the nav destination registers as prs with the badge from the same array', 
   const prs = dests.find((d) => d.id === 'prs');
   assert.ok(prs !== undefined, 'prs must be registered');
   assert.equal(prs.requiresGitHub, false, 'the list stays readable without a token');
-  assert.deepEqual(dests.map((d) => d.id), ['changes', 'prs', 'issues'], 'order is the strip order');
+  assert.deepEqual(dests.map((d) => d.id), ['changes', 'prs', 'issues', 'branches'], 'order is the strip order');
 
   const src = read('src/webview/NavStrip.tsx');
   assert.match(src, /badgeCount\(/, 'the badge is the capped count, not a second request');

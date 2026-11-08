@@ -79,15 +79,19 @@ test('each registry is independent, and the shared one is a registry', () => {
   assert.ok(Array.isArray(navRegistry.list()));
 });
 
-test('the shared navRegistry registers changes, prs, and issues in order', () => {
+test('the shared navRegistry registers changes, prs, issues, and branches in order', () => {
   assert.deepEqual(
     navRegistry.list().map((d) => d.id),
-    ['changes', 'prs', 'issues'],
+    ['changes', 'prs', 'issues', 'branches'],
   );
   const issues = navRegistry.list().find((d) => d.id === 'issues');
   assert.ok(issues !== undefined);
   assert.equal(issues.requiresGitHub, true);
   assert.equal(issues.icon, 'issue');
+  const branches = navRegistry.list().find((d) => d.id === 'branches');
+  assert.ok(branches !== undefined, 'P11 registers the fifth destination');
+  assert.equal(branches.requiresGitHub, false, 'Branches works without a token');
+  assert.equal(branches.icon, 'git-branch');
 });
 
 test('the strip needs at least two destinations to show', () => {
