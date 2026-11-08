@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
+  AUTHOR_CACHE_MAX_ENTRIES,
   CACHE_MAX_ENTRIES,
   ETAG_MAX_ENTRIES,
   GitHubClient,
@@ -870,6 +871,47 @@ test('the etag store is bounded and evicts in insertion order', async () => {
     await tagged.gh.pullRequestsForCommit('o', 'r', `${1000 + i}`.padStart(40, '0'));
   }
   assert.equal(tagged.gh.etagSize, ETAG_MAX_ENTRIES, 'the bound holds');
+});
+
+test('commit avatar traffic cannot evict the pull request validator', async () => {
+  // Both webviews share one client, so a graph scroll on the Explorer fires
+  // `commitAuthors` for every visible hash through the same `get()` path. Those
+  // keys are unbounded in distinct hashes; if they shared one map with the list
+  // validators, a single scroll would silently turn Reload into a full read.
+  const calls: Array<{ url: string; headers: Record<string, string> }> = [];
+  const LIST = /\/repos\/o\/r\/pulls\?/;
+  const gh = new GitHubClient({
+    apiUrl: 'https://api.github.com',
+    token: TOKEN,
+    sleep: () => Promise.resolve(),
+    fetchImpl: (url, init) => {
+      calls.push({ url, headers: init.headers });
+      if (LIST.test(url) && init.headers['If-None-Match'] === ETAG) {
+        return Promise.resolve(response(304, ''));
+      }
+      return Promise.resolve(response(200, LIST.test(url) ? [] : { author: { login: 'a', avatar_url: 'u' } }, { etag: ETAG }));
+    },
+  });
+
+  await gh.pullRequests('o', 'r');
+  // Far past both bounds, the way a long graph session behaves.
+  for (let i = 0; i < AUTHOR_CACHE_MAX_ENTRIES + 50; i += 1) {
+    await gh.commitAuthors('o', 'r', [`${i}`.padStart(40, '0')]);
+  }
+
+  const before = calls.length;
+  const read = await gh.pullRequests('o', 'r', { refresh: true });
+  assert.equal(calls[before]?.headers['If-None-Match'], ETAG, 'the list validator survived the avatar traffic');
+  assert.equal(read.revalidated, true);
+});
+
+test('the author etag store is bounded on its own', async () => {
+  const h = client([response(200, { author: { login: 'a', avatar_url: 'u' } }, { etag: ETAG })]);
+  for (let i = 0; i < AUTHOR_CACHE_MAX_ENTRIES + 50; i += 1) {
+    await h.gh.commitAuthors('o', 'r', [`${i}`.padStart(40, '0')]);
+  }
+  assert.equal(h.gh.authorEtagSize, AUTHOR_CACHE_MAX_ENTRIES, 'the author bound holds');
+  assert.equal(h.gh.etagSize, 0, 'and it does not spill into the list store');
 });
 
 test('a revalidated etag is not evicted as if it were the oldest', async () => {

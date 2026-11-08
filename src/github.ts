@@ -128,6 +128,7 @@ const REQUEST_TIMEOUT_MS = 15_000;
 export const CACHE_MAX_ENTRIES = 200;
 export const AUTHOR_CACHE_MAX_ENTRIES = 1000;
 export const ETAG_MAX_ENTRIES = 200;
+export const AUTHOR_ETAG_MAX_ENTRIES = 1000;
 
 interface CacheEntry {
   at: number;
@@ -137,7 +138,6 @@ interface CacheEntry {
 interface EtagEntry {
   etag: string;
   value: unknown;
-  at: number;
 }
 
 export class GitHubClient {
@@ -160,7 +160,16 @@ export class GitHubClient {
    * validator; ETags are per-URL per the docs and not documented as per-token.
    */
   private readonly etags = new Map<string, EtagEntry>();
-  /** Salted digest prefix of the token. Never reversible, never logged. */
+  /** Author validators, split and bounded exactly like {@link authorCache}. */
+  private readonly authorEtags = new Map<string, EtagEntry>();
+  /**
+   * Random per-client id, used only to scope validator keys.
+   *
+   * Not derived from the token: the one property the key needs is that two
+   * clients never share a validator, and a random id gives that without putting
+   * any token-derived string into a key. `clearCache()` drops the store when the
+   * client is rebuilt on a token change.
+   */
   private readonly tokenFingerprint: string;
   /** Timestamps of recent failures, used for the sliding breaker window. */
   private failures: number[] = [];
@@ -229,9 +238,14 @@ export class GitHubClient {
     return this.authorCache.size;
   }
 
-  /** Number of stored validators. Exposed so the ETag bound is testable. */
+  /** Number of stored list validators. Exposed so the ETag bound is testable. */
   get etagSize(): number {
     return this.etags.size;
+  }
+
+  /** Number of stored author validators. */
+  get authorEtagSize(): number {
+    return this.authorEtags.size;
   }
 
   /** Drop cached responses. Used when the token changes. */
@@ -239,6 +253,7 @@ export class GitHubClient {
     this.cache.clear();
     this.authorCache.clear();
     this.etags.clear();
+    this.authorEtags.clear();
   }
 
   // ------------------------------------------------------------------ reads
@@ -557,13 +572,14 @@ export class GitHubClient {
     }
 
     const etagKey = `${this.tokenFingerprint}|${cacheKey}`;
-    const stored = this.etags.get(etagKey);
+    const store = this.etagStore(cacheKey);
+    const stored = store.get(etagKey);
     let response = await this.send(path, stored === undefined ? undefined : { etag: stored.etag });
 
     // A 304 is only answerable while the stored validator is still here. It can
     // vanish mid-flight when a concurrent read evicts it at the bound, so re-read
     // rather than trust the pre-request lookup. One unconditional retry, no loop.
-    if (response.status === 304 && !this.etags.has(etagKey)) {
+    if (response.status === 304 && !store.has(etagKey)) {
       response = await this.send(path);
       if (response.status === 304) {
         throw new GitHubError({
@@ -576,11 +592,11 @@ export class GitHubClient {
     }
 
     if (response.status === 304) {
-      const entry = this.etags.get(etagKey) as EtagEntry;
+      const entry = store.get(etagKey) as EtagEntry;
       // Re-insert through `setEtag` so the refreshed key moves to the end of the
       // eviction order. Mutating `at` in place would leave a key that is being
       // revalidated every few seconds as the next eviction candidate.
-      this.setEtag(etagKey, { etag: entry.etag, value: entry.value });
+      this.setEtag(cacheKey, etagKey, { etag: entry.etag, value: entry.value });
       this.setCache(cacheKey, entry.value);
       return {
         data: entry.value as T,
@@ -594,22 +610,36 @@ export class GitHubClient {
     const data = map(parsed, response.headers);
     this.setCache(cacheKey, data);
     const etag = response.headers.get('etag');
-    if (etag !== null && etag.length > 0) this.setEtag(etagKey, { etag, value: data });
+    if (etag !== null && etag.length > 0) this.setEtag(cacheKey, etagKey, { etag, value: data });
     return { data, cached: false, rateLimit: this.rateLimit(false) };
   }
 
   /**
-   * Store a validator, evicting the oldest past {@link ETAG_MAX_ENTRIES}.
-   * Same insertion-order policy as {@link setCache}, for the same reason.
+   * Store a validator, evicting the oldest past its bound.
+   *
+   * The author/non-author split mirrors {@link setCache} and exists for the same
+   * reason: `commitAuthor:` and `contributorId:` keys grow one per commit
+   * inspected, and both webviews share one client, so a graph scroll would
+   * otherwise evict the pull request list's validator and silently turn Reload
+   * back into a full read. Insertion-order eviction, same as the response cache.
    */
-  private setEtag(key: string, entry: { etag: string; value: unknown }): void {
-    this.etags.delete(key);
-    this.etags.set(key, { etag: entry.etag, value: entry.value, at: this.now() });
-    while (this.etags.size > ETAG_MAX_ENTRIES) {
-      const oldest = this.etags.keys().next();
+  private setEtag(cacheKey: string, key: string, entry: { etag: string; value: unknown }): void {
+    const isAuthor = isAuthorKey(cacheKey);
+    const target = isAuthor ? this.authorEtags : this.etags;
+    const maxEntries = isAuthor ? AUTHOR_ETAG_MAX_ENTRIES : ETAG_MAX_ENTRIES;
+
+    target.delete(key);
+    target.set(key, { etag: entry.etag, value: entry.value });
+    while (target.size > maxEntries) {
+      const oldest = target.keys().next();
       if (oldest.done === true) break;
-      this.etags.delete(oldest.value);
+      target.delete(oldest.value);
     }
+  }
+
+  /** The store a key belongs to. Routed on the cache key, never the salted one. */
+  private etagStore(cacheKey: string): Map<string, EtagEntry> {
+    return isAuthorKey(cacheKey) ? this.authorEtags : this.etags;
   }
 
   /**
@@ -982,6 +1012,11 @@ export function toIssues(body: unknown): IssueInfo[] {
     });
   }
   return result;
+}
+
+/** Keys that grow one per commit inspected, routed to their own bounded store. */
+function isAuthorKey(cacheKey: string): boolean {
+  return cacheKey.startsWith('commitAuthor:') || cacheKey.startsWith('contributorId:');
 }
 
 function parseJson(body: string): unknown {
