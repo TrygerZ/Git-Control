@@ -5065,6 +5065,277 @@ h3 {
  * The spinner keeps its ring and its text label, which is what actually carries
  * "still working".
  */
+/* ---------------------------------------------------------- Actions view (P13)
+
+   Frame 08: a filter row, then This branch and All branches. The run row is the
+   disclosure, so the whole title line is one button and the job list hangs under
+   it. Status is icon plus word: colour alone would fail in forced-colours mode. */
+
+.gc-actions {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  gap: var(--gc-space-2);
+  min-height: 0;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.gc-actions__filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--gc-space-2);
+  flex: 0 0 auto;
+}
+
+.gc-actions__filter {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--gc-space-2);
+  flex: 1 1 8em;
+  min-width: 0;
+  min-height: var(--gc-hit);
+  padding: var(--gc-space-1) var(--gc-space-3);
+  border: 1px solid var(--vscode-dropdown-border, var(--gc-border));
+  border-radius: var(--gc-radius-lg);
+  background: var(--vscode-dropdown-background, var(--gc-bg-surface));
+  color: var(--vscode-dropdown-foreground, var(--gc-text-primary));
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.gc-actions__filter:focus-visible {
+  outline: 1px solid var(--vscode-focusBorder);
+  outline-offset: -1px;
+}
+
+.gc-actions__filter-label {
+  flex: 0 0 auto;
+  color: var(--gc-text-muted);
+  font-size: var(--gc-fs-2xs);
+}
+
+.gc-actions__filter-value {
+  overflow: hidden;
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: var(--gc-fs-sm);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.gc-actions__filter-caret {
+  flex: 0 0 auto;
+  color: var(--gc-text-muted);
+}
+
+.gc-actions__groups {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.gc-actions__rows,
+.gc-actions__jobs {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gc-space-1);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.gc-actions__row {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  border-radius: var(--gc-radius);
+}
+
+.gc-actions__row-head {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--gc-space-1);
+  min-width: 0;
+  border-radius: var(--gc-radius);
+}
+
+.gc-actions__row-head:hover {
+  background: var(--gc-bg-hover);
+}
+
+.gc-actions__toggle {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--gc-space-3);
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: var(--gc-hit);
+  padding: var(--gc-space-2) var(--gc-space-3);
+  border: none;
+  border-radius: var(--gc-radius);
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.gc-actions__twisty {
+  flex: 0 0 auto;
+  color: var(--gc-text-muted);
+  font-size: var(--gc-fs-2xs);
+}
+
+.gc-actions__status {
+  display: inline-flex;
+  align-items: center;
+  flex: 0 0 auto;
+  font-size: var(--gc-fs-md);
+}
+
+/* One tone per run state; the word beside the glyph carries the same fact. */
+.gc-actions__status--success {
+  color: var(--gc-state-success);
+}
+
+.gc-actions__status--danger {
+  color: var(--gc-state-danger);
+}
+
+.gc-actions__status--running {
+  color: var(--gc-tone-changed);
+}
+
+.gc-actions__status--queued {
+  color: var(--gc-text-muted);
+}
+
+.gc-actions__status--neutral {
+  color: var(--gc-text-muted);
+}
+
+.gc-actions__status--warning {
+  color: var(--gc-state-warning);
+}
+
+/* The arc spins; the reduced-motion block below freezes it in place. */
+.gc-actions__status--running .gc-icon {
+  animation: gc-actions-spin 1.6s linear infinite;
+}
+
+@keyframes gc-actions-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.gc-actions__body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gc-space-1);
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.gc-actions__title {
+  overflow: hidden;
+  color: var(--gc-text-primary);
+  font-size: var(--gc-fs-sm);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.gc-actions__meta,
+.gc-actions__job-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--gc-space-2);
+  color: var(--gc-text-muted);
+  font-size: var(--gc-fs-2xs);
+}
+
+.gc-actions__duration {
+  flex: 0 0 auto;
+  color: var(--gc-text-muted);
+  font-size: var(--gc-fs-2xs);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.gc-actions__link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  min-width: var(--gc-hit);
+  min-height: var(--gc-hit);
+  padding: 0;
+  border: none;
+  border-radius: var(--gc-radius);
+  background: transparent;
+  color: var(--gc-text-muted);
+  cursor: pointer;
+  opacity: 0;
+}
+
+.gc-actions__row-head:hover .gc-actions__link,
+.gc-actions__row-head:focus-within .gc-actions__link {
+  opacity: 1;
+}
+
+.gc-actions__link:hover {
+  color: var(--gc-text-primary);
+}
+
+.gc-actions__jobs {
+  margin: 0 0 var(--gc-space-2) var(--gc-space-7);
+  padding-left: var(--gc-space-3);
+  border-left: 1px solid var(--gc-border-subtle);
+}
+
+.gc-actions__job {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--gc-space-2);
+  min-width: 0;
+  padding: var(--gc-space-1) 0;
+}
+
+.gc-actions__job-name {
+  overflow: hidden;
+  flex: 1 1 auto;
+  min-width: 0;
+  color: var(--gc-text-primary);
+  font-size: var(--gc-fs-xs);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.gc-actions__jobs-note {
+  color: var(--gc-text-muted);
+  font-size: var(--gc-fs-2xs);
+}
+
+.gc-actions__footer {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--gc-space-2);
+  flex: 0 0 auto;
+  padding-top: var(--gc-space-2);
+  border-top: 1px solid var(--gc-border-subtle);
+  color: var(--gc-text-muted);
+  font-size: var(--gc-fs-xs);
+}
+
+.gc-actions__quota {
+  margin-left: auto;
+  font-variant-numeric: tabular-nums;
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
