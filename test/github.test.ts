@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   AUTHOR_CACHE_MAX_ENTRIES,
+  AUTHOR_ETAG_MAX_ENTRIES,
   CACHE_MAX_ENTRIES,
   ETAG_MAX_ENTRIES,
   GitHubClient,
@@ -907,10 +908,10 @@ test('commit avatar traffic cannot evict the pull request validator', async () =
 
 test('the author etag store is bounded on its own', async () => {
   const h = client([response(200, { author: { login: 'a', avatar_url: 'u' } }, { etag: ETAG })]);
-  for (let i = 0; i < AUTHOR_CACHE_MAX_ENTRIES + 50; i += 1) {
+  for (let i = 0; i < AUTHOR_ETAG_MAX_ENTRIES + 50; i += 1) {
     await h.gh.commitAuthors('o', 'r', [`${i}`.padStart(40, '0')]);
   }
-  assert.equal(h.gh.authorEtagSize, AUTHOR_CACHE_MAX_ENTRIES, 'the author bound holds');
+  assert.equal(h.gh.authorEtagSize, AUTHOR_ETAG_MAX_ENTRIES, 'the author bound holds');
   assert.equal(h.gh.etagSize, 0, 'and it does not spill into the list store');
 });
 
@@ -970,6 +971,36 @@ test('two clients with different tokens never share an etag', async () => {
   assert.equal(a.gh.etagSize, 1);
   assert.equal(b.gh.etagSize, 1);
   assert.equal(b.calls[0]?.headers['If-None-Match'], undefined, 'a fresh client sends no etag');
+});
+
+test('a 200 without an etag drops the stored validator, so a later 304 cannot revert the list', async () => {
+  const calls: Array<Record<string, string>> = [];
+  let read = 0;
+  const gh = new GitHubClient({
+    apiUrl: 'https://api.github.com',
+    token: TOKEN,
+    sleep: () => Promise.resolve(),
+    fetchImpl: (_url, init) => {
+      calls.push(init.headers);
+      read += 1;
+      if (read === 1) return Promise.resolve(response(200, [{ number: 1 }], { etag: ETAG }));
+      if (read === 2) return Promise.resolve(response(200, [{ number: 2 }]));
+      // A server only answers 304 to a conditional request.
+      if (init.headers['If-None-Match'] !== undefined) return Promise.resolve(response(304, ''));
+      return Promise.resolve(response(200, [{ number: 2 }]));
+    },
+  });
+
+  await gh.pullRequests('o', 'r');
+  // A 200 with a new body but no validator must not leave the old etag paired
+  // with the old value; the next conditional read would then answer from it.
+  const second = await gh.pullRequests('o', 'r', { refresh: true });
+  assert.deepEqual(second.data.map((p) => p.number), [2]);
+
+  const third = await gh.pullRequests('o', 'r', { refresh: true });
+  assert.equal(calls[2]?.['If-None-Match'], undefined, 'the stale validator is gone');
+  assert.equal(third.revalidated, undefined);
+  assert.deepEqual(third.data.map((p) => p.number), [2], 'the list never reverts');
 });
 
 test('a response without an etag header stores no etag', async () => {

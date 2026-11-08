@@ -158,7 +158,7 @@ Encodes module purity boundaries (pure logic vs I/O) and execution trust boundar
 | `src/repository.ts` | Repository state cache, commit graph layout invocation, commit pagination |
 | `src/watcher.ts` | Dual-source file watcher (`vscode.workspace` + `fs.watch` for `.git`) with 500ms debounce |
 | `src/logger.ts` | Diagnostic logger with regex credential redaction |
-| `src/github.ts` | GitHub REST client with bounded response cache (`CACHE_MAX_ENTRIES = 200`, `AUTHOR_CACHE_MAX_ENTRIES = 1000`), bounded ETag store (`ETAG_MAX_ENTRIES = 200`) for conditional reads, and circuit breaker (5 failures / 60s). A 304 is a success, never a breaker failure |
+| `src/github.ts` | GitHub REST client with bounded response cache (`CACHE_MAX_ENTRIES = 200`, `AUTHOR_CACHE_MAX_ENTRIES = 1000`), bounded ETag stores (`ETAG_MAX_ENTRIES = 200`, `AUTHOR_ETAG_MAX_ENTRIES = 1000`, split like the response cache) for conditional reads, and circuit breaker (5 failures / 60s). A 304 is a success, never a breaker failure |
 | `src/remoteUrl.ts` | Remote URL parser and credential stripper |
 | `src/layout.ts` | Deterministic DAG layout engine (pure: no DOM, no git, no vscode; identical inputs yield byte-identical output; used only by `src/repository.ts`) |
 | `src/iconTheme.ts` | Extension-host icon theme extractor (reads active JSON/JSONC, merges overlays, resolves asset URIs via `vscode.workspace.fs` + `vscode.Uri.joinPath` only) |

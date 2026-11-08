@@ -610,7 +610,14 @@ export class GitHubClient {
     const data = map(parsed, response.headers);
     this.setCache(cacheKey, data);
     const etag = response.headers.get('etag');
-    if (etag !== null && etag.length > 0) this.setEtag(cacheKey, etagKey, { etag, value: data });
+    if (etag !== null && etag.length > 0) {
+      this.setEtag(cacheKey, etagKey, { etag, value: data });
+    } else {
+      // A 200 that carries no validator invalidates the one we held: keeping it
+      // would pair an old etag with a new value, and the next 304 would answer
+      // from the old value and re-cache it, silently reverting the list.
+      store.delete(etagKey);
+    }
     return { data, cached: false, rateLimit: this.rateLimit(false) };
   }
 
