@@ -5,7 +5,7 @@ import * as path from 'node:path';
 import { GitError, GitRunner } from '../src/git';
 import { GitHubError } from '../src/github';
 import { MessageBridge, toErrorBody, type BridgeHost, type WebviewLike } from '../src/bridge';
-import { shouldRemember } from '../src/bridgePure';
+import { idempotencyKeyOf, shouldRemember } from '../src/bridgePure';
 import { hostText } from '../src/hostText';
 import { Logger, type LogSink } from '../src/logger';
 import { RepositoryService, type PersistentStore } from '../src/repository';
@@ -3032,4 +3032,72 @@ test('amend in a detached HEAD on a local-only commit is still allowed', async (
   if (!response.ok) return;
   const data = response.data as { commit: string | null };
   assert.notEqual(data.commit, local);
+});
+
+test('repos/refs flags merged and gone, drops pseudo-refs, and rejects a payload', async (t) => {
+  const dir = await makeFixture('branches');
+  t.after(() => cleanup(dir));
+  const repo = new RepositoryService({ folderPath: dir, gitPath: 'git', store: new MemoryStore() });
+  const h = harness(repo);
+  t.after(() => h.bridge.dispose());
+
+  const response = await h.webview.send(req('repos/refs', {}));
+  assert.equal(response.ok, true);
+  if (!response.ok) return;
+  const result = response.data as {
+    refs: Array<{ refName: string; shortName: string; kind: string; gone: boolean; merged: boolean }>;
+    head: string | null;
+    currentBranch: string | null;
+    base: string | null;
+  };
+
+  assert.equal(result.base, 'main');
+  assert.equal(result.currentBranch, 'main');
+  assert.equal(typeof result.head, 'string');
+
+  // Exactly one merged branch, and it is not the base nor HEAD.
+  assert.deepEqual(result.refs.filter((r) => r.merged).map((r) => r.shortName), ['merged-local']);
+  assert.deepEqual(result.refs.filter((r) => r.gone).map((r) => r.shortName), ['gone-upstream']);
+
+  // No pseudo-ref and no symbolic remote head can be offered as a target.
+  assert.deepEqual(result.refs.filter((r) => r.kind === 'other'), []);
+  assert.deepEqual(result.refs.filter((r) => r.refName.endsWith('/HEAD')), []);
+  assert.ok(result.refs.some((r) => r.kind === 'remote'));
+  assert.ok(result.refs.some((r) => r.kind === 'tag'));
+
+  const invalid = await h.webview.send(req('repos/refs', { unexpected: true }));
+  assert.equal(invalid.ok, false);
+  if (invalid.ok) return;
+  assert.equal(invalid.error.code, 'VALIDATION_ERROR');
+});
+
+test('repos/worktrees lists the repository and rejects a payload', async (t) => {
+  const dir = await makeFixture('single');
+  t.after(() => cleanup(dir));
+  const repo = new RepositoryService({ folderPath: dir, gitPath: 'git', store: new MemoryStore() });
+  const h = harness(repo);
+  t.after(() => h.bridge.dispose());
+
+  const response = await h.webview.send(req('repos/worktrees', {}));
+  assert.equal(response.ok, true);
+  if (!response.ok) return;
+  const result = response.data as {
+    worktrees: Array<{ path: string; branch: string | null; isCurrent: boolean; bare: boolean }>;
+  };
+  assert.equal(result.worktrees.length, 1);
+  assert.equal(result.worktrees[0]?.branch, 'main');
+  assert.equal(result.worktrees[0]?.isCurrent, true);
+  assert.equal(result.worktrees[0]?.bare, false);
+
+  const invalid = await h.webview.send(req('repos/worktrees', { unexpected: true }));
+  assert.equal(invalid.ok, false);
+  if (invalid.ok) return;
+  assert.equal(invalid.error.code, 'VALIDATION_ERROR');
+});
+
+test('repos/refs and repos/worktrees never take the mutation idempotency path', () => {
+  for (const kind of ['repos/refs', 'repos/worktrees']) {
+    const request = { id: 'x', kind, payload: { idempotencyKey: 'k' } } as unknown as Request;
+    assert.equal(idempotencyKeyOf(request), null, kind);
+  }
 });

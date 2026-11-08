@@ -78,6 +78,7 @@ import type {
   OpenStashDiffPayload,
   PullRequestsPayload,
   PullRequestsResult,
+  RefsResult,
   RemoteInfo,
   RepoGraph,
   RepoStatus,
@@ -93,6 +94,7 @@ import type {
   StashFile,
   StashShowPayload,
   StatusPayload,
+  WorktreeInfo,
 } from './messages';
 
 /** Narrow slice of `vscode.Webview`. */
@@ -330,6 +332,12 @@ export class MessageBridge {
       case 'repos/contributors':
         validateEmptyPayload(request.payload, this.text().invalid);
         return this.handleContributors();
+      case 'repos/refs':
+        validateEmptyPayload(request.payload, this.text().invalid);
+        return this.handleRefs();
+      case 'repos/worktrees':
+        validateEmptyPayload(request.payload, this.text().invalid);
+        return this.handleWorktrees();
       case 'stash/list':
         validateEmptyPayload(request.payload, this.text().invalid);
         return this.handleStashList();
@@ -474,6 +482,18 @@ export class MessageBridge {
   private async handleContributors(): Promise<ContributorsResponse> {
     const repo = await this.repository();
     return repo.contributors();
+  }
+
+  /** Branch and tag inventory with merged and gone markers. Readonly; no guard needed. */
+  private async handleRefs(): Promise<RefsResult> {
+    const repo = await this.repository();
+    return repo.refs();
+  }
+
+  /** Worktree list for the active repository. Readonly; no guard needed. */
+  private async handleWorktrees(): Promise<{ worktrees: WorktreeInfo[] }> {
+    const repo = await this.repository();
+    return { worktrees: await repo.worktrees() };
   }
 
   /** Query list of stash entries. Readonly; no guard needed. */

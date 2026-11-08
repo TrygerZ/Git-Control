@@ -575,3 +575,21 @@ test('isMergeCommit detects merge vs regular commits with cache and git fallback
   assert.equal(await repo.isMergeCommit(regularCommit!.hash), false);
 });
 
+
+test('graph refs expose gone and committedAt but never merged', async (t) => {
+  const dir = await makeFixture('branches');
+  t.after(() => cleanup(dir));
+  const repo = service(dir);
+
+  const graph = await repo.graph({ limit: 50 });
+  const gone = graph.refs.find((r) => r.shortName === 'gone-upstream');
+  assert.equal(gone?.gone, true);
+  assert.equal(typeof gone?.committedAt, 'string');
+  // Every other ref reports gone: false.
+  assert.deepEqual(
+    graph.refs.filter((r) => r.gone).map((r) => r.shortName),
+    ['gone-upstream'],
+  );
+  // `merged` belongs to BranchRef only: the graph payload must not carry it.
+  for (const ref of graph.refs) assert.equal('merged' in ref, false, ref.refName);
+});

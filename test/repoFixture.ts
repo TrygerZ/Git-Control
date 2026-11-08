@@ -36,7 +36,9 @@ export type FixtureKind =
   /** One commit on `main`, tracked by bare remote `origin` at `.git/bare.git`. */
   | 'remote'
   /** Commit with subject and body containing control characters (\x1f, \x1e). */
-  | 'control-chars';
+  | 'control-chars'
+  /** Branch variety: ahead, gone, merged, local-only, tags, and stash. */
+  | 'branches';
 
 /** Built templates, one per kind per process. */
 const templates = new Map<FixtureKind, Promise<string>>();
@@ -133,6 +135,50 @@ async function buildTemplate(kind: FixtureKind): Promise<string> {
     await bareGit.run(['init', '--bare', '--quiet', '--initial-branch=main', bareDir]);
     await git.run(['remote', 'add', 'origin', './.git/bare.git']);
     await git.run(['push', '--quiet', '-u', 'origin', 'main']);
+    return dir;
+  }
+
+  if (kind === 'branches') {
+    await fs.writeFile(path.join(dir, 'a.txt'), 'one\n', 'utf8');
+    await git.stage(['a.txt']);
+    await git.commit('initial commit');
+    const bareDir = path.join(dir, '.git', 'bare.git');
+    const bareGit = new GitRunner({ gitPath: 'git', cwd: dir });
+    await bareGit.run(['init', '--bare', '--quiet', '--initial-branch=main', bareDir]);
+    await git.run(['remote', 'add', 'origin', './.git/bare.git']);
+    await git.run(['push', '--quiet', '-u', 'origin', 'main']);
+    await git.run(['remote', 'set-head', 'origin', 'main']);
+
+    await git.run(['tag', 'v1.0.0']);
+    await git.run(['tag', '-a', '-m', 'v1.1.0', 'v1.1.0']);
+
+    await git.run(['branch', 'merged-local', 'main']);
+
+    await git.createBranch('feat/ahead', 'main');
+    await git.run(['push', '--quiet', '-u', 'origin', 'feat/ahead']);
+    await fs.writeFile(path.join(dir, 'ahead-1.txt'), 'ahead 1\n', 'utf8');
+    await git.stage(['ahead-1.txt']);
+    await git.commit('ahead 1');
+    await fs.writeFile(path.join(dir, 'ahead-2.txt'), 'ahead 2\n', 'utf8');
+    await git.stage(['ahead-2.txt']);
+    await git.commit('ahead 2');
+
+    await git.createBranch('gone-upstream', 'main');
+    await git.run(['push', '--quiet', '-u', 'origin', 'gone-upstream']);
+    await fs.writeFile(path.join(dir, 'gone.txt'), 'gone\n', 'utf8');
+    await git.stage(['gone.txt']);
+    await git.commit('gone 1');
+    await git.run(['push', '--quiet', 'origin', '--delete', 'gone-upstream']);
+    await git.run(['fetch', '--quiet', '--prune', 'origin']);
+
+    await git.createBranch('local-only', 'main');
+    await fs.writeFile(path.join(dir, 'local.txt'), 'local\n', 'utf8');
+    await git.stage(['local.txt']);
+    await git.commit('local 1');
+
+    await git.switchBranch('main');
+    await fs.writeFile(path.join(dir, 'a.txt'), 'stash me\n', 'utf8');
+    await git.run(['stash', 'push', '-m', 'stash']);
     return dir;
   }
 

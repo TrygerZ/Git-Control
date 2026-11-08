@@ -62,6 +62,32 @@ export interface RefInfo {
   ahead: number;
   behind: number;
   isHead: boolean;
+  /** Upstream branch no longer exists on the remote. */
+  gone: boolean;
+  /** Committer date for commits, tagger date for annotated tags, null when git prints nothing. */
+  committedAt: string | null;
+}
+
+export interface BranchRef extends RefInfo {
+  merged: boolean;
+}
+
+export interface RefsResult {
+  refs: BranchRef[];
+  head: string | null;
+  currentBranch: string | null;
+  base: string | null;
+}
+
+export interface WorktreeInfo {
+  path: string;
+  head: string | null;
+  branch: string | null;
+  detached: boolean;
+  bare: boolean;
+  locked: boolean;
+  prunable: boolean;
+  isCurrent: boolean;
 }
 
 export interface ChangeEntry {
@@ -630,6 +656,8 @@ export interface RequestMap {
   'repos/graph': { payload: GraphPayload; response: RepoGraph };
   'repos/remotes': { payload: Record<string, never>; response: { remotes: RemoteInfo[] } };
   'repos/contributors': { payload: ContributorsRequest; response: ContributorsResponse };
+  'repos/refs': { payload: Record<string, never>; response: RefsResult };
+  'repos/worktrees': { payload: Record<string, never>; response: { worktrees: WorktreeInfo[] } };
   'stash/list': { payload: Record<string, never>; response: StashEntry[] };
   'stash/show': { payload: StashShowPayload; response: StashFile[] };
   'commits/detail': { payload: CommitDetailPayload; response: CommitDetail };

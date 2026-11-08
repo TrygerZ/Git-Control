@@ -14,7 +14,8 @@ function node(patch: Partial<GraphNode> = {}): GraphNode {
 
 function ref(shortName: string, kind: RefInfo['kind'], objectName = node().hash): RefInfo {
   return { refName: kind === 'local' ? `refs/heads/${shortName}` : `refs/remotes/${shortName}`,
-    shortName, kind, objectName, upstream: null, ahead: 0, behind: 0, isHead: false };
+    shortName, kind, objectName, upstream: null, ahead: 0, behind: 0, isHead: false,
+    gone: false, committedAt: null };
 }
 
 function status(patch: Partial<RepoStatus> = {}): RepoStatus {

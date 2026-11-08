@@ -559,6 +559,8 @@ function ref(patch: Partial<RefInfo> = {}): RefInfo {
     ahead: 0,
     behind: 0,
     isHead: false,
+    gone: false,
+    committedAt: null,
     ...patch,
   };
 }

@@ -8,9 +8,11 @@
  * (backed by `workspaceState` in production) so the service stays testable.
  */
 import { createHash } from 'node:crypto';
+import * as path from 'node:path';
 import { GitRunner } from './git';
 import { layoutGraph, type LayoutRef } from './layout';
 import type {
+  BranchRef,
   ChangeEntry,
   CommitDetail,
   CommitFileChange,
@@ -19,12 +21,14 @@ import type {
   GraphNode,
   Lang,
   RefInfo,
+  RefsResult,
   RepoGraph,
   RepoStatus,
   StashEntry,
   StashFile,
+  WorktreeInfo,
 } from './messages';
-import type { ParsedCommit, ParsedNumstatEntry, ParsedRef, ParsedStatusEntry } from './gitParse';
+import { parseTrack, type ParsedCommit, type ParsedNumstatEntry, type ParsedRef, type ParsedStatusEntry } from './gitParse';
 
 /** Narrow slice of `vscode.Memento` that this service needs. */
 export interface PersistentStore {
@@ -72,6 +76,8 @@ export const MAX_STAT_ENTRIES = 2000;
  */
 export const DETAIL_CACHE_MAX_ENTRIES = 200;
 const LAST_FETCH_KEY_PREFIX = 'gitControl.lastFetchAt:';
+/** Matches the symbolic remote head `refs/remotes/<remote>/HEAD` (exactly three segments). */
+const SYMBOLIC_REMOTE_HEAD = /^refs\/remotes\/[^/]+\/HEAD$/;
 
 export class RepositoryService {
   readonly folderPath: string;
@@ -360,6 +366,76 @@ export class RepositoryService {
     return parents.length >= 2;
   }
 
+  async refs(): Promise<RefsResult> {
+    const [rawRefs, current, originHead] = await Promise.all([
+      this.git.refs(),
+      this.git.currentBranch(),
+      this.git.originHead(),
+    ]);
+
+    const refInfos = rawRefs.map(toRefInfo);
+    const locals = refInfos.filter((r) => r.kind === 'local').map((r) => r.shortName);
+    const base = pickBaseBranch({ locals, originHead, current: current.branch });
+
+    const mergedSet = base !== null ? await this.git.mergedBranches(base) : new Set<string>();
+
+    const filtered: BranchRef[] = [];
+    for (const info of refInfos) {
+      if (info.kind === 'other' || (info.kind === 'remote' && SYMBOLIC_REMOTE_HEAD.test(info.refName))) {
+        continue;
+      }
+      const isBaseBranch = base !== null && info.refName === `refs/heads/${base}`;
+      const merged =
+        info.kind === 'local' &&
+        mergedSet.has(info.refName) &&
+        !isBaseBranch &&
+        !info.isHead;
+
+      filtered.push({
+        ...info,
+        merged,
+      });
+    }
+
+    return {
+      refs: filtered,
+      head: current.head,
+      currentBranch: current.branch,
+      base,
+    };
+  }
+
+  async worktrees(): Promise<WorktreeInfo[]> {
+    const [raw, root] = await Promise.all([this.git.worktrees(), this.repoRoot()]);
+    const currentRoot =
+      process.platform === 'win32'
+        ? path.resolve(root).toLowerCase()
+        : path.resolve(root);
+
+    return raw.map((wt) => {
+      const wtPath =
+        process.platform === 'win32'
+          ? path.resolve(wt.path).toLowerCase()
+          : path.resolve(wt.path);
+
+      let branch = wt.branch;
+      if (branch !== null && branch.startsWith('refs/heads/')) {
+        branch = branch.slice('refs/heads/'.length);
+      }
+
+      return {
+        path: wt.path,
+        head: wt.head,
+        branch,
+        detached: wt.detached,
+        bare: wt.bare,
+        locked: wt.locked !== null,
+        prunable: wt.prunable !== null,
+        isCurrent: wtPath === currentRoot,
+      };
+    });
+  }
+
   // ------------------------------------------------------------ fetch clock
 
   /** Epoch ms of the last successful fetch, surviving reloads. */
@@ -559,6 +635,33 @@ function toConflicts(entries: readonly ParsedStatusEntry[]): ConflictEntry[] {
     .map((e) => ({ path: e.path, code: `${e.indexStatus}${e.worktreeStatus}` }));
 }
 
+export interface BaseBranchInput {
+  locals: readonly string[];
+  originHead: string | null;
+  current: string | null;
+}
+
+/**
+ * Base branch the `merged` flag is computed against.
+ *
+ * Order: the local branch behind `origin/HEAD`, then `main`, then `master`, then
+ * whatever is checked out. `null` means no branch can be called merged, which is
+ * the safe answer for a detached HEAD or an empty repository. The result is
+ * advisory: `git branch -d` makes its own check, so a `true` here never replaces
+ * git's refusal.
+ */
+export function pickBaseBranch(input: BaseBranchInput): string | null {
+  const { locals, originHead, current } = input;
+  if (originHead !== null) {
+    const stripped = originHead.startsWith('origin/') ? originHead.slice('origin/'.length) : originHead;
+    if (locals.includes(stripped)) return stripped;
+  }
+  if (locals.includes('main')) return 'main';
+  if (locals.includes('master')) return 'master';
+  if (current !== null && locals.includes(current)) return current;
+  return null;
+}
+
 function toLayoutRef(ref: ParsedRef): LayoutRef {
   return { refName: ref.refName, objectName: ref.objectName };
 }
@@ -574,6 +677,8 @@ function toRefInfo(ref: ParsedRef): RefInfo {
     ahead: counts.ahead,
     behind: counts.behind,
     isHead: ref.isHead,
+    gone: counts.gone,
+    committedAt: ref.committedAt,
   };
 }
 
@@ -602,16 +707,6 @@ function shortRefName(refName: string): string {
   // is never handed back to git as a branch name.
   if (refName.startsWith('refs/')) return refName.slice('refs/'.length);
   return refName;
-}
-
-/** Parse `%(upstream:track)`, e.g. `[ahead 2, behind 1]`. */
-function parseTrack(track: string): { ahead: number; behind: number } {
-  const ahead = /ahead (\d+)/.exec(track);
-  const behind = /behind (\d+)/.exec(track);
-  return {
-    ahead: ahead === null ? 0 : Number.parseInt(ahead[1] as string, 10),
-    behind: behind === null ? 0 : Number.parseInt(behind[1] as string, 10),
-  };
 }
 
 function totalsOf(

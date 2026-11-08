@@ -289,7 +289,7 @@ export function parseRevListParents(raw: string): string[] {
 }
 
 /** Field order of {@link REFS_FORMAT}. */
-export const REFS_FORMAT = '%(refname)%1f%(objectname)%1f%(upstream)%1f%(upstream:track)%1f%(HEAD)';
+export const REFS_FORMAT = '%(refname)%1f%(objectname)%1f%(upstream)%1f%(upstream:track)%1f%(HEAD)%1f%(creatordate:iso-strict)';
 
 export interface ParsedRef {
   refName: string;
@@ -297,6 +297,100 @@ export interface ParsedRef {
   upstream: string | null;
   track: string;
   isHead: boolean;
+  /** Committer date for commits, tagger date for annotated tags. Null when git prints nothing. */
+  committedAt: string | null;
+}
+
+export interface TrackInfo {
+  ahead: number;
+  behind: number;
+  gone: boolean;
+}
+
+export function parseTrack(track: string): TrackInfo {
+  const aheadMatch = /\bahead (\d+)\b/.exec(track);
+  const behindMatch = /\bbehind (\d+)\b/.exec(track);
+  return {
+    ahead: aheadMatch ? Number(aheadMatch[1]) : 0,
+    behind: behindMatch ? Number(behindMatch[1]) : 0,
+    gone: track.includes('[gone]'),
+  };
+}
+
+export interface ParsedWorktree {
+  path: string;
+  head: string | null;
+  branch: string | null;
+  detached: boolean;
+  bare: boolean;
+  locked: string | null;
+  prunable: string | null;
+}
+
+export function parseWorktrees(raw: string): ParsedWorktree[] {
+  const result: ParsedWorktree[] = [];
+  const lines = raw.split(/\r?\n/);
+  let current: ParsedWorktree | null = null;
+
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (trimmed.length === 0) {
+      if (current !== null) {
+        result.push(current);
+        current = null;
+      }
+      continue;
+    }
+
+    const spaceIdx = line.indexOf(' ');
+    const key = spaceIdx === -1 ? line : line.slice(0, spaceIdx);
+    const value = spaceIdx === -1 ? '' : line.slice(spaceIdx + 1);
+
+    if (key === 'worktree') {
+      if (current !== null) {
+        result.push(current);
+      }
+      current = {
+        path: value,
+        head: null,
+        branch: null,
+        detached: false,
+        bare: false,
+        locked: null,
+        prunable: null,
+      };
+      continue;
+    }
+
+    if (current === null) continue;
+
+    if (key === 'HEAD') {
+      current.head = value;
+    } else if (key === 'branch') {
+      current.branch = value;
+    } else if (key === 'detached') {
+      current.detached = true;
+    } else if (key === 'bare') {
+      current.bare = true;
+    } else if (key === 'locked') {
+      current.locked = value;
+    } else if (key === 'prunable') {
+      current.prunable = value;
+    }
+  }
+
+  if (current !== null) {
+    result.push(current);
+  }
+
+  return result;
+}
+
+export function parseRefNameList(raw: string): string[] {
+  return raw
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0);
 }
 
 /** Parse `git for-each-ref --format=REFS_FORMAT`, one ref per line. */
@@ -306,13 +400,15 @@ export function parseRefs(raw: string): ParsedRef[] {
     if (line.length === 0) continue;
     const fields = line.split('\x1f');
     if (fields.length < 5) continue;
-    const [refName, objectName, upstream, track, head] = fields as [string, string, string, string, string];
+    const [refName, objectName, upstream, track, head, date] = fields as [string, string, string, string, string, string | undefined];
+    const committedAt = date !== undefined && date.length > 0 ? date : null;
     refs.push({
       refName,
       objectName,
       upstream: upstream.length > 0 ? upstream : null,
       track,
       isHead: head.trim() === '*',
+      committedAt,
     });
   }
   return refs;
