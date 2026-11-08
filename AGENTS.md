@@ -187,6 +187,10 @@ Encodes module purity boundaries (pure logic vs I/O) and execution trust boundar
 | `src/webview/branchesModel.ts` | Pure Branches view model (`chipsFor`, `branchRow`, `sortLocals`, `filterRows`, `groupRemotes`, `tagRows`, `visibleWorktrees`, `canCheckout`) plus the literal tables the state parser validates against |
 | `src/webview/pollPlan.ts` | Pure poll scheduler core (`nextPoll`, `applyResult`, `DEFAULT_POLL_CONFIG`). Owns no timers: it returns the next delay and the caller owns the `setTimeout`. Visible-only, in-flight guard, error backoff, server `x-poll-interval` floor |
 | `src/webview/listNav.ts` | Pure roving-focus key model for the PR list (`nextIndex`), reused by Issues and Actions |
+| `src/webview/actionsModel.ts` | Pure Actions view model (`toneOf`, `groupRuns`, `branchesWithRuns`, `filterByWorkflow`, `failingDot`, `needsPolling`, `durationText`, `metaLine`) plus `ALL_BRANCHES_CAP`. Zero `vscode`, react, or DOM imports |
+| `src/webview/ActionsView.tsx` | Sidebar Actions view. P07 gate with `view: 'actions'`, two collapsible groups, empty and error states, footer. Owns the P12 poll timer and the bounded nav dot probe |
+| `src/webview/ActionRunRow.tsx` | Run row: disclosure button with `aria-expanded`/`aria-controls`, tone icon plus a visually hidden status word, title, meta line, duration, job list on expand. No log text and no re-run control until P14 and P27 |
+| `src/webview/ActionsFilters.tsx` | Branch and workflow filter triggers with anchored `role="menu"` popups (`menuitemradio`, Escape returns focus) |
 | `src/webview/focusTrap.ts` | Pure Tab-trap maths and shared focusable selector for modal dialogs (`FOCUSABLE_SELECTOR`, `trapTabTarget`) |
 | `src/webview/useDialogFocusTrap.ts` | Hook wiring `focusTrap.ts` and Escape handling into `GuardDialog`, `MergeDialog`, `PromptDialog` |
 | `src/webview/iconFontStyles.ts` | Nonce-bearing `<style>` / adopted stylesheet `@font-face` injector (strict CSP compliant) |
