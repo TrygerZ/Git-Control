@@ -8,6 +8,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   branchRow,
+  canCheckout,
   chipsFor,
   filterRows,
   groupRemotes,
@@ -284,4 +285,13 @@ test('visibleWorktrees lists every worktree once a second one exists', () => {
     worktree({ path: '/repo-feat', branch: 'feat/a' }),
   ];
   assert.deepEqual(visibleWorktrees(list), list);
+});
+
+// -------------------------------------------------------------- canCheckout
+
+test('canCheckout offers a local branch and refuses a remote, a tag, or a pseudo-ref', () => {
+  assert.equal(canCheckout(ref({ shortName: 'main' })), true);
+  assert.equal(canCheckout(ref({ shortName: 'origin/main', kind: 'remote' })), false);
+  assert.equal(canCheckout(ref({ shortName: 'v1.0', kind: 'tag' })), false);
+  assert.equal(canCheckout(ref({ shortName: 'stash', kind: 'other', refName: 'refs/stash' })), false);
 });
