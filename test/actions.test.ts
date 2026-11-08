@@ -387,3 +387,214 @@ test('the breaker serves stale runs instead of failing', async () => {
   assert.equal(stale.cached, true);
   assert.equal(stale.data[0]?.id, 482);
 });
+
+// =========================================================== pure model (T06)
+
+import {
+  branchesWithRuns,
+  durationText,
+  failingDot,
+  filterByWorkflow,
+  groupRuns,
+  metaLine,
+  needsPolling,
+  toneOf,
+  ALL_BRANCHES_CAP,
+} from '../src/webview/actionsModel';
+import type { WorkflowRunInfo } from '../src/messages';
+
+function run(patch: Partial<WorkflowRunInfo> = {}): WorkflowRunInfo {
+  return {
+    id: 1,
+    workflowId: 12,
+    name: 'CI',
+    title: 'fix(graph): cull nodes',
+    runNumber: 482,
+    event: 'push',
+    status: 'completed',
+    conclusion: 'success',
+    branch: 'main',
+    sha: '9f8e7d6'.padEnd(40, '0'),
+    url: 'https://github.com/o/r/actions/runs/1',
+    createdAt: '2026-11-01T10:00:00Z',
+    startedAt: '2026-11-01T10:00:05Z',
+    updatedAt: '2026-11-01T10:03:57Z',
+    attempt: 1,
+    ...patch,
+  };
+}
+
+// ------------------------------------------------------------------- toneOf
+
+test('toneOf maps every status and conclusion the view can draw', () => {
+  assert.equal(toneOf({ status: 'completed', conclusion: 'success' }), 'success');
+  assert.equal(toneOf({ status: 'completed', conclusion: 'failure' }), 'danger');
+  assert.equal(toneOf({ status: 'completed', conclusion: 'timed_out' }), 'danger');
+  assert.equal(toneOf({ status: 'completed', conclusion: 'startup_failure' }), 'danger');
+  assert.equal(toneOf({ status: 'completed', conclusion: 'action_required' }), 'warning');
+  assert.equal(toneOf({ status: 'in_progress', conclusion: null }), 'running');
+  assert.equal(toneOf({ status: 'queued', conclusion: null }), 'queued');
+  assert.equal(toneOf({ status: 'waiting', conclusion: null }), 'queued');
+  assert.equal(toneOf({ status: 'requested', conclusion: null }), 'queued');
+  assert.equal(toneOf({ status: 'pending', conclusion: null }), 'queued');
+  assert.equal(toneOf({ status: 'completed', conclusion: 'cancelled' }), 'neutral');
+  assert.equal(toneOf({ status: 'completed', conclusion: 'skipped' }), 'neutral');
+  assert.equal(toneOf({ status: 'completed', conclusion: 'neutral' }), 'neutral');
+  assert.equal(toneOf({ status: 'completed', conclusion: 'stale' }), 'neutral');
+  assert.equal(toneOf({ status: 'completed', conclusion: null }), 'neutral');
+});
+
+test('a running status wins over a stale conclusion', () => {
+  // The API can report in_progress with the previous attempt's conclusion.
+  assert.equal(toneOf({ status: 'in_progress', conclusion: 'failure' }), 'running');
+});
+
+// ----------------------------------------------------------------- groupRuns
+
+test('groupRuns splits on the current branch and keeps GitHub order', () => {
+  const runs = [
+    run({ id: 1, branch: 'main' }),
+    run({ id: 2, branch: 'feat/a' }),
+    run({ id: 3, branch: 'main' }),
+  ];
+  const groups = groupRuns(runs, 'main');
+  assert.deepEqual(groups.thisBranch.map((r) => r.id), [1, 3]);
+  assert.deepEqual(groups.others.map((r) => r.id), [2]);
+});
+
+test('groupRuns with no current branch puts everything in others', () => {
+  const runs = [run({ id: 1, branch: 'main' }), run({ id: 2, branch: null })];
+  const groups = groupRuns(runs, null);
+  assert.deepEqual(groups.thisBranch, []);
+  assert.deepEqual(groups.others.map((r) => r.id), [1, 2]);
+});
+
+test('groupRuns puts every run in others when the branch has none', () => {
+  const groups = groupRuns([run({ id: 1, branch: 'other' })], 'main');
+  assert.deepEqual(groups.thisBranch, []);
+  assert.equal(groups.others.length, 1);
+});
+
+test('groupRuns caps the All branches group at 20', () => {
+  const runs = Array.from({ length: 25 }, (_, i) => run({ id: i + 1, branch: 'other' }));
+  const groups = groupRuns(runs, 'main');
+  assert.equal(groups.others.length, ALL_BRANCHES_CAP);
+  assert.deepEqual(groups.others.map((r) => r.id), runs.slice(0, 20).map((r) => r.id));
+});
+
+test('a run whose branch is null never lands in This branch', () => {
+  const groups = groupRuns([run({ id: 1, branch: null })], 'main');
+  assert.deepEqual(groups.thisBranch, []);
+});
+
+// ----------------------------------------------------------- branchesWithRuns
+
+test('branchesWithRuns lists each branch once with the current branch first', () => {
+  const runs = [
+    run({ id: 1, branch: 'feat/a' }),
+    run({ id: 2, branch: 'main' }),
+    run({ id: 3, branch: 'feat/a' }),
+    run({ id: 4, branch: null }),
+  ];
+  assert.deepEqual(branchesWithRuns(runs, 'main'), ['main', 'feat/a']);
+  assert.deepEqual(branchesWithRuns(runs, null), ['feat/a', 'main'], 'first-seen order, nulls dropped');
+});
+
+test('branchesWithRuns keeps the current branch even when it has no runs', () => {
+  assert.deepEqual(branchesWithRuns([run({ id: 1, branch: 'x' })], 'main'), ['main', 'x']);
+});
+
+// ------------------------------------------------------------ filterByWorkflow
+
+test('filterByWorkflow keeps only the chosen workflow, or everything for null', () => {
+  const runs = [run({ id: 1, workflowId: 12 }), run({ id: 2, workflowId: 13 })];
+  assert.deepEqual(filterByWorkflow(runs, null).map((r) => r.id), [1, 2]);
+  assert.deepEqual(filterByWorkflow(runs, 13).map((r) => r.id), [2]);
+});
+
+// ------------------------------------------------------------------ failingDot
+
+test('failingDot looks at the newest completed run on the current branch', () => {
+  assert.equal(
+    failingDot([run({ status: 'completed', conclusion: 'failure' })], 'main'),
+    true,
+  );
+  assert.equal(failingDot([run({ status: 'completed', conclusion: 'success' })], 'main'), false);
+});
+
+test('failingDot counts timed_out and startup_failure, not cancelled or skipped', () => {
+  for (const conclusion of ['timed_out', 'startup_failure'] as const) {
+    assert.equal(failingDot([run({ conclusion })], 'main'), true, conclusion);
+  }
+  for (const conclusion of ['cancelled', 'skipped', 'neutral', 'stale', 'action_required'] as const) {
+    assert.equal(failingDot([run({ conclusion })], 'main'), false, conclusion);
+  }
+});
+
+test('failingDot skips a run that is still going in favour of the last completed one', () => {
+  const runs = [
+    run({ id: 1, status: 'in_progress', conclusion: null }),
+    run({ id: 2, status: 'completed', conclusion: 'failure' }),
+  ];
+  assert.equal(failingDot(runs, 'main'), true);
+});
+
+test('failingDot is false with no runs, no current branch, or only other branches', () => {
+  assert.equal(failingDot([], 'main'), false);
+  assert.equal(failingDot([run({ conclusion: 'failure' })], null), false);
+  assert.equal(failingDot([run({ conclusion: 'failure', branch: 'other' })], 'main'), false);
+});
+
+// ----------------------------------------------------------------- needsPolling
+
+test('needsPolling is true while any run is not completed', () => {
+  assert.equal(needsPolling([run({ status: 'in_progress', conclusion: null })]), true);
+  assert.equal(needsPolling([run({ status: 'queued', conclusion: null })]), true);
+  assert.equal(needsPolling([run(), run({ status: 'waiting', conclusion: null })]), true);
+  assert.equal(needsPolling([run()]), false);
+  assert.equal(needsPolling([]), false);
+});
+
+// --------------------------------------------------------------- durationText
+
+test('durationText reports a completed run from startedAt to updatedAt', () => {
+  const r = run({
+    startedAt: '2026-11-01T10:00:00Z',
+    updatedAt: '2026-11-01T10:03:52Z',
+  });
+  assert.equal(durationText(r, Date.parse('2026-11-02T00:00:00Z'), 'en'), '3m 52s');
+});
+
+test('durationText counts from startedAt to now while running', () => {
+  const r = run({ status: 'in_progress', conclusion: null, startedAt: '2026-11-01T10:00:00Z' });
+  const now = Date.parse('2026-11-01T10:01:05Z');
+  assert.equal(durationText(r, now, 'en'), 'running 1m 5s');
+  assert.equal(durationText(r, now, 'id'), 'berjalan 1m 5s');
+});
+
+test('durationText says queued for a run that never started', () => {
+  const r = run({ status: 'queued', conclusion: null, startedAt: null });
+  assert.equal(durationText(r, Date.now(), 'en'), 'queued');
+  assert.equal(durationText(r, Date.now(), 'id'), 'antre');
+});
+
+test('durationText clamps clock skew to zero rather than showing a negative', () => {
+  const r = run({ startedAt: '2026-11-01T10:00:10Z', updatedAt: '2026-11-01T10:00:00Z' });
+  assert.equal(durationText(r, Date.parse('2026-11-01T11:00:00Z'), 'en'), '0s');
+});
+
+test('durationText drops the seconds once the duration reaches an hour', () => {
+  const r = run({ startedAt: '2026-11-01T10:00:00Z', updatedAt: '2026-11-01T11:02:03Z' });
+  assert.equal(durationText(r, 0, 'en'), '1h 2m');
+});
+
+// ------------------------------------------------------------------- metaLine
+
+test('metaLine reads workflow, run number, trigger, and short sha', () => {
+  const line = metaLine(run());
+  assert.equal(line, 'CI #482 - push 9f8e7d6');
+});
+
+test('metaLine omits a missing event instead of leaving a stray separator', () => {
+  assert.equal(metaLine(run({ event: '' })), 'CI #482 - 9f8e7d6');
+});
