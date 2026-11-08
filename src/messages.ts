@@ -498,6 +498,8 @@ export interface GitHubRateLimit {
   resetAt: number | null;
   cached: boolean;
   offline: boolean;
+  /** `x-poll-interval` in ms. Only present when GitHub sent one. */
+  pollIntervalMs?: number;
 }
 
 export interface GitHubRepoInfo {

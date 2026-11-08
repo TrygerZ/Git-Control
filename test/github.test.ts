@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   CACHE_MAX_ENTRIES,
+  ETAG_MAX_ENTRIES,
   GitHubClient,
   GitHubError,
   hasPrivateScope,
@@ -756,3 +757,199 @@ test('contributorIdentity handles empty or whitespace email without network requ
   });
   assert.equal(h.calls.length, 0);
 });
+
+// ------------------------------------------------------- P12: ETag and 304
+
+const REPO_BODY = { default_branch: 'main', private: false, html_url: 'u' };
+const ETAG = 'W/"33a64df551425fcc55e4d42a148795d9f25f89d4"';
+
+/** Past the repo TTL (5 min) and the PR TTL (60 s). */
+function expire(h: { advance(ms: number): void }): void {
+  h.advance(301_000);
+}
+
+test('a read past its TTL sends If-None-Match and a 304 returns the stored data', async () => {
+  const h = client([
+    response(200, REPO_BODY, { etag: ETAG }),
+    response(304, ''),
+  ]);
+  const first = await h.gh.repo('o', 'r');
+  assert.equal(first.cached, false);
+  assert.equal(first.revalidated, undefined, 'a 200 is a plain read');
+
+  expire(h);
+  const second = await h.gh.repo('o', 'r');
+  assert.equal(h.calls.length, 2, 'the expired read still costs exactly one request');
+  assert.equal(h.calls[1]?.headers['If-None-Match'], ETAG, 'the stored etag travels on the retry');
+  assert.deepEqual(second.data, first.data);
+  assert.equal(second.cached, false, 'the server confirmed freshness, so it is not a cache replay');
+  assert.equal(second.revalidated, true);
+});
+
+test('five consecutive 304s leave the breaker closed', async () => {
+  const h = client([response(200, REPO_BODY, { etag: ETAG }), response(304, '')]);
+  await h.gh.repo('o', 'r');
+  for (let i = 0; i < 5; i += 1) {
+    expire(h);
+    const read = await h.gh.repo('o', 'r');
+    assert.equal(read.revalidated, true);
+  }
+  assert.equal(h.gh.circuitOpen, false, 'a 304 is a success, never a failure');
+});
+
+test('a 304 refreshes the rate-limit snapshot from its headers', async () => {
+  const h = client([
+    response(200, REPO_BODY, { etag: ETAG, 'x-ratelimit-remaining': '4999' }),
+    response(304, '', { 'x-ratelimit-remaining': '4998' }),
+  ]);
+  await h.gh.repo('o', 'r');
+  expire(h);
+  const read = await h.gh.repo('o', 'r');
+  assert.equal(read.rateLimit.remaining, 4998);
+});
+
+test('a 304 whose stored value vanished mid-flight retries once without the header', async () => {
+  const calls: Array<Record<string, string>> = [];
+  let clock = 1_700_000_000_000;
+  let gh!: GitHubClient;
+  let firstRead = true;
+  gh = new GitHubClient({
+    apiUrl: 'https://api.github.com',
+    token: TOKEN,
+    now: () => clock,
+    sleep: () => Promise.resolve(),
+    fetchImpl: (_url, init) => {
+      calls.push(init.headers);
+      if (firstRead) {
+        firstRead = false;
+        return Promise.resolve(response(200, REPO_BODY, { etag: ETAG }));
+      }
+      if (calls.length === 2) {
+        // A concurrent read evicts the validator at the bound while this one is
+        // in flight, so the 304 can no longer be answered from the store.
+        (gh as unknown as { etags: Map<string, unknown> }).etags.clear();
+        return Promise.resolve(response(304, ''));
+      }
+      return Promise.resolve(response(200, REPO_BODY));
+    },
+  });
+
+  await gh.repo('o', 'r');
+  clock += 301_000;
+  const read = await gh.repo('o', 'r');
+  assert.equal(calls.length, 3, 'the 304 is retried exactly once');
+  assert.equal(calls[2]?.['If-None-Match'], undefined, 'the retry is unconditional');
+  assert.equal(read.data.defaultBranch, 'main');
+  assert.equal(read.revalidated, undefined);
+});
+
+test('refresh skips the fresh cache but keeps the conditional request', async () => {
+  const h = client([response(200, [], { etag: ETAG }), response(304, '')]);
+  await h.gh.pullRequests('o', 'r');
+  const insideTtl = await h.gh.pullRequests('o', 'r', { refresh: true });
+  assert.equal(h.calls.length, 2, 'refresh is a request even inside the TTL');
+  assert.equal(h.calls[1]?.headers['If-None-Match'], ETAG);
+  assert.equal(insideTtl.revalidated, true);
+  assert.equal(insideTtl.cached, false);
+});
+
+test('the etag store is bounded and evicts in insertion order', async () => {
+  const h = client([response(200, [])]);
+  assert.equal(h.gh.etagSize, 0);
+  for (let i = 0; i < ETAG_MAX_ENTRIES; i += 1) {
+    await h.gh.pullRequestsForCommit('o', 'r', `${i}`.padStart(40, '0'));
+  }
+  assert.equal(h.gh.etagSize, 0, 'a response without an etag header stores nothing');
+
+  const tagged = client([response(200, [], { etag: ETAG })]);
+  for (let i = 0; i < ETAG_MAX_ENTRIES; i += 1) {
+    await tagged.gh.pullRequestsForCommit('o', 'r', `${i}`.padStart(40, '0'));
+  }
+  assert.equal(tagged.gh.etagSize, ETAG_MAX_ENTRIES);
+  for (let i = 0; i < 50; i += 1) {
+    await tagged.gh.pullRequestsForCommit('o', 'r', `${1000 + i}`.padStart(40, '0'));
+  }
+  assert.equal(tagged.gh.etagSize, ETAG_MAX_ENTRIES, 'the bound holds');
+});
+
+test('clearCache also clears the etag store', async () => {
+  const h = client([response(200, REPO_BODY, { etag: ETAG })]);
+  await h.gh.repo('o', 'r');
+  assert.equal(h.gh.etagSize, 1);
+  h.gh.clearCache();
+  assert.equal(h.gh.etagSize, 0);
+});
+
+test('two clients with different tokens never share an etag', async () => {
+  const queue = [response(200, REPO_BODY, { etag: ETAG }), response(200, REPO_BODY, { etag: ETAG })];
+  const a = client(queue, { token: 'ghp_first_token_000000000000000000' });
+  const b = client(queue, { token: 'ghp_second_token_111111111111111111' });
+  await a.gh.repo('o', 'r');
+  await b.gh.repo('o', 'r');
+  assert.equal(a.gh.etagSize, 1);
+  assert.equal(b.gh.etagSize, 1);
+  assert.equal(b.calls[0]?.headers['If-None-Match'], undefined, 'a fresh client sends no etag');
+});
+
+test('a response without an etag header stores no etag', async () => {
+  const h = client([response(200, REPO_BODY)]);
+  await h.gh.repo('o', 'r');
+  assert.equal(h.gh.etagSize, 0);
+  expire(h);
+  await h.gh.repo('o', 'r');
+  assert.equal(h.calls[1]?.headers['If-None-Match'], undefined);
+});
+
+test('x-poll-interval becomes pollIntervalMs in milliseconds', async () => {
+  const h = client([response(200, REPO_BODY, { 'x-poll-interval': '60' })]);
+  await h.gh.repo('o', 'r');
+  assert.equal(h.gh.pollIntervalMs, 60_000);
+  assert.equal(h.gh.rateLimit().pollIntervalMs, 60_000);
+
+  const absent = client([response(200, REPO_BODY)]);
+  await absent.gh.repo('o', 'r');
+  assert.equal(absent.gh.pollIntervalMs, null);
+  assert.equal(absent.gh.rateLimit().pollIntervalMs, undefined, 'the field only appears when known');
+});
+
+test('the token and its fingerprint never appear in an etag key or a log line', async () => {
+  const lines: string[] = [];
+  const rec = recorder([response(200, REPO_BODY, { etag: ETAG })]);
+  const gh = new GitHubClient({
+    apiUrl: 'https://api.github.com',
+    token: TOKEN,
+    fetchImpl: rec.fetchImpl,
+    logger: (line) => lines.push(line),
+    sleep: () => Promise.resolve(),
+  });
+  await gh.repo('o', 'r');
+  const keys = [...(gh as unknown as { etags: Map<string, unknown> }).etags.keys()].join(' ');
+  assert.ok(keys.length > 0);
+  assert.ok(!keys.includes(TOKEN), 'the raw token is never a key');
+  assert.ok(!lines.join('\n').includes(TOKEN));
+  assert.ok(!lines.join('\n').includes(ETAG), 'etag values stay out of the log');
+});
+
+test('the breaker still serves stale cache and sends no request while open', async () => {
+  const queue: Array<FetchResponseLike | Error> = [response(200, REPO_BODY, { etag: ETAG })];
+  const rec = recorder(queue);
+  let clock = 1_700_000_000_000;
+  const gh = new GitHubClient({
+    apiUrl: 'https://api.github.com',
+    token: TOKEN,
+    fetchImpl: rec.fetchImpl,
+    now: () => clock,
+    sleep: () => Promise.resolve(),
+  });
+  await gh.repo('o', 'r');
+  queue[0] = response(500, { message: 'boom' });
+  for (let i = 0; i < 5; i += 1) await assert.rejects(() => gh.repo(`x${i}`, 'r'));
+  assert.equal(gh.circuitOpen, true);
+  const before = rec.calls.length;
+  clock += 600_000;
+  const stale = await gh.repo('o', 'r');
+  assert.equal(rec.calls.length, before, 'no request while the circuit is open');
+  assert.equal(stale.cached, true);
+  assert.equal(stale.data.defaultBranch, 'main');
+});
+

@@ -15,6 +15,7 @@
  * header — and never appears in a log line, an error message, an error `detail`,
  * or any returned value. {@link redact} is applied to everything logged.
  */
+import { randomBytes } from 'node:crypto';
 import { redact } from './logger';
 import type {
   CommitAuthorInfo,
@@ -105,6 +106,8 @@ export interface Fetched<T> {
   data: T;
   cached: boolean;
   rateLimit: GitHubRateLimit;
+  /** True when the server confirmed the stored copy with a 304. */
+  revalidated?: boolean;
 }
 
 const RETRY_DELAYS_MS = [500, 1000, 2000];
@@ -124,10 +127,17 @@ const REQUEST_TIMEOUT_MS = 15_000;
  */
 export const CACHE_MAX_ENTRIES = 200;
 export const AUTHOR_CACHE_MAX_ENTRIES = 1000;
+export const ETAG_MAX_ENTRIES = 200;
 
 interface CacheEntry {
   at: number;
   value: unknown;
+}
+
+interface EtagEntry {
+  etag: string;
+  value: unknown;
+  at: number;
 }
 
 export class GitHubClient {
@@ -141,6 +151,17 @@ export class GitHubClient {
 
   private readonly cache = new Map<string, CacheEntry>();
   private readonly authorCache = new Map<string, CacheEntry>();
+  /**
+   * Stored validators, keyed by `{tokenFingerprint}|{cacheKey}`.
+   *
+   * Deliberately separate from `cache`: a body can be evicted while its ETag
+   * survives (and vice versa), which is exactly the case the 304-retry path
+   * covers. The fingerprint keeps two tokens on one base URL from sharing a
+   * validator; ETags are per-URL per the docs and not documented as per-token.
+   */
+  private readonly etags = new Map<string, EtagEntry>();
+  /** Salted digest prefix of the token. Never reversible, never logged. */
+  private readonly tokenFingerprint: string;
   /** Timestamps of recent failures, used for the sliding breaker window. */
   private failures: number[] = [];
   private breakerOpen = false;
@@ -149,12 +170,19 @@ export class GitHubClient {
     remaining: null,
     resetAt: null,
   };
+  /** Last `x-poll-interval` seen, in ms. `null` until GitHub sends one. */
+  private lastPollIntervalMs: number | null = null;
 
   constructor(options: GitHubClientOptions) {
     this.apiUrl = options.apiUrl.replace(/\/+$/, '');
     this.token = options.token !== undefined && options.token !== null && options.token.length > 0
       ? options.token
       : null;
+    // A per-client random scope, not a digest of the token: the only property the
+    // key needs is that two clients never share validators. Deriving it from the
+    // token would put a token-derived string in a key for no added benefit, and
+    // `clearCache()` already drops everything when the client is rebuilt.
+    this.tokenFingerprint = randomBytes(8).toString('hex');
     this.fetchImpl = options.fetchImpl ?? defaultFetch;
     this.now = options.now ?? ((): number => Date.now());
     this.logger = options.logger ?? ((): void => undefined);
@@ -178,7 +206,13 @@ export class GitHubClient {
       resetAt: this.lastRateLimit.resetAt,
       cached,
       offline: this.breakerOpen,
+      ...(this.lastPollIntervalMs === null ? {} : { pollIntervalMs: this.lastPollIntervalMs }),
     };
+  }
+
+  /** Minimum poll interval the server asked for, in ms, or `null` when it never said. */
+  get pollIntervalMs(): number | null {
+    return this.lastPollIntervalMs;
   }
 
   get circuitOpen(): boolean {
@@ -195,10 +229,16 @@ export class GitHubClient {
     return this.authorCache.size;
   }
 
+  /** Number of stored validators. Exposed so the ETag bound is testable. */
+  get etagSize(): number {
+    return this.etags.size;
+  }
+
   /** Drop cached responses. Used when the token changes. */
   clearCache(): void {
     this.cache.clear();
     this.authorCache.clear();
+    this.etags.clear();
   }
 
   // ------------------------------------------------------------------ reads
@@ -237,7 +277,7 @@ export class GitHubClient {
   async pullRequests(
     owner: string,
     repo: string,
-    opts: { state?: 'open' | 'closed' | 'all'; perPage?: number } = {},
+    opts: { state?: 'open' | 'closed' | 'all'; perPage?: number; refresh?: boolean } = {},
   ): Promise<Fetched<PullRequestInfo[]>> {
     const state = opts.state ?? 'open';
     const perPage = clampPerPage(opts.perPage ?? 50);
@@ -249,6 +289,7 @@ export class GitHubClient {
       `pulls:${owner}/${repo}:${state}:${perPage}`,
       PR_TTL_MS,
       (body) => toPullRequests(body),
+      opts.refresh === true ? { refresh: true } : undefined,
     );
   }
 
@@ -485,15 +526,23 @@ export class GitHubClient {
 
   // --------------------------------------------------------------- internals
 
-  /** Cache-then-network read with breaker, retry, and TTL applied in that order. */
+  /**
+   * Cache-then-network read with breaker, retry, and TTL applied in that order.
+   *
+   * `refresh` skips the fresh-cache return but still sends the stored validator,
+   * so a manual Reload costs one conditional request instead of a full payload.
+   */
   private async get<T>(
     path: string,
     cacheKey: string,
     ttlMs: number,
     map: (body: unknown, headers: { get(name: string): string | null }) => T,
+    opts?: { refresh?: boolean },
   ): Promise<Fetched<T>> {
-    const fresh = this.readCache<T>(cacheKey, ttlMs);
-    if (fresh !== undefined) return { data: fresh, cached: true, rateLimit: this.rateLimit(true) };
+    if (opts?.refresh !== true) {
+      const fresh = this.readCache<T>(cacheKey, ttlMs);
+      if (fresh !== undefined) return { data: fresh, cached: true, rateLimit: this.rateLimit(true) };
+    }
 
     if (this.breakerOpen) {
       // Open circuit: serve any cached copy regardless of age, else fail fast.
@@ -507,11 +556,57 @@ export class GitHubClient {
       });
     }
 
-    const response = await this.send(path);
+    const etagKey = `${this.tokenFingerprint}|${cacheKey}`;
+    const stored = this.etags.get(etagKey);
+    let response = await this.send(path, stored === undefined ? undefined : { etag: stored.etag });
+
+    // A 304 is only answerable while the stored validator is still here. It can
+    // vanish mid-flight when a concurrent read evicts it at the bound, so re-read
+    // rather than trust the pre-request lookup. One unconditional retry, no loop.
+    if (response.status === 304 && !this.etags.has(etagKey)) {
+      response = await this.send(path);
+      if (response.status === 304) {
+        throw new GitHubError({
+          status: 503,
+          code: 'UNAVAILABLE',
+          message: this.text().unavailable,
+          detail: 'status 304 without a conditional request',
+        });
+      }
+    }
+
+    if (response.status === 304) {
+      const entry = this.etags.get(etagKey) as EtagEntry;
+      entry.at = this.now();
+      this.setCache(cacheKey, entry.value);
+      return {
+        data: entry.value as T,
+        cached: false,
+        rateLimit: this.rateLimit(false),
+        revalidated: true,
+      };
+    }
+
     const parsed = parseJson(response.body);
     const data = map(parsed, response.headers);
     this.setCache(cacheKey, data);
+    const etag = response.headers.get('etag');
+    if (etag !== null && etag.length > 0) this.setEtag(etagKey, { etag, value: data });
     return { data, cached: false, rateLimit: this.rateLimit(false) };
+  }
+
+  /**
+   * Store a validator, evicting the oldest past {@link ETAG_MAX_ENTRIES}.
+   * Same insertion-order policy as {@link setCache}, for the same reason.
+   */
+  private setEtag(key: string, entry: { etag: string; value: unknown }): void {
+    this.etags.delete(key);
+    this.etags.set(key, { etag: entry.etag, value: entry.value, at: this.now() });
+    while (this.etags.size > ETAG_MAX_ENTRIES) {
+      const oldest = this.etags.keys().next();
+      if (oldest.done === true) break;
+      this.etags.delete(oldest.value);
+    }
   }
 
   /**
@@ -544,22 +639,29 @@ export class GitHubClient {
    * One request with retries. Retries cover network failures plus 429/502/503/504
    * only: a 4xx that is not 429 is a client mistake and repeating it just burns
    * rate limit.
+   *
+   * A 304 is returned as a normal result, never routed through {@link toError}:
+   * it means "your copy is current", and counting it as a failure would open the
+   * breaker for a client that is behaving exactly right.
    */
-  private async send(path: string): Promise<{
-    body: string;
-    headers: { get(name: string): string | null };
-  }> {
+  private async send(
+    path: string,
+    opts?: { etag?: string },
+  ): Promise<{ status: number; body: string; headers: { get(name: string): string | null } }> {
     let attempt = 0;
     for (;;) {
       try {
-        const response = await this.fetchImpl(`${this.apiUrl}${path}`, {
-          method: 'GET',
-          headers: this.headers(),
-        });
+        const headers = this.headers();
+        if (opts?.etag !== undefined) headers['If-None-Match'] = opts.etag;
+        const response = await this.fetchImpl(`${this.apiUrl}${path}`, { method: 'GET', headers });
         this.readRateLimit(response.headers);
+        if (response.status === 304) {
+          this.recordSuccess();
+          return { status: 304, body: '', headers: response.headers };
+        }
         if (response.status >= 200 && response.status < 300) {
           this.recordSuccess();
-          return { body: await response.text(), headers: response.headers };
+          return { status: response.status, body: await response.text(), headers: response.headers };
         }
 
         const error = await this.toError(response);
@@ -652,6 +754,10 @@ export class GitHubClient {
     if (limit !== null) this.lastRateLimit.limit = limit;
     if (remaining !== null) this.lastRateLimit.remaining = remaining;
     if (resetAt !== null) this.lastRateLimit.resetAt = resetAt;
+    // `x-poll-interval` is seconds; the scheduler works in ms. Only GitHub's
+    // polling endpoints send it, so it stays null everywhere else.
+    const pollSeconds = numberOf(headers.get('x-poll-interval'));
+    if (pollSeconds !== null && pollSeconds >= 0) this.lastPollIntervalMs = pollSeconds * 1000;
   }
 
   private readCache<T>(key: string, ttlMs: number): T | undefined {
