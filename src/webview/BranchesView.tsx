@@ -12,7 +12,6 @@
  * its own copies of that state; importing it would tie two roots together.
  */
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type JSX, type KeyboardEvent } from 'react';
-import { GuardDialog } from './GuardDialog';
 import { MergeDialog, mergeActionPayload } from './MergeDialog';
 import { PromptDialog } from './PromptDialog';
 import { Tablist } from './Tablist';
@@ -260,6 +259,7 @@ export function BranchesView(): JSX.Element {
             collapsed={collapsed}
             language={language}
             openMenuKey={openMenuKey}
+            onCopy={copyName}
             onToggleSection={toggleSection}
             onSort={setSort}
             onMenu={setMenu}
@@ -335,7 +335,10 @@ export function BranchesView(): JSX.Element {
         />
       )}
 
-      <GuardDialog />
+      {/*
+        No GuardDialog here: the sidebar shell mounts one for every route, and a
+        second host would render two modal dialogs for a single guard verdict.
+      */}
     </div>
   );
 }
@@ -355,6 +358,7 @@ function LocalList(props: {
   onToggleSection(key: BranchesSectionKey): void;
   onSort(sort: BranchSort): void;
   onMenu(anchor: MenuAnchor): void;
+  onCopy(text: string): void;
 }): JSX.Element {
   const strings = useT();
   const {
@@ -368,6 +372,7 @@ function LocalList(props: {
     onToggleSection,
     onSort,
     onMenu,
+    onCopy,
   } = props;
 
   const [sortOpen, setSortOpen] = useState(false);
@@ -508,7 +513,7 @@ function LocalList(props: {
           className="gc-branches__sort"
           aria-haspopup="menu"
           aria-expanded={sortOpen}
-          aria-label={strings.branches.sortAria}
+          title={strings.branches.sortAria}
           onClick={() => setSortOpen((open) => !open)}
         >
           {strings.branches.sortLabel(sortName)}
@@ -521,26 +526,31 @@ function LocalList(props: {
           strings.branches.sectionWorktrees,
           worktrees.length,
           <ul className="gc-branches__list" role="list">
-            {worktrees.map((worktree) => (
-              <li key={worktree.path} className="gc-branches__row gc-branches__row--worktree">
-                <Icon name="folder" />
-                <span className="gc-branches__name" title={worktree.path}>
-                  {sanitizeGitText(worktree.branch ?? shortHash(worktree.head ?? ''))}
-                </span>
-                {worktree.isCurrent && (
-                  <span className="gc-branches__muted">{strings.branches.currentWorktree}</span>
-                )}
-                <button
-                  type="button"
-                  className="gc-icon-button gc-branches__more"
-                  aria-label={strings.branches.worktreePathAria(worktree.path)}
-                  title={worktree.path}
-                  onClick={() => void navigator.clipboard.writeText(worktree.path)}
-                >
-                  <Icon name="copy" />
-                </button>
-              </li>
-            ))}
+            {worktrees.map((worktree) => {
+              // A worktree path comes from git, so it is sanitised everywhere it
+              // reaches the DOM, the tooltip included.
+              const safePath = sanitizeGitText(worktree.path);
+              return (
+                <li key={worktree.path} className="gc-branches__row gc-branches__row--worktree">
+                  <Icon name="folder" />
+                  <span className="gc-branches__name" title={safePath}>
+                    {sanitizeGitText(worktree.branch ?? shortHash(worktree.head ?? ''))}
+                  </span>
+                  {worktree.isCurrent && (
+                    <span className="gc-branches__muted">{strings.branches.currentWorktree}</span>
+                  )}
+                  <button
+                    type="button"
+                    className="gc-icon-button gc-branches__more"
+                    aria-label={strings.branches.worktreePathAria(safePath)}
+                    title={safePath}
+                    onClick={() => onCopy(worktree.path)}
+                  >
+                    <Icon name="copy" />
+                  </button>
+                </li>
+              );
+            })}
           </ul>,
         )}
 
@@ -715,10 +725,12 @@ function BranchRowItem(props: {
   const language = props.language;
   const menuButtonRef = useRef<HTMLButtonElement>(null);
 
-  // The menu offers Checkout and Merge only where the model allows it, so a
-  // remote row can never grow a control this phase does not support (D-P11-3).
-  const showMenu = canCheckout(ref_) && props.isCurrent !== true;
-
+  /*
+   * Every row gets a menu, because Copy name is offered on every row. The menu
+   * itself gates Checkout and Merge behind `canCheckout` and the current-branch
+   * check, so a remote or current row can never grow a control this phase does
+   * not support (D-P11-3).
+   */
   const openMenu = (): void => {
     const box = menuButtonRef.current?.getBoundingClientRect();
     if (box === undefined) return;
@@ -763,19 +775,17 @@ function BranchRowItem(props: {
       <span className="gc-branches__age">
         {row.committedAt === null ? '' : relativeTime(row.committedAt, Date.now(), language)}
       </span>
-      {showMenu && (
-        <button
-          ref={menuButtonRef}
-          type="button"
-          className="gc-icon-button gc-branches__more"
-          aria-label={strings.branches.rowMenuAria(sanitizeGitText(row.shortName))}
-          aria-haspopup="menu"
-          aria-expanded={props.expanded}
-          onClick={openMenu}
-        >
-          <Icon name="ellipsis" />
-        </button>
-      )}
+      <button
+        ref={menuButtonRef}
+        type="button"
+        className="gc-icon-button gc-branches__more"
+        aria-label={strings.branches.rowMenuAria(sanitizeGitText(row.shortName))}
+        aria-haspopup="menu"
+        aria-expanded={props.expanded}
+        onClick={openMenu}
+      >
+        <Icon name="ellipsis" />
+      </button>
     </li>
   );
 }

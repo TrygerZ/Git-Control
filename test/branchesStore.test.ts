@@ -73,7 +73,6 @@ function reset(): void {
     refs: [],
     base: null,
     worktrees: [],
-    tab: 'local',
     sort: 'recent',
     filter: '',
     collapsed: new Set(),
@@ -84,47 +83,39 @@ function reset(): void {
 
 // ------------------------------------------------------------- persistence
 
-test('loadState defaults the Branches view to the Local tab, recent sort, nothing folded', () => {
+test('loadState defaults the Branches sort to recent activity with nothing folded', () => {
   saveState({
-    branchesTab: undefined as unknown as 'local',
     branchSort: undefined as unknown as 'recent',
     collapsedBranchSections: undefined as unknown as [],
   });
   const state = loadState();
-  assert.equal(state.branchesTab, 'local');
   assert.equal(state.branchSort, 'recent');
   assert.deepEqual(state.collapsedBranchSections, []);
 });
 
-test('loadState keeps the three known values', () => {
-  saveState({ branchesTab: 'tags', branchSort: 'aheadBehind', collapsedBranchSections: ['local', 'tags'] });
+test('loadState keeps the known sort and the folded sections', () => {
+  saveState({ branchSort: 'aheadBehind', collapsedBranchSections: ['local', 'tags'] });
   const state = loadState();
-  assert.equal(state.branchesTab, 'tags');
   assert.equal(state.branchSort, 'aheadBehind');
   assert.deepEqual(state.collapsedBranchSections, ['local', 'tags']);
 });
 
-test('loadState rejects an unknown tab, an unknown sort, and unknown section keys', () => {
+test('loadState rejects an unknown sort and unknown section keys', () => {
   saveState({
-    branchesTab: 'stashes' as unknown as 'local',
     branchSort: 'oldest' as unknown as 'recent',
     collapsedBranchSections: ['local', 7, 'nope'] as unknown as ['local'],
   });
   const state = loadState();
-  assert.equal(state.branchesTab, 'local', 'an unknown sub-tab falls back to Local');
   assert.equal(state.branchSort, 'recent', 'an unknown sort falls back to recent activity');
   assert.deepEqual(state.collapsedBranchSections, ['local'], 'only known section keys survive');
 });
 
 // --------------------------------------------------------------- selection
 
-test('setTab and setSort update the slice and persist, so a rebuild restores them', () => {
+test('setSort updates the slice and persists, so a rebuild restores it', () => {
   reset();
-  useBranchesStore.getState().setTab('remote');
   useBranchesStore.getState().setSort('name');
-  assert.equal(useBranchesStore.getState().tab, 'remote');
   assert.equal(useBranchesStore.getState().sort, 'name');
-  assert.equal(loadState().branchesTab, 'remote');
   assert.equal(loadState().branchSort, 'name');
 });
 

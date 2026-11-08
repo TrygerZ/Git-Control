@@ -45,7 +45,7 @@ import type {
   IconThemeSnapshot,
   WorktreeInfo,
 } from '../messages';
-import type { BranchesSectionKey, BranchesTab, BranchSort } from './branchesModel';
+import type { BranchesSectionKey, BranchSort } from './branchesModel';
 import { clampZoom, COLUMN_WIDTH, LANE_HEIGHT, partitionUnrequestedHashes } from './viewport';
 
 /** Client-side coalescing of host change notifications. */
@@ -1376,14 +1376,12 @@ export interface BranchesState {
   refs: BranchRef[];
   base: string | null;
   worktrees: WorktreeInfo[];
-  tab: BranchesTab;
   sort: BranchSort;
   filter: string;
   collapsed: Set<BranchesSectionKey>;
   loading: boolean;
   error: ErrorBody | null;
   load(): Promise<void>;
-  setTab(tab: BranchesTab): void;
   setSort(sort: BranchSort): void;
   setFilter(text: string): void;
   toggleSection(key: BranchesSectionKey): void;
@@ -1397,7 +1395,6 @@ export const useBranchesStore = create<BranchesState>((set, get) => {
     refs: [],
     base: null,
     worktrees: [],
-    tab: initial.branchesTab,
     sort: initial.branchSort,
     filter: '',
     collapsed: new Set(initial.collapsedBranchSections),
@@ -1427,10 +1424,6 @@ export const useBranchesStore = create<BranchesState>((set, get) => {
         }
       })();
       return inFlightBranchesLoad;
-    },
-    setTab(tab: BranchesTab) {
-      set({ tab });
-      saveState({ branchesTab: tab });
     },
     setSort(sort: BranchSort) {
       set({ sort });

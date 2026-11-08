@@ -62,9 +62,12 @@ test('the view reuses the existing checkout, merge, and create payloads instead 
   assert.match(src, /runAction/);
 });
 
-test('the view mounts the guard dialog once, so a dirty tree offers the existing remedies', () => {
+test('the view does not mount a second guard dialog, because the shell already hosts one', () => {
+  // Two hosts read the same `pendingGuard`, so one dirty-tree checkout would
+  // render two aria-modal dialogs with two focus traps.
   const src = read('src/webview/BranchesView.tsx');
-  assert.equal(src.match(/<GuardDialog \/>/g)?.length, 1);
+  assert.doesNotMatch(src, /<GuardDialog/);
+  assert.match(read('src/webview/PendingChanges.tsx'), /<GuardDialog \/>/, 'the shell keeps its single host');
 });
 
 test('the controls owned by later phases are absent', () => {
@@ -88,6 +91,30 @@ test('remote rows offer no checkout control', () => {
   // property of how one component happens to be written.
   const src = read('src/webview/BranchesView.tsx');
   assert.match(src, /canCheckout\(/, 'the row menu asks the model before offering Checkout');
+});
+
+test('every row carries a menu, because Copy name is offered on every row', () => {
+  // The Current row is the one a user most often pastes, so it must not be the
+  // one row without a copy affordance. Checkout and Merge stay gated inside.
+  const src = code('src/webview/BranchesView.tsx');
+  assert.doesNotMatch(src, /const showMenu/, 'the menu is unconditional');
+  assert.match(src, /const mutable = canCheckout\(ref_\) && !isCurrent/);
+  assert.match(src, /item\(strings\.branches\.menuCopyName/, 'copy is outside the mutable gate');
+});
+
+test('a worktree path is sanitised everywhere it reaches the DOM', () => {
+  const src = read('src/webview/BranchesView.tsx');
+  assert.match(src, /const safePath = sanitizeGitText\(worktree\.path\)/);
+  assert.match(src, /title=\{safePath\}/);
+  assert.match(src, /worktreePathAria\(safePath\)/);
+  assert.doesNotMatch(src, /title=\{worktree\.path\}|worktreePathAria\(worktree\.path\)/);
+});
+
+test('the sort trigger keeps its visible label in its accessible name', () => {
+  const src = read('src/webview/BranchesView.tsx');
+  const trigger = src.slice(src.indexOf('className="gc-branches__sort"'), src.indexOf('onClick={() => setSortOpen'));
+  assert.doesNotMatch(trigger, /aria-label=/, 'an aria-label would replace the visible text');
+  assert.match(trigger, /title=\{strings\.branches\.sortAria\}/);
 });
 
 test('copy goes through the clipboard and reports a toast', () => {
