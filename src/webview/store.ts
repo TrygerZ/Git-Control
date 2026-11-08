@@ -1491,8 +1491,13 @@ export const useActionsStore = create<ActionsState>((set, get) => {
             };
           });
           useGitHubStore.setState({ rateLimit: result.rateLimit });
-          // The dot is only meaningful for the branch the user is on.
-          if (branch !== null) useNavStore.getState().setFailing(failingDot(result.runs, branch));
+          // The dot is about the branch the user is on, which is not the same as
+          // the filter: an unfiltered list still answers it, and a filter on some
+          // other branch must not move it.
+          const repoBranch = useRepoStore.getState().status?.branch ?? null;
+          if (repoBranch !== null) {
+            useNavStore.getState().setFailing(failingDot(result.runs, repoBranch));
+          }
         } catch (err) {
           set({ loading: false, error: toErrorBody(err) });
         } finally {

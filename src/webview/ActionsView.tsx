@@ -62,12 +62,20 @@ export function ActionsView(): JSX.Element {
 
   useEffect(() => {
     if (route.id === 'actions' && auth?.connected === true) {
-      void load({ branch, workflowId });
+      // `selectBranch`/`selectWorkflow` already trigger their own load, so this
+      // effect must not also fire on a filter change: it would double the request
+      // for every menu pick. It reacts to the route and the auth state only.
+      void useActionsStore.getState().load({});
     }
-  }, [route.id, auth?.connected, branch, workflowId, load]);
+  }, [route.id, auth?.connected]);
 
+  /*
+   * Poll only while a run in view is unfinished. `load` already dedupes through
+   * its in-flight map, so a poll tick that overlaps a filter change costs nothing.
+   */
+  const polling = route.id === 'actions' && needsPolling(runs);
   useEffect(() => {
-    if (route.id !== 'actions' || !needsPolling(runs)) return undefined;
+    if (!polling) return undefined;
 
     let timer: ReturnType<typeof setTimeout> | null = null;
     let cancelled = false;
@@ -130,7 +138,7 @@ export function ActionsView(): JSX.Element {
         clearTimeout(timer);
       }
     };
-  }, [route.id, needsPolling(runs), load]);
+  }, [polling, load]);
 
   const loading = ghLoading || actionsLoading;
   const error = actionsError ?? ghError;

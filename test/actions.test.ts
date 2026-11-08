@@ -400,6 +400,7 @@ import {
   needsPolling,
   toneOf,
   ALL_BRANCHES_CAP,
+  formatDuration,
 } from '../src/webview/actionsModel';
 import type { WorkflowRunInfo } from '../src/messages';
 
@@ -597,4 +598,13 @@ test('metaLine reads workflow, run number, trigger, and short sha', () => {
 
 test('metaLine omits a missing event instead of leaving a stray separator', () => {
   assert.equal(metaLine(run({ event: '' })), 'CI #482 - 9f8e7d6');
+});
+
+// ------------------------------------------------------------ formatDuration
+
+test('formatDuration clamps clock skew to zero and shares one ladder with jobs', () => {
+  assert.equal(formatDuration('2026-11-01T10:00:00Z', Date.parse('2026-11-01T10:00:10Z'), true, 'en'), 'running 10s');
+  assert.equal(formatDuration('2026-11-01T10:00:10Z', Date.parse('2026-11-01T10:00:00Z'), false, 'en'), '0s');
+  assert.equal(formatDuration(null, 0, false, 'en'), 'queued');
+  assert.equal(formatDuration(null, 0, false, 'id'), 'antre');
 });

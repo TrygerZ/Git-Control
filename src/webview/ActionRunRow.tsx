@@ -1,7 +1,7 @@
 import type { JSX } from 'react';
 import type { Catalog } from './i18n';
 import type { Lang, RunConclusion, RunJobInfo, RunStatus, WorkflowRunInfo } from '../messages';
-import { durationText, metaLine, toneOf, type RunTone } from './actionsModel';
+import { durationText, formatDuration, metaLine, toneOf, type RunTone } from './actionsModel';
 import { sanitizeGitText } from './format';
 import { Icon, type IconName } from './ui';
 import { useActionsStore, useGitHubStore, useSettingsStore } from './store';
@@ -56,26 +56,10 @@ function runStatusWord(
   }
 }
 
-function jobDuration(job: RunJobInfo, now: number, strings: Catalog): string {
-  if (job.startedAt === null) return strings.actions.durationQueued;
-  const start = Date.parse(job.startedAt);
-  const end =
-    job.status === 'completed' && job.completedAt !== null ? Date.parse(job.completedAt) : now;
-  const delta = Math.max(0, end - start);
-  const totalSeconds = Math.floor(delta / 1000);
-  let formatted: string;
-  if (totalSeconds < 60) {
-    formatted = `${totalSeconds}s`;
-  } else if (totalSeconds < 3600) {
-    const m = Math.floor(totalSeconds / 60);
-    const s = totalSeconds % 60;
-    formatted = `${m}m ${s}s`;
-  } else {
-    const h = Math.floor(totalSeconds / 3600);
-    const m = Math.floor((totalSeconds % 3600) / 60);
-    formatted = `${h}h ${m}m`;
-  }
-  return job.status === 'completed' ? formatted : strings.actions.durationRunning(formatted);
+/** A job's duration reuses the run formatter so the two can never drift. */
+function jobDuration(job: RunJobInfo, now: number, lang: Lang): string {
+  const finished = job.status === 'completed' && job.completedAt !== null;
+  return formatDuration(job.startedAt, finished ? Date.parse(job.completedAt as string) : now, !finished, lang);
 }
 
 export interface ActionRunRowProps {
@@ -163,7 +147,7 @@ export function ActionRunRow({ run, now }: ActionRunRowProps): JSX.Element {
                   </span>
                   <span className="gc-visually-hidden">{jobWord}</span>
                   <span className="gc-actions__job-name">{sanitizeGitText(job.name)}</span>
-                  <span className="gc-actions__duration">{jobDuration(job, now, strings)}</span>
+                  <span className="gc-actions__duration">{jobDuration(job, now, language)}</span>
                 </li>
               );
             })

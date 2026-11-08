@@ -83,7 +83,9 @@ test('the poll timer stops when nothing is active and while the route is elsewhe
   const src = read('src/webview/ActionsView.tsx');
   assert.match(src, /needsPolling/);
   assert.match(src, /clearTimeout/);
-  assert.match(src, /route\.id !== 'actions'/);
+  // One derived flag gates both the route and the active-run condition, so the
+  // effect cannot arm a timer on a route that does not draw the list.
+  assert.match(src, /route\.id === 'actions' && needsPolling\(runs\)/);
 });
 
 test('the sidebar shell mounts the view and probes the dot before it is opened', () => {

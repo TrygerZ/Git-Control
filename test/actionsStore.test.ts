@@ -9,8 +9,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { bridge, loadState, saveState } from '../src/webview/bridge';
-import { useActionsStore, useGitHubStore, useNavStore } from '../src/webview/store';
-import type { GitHubLinkage, WorkflowInfo, WorkflowRunInfo } from '../src/messages';
+import { useActionsStore, useGitHubStore, useNavStore, useRepoStore } from '../src/webview/store';
+import type { GitHubLinkage, RepoStatus, WorkflowInfo, WorkflowRunInfo } from '../src/messages';
 
 const LINKED: GitHubLinkage = {
   available: true,
@@ -69,7 +69,12 @@ function stub(reply: (kind: string, payload: unknown) => unknown): { calls: Call
   };
 }
 
+/** Only the fields the dot reads; the store treats the status as opaque otherwise. */
+const BASE_STATUS = { branch: 'main' } as unknown as RepoStatus;
+
 function resetAll(): void {
+  // The dot is computed against the repository's branch, not the list filter.
+  useRepoStore.setState({ status: BASE_STATUS });
   useGitHubStore.setState({
     auth: { connected: true, login: 'me', scopes: ['repo'] },
     linkage: LINKED,

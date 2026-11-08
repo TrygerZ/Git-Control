@@ -100,26 +100,37 @@ export function needsPolling(runs: readonly WorkflowRunInfo[]): boolean {
   return runs.some((r) => r.status !== 'completed');
 }
 
-export function durationText(run: WorkflowRunInfo, now: number, lang: Lang): string {
+/**
+ * Shared duration formatter for runs and jobs.
+ *
+ * `endMs` is the completion stamp for a finished row and "now" for a live one.
+ * Clock skew clamps to zero: a runner and this machine disagree by seconds, and
+ * a negative duration reads as a bug rather than as skew.
+ */
+export function formatDuration(
+  startedAt: string | null,
+  endMs: number,
+  running: boolean,
+  lang: Lang,
+): string {
   const strings = t(lang).actions;
-  if (run.startedAt === null) return strings.durationQueued;
-  const start = Date.parse(run.startedAt);
-  const end = run.status === 'completed' ? Date.parse(run.updatedAt) : now;
-  const delta = Math.max(0, end - start);
-  const totalSeconds = Math.floor(delta / 1000);
+  if (startedAt === null) return strings.durationQueued;
+  const totalSeconds = Math.max(0, Math.floor((endMs - Date.parse(startedAt)) / 1000));
   let formatted: string;
   if (totalSeconds < 60) {
     formatted = `${totalSeconds}s`;
   } else if (totalSeconds < 3600) {
-    const m = Math.floor(totalSeconds / 60);
-    const s = totalSeconds % 60;
-    formatted = `${m}m ${s}s`;
+    formatted = `${Math.floor(totalSeconds / 60)}m ${totalSeconds % 60}s`;
   } else {
-    const h = Math.floor(totalSeconds / 3600);
-    const m = Math.floor((totalSeconds % 3600) / 60);
-    formatted = `${h}h ${m}m`;
+    formatted = `${Math.floor(totalSeconds / 3600)}h ${Math.floor((totalSeconds % 3600) / 60)}m`;
   }
-  return run.status === 'completed' ? formatted : strings.durationRunning(formatted);
+  return running ? strings.durationRunning(formatted) : formatted;
+}
+
+export function durationText(run: WorkflowRunInfo, now: number, lang: Lang): string {
+  const running = run.status !== 'completed';
+  const endMs = running ? now : Date.parse(run.updatedAt);
+  return formatDuration(run.startedAt, endMs, running, lang);
 }
 
 export function metaLine(run: WorkflowRunInfo, lang: Lang = 'en'): string {
