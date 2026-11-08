@@ -256,3 +256,29 @@ test('refs keeps a local branch and a tag whose name ends in slash HEAD', async 
   assert.ok(names.includes('refs/heads/feature/HEAD'), names.join(' '));
   assert.ok(names.includes('refs/tags/foo/HEAD'), names.join(' '));
 });
+
+/**
+ * Only the symbolic remote head is a non-target, and it is always exactly
+ * `refs/remotes/<remote>/HEAD`. A remote-tracking branch literally named
+ * `HEAD` under a subdirectory is a real branch and must survive.
+ */
+test('refs drops only the symbolic remote head, not a remote branch named HEAD', async (t) => {
+  const dir = await makeFixture('single');
+  t.after(() => cleanup(dir));
+  const git = new GitRunner({ gitPath: 'git', cwd: dir });
+  await git.run(['remote', 'add', 'origin', './.git/bare.git']);
+  const head = (await git.run(['rev-parse', 'HEAD'])).stdout.trim();
+  await git.run(['update-ref', 'refs/remotes/origin/feature/HEAD', head]);
+  await git.run(['update-ref', 'refs/remotes/origin/main', head]);
+  await git.run(['symbolic-ref', 'refs/remotes/origin/HEAD', 'refs/remotes/origin/main']);
+
+  const repo = new RepositoryService({
+    folderPath: dir,
+    gitPath: 'git',
+    store: { get: (_k, d) => d, update: () => Promise.resolve() },
+  });
+  const names = (await repo.refs()).refs.map((r) => r.refName);
+  assert.ok(names.includes('refs/remotes/origin/feature/HEAD'), names.join(' '));
+  assert.ok(names.includes('refs/remotes/origin/main'), names.join(' '));
+  assert.equal(names.includes('refs/remotes/origin/HEAD'), false, names.join(' '));
+});

@@ -76,6 +76,8 @@ export const MAX_STAT_ENTRIES = 2000;
  */
 export const DETAIL_CACHE_MAX_ENTRIES = 200;
 const LAST_FETCH_KEY_PREFIX = 'gitControl.lastFetchAt:';
+/** Matches the symbolic remote head `refs/remotes/<remote>/HEAD` (exactly three segments). */
+const SYMBOLIC_REMOTE_HEAD = /^refs\/remotes\/[^/]+\/HEAD$/;
 
 export class RepositoryService {
   readonly folderPath: string;
@@ -379,7 +381,7 @@ export class RepositoryService {
 
     const filtered: BranchRef[] = [];
     for (const info of refInfos) {
-      if (info.kind === 'other' || (info.kind === 'remote' && info.refName.endsWith('/HEAD'))) {
+      if (info.kind === 'other' || (info.kind === 'remote' && SYMBOLIC_REMOTE_HEAD.test(info.refName))) {
         continue;
       }
       const isBaseBranch = base !== null && info.refName === `refs/heads/${base}`;
