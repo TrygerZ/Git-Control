@@ -92,7 +92,7 @@ test('errors back off and cap', () => {
     assert.equal(decision.poll, true);
     return decision.poll ? decision.delayMs : -1;
   });
-  // base 15s plus 15/30/60/120s of backoff, clamped at 120s.
+  // base 15s plus 0/15/30/60s of backoff, clamped at 120s.
   assert.deepEqual(delays, [15_000, 30_000, 60_000, 120_000, 120_000]);
 });
 
