@@ -34,6 +34,7 @@ import { useT } from './useT';
 import { groupBySection, isSectionBulkDisabled, stageableFrom, unstageableFrom, type ChangeSection } from './tree';
 import {
   toErrorBody,
+  useActionsStore,
   useChangesStore,
   useGitHubStore,
   useIconThemeStore,
@@ -167,6 +168,19 @@ export function PendingChangesApp(): JSX.Element {
     [stashes, stashFilter, language],
   );
   const selected = [...selection];
+
+  /*
+   * The Actions dot has to be right before the view is ever opened, so the shell
+   * probes it once per (repository, branch, auth) change. `refreshDot` is bounded
+   * to five rows and returns immediately while signed out, so this costs one
+   * cheap conditional request and nothing on a repository without Actions.
+   */
+  const githubConnected = useGitHubStore((s) => s.auth?.connected === true);
+  const currentBranch = status?.branch ?? null;
+  useEffect(() => {
+    if (!githubConnected) return;
+    void useActionsStore.getState().refreshDot(currentBranch);
+  }, [githubConnected, currentBranch]);
 
   const route = useRouteStore((s) => s.route);
   const sub = changesSubOf(route);

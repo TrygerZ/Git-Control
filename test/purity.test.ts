@@ -32,6 +32,7 @@ const PURE_MODULES = [
   'src/webview/issueBranch.ts',
   'src/webview/branchesModel.ts',
   'src/webview/pollPlan.ts',
+  'src/webview/actionsModel.ts',
 ];
 
 test('pure modules contain no vscode imports', () => {
@@ -65,4 +66,8 @@ test('the P09 pure modules are listed', () => {
 
 test('the P11 pure module is listed', () => {
   assert.ok(PURE_MODULES.includes('src/webview/branchesModel.ts'));
+});
+
+test('the P13 pure module is listed', () => {
+  assert.ok(PURE_MODULES.includes('src/webview/actionsModel.ts'));
 });

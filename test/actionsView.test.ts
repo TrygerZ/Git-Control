@@ -85,3 +85,12 @@ test('the poll timer stops when nothing is active and while the route is elsewhe
   assert.match(src, /clearTimeout/);
   assert.match(src, /route\.id !== 'actions'/);
 });
+
+test('the sidebar shell mounts the view and probes the dot before it is opened', () => {
+  const src = read('src/webview/PendingChanges.tsx');
+  assert.match(src, /<ActionsView \/>/);
+  assert.match(src, /route\.id === 'actions'/);
+  // The dot must be right on every route, not only while Actions is open.
+  assert.match(src, /refreshDot\(currentBranch\)/);
+  assert.match(src, /if \(!githubConnected\) return;/);
+});
