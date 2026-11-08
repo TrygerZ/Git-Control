@@ -510,4 +510,34 @@ export const ICON_PATHS: Record<IconName, () => JSX.Element> = {
   play: () => (
     <path d="M5 3.5V12.5L12 8L5 3.5z" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" fill="none" />
   ),
+  // Running: three quarter arc, the GitHub spinner frozen as a static glyph.
+  // Motion lives in CSS so `prefers-reduced-motion` can stop it without a second icon.
+  'status-running': () => (
+    <path
+      d="M8 2.25A5.75 5.75 0 1 1 2.25 8"
+      stroke="currentColor"
+      strokeWidth="1.75"
+      strokeLinecap="round"
+      fill="none"
+    />
+  ),
+  // Queued: dashed ring, a run the scheduler has accepted but not started.
+  'status-queued': () => (
+    <circle
+      cx="8"
+      cy="8"
+      r="5.75"
+      stroke="currentColor"
+      strokeWidth="1.5"
+      strokeDasharray="2.2 2.2"
+      fill="none"
+    />
+  ),
+  // Skipped: ring with a slash, a run that was deliberately not executed.
+  'status-skipped': () => (
+    <>
+      <circle cx="8" cy="8" r="5.75" stroke="currentColor" strokeWidth="1.5" fill="none" />
+      <path d="M4.4 11.6L11.6 4.4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+    </>
+  ),
 };

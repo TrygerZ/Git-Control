@@ -57,4 +57,7 @@ export type IconName =
   | 'changes'
   | 'issue'
   | 'pr'
-  | 'play';
+  | 'play'
+  | 'status-running'
+  | 'status-queued'
+  | 'status-skipped';
