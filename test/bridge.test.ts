@@ -11,6 +11,8 @@ import { Logger, type LogSink } from '../src/logger';
 import { RepositoryService, type PersistentStore } from '../src/repository';
 import { advanceRemote, cleanup, makeFixture } from './repoFixture';
 import type {
+  ActionsJobsPayload,
+  ActionsRunsPayload,
   ContributorInfo,
   HostEvent,
   HostMessage,
@@ -3135,4 +3137,95 @@ test('repos/refs and repos/worktrees never take the mutation idempotency path', 
     const request = { id: 'x', kind, payload: { idempotencyKey: 'k' } } as unknown as Request;
     assert.equal(idempotencyKeyOf(request), null, kind);
   }
+});
+
+// ------------------------------------------------------ actions handlers (P13)
+
+test('github/actionsRuns and github/actionsJobs reach the host unchanged', async (t) => {
+  const runsSeen: ActionsRunsPayload[] = [];
+  const jobsSeen: ActionsJobsPayload[] = [];
+  const h = harness(null, {
+    githubActionsRuns: (payload) => {
+      runsSeen.push(payload);
+      return Promise.resolve({
+        runs: [],
+        workflows: [],
+        rateLimit: { limit: 5000, remaining: 4999, resetAt: null, cached: false, offline: false },
+      });
+    },
+    githubActionsJobs: (payload) => {
+      jobsSeen.push(payload);
+      return Promise.resolve({
+        jobs: [],
+        rateLimit: { limit: 5000, remaining: 4999, resetAt: null, cached: false, offline: false },
+      });
+    },
+  });
+  t.after(() => h.bridge.dispose());
+
+  const runs = await h.webview.send(
+    req('github/actionsRuns', { owner: 'o', repo: 'r', branch: 'main', perPage: 10 }),
+  );
+  assert.equal(runs.ok, true);
+  assert.deepEqual(runsSeen, [{ owner: 'o', repo: 'r', branch: 'main', perPage: 10 }]);
+
+  const jobs = await h.webview.send(req('github/actionsJobs', { owner: 'o', repo: 'r', runId: 482 }));
+  assert.equal(jobs.ok, true);
+  assert.deepEqual(jobsSeen, [{ owner: 'o', repo: 'r', runId: 482 }]);
+});
+
+test('a bad actions payload never reaches the host function', async (t) => {
+  let calls = 0;
+  const h = harness(null, {
+    githubActionsRuns: () => {
+      calls += 1;
+      return Promise.resolve({
+        runs: [],
+        workflows: [],
+        rateLimit: { limit: 5000, remaining: 4999, resetAt: null, cached: false, offline: false },
+      });
+    },
+    githubActionsJobs: () => {
+      calls += 1;
+      return Promise.resolve({
+        jobs: [],
+        rateLimit: { limit: 5000, remaining: 4999, resetAt: null, cached: false, offline: false },
+      });
+    },
+  });
+  t.after(() => h.bridge.dispose());
+
+  const badRuns: Array<Record<string, unknown>> = [
+    { owner: 'o wner', repo: 'r' },
+    { owner: 'o', repo: 'r', branch: '-flag' },
+    { owner: 'o', repo: 'r', branch: 'a..b' },
+    { owner: 'o', repo: 'r', workflowId: 0 },
+    { owner: 'o', repo: 'r', workflowId: 1.5 },
+    { owner: 'o', repo: 'r', perPage: 0 },
+    { owner: 'o', repo: 'r', perPage: 51 },
+  ];
+  for (const payload of badRuns) {
+    const reply = await h.webview.send(req('github/actionsRuns', payload));
+    assert.equal(reply.ok, false, JSON.stringify(payload));
+    if (!reply.ok) assert.equal(reply.error.code, 'VALIDATION_ERROR');
+  }
+
+  for (const runId of [0, -1, 1.5, '482']) {
+    const reply = await h.webview.send(req('github/actionsJobs', { owner: 'o', repo: 'r', runId }));
+    assert.equal(reply.ok, false, String(runId));
+    if (!reply.ok) assert.equal(reply.error.code, 'VALIDATION_ERROR');
+  }
+
+  assert.equal(calls, 0, 'validation happens before the host call');
+});
+
+test('the actions handlers answer UNAVAILABLE when the host lacks them', async (t) => {
+  const h = harness(null);
+  t.after(() => h.bridge.dispose());
+  const runs = await h.webview.send(req('github/actionsRuns', { owner: 'o', repo: 'r' }));
+  assert.equal(runs.ok, false);
+  if (!runs.ok) assert.equal(runs.error.code, 'UNAVAILABLE');
+  const jobs = await h.webview.send(req('github/actionsJobs', { owner: 'o', repo: 'r', runId: 1 }));
+  assert.equal(jobs.ok, false);
+  if (!jobs.ok) assert.equal(jobs.error.code, 'UNAVAILABLE');
 });
