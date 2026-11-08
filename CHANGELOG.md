@@ -5,6 +5,14 @@ All notable changes to the "Git Control" extension will be documented in this fi
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.8.0] - 2026-11-08
+
+### Added
+- Branches view in the sidebar lists local branches, remote branches, and tags, with labels for merged, local-only, and upstream-gone branches.
+- Branches can be sorted by recent activity, name, or ahead and behind. The choice is remembered per workspace.
+- Branch rows offer Checkout, Merge into current, and Copy branch name. Checkout on uncommitted changes keeps the existing stash or commit prompt.
+- Git Control: Open Branches command.
+
 ## [3.7.1] - 2026-11-08
 
 ### Changed
