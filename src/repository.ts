@@ -379,7 +379,7 @@ export class RepositoryService {
 
     const filtered: BranchRef[] = [];
     for (const info of refInfos) {
-      if (info.kind === 'other' || info.refName.endsWith('/HEAD')) {
+      if (info.kind === 'other' || (info.kind === 'remote' && info.refName.endsWith('/HEAD'))) {
         continue;
       }
       const isBaseBranch = base !== null && info.refName === `refs/heads/${base}`;
@@ -404,11 +404,11 @@ export class RepositoryService {
   }
 
   async worktrees(): Promise<WorktreeInfo[]> {
-    const raw = await this.git.worktrees();
-    const currentFolder =
+    const [raw, root] = await Promise.all([this.git.worktrees(), this.repoRoot()]);
+    const currentRoot =
       process.platform === 'win32'
-        ? path.resolve(this.folderPath).toLowerCase()
-        : path.resolve(this.folderPath);
+        ? path.resolve(root).toLowerCase()
+        : path.resolve(root);
 
     return raw.map((wt) => {
       const wtPath =
@@ -429,7 +429,7 @@ export class RepositoryService {
         bare: wt.bare,
         locked: wt.locked !== null,
         prunable: wt.prunable !== null,
-        isCurrent: wtPath === currentFolder,
+        isCurrent: wtPath === currentRoot,
       };
     });
   }

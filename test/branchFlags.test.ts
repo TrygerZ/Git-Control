@@ -1,9 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import * as fs from 'node:fs/promises';
+import * as path from 'node:path';
 import { GitRunner } from '../src/git';
-import { RepositoryService } from '../src/repository';
+import { RepositoryService, pickBaseBranch } from '../src/repository';
 import { parseRefNameList, parseTrack, parseWorktrees } from '../src/gitParse';
-import { pickBaseBranch } from '../src/repository';
 import { cleanup, makeFixture } from './repoFixture';
 
 test('parseTrack reads ahead, behind, and the gone marker', () => {
@@ -210,4 +211,48 @@ test('worktrees service marks exactly one of two entries as current', async (t) 
   assert.equal(current?.branch, 'main');
   assert.deepEqual(entries.map((e) => e.locked), [false, false]);
   assert.deepEqual(entries.map((e) => e.prunable), [false, false]);
+});
+
+/**
+ * VS Code can open a subdirectory of a repository: `folderPath` is
+ * `folder.uri.fsPath`, while `git worktree list` always prints the worktree
+ * root. Comparing the two directly marks nothing current.
+ */
+test('worktrees still marks the current entry when the folder is a subdirectory', async (t) => {
+  const dir = await makeFixture('single');
+  t.after(() => cleanup(dir));
+  const sub = path.join(dir, 'src');
+  await fs.mkdir(sub, { recursive: true });
+
+  const repo = new RepositoryService({
+    folderPath: sub,
+    gitPath: 'git',
+    store: { get: (_k, d) => d, update: () => Promise.resolve() },
+  });
+  const entries = await repo.worktrees();
+  assert.equal(entries.length, 1);
+  assert.equal(entries[0]?.isCurrent, true);
+  assert.equal(entries[0]?.path, await repo.repoRoot());
+});
+
+/**
+ * Only a symbolic remote head is a non-target. `refs/heads/feature/HEAD` and
+ * `refs/tags/foo/HEAD` are legal names and must survive the filter.
+ */
+test('refs keeps a local branch and a tag whose name ends in slash HEAD', async (t) => {
+  const dir = await makeFixture('single');
+  t.after(() => cleanup(dir));
+  const git = new GitRunner({ gitPath: 'git', cwd: dir });
+  await git.run(['branch', 'feature/HEAD', 'main']);
+  await git.run(['tag', 'foo/HEAD', 'main']);
+
+  const repo = new RepositoryService({
+    folderPath: dir,
+    gitPath: 'git',
+    store: { get: (_k, d) => d, update: () => Promise.resolve() },
+  });
+  const result = await repo.refs();
+  const names = result.refs.map((r) => r.refName);
+  assert.ok(names.includes('refs/heads/feature/HEAD'), names.join(' '));
+  assert.ok(names.includes('refs/tags/foo/HEAD'), names.join(' '));
 });
