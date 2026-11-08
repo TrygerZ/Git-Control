@@ -32,6 +32,12 @@ import { DEFAULT_ROUTE, parseRoute } from './route';
 import type { PrFilterId } from './prFilters';
 import type { ChangeSection } from './tree';
 import { activeLang, t } from './i18n';
+import {
+  BRANCHES_SECTIONS,
+  BRANCH_SORTS,
+  type BranchesSectionKey,
+  type BranchSort,
+} from './branchesModel';
 
 /** Shape of the object the host injects. Not covered by `@types/vscode`. */
 interface VsCodeApi {
@@ -61,6 +67,8 @@ export interface WebviewState {
   issueFilter: IssueListFilter;
   issueQuery: string;
   issueLabel: string | null;
+  branchSort: BranchSort;
+  collapsedBranchSections: BranchesSectionKey[];
 }
 
 const PR_FILTERS: readonly PrFilterId[] = ['open', 'review-requested', 'mine', 'draft'];
@@ -80,6 +88,8 @@ const DEFAULT_STATE: WebviewState = {
   issueFilter: 'assigned',
   issueQuery: '',
   issueLabel: null,
+  branchSort: 'recent',
+  collapsedBranchSections: [],
 };
 
 /** Rejection carrying the full {@link ErrorBody} so the UI can render remedies. */
@@ -293,6 +303,12 @@ export function loadState(): WebviewState {
     issueFilter: ISSUE_FILTERS.find((id) => id === partial.issueFilter) ?? 'assigned',
     issueQuery: typeof partial.issueQuery === 'string' ? partial.issueQuery : '',
     issueLabel: typeof partial.issueLabel === 'string' && partial.issueLabel.length > 0 ? partial.issueLabel : null,
+    branchSort: BRANCH_SORTS.find((s) => s === partial.branchSort) ?? 'recent',
+    collapsedBranchSections: Array.isArray(partial.collapsedBranchSections)
+      ? partial.collapsedBranchSections.filter(
+          (k): k is BranchesSectionKey => (BRANCHES_SECTIONS as readonly unknown[]).includes(k),
+        )
+      : [],
   };
 }
 

@@ -18,6 +18,7 @@ import type { NavCounts } from './navCounts';
 import { pruneSelection, toggleNode, togglePath, type ChangeSection, type TreeNode } from './tree';
 import { activeLang, setActiveLang, t } from './i18n';
 import type {
+  BranchRef,
   ChangeEntry,
   CommitDetail,
   CommitResult,
@@ -42,7 +43,9 @@ import type {
   StashEntry,
   StashFile,
   IconThemeSnapshot,
+  WorktreeInfo,
 } from '../messages';
+import type { BranchesSectionKey, BranchSort } from './branchesModel';
 import { clampZoom, COLUMN_WIDTH, LANE_HEIGHT, partitionUnrequestedHashes } from './viewport';
 
 /** Client-side coalescing of host change notifications. */
@@ -1367,6 +1370,81 @@ export const useIssuesStore = create<IssuesState>((set, get) => ({
   },
 }));
 
+// ------------------------------------------------------------ branchesStore
+
+export interface BranchesState {
+  refs: BranchRef[];
+  base: string | null;
+  worktrees: WorktreeInfo[];
+  sort: BranchSort;
+  filter: string;
+  collapsed: Set<BranchesSectionKey>;
+  loading: boolean;
+  error: ErrorBody | null;
+  load(): Promise<void>;
+  setSort(sort: BranchSort): void;
+  setFilter(text: string): void;
+  toggleSection(key: BranchesSectionKey): void;
+}
+
+let inFlightBranchesLoad: Promise<void> | null = null;
+
+export const useBranchesStore = create<BranchesState>((set, get) => {
+  const initial = loadState();
+  return {
+    refs: [],
+    base: null,
+    worktrees: [],
+    sort: initial.branchSort,
+    filter: '',
+    collapsed: new Set(initial.collapsedBranchSections),
+    loading: false,
+    error: null,
+    load(): Promise<void> {
+      if (inFlightBranchesLoad !== null) return inFlightBranchesLoad;
+      set({ loading: true });
+      inFlightBranchesLoad = (async () => {
+        try {
+          const [refsResult, worktreesResult] = await Promise.all([
+            bridge.request('repos/refs', {}),
+            bridge.request('repos/worktrees', {}),
+          ]);
+          set({
+            refs: refsResult.refs,
+            base: refsResult.base,
+            worktrees: worktreesResult.worktrees,
+            loading: false,
+            error: null,
+          });
+        } catch (err) {
+          // Keep previous refs and worktrees on failure so the list does not blank.
+          set({ loading: false, error: toErrorBody(err) });
+        } finally {
+          inFlightBranchesLoad = null;
+        }
+      })();
+      return inFlightBranchesLoad;
+    },
+    setSort(sort: BranchSort) {
+      set({ sort });
+      saveState({ branchSort: sort });
+    },
+    setFilter(text: string) {
+      set({ filter: text });
+    },
+    toggleSection(key: BranchesSectionKey) {
+      const next = new Set(get().collapsed);
+      if (next.has(key)) {
+        next.delete(key);
+      } else {
+        next.add(key);
+      }
+      set({ collapsed: next });
+      saveState({ collapsedBranchSections: [...next] });
+    },
+  };
+});
+
 // ----------------------------------------------------------- event plumbing
 
 let wired = false;
@@ -1388,6 +1466,13 @@ export function wireHostEvents(mode: 'explorer' | 'pending'): () => void {
       else {
         void useChangesStore.getState().load();
         void useRepoStore.getState().refresh();
+        // Refs and worktrees move with the repository too, so an open Branches
+        // view would otherwise show a stale list after a checkout made
+        // elsewhere. Guarded by the route: reading refs costs two git spawns and
+        // nothing else on this panel displays them.
+        if (useRouteStore.getState().route.id === 'branches') {
+          void useBranchesStore.getState().load();
+        }
       }
     }, REFRESH_DEBOUNCE_MS);
   });

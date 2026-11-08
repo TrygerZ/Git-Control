@@ -22,6 +22,7 @@ import { SidebarHeader } from './SidebarHeader';
 import { NavStrip } from './NavStrip';
 import { PullRequestsView } from './PullRequestsView';
 import { IssuesView } from './IssuesView';
+import { BranchesView } from './BranchesView';
 import { Tablist } from './Tablist';
 import { CHANGES_PANEL_ID, CHANGES_TABS_PREFIX, changesSubTabs, changesTabId } from './navRegistry';
 import { changesSubOf, parseRoute } from './route';
@@ -174,7 +175,7 @@ export function PendingChangesApp(): JSX.Element {
    * and the body below never move between routes.
    */
   const subTabs =
-    route.id === 'prs' || route.id === 'issues'
+    route.id === 'prs' || route.id === 'issues' || route.id === 'branches'
       ? []
       : changesSubTabs(strings, { changes: changes.length, stashes: stashes.length });
   /**
@@ -278,6 +279,8 @@ export function PendingChangesApp(): JSX.Element {
         <PullRequestsView />
       ) : route.id === 'issues' ? (
         <IssuesView />
+      ) : route.id === 'branches' ? (
+        <BranchesView />
       ) : (
         <>
       <div
@@ -555,7 +558,7 @@ export function PendingChangesApp(): JSX.Element {
         The commit footer is Changes-only; a toast pushed from the GitHub
         views (prs, issues) would otherwise have no live region.
       */}
-      {(route.id === 'prs' || route.id === 'issues') && <ToastRegion />}
+      {(route.id === 'prs' || route.id === 'issues' || route.id === 'branches') && <ToastRegion />}
 
       <GuardDialog />
     </div>

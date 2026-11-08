@@ -184,6 +184,7 @@ Encodes module purity boundaries (pure logic vs I/O) and execution trust boundar
 | `src/webview/issueFilters.ts` | Pure issue list filters, label options, and text matching (`filterIssues`, `labelOptions`, `matchesText`) |
 | `src/webview/issueText.ts` | Pure issue body preview helpers (`issueExcerpt`, `EXCERPT_MAX`) with whitespace collapsing and bidi/control neutralization |
 | `src/webview/issueBranch.ts` | Pure branch name suggestion for Start work (`slugifyTitle`, `suggestBranchName`, `branchNameProblem`, `startWorkRequest`, `BRANCH_SLUG_MAX`). Folds the untrusted GitHub title to `[a-z0-9-]` before it can reach an argv |
+| `src/webview/branchesModel.ts` | Pure Branches view model (`chipsFor`, `branchRow`, `sortLocals`, `filterRows`, `groupRemotes`, `tagRows`, `visibleWorktrees`, `canCheckout`) plus the literal tables the state parser validates against |
 | `src/webview/listNav.ts` | Pure roving-focus key model for the PR list (`nextIndex`), reused by Issues and Actions |
 | `src/webview/focusTrap.ts` | Pure Tab-trap maths and shared focusable selector for modal dialogs (`FOCUSABLE_SELECTOR`, `trapTabTarget`) |
 | `src/webview/useDialogFocusTrap.ts` | Hook wiring `focusTrap.ts` and Escape handling into `GuardDialog`, `MergeDialog`, `PromptDialog` |
@@ -193,6 +194,7 @@ Encodes module purity boundaries (pure logic vs I/O) and execution trust boundar
 | `src/webview/PendingChanges.tsx` | Sidebar panel. Changes and Stashes sub-tabs (route `sub`) over one tabpanel that swaps the tree view for staged, unstaged, and untracked changes and the stash list. `CommitForm` and the banners stay mounted in both |
 | `src/webview/PullRequestsView.tsx` | Sidebar Pull requests view. Banners, search row, filter chips, current-branch card, grouped list, footer. Reads only through store actions; reloads on mount and on `prs` activation while stale, no polling |
 | `src/webview/IssuesView.tsx` | Sidebar Issues view. Sign-in required, chips Assigned / Created / Mentioned, label menu, expandable row preview with Start work, recently closed group, footer quota |
+| `src/webview/BranchesView.tsx` | Sidebar Branches view. Sub-tabs Local / Remote / Tags, filter row, sections Current / Local / Worktrees / Recent tags, row menu (Checkout, Merge into current, Copy name), sort menu, footer New branch and fetch age. Owns its prompt and merge hosts; the guard dialog stays the shell's single host |
 | `src/webview/StartWorkDialog.tsx` | "Start work on #n" dialog. Suggested branch name, command preview through `gitCommandOf`, dirty-tree note, inline name problem. Closes before it awaits `runAction` so a host guard verdict cannot stack modals |
 | `src/webview/Inspector.tsx` | Detail inspector for selected commit or file diff |
 | `src/webview/SidebarHeader.tsx` | Sidebar-only header (title row with refresh and open-graph, branch row with sync chip, upstream row). Reads stores and `headerModel`, owns no state. The Explorer keeps `ContextBar` |

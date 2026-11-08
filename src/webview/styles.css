@@ -5611,3 +5611,204 @@ h3 {
   margin-left: auto;
   font-variant-numeric: tabular-nums;
 }
+
+/* ----------------------------------------------------------------- branches */
+
+/*
+ * Frame 11. The view fills the shell the way `.gc-prs` does: only the list
+ * scrolls, so the sub-tabs, the filter row, and the footer stay in reach.
+ * `min-width: 0` keeps a long branch name from widening the 300 px sidebar.
+ */
+.gc-branches {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  gap: var(--gc-space-2);
+  min-height: 0;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.gc-branches__panel {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.gc-branches__sections {
+  display: flex;
+  flex-direction: column;
+}
+
+/* The section header already draws the separation; rows sit flush beneath it. */
+.gc-branches__section {
+  padding-bottom: 0;
+}
+
+.gc-branches__list {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+/*
+ * Frame 11 row: 32 px tall, icon then name then the quiet facts. The name
+ * truncates instead of wrapping, because a wrapped row breaks the scan line
+ * the whole list depends on.
+ */
+.gc-branches__row {
+  display: flex;
+  align-items: center;
+  gap: var(--gc-space-3);
+  min-height: var(--gc-hit-lg);
+  padding: 0 var(--gc-space-4);
+  color: var(--gc-text-primary);
+  font-size: var(--gc-fs-sm);
+}
+
+.gc-branches__row:hover {
+  background: var(--gc-bg-hover);
+}
+
+.gc-branches__row--current {
+  background: var(--gc-accent-subtle);
+}
+
+.gc-branches__row--worktree .gc-branches__name {
+  font-family: var(--vscode-editor-font-family, monospace);
+  font-size: var(--gc-fs-xs);
+}
+
+.gc-branches__check {
+  display: inline-flex;
+  flex: 0 0 auto;
+  color: var(--gc-accent-primary);
+}
+
+.gc-branches__name {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--vscode-editor-font-family, monospace);
+  font-size: var(--gc-fs-xs);
+}
+
+.gc-branches__ahead,
+.gc-branches__behind,
+.gc-branches__age,
+.gc-branches__hash,
+.gc-branches__muted {
+  flex: 0 0 auto;
+  color: var(--gc-text-muted);
+  font-size: var(--gc-fs-2xs);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.gc-branches__ahead {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--gc-space-1);
+  color: var(--gc-tone-added);
+}
+
+.gc-branches__behind {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--gc-space-1);
+  color: var(--gc-tone-pending);
+}
+
+.gc-branches__hash {
+  color: var(--gc-accent-primary);
+}
+
+/*
+ * Chips are words, never colour alone (section 10): the tone tints the pill and
+ * the label carries the fact, so a colour-blind or forced-colours user reads
+ * the same thing.
+ */
+.gc-branches__chip {
+  flex: 0 0 auto;
+  padding: 0 var(--gc-space-3);
+  border-radius: var(--gc-radius-pill);
+  background: var(--gc-bg-hover);
+  color: var(--gc-text-secondary);
+  font-size: var(--gc-fs-2xs);
+  white-space: nowrap;
+}
+
+.gc-branches__chip--merged {
+  background: var(--gc-state-merged-subtle);
+  color: var(--gc-state-merged);
+}
+
+.gc-branches__chip--upstreamGone {
+  background: var(--gc-state-warning-subtle);
+  color: var(--gc-state-warning);
+}
+
+.gc-branches__more {
+  flex: 0 0 auto;
+  font-size: var(--gc-fs-sm);
+}
+
+.gc-branches__empty {
+  margin: 0;
+  padding: var(--gc-space-3) var(--gc-space-4);
+  color: var(--gc-text-muted);
+  font-size: var(--gc-fs-xs);
+}
+
+/* The sort affordance is a quiet text link in the section header (frame 11). */
+.gc-branches__sort {
+  flex: 0 0 auto;
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--gc-text-muted);
+  font: inherit;
+  font-size: var(--gc-fs-xs);
+  cursor: pointer;
+}
+
+.gc-branches__sort:hover {
+  color: var(--gc-text-primary);
+}
+
+.gc-branches__footer {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--gc-space-3);
+  flex: 0 0 auto;
+  padding-top: var(--gc-space-2);
+  border-top: 1px solid var(--gc-border);
+}
+
+.gc-branches__fetched {
+  margin-left: auto;
+  color: var(--gc-text-muted);
+  font-size: var(--gc-fs-2xs);
+  white-space: nowrap;
+}
+
+/*
+ * Below the P05 breakpoint the age and the ahead text would squeeze the name
+ * into an ellipsis on every row. The chips stay: they carry the facts that
+ * change what the user does next.
+ */
+@media (max-width: 360px) {
+  .gc-branches__age,
+  .gc-branches__hash,
+  .gc-branches__ahead,
+  .gc-branches__behind {
+    display: none;
+  }
+}
