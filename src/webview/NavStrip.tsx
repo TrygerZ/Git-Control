@@ -48,6 +48,20 @@ const ISSUES_DESTINATION: NavDestination = {
 };
 navRegistry.register(ISSUES_DESTINATION);
 
+/*
+ * Actions stays sign-in required (Q12 reversed D-19 for Pull requests only), so
+ * the destination hides nothing but its badge and dot do while signed out.
+ */
+const ACTIONS_DESTINATION: NavDestination = {
+  id: 'actions',
+  order: 35,
+  icon: 'play',
+  label: (s) => s.nav.actions,
+  ariaName: (s, _count) => s.nav.actionsFailingAria,
+  requiresGitHub: true,
+};
+navRegistry.register(ACTIONS_DESTINATION);
+
 /* Frame 11 draws no badge on Branches, so the destination carries none. */
 const BRANCHES_DESTINATION: NavDestination = {
   id: 'branches',

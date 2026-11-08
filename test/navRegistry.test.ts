@@ -79,11 +79,15 @@ test('each registry is independent, and the shared one is a registry', () => {
   assert.ok(Array.isArray(navRegistry.list()));
 });
 
-test('the shared navRegistry registers changes, prs, issues, and branches in order', () => {
+test('the shared navRegistry registers changes, prs, issues, actions, and branches in order', () => {
   assert.deepEqual(
     navRegistry.list().map((d) => d.id),
-    ['changes', 'prs', 'issues', 'branches'],
+    ['changes', 'prs', 'issues', 'actions', 'branches'],
   );
+  const actions = navRegistry.list().find((d) => d.id === 'actions');
+  assert.ok(actions !== undefined, 'P13 registers Actions fourth, as frame 08 draws it');
+  assert.equal(actions.requiresGitHub, true, 'Actions has no anonymous mode');
+  assert.equal(actions.icon, 'play');
   const issues = navRegistry.list().find((d) => d.id === 'issues');
   assert.ok(issues !== undefined);
   assert.equal(issues.requiresGitHub, true);
