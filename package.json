@@ -74,6 +74,10 @@
         "title": "Git Control: Open Branches"
       },
       {
+        "command": "gitControl.openActions",
+        "title": "Git Control: Open Actions"
+      },
+      {
         "command": "gitControl.refresh",
         "title": "Git Control: Refresh"
       },

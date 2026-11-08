@@ -331,6 +331,7 @@ class Controller implements vscode.Disposable {
     );
     register('gitControl.openPullRequests', () => this.navigate('prs'));
     register('gitControl.openIssues', () => this.navigate('issues'));
+    register('gitControl.openActions', () => this.navigate('actions'));
     register('gitControl.openBranches', () => this.navigate('branches'));
     register('gitControl.refresh', async () => {
       for (const repo of this.repositories.values()) repo.invalidate();
