@@ -20,11 +20,18 @@ function read(relative: string): string {
   return fs.readFileSync(path.join(ROOT, relative), 'utf8');
 }
 
+/** Source with block and line comments stripped, so prose cannot trip a scan. */
+function code(relative: string): string {
+  return read(relative)
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+    .replace(/^\s*\/\/.*$/gm, '');
+}
+
 test('the view exists and routes its decisions through the pure helpers', () => {
-  const src = read('src/webview/BranchesView.tsx');
+  const src = code('src/webview/BranchesView.tsx');
   for (const helper of [
     'branchRow',
-    'chipsFor',
+    'canCheckout',
     'sortLocals',
     'filterRows',
     'groupRemotes',
@@ -61,10 +68,19 @@ test('the view mounts the guard dialog once, so a dirty tree offers the existing
 });
 
 test('the controls owned by later phases are absent', () => {
-  const src = read('src/webview/BranchesView.tsx');
-  for (const forbidden of ['Clean up', 'cleanup', 'New tag', 'Compare', 'Delete branch', 'Add worktree', 'deleteBranch']) {
+  // Checked against the rendered strings and the action payloads, not the
+  // component's prose, so a comment naming a deferred control is not a failure.
+  const src = code('src/webview/BranchesView.tsx');
+  for (const forbidden of ['branchDelete', 'deleteBranch', 'newTag', 'addWorktree', 'compareRange']) {
     assert.doesNotMatch(src, new RegExp(forbidden), forbidden);
   }
+  const actions = [...src.matchAll(/action:\s*'([a-z-]+)'/g)].map((m) => m[1]);
+  assert.deepEqual(
+    [...new Set(actions)].sort(),
+    ['create-branch'],
+    'the only inline action is branch creation; checkout and merge ride the shared payload helpers',
+  );
+  assert.doesNotMatch(src, /'delete-branch'|'delete-tag'|'worktree-add'|'compare'/);
 });
 
 test('remote rows offer no checkout control', () => {
