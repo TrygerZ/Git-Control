@@ -534,6 +534,8 @@ export interface PullRequestsPayload {
   repo: string;
   /** Default `open`, per the PRD. */
   state?: 'open' | 'closed' | 'all';
+  /** Bypass the TTL and revalidate with `If-None-Match`. Manual Reload only. */
+  refresh?: boolean;
 }
 
 export interface PullRequestsResult {

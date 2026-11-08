@@ -117,3 +117,14 @@ test('the view wires the connect focus restore into both Connect buttons', () =>
   assert.match(src, /restoreTarget\(/);
   assert.match(src, /connectRef/, 'the button is reached through a ref, not a re-render');
 });
+
+// ------------------------------------------------- P12: Reload revalidates
+
+test('Reload revalidates the pull request list instead of replaying the host cache', () => {
+  // P07 deferred the "..." menu, so the header refresh button is the Reload
+  // affordance the user actually has. On the prs route it must ask for a
+  // conditional request; on every other route it must not touch GitHub at all.
+  const src = read('src/webview/SidebarHeader.tsx');
+  assert.match(src, /loadPullRequests\(\s*\{\s*refresh:\s*true\s*\}\s*\)/, 'the reload asks for a refresh');
+  assert.match(src, /route\.id === 'prs'/, 'and only while the list is on screen');
+});

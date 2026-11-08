@@ -872,6 +872,45 @@ test('the etag store is bounded and evicts in insertion order', async () => {
   assert.equal(tagged.gh.etagSize, ETAG_MAX_ENTRIES, 'the bound holds');
 });
 
+test('a revalidated etag is not evicted as if it were the oldest', async () => {
+  const calls: Array<{ url: string; headers: Record<string, string> }> = [];
+  const LIST = /\/repos\/o\/r\/pulls\?/;
+  const gh = new GitHubClient({
+    apiUrl: 'https://api.github.com',
+    token: TOKEN,
+    sleep: () => Promise.resolve(),
+    fetchImpl: (url, init) => {
+      calls.push({ url, headers: init.headers });
+      if (LIST.test(url) && init.headers['If-None-Match'] === ETAG) {
+        return Promise.resolve(response(304, ''));
+      }
+      return Promise.resolve(response(200, [], { etag: ETAG }));
+    },
+  });
+
+  // The pulls key goes in first, so it starts at the head of the eviction order.
+  await gh.pullRequests('o', 'r');
+  // One more key behind it, so re-inserting the pulls key actually moves it.
+  await gh.pullRequestsForCommit('o', 'r', 'a'.repeat(40));
+  // A 304 must move the pulls key to the back. Mutating its timestamp in place
+  // would leave the list the user is looking at as the next eviction candidate.
+  assert.equal((await gh.pullRequests('o', 'r', { refresh: true })).revalidated, true);
+
+  // Fill exactly to the bound, then one past it: only the head is dropped.
+  for (let i = 0; i < ETAG_MAX_ENTRIES - 2; i += 1) {
+    await gh.pullRequestsForCommit('o', 'r', `${i}`.padStart(40, '0'));
+  }
+  assert.equal(gh.etagSize, ETAG_MAX_ENTRIES);
+  await gh.pullRequestsForCommit('o', 'r', 'b'.repeat(40));
+  assert.equal(gh.etagSize, ETAG_MAX_ENTRIES, 'the bound holds');
+
+  const before = calls.length;
+  const stillValidated = await gh.pullRequests('o', 'r', { refresh: true });
+  assert.equal(calls.length, before + 1);
+  assert.equal(calls[before]?.headers['If-None-Match'], ETAG, 'the revalidated key kept its validator');
+  assert.equal(stillValidated.revalidated, true);
+});
+
 test('clearCache also clears the etag store', async () => {
   const h = client([response(200, REPO_BODY, { etag: ETAG })]);
   await h.gh.repo('o', 'r');

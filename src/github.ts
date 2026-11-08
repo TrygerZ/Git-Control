@@ -577,7 +577,10 @@ export class GitHubClient {
 
     if (response.status === 304) {
       const entry = this.etags.get(etagKey) as EtagEntry;
-      entry.at = this.now();
+      // Re-insert through `setEtag` so the refreshed key moves to the end of the
+      // eviction order. Mutating `at` in place would leave a key that is being
+      // revalidated every few seconds as the next eviction candidate.
+      this.setEtag(etagKey, { etag: entry.etag, value: entry.value });
       this.setCache(cacheKey, entry.value);
       return {
         data: entry.value as T,
