@@ -31,6 +31,7 @@ import {
   shouldRemember,
   validateAction as validateActionPure,
   validateActionsJobsPayload,
+  validateActionsLogPayload,
   validateActionsRunsPayload,
   validateEmptyPayload as validateEmptyPayloadPure,
 } from './bridgePure';
@@ -47,6 +48,8 @@ import type {
   ActionResult,
   ActionsJobsPayload,
   ActionsJobsResult,
+  ActionsLogPayload,
+  ActionsLogResult,
   ActionsRunsPayload,
   ActionsRunsResult,
   CommitAuthorInfo,
@@ -144,6 +147,8 @@ export interface BridgeHost {
   /** Workflow runs. Sign-in required, so the host also needs a token to answer. */
   githubActionsRuns?(payload: ActionsRunsPayload): Promise<ActionsRunsResult>;
   githubActionsJobs?(payload: ActionsJobsPayload): Promise<ActionsJobsResult>;
+  /** Processed job log tail. Sign-in required, like every Actions read. */
+  githubActionsLog?(payload: ActionsLogPayload): Promise<ActionsLogResult>;
   githubCommitAuthors?(payload: CommitAuthorsPayload): Promise<CommitAuthorsResult>;
   githubContributorIdentity?(payload: ContributorIdentityPayload): Promise<ContributorIdentity>;
   githubLinkage?(): Promise<GitHubLinkage>;
@@ -391,6 +396,8 @@ export class MessageBridge {
         return this.handleGitHubActionsRuns(request.payload as ActionsRunsPayload);
       case 'github/actionsJobs':
         return this.handleGitHubActionsJobs(request.payload as ActionsJobsPayload);
+      case 'github/actionsLog':
+        return this.handleGitHubActionsLog(request.payload as ActionsLogPayload);
       case 'github/commitAuthors':
         return this.handleGitHubCommitAuthors(request.payload as CommitAuthorsPayload);
       case 'github/contributorIdentity':
@@ -744,6 +751,15 @@ export class MessageBridge {
     const jobs = this.host.githubActionsJobs;
     if (jobs === undefined) fail(503, 'UNAVAILABLE', this.text().githubPending);
     return jobs(payload);
+  }
+
+  private async handleGitHubActionsLog(payload: ActionsLogPayload): Promise<ActionsLogResult> {
+    const invalid = (detail: string): never =>
+      fail(400, 'VALIDATION_ERROR', this.text().invalid, { detail });
+    validateActionsLogPayload(payload, invalid);
+    const log = this.host.githubActionsLog;
+    if (log === undefined) fail(503, 'UNAVAILABLE', this.text().githubPending);
+    return log(payload);
   }
 
   private async handleGitHubCommitAuthors(payload: CommitAuthorsPayload): Promise<CommitAuthorsResult> {

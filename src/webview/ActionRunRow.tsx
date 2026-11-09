@@ -1,6 +1,7 @@
 import type { JSX } from 'react';
 import type { Lang, RunJobInfo, WorkflowRunInfo } from '../messages';
 import {
+  canLoadLog,
   durationText,
   formatDuration,
   metaLine,
@@ -9,6 +10,7 @@ import {
   toneOf,
   type RunTone,
 } from './actionsModel';
+import { ActionJobLog } from './ActionJobLog';
 import { sanitizeGitText } from './format';
 import { Icon, type IconName } from './ui';
 import { useActionsStore, useGitHubStore, useSettingsStore } from './store';
@@ -52,6 +54,8 @@ export function ActionRunRow({ run, now }: ActionRunRowProps): JSX.Element {
   const isErrorJobs = useActionsStore((s) => s.jobsError.has(run.id));
   const toggleRun = useActionsStore((s) => s.toggleRun);
   const loadJobs = useActionsStore((s) => s.loadJobs);
+  const expandedJobs = useActionsStore((s) => s.expandedJobs);
+  const toggleJob = useActionsStore((s) => s.toggleJob);
 
   const jobsId = `gc-actions-jobs-${run.id}`;
   const tone = toneOf(run);
@@ -117,17 +121,50 @@ export function ActionRunRow({ run, now }: ActionRunRowProps): JSX.Element {
               const jobTone = toneOf(job);
               const jobIcon = runStatusIcon(jobTone);
               const jobWord = statusWord(job.status, job.conclusion, language);
+              const jobName = sanitizeGitText(job.name);
+              const jobExpanded = expandedJobs.has(job.id);
+              const logId = `gc-actions-log-${job.id}`;
+              const loggable = canLoadLog(job);
               return (
                 <li key={job.id} className="gc-actions__job">
-                  <span
-                    className={`gc-actions__status gc-actions__status--${jobTone}`}
-                    aria-hidden="true"
-                  >
-                    <Icon name={jobIcon} />
-                  </span>
-                  <span className="gc-visually-hidden">{jobWord}</span>
-                  <span className="gc-actions__job-name">{sanitizeGitText(job.name)}</span>
-                  <span className="gc-actions__duration">{jobDuration(job, now, language)}</span>
+                  <div className="gc-actions__job-head">
+                    <span
+                      className={`gc-actions__status gc-actions__status--${jobTone}`}
+                      aria-hidden="true"
+                    >
+                      <Icon name={jobIcon} />
+                    </span>
+                    <span className="gc-visually-hidden">{jobWord}</span>
+                    <button
+                      type="button"
+                      className="gc-actions__job-toggle"
+                      aria-expanded={jobExpanded}
+                      aria-controls={jobExpanded ? logId : undefined}
+                      aria-label={
+                        jobExpanded
+                          ? strings.actions.logToggleCollapse(jobName)
+                          : strings.actions.logToggleExpand(jobName)
+                      }
+                      onClick={() => toggleJob(job.id)}
+                    >
+                      <span className="gc-actions__twisty" aria-hidden="true">
+                        <Icon name={jobExpanded ? 'chevron-down' : 'chevron-right'} />
+                      </span>
+                      <span className="gc-actions__job-name">{jobName}</span>
+                    </button>
+                    <span className="gc-actions__duration">{jobDuration(job, now, language)}</span>
+                  </div>
+                  {jobExpanded && (
+                    <div id={logId}>
+                      {loggable ? (
+                        <ActionJobLog job={job} />
+                      ) : (
+                        // Acceptance 7: a running job answers with the hint and
+                        // sends no request, because the tail is not final yet.
+                        <p className="gc-actions__log-note">{strings.actions.logNotReady}</p>
+                      )}
+                    </div>
+                  )}
                 </li>
               );
             })

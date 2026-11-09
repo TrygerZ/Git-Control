@@ -1065,3 +1065,238 @@ test('the breaker still serves stale cache and sends no request while open', asy
   assert.equal(stale.data.defaultBranch, 'main');
 });
 
+// ------------------------------------------------------------- job log (P14)
+
+/** Response with a streaming body, so the reader path is exercised. */
+function streamResponse(
+  status: number,
+  chunks: string[],
+  headerMap: Record<string, string> = {},
+): FetchResponseLike & { cancelled: boolean } {
+  const encoded = chunks.map((c) => new TextEncoder().encode(c));
+  let index = 0;
+  const state = { cancelled: false };
+  const body = {
+    getReader() {
+      return {
+        read: () => {
+          if (index >= encoded.length) return Promise.resolve({ done: true, value: undefined });
+          const value = encoded[index];
+          index += 1;
+          return Promise.resolve({ done: false, value });
+        },
+        cancel: () => {
+          state.cancelled = true;
+          return Promise.resolve();
+        },
+      };
+    },
+  };
+  return {
+    status,
+    ok: status >= 200 && status < 300,
+    headers: headers(headerMap),
+    text: () => Promise.resolve(chunks.join('')),
+    body,
+    get cancelled() {
+      return state.cancelled;
+    },
+  } as FetchResponseLike & { cancelled: boolean };
+}
+
+const SIGNED = 'https://pipelines.actions.githubusercontent.com/log?sig=SECRETSIG&se=2026';
+
+function logClient(
+  queue: Array<FetchResponseLike | Error>,
+  opts: { token?: string | null; apiUrl?: string; logger?: (line: string) => void } = {},
+): { gh: GitHubClient; calls: Array<{ url: string; headers: Record<string, string>; redirect?: string }> } {
+  const calls: Array<{ url: string; headers: Record<string, string>; redirect?: string }> = [];
+  let index = 0;
+  // Both hops share the recorder: hop 1 goes through `fetchImpl`, hop 2 through
+  // the separate log fetch, and the assertions need to see both.
+  const record: FetchLike = (url, init) => {
+    calls.push({ url, headers: init.headers, redirect: init.redirect });
+    const next = queue[Math.min(index, queue.length - 1)];
+    index += 1;
+    if (next instanceof Error) return Promise.reject(next);
+    return Promise.resolve(next as FetchResponseLike);
+  };
+  const gh = new GitHubClient({
+    apiUrl: opts.apiUrl ?? 'https://api.github.com',
+    token: opts.token === undefined ? TOKEN : opts.token,
+    fetchImpl: record,
+    fetchLogImpl: record,
+    now: () => 1_700_000_000_000,
+    sleep: () => Promise.resolve(),
+    ...(opts.logger === undefined ? {} : { logger: opts.logger }),
+  });
+  return { gh, calls };
+}
+
+test('jobLogTail sends the token on hop 1 and none of it on hop 2', async () => {
+  const signed = streamResponse(200, ['hello\n']);
+  const { gh, calls } = logClient([response(302, '', { location: SIGNED }), signed]);
+  const result = await gh.jobLogTail('o', 'r', 77);
+  assert.equal(result.data.state, 'ok');
+  assert.deepEqual(result.data.lines, [{ text: 'hello', tone: 'normal' }]);
+
+  assert.equal(calls.length, 2);
+  assert.equal(calls[0]?.url, 'https://api.github.com/repos/o/r/actions/jobs/77/logs');
+  assert.equal(calls[0]?.headers.Authorization, `Bearer ${TOKEN}`);
+  assert.equal(calls[0]?.redirect, 'manual');
+
+  const second = calls[1] as { url: string; headers: Record<string, string> };
+  assert.equal(second.url, SIGNED);
+  const names = Object.keys(second.headers).map((n) => n.toLowerCase());
+  for (const forbidden of ['authorization', 'accept', 'x-github-api-version']) {
+    assert.ok(!names.includes(forbidden), `${forbidden} must not reach hop 2`);
+  }
+  assert.ok(!second.url.includes(TOKEN));
+});
+
+test('jobLogTail refuses a 302 with no Location', async () => {
+  const { gh, calls } = logClient([response(302, '')]);
+  await assert.rejects(() => gh.jobLogTail('o', 'r', 1), (err: unknown) => {
+    assert.ok(err instanceof GitHubError);
+    assert.equal(err.code, 'UNAVAILABLE');
+    return true;
+  });
+  assert.equal(calls.length, 1);
+});
+
+test('jobLogTail never calls a host outside the policy', async () => {
+  const { gh, calls } = logClient([response(302, '', { location: 'https://evil.test/log?sig=x' })]);
+  const result = await gh.jobLogTail('o', 'r', 1);
+  assert.equal(result.data.state, 'blocked');
+  assert.deepEqual(result.data.lines, []);
+  assert.equal(calls.length, 1, 'the hostile host is never contacted');
+});
+
+test('jobLogTail refuses a redirect on hop 2', async () => {
+  const { gh } = logClient([
+    response(302, '', { location: SIGNED }),
+    response(302, '', { location: 'https://pipelines.actions.githubusercontent.com/again' }),
+  ]);
+  const result = await gh.jobLogTail('o', 'r', 1);
+  assert.equal(result.data.state, 'expired');
+});
+
+test('jobLogTail maps 404 and 410 to expired', async () => {
+  for (const status of [404, 410]) {
+    const { gh } = logClient([response(status, { message: 'gone' })]);
+    const result = await gh.jobLogTail('o', 'r', 1);
+    assert.equal(result.data.state, 'expired', String(status));
+  }
+});
+
+test('jobLogTail maps 403 on hop 2 to expired', async () => {
+  const { gh } = logClient([response(302, '', { location: SIGNED }), response(403, '')]);
+  const result = await gh.jobLogTail('o', 'r', 1);
+  assert.equal(result.data.state, 'expired');
+});
+
+test('jobLogTail maps 401 to AUTH_ERROR', async () => {
+  const { gh } = logClient([response(401, { message: 'bad credentials' })]);
+  await assert.rejects(() => gh.jobLogTail('o', 'r', 1), (err: unknown) => {
+    assert.ok(err instanceof GitHubError);
+    assert.equal(err.code, 'AUTH_ERROR');
+    return true;
+  });
+});
+
+test('jobLogTail processes a direct 200 body on hop 1', async () => {
+  const { gh, calls } = logClient([streamResponse(200, ['direct line\n'])]);
+  const result = await gh.jobLogTail('o', 'r', 1);
+  assert.equal(result.data.state, 'ok');
+  assert.deepEqual(result.data.lines.map((l) => l.text), ['direct line']);
+  assert.equal(calls.length, 1);
+});
+
+test('jobLogTail cancels the reader past the hard cap and returns tooLarge', async () => {
+  const big = streamResponse(200, ['x'.repeat(64), 'y'.repeat(64), 'z'.repeat(64)]);
+  const { gh } = logClient([response(302, '', { location: SIGNED }), big]);
+  // Shrink the cap through the public option so the test does not move 64 MiB.
+  const result = await gh.jobLogTail('o', 'r', 1, { limits: { hardCapBytes: 100 } });
+  assert.equal(result.data.state, 'tooLarge');
+  assert.equal(big.cancelled, true);
+});
+
+test('jobLogTail surfaces a transport abort as UNAVAILABLE without retrying', async () => {
+  const abort = Object.assign(new Error('The operation was aborted'), { name: 'AbortError' });
+  const { gh, calls } = logClient([abort]);
+  await assert.rejects(() => gh.jobLogTail('o', 'r', 1), (err: unknown) => {
+    assert.ok(err instanceof GitHubError);
+    assert.equal(err.code, 'UNAVAILABLE');
+    return true;
+  });
+  assert.equal(calls.length, 1, 'no retry on the log path');
+});
+
+test('jobLogTail does not retry a 503 on hop 2 and calls it unavailable, not expired', async () => {
+  const { gh, calls } = logClient([response(302, '', { location: SIGNED }), response(503, '')]);
+  await assert.rejects(() => gh.jobLogTail('o', 'r', 1), (err: unknown) => {
+    assert.ok(err instanceof GitHubError);
+    assert.equal(err.code, 'UNAVAILABLE');
+    return true;
+  });
+  assert.equal(calls.length, 2, 'no retry');
+});
+
+test('jobLogTail caches a completed job and not a running one', async () => {
+  const completed = logClient([response(302, '', { location: SIGNED }), streamResponse(200, ['a\n'])]);
+  await completed.gh.jobLogTail('o', 'r', 1, { completed: true });
+  await completed.gh.jobLogTail('o', 'r', 1, { completed: true });
+  assert.equal(completed.calls.length, 2, 'second read comes from the cache');
+
+  const running = logClient([
+    response(302, '', { location: SIGNED }),
+    streamResponse(200, ['a\n']),
+    response(302, '', { location: SIGNED }),
+    streamResponse(200, ['a\n']),
+  ]);
+  await running.gh.jobLogTail('o', 'r', 2);
+  await running.gh.jobLogTail('o', 'r', 2);
+  assert.equal(running.calls.length, 4, 'a running job is read every time');
+});
+
+test('jobLogTail joins an in-flight request for the same job', async () => {
+  const { gh, calls } = logClient([response(302, '', { location: SIGNED }), streamResponse(200, ['a\n'])]);
+  await Promise.all([gh.jobLogTail('o', 'r', 9), gh.jobLogTail('o', 'r', 9)]);
+  assert.equal(calls.length, 2, 'one hop 1 and one hop 2 for two callers');
+});
+
+test('jobLogTail fails fast while the breaker is open', async () => {
+  const { gh, calls } = logClient([response(500, { message: 'boom' })]);
+  for (let i = 0; i < 5; i += 1) await assert.rejects(() => gh.jobLogTail('o', 'r', 100 + i));
+  assert.equal(gh.circuitOpen, true);
+  const before = calls.length;
+  await assert.rejects(() => gh.jobLogTail('o', 'r', 200), (err: unknown) => {
+    assert.ok(err instanceof GitHubError);
+    assert.equal(err.code, 'UNAVAILABLE');
+    return true;
+  });
+  assert.equal(calls.length, before);
+});
+
+test('jobLogTail never puts the signed url in an error detail or a log line', async () => {
+  const lines: string[] = [];
+  const { gh } = logClient([response(302, '', { location: SIGNED }), response(500, '')], {
+    logger: (line) => lines.push(line),
+  });
+  // A storage 5xx is UNAVAILABLE, not a missing log. Its detail carries the
+  // status only, never the URL it was asked for.
+  await assert.rejects(() => gh.jobLogTail('o', 'r', 1), (err: unknown) => {
+    assert.ok(err instanceof GitHubError);
+    assert.equal(err.code, 'UNAVAILABLE');
+    assert.ok(!String(err.detail ?? '').includes('SECRETSIG'));
+    return true;
+  });
+  assert.ok(!lines.join('\n').includes('SECRETSIG'));
+  const { gh: broken } = logClient([response(302, '', { location: SIGNED }), new Error(`fetch failed ${SIGNED}`)]);
+  await assert.rejects(() => broken.jobLogTail('o', 'r', 1), (err: unknown) => {
+    assert.ok(err instanceof GitHubError);
+    assert.ok(!String(err.detail ?? '').includes('SECRETSIG'));
+    assert.ok(!err.message.includes('SECRETSIG'));
+    return true;
+  });
+});

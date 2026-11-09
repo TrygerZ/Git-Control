@@ -59,6 +59,13 @@ const RULES: ReadonlyArray<{ pattern: RegExp; replace: string }> = [
   { pattern: /\b(Bearer|Basic|token)\s+[A-Za-z0-9._\-+/=]{16,}/gi, replace: `$1 ${REDACTED}` },
   // HTTP auth headers, however they are cased or spaced.
   { pattern: /(Authorization:\s*)\S+.*/gi, replace: `$1${REDACTED}` },
+  // Signed-storage-URL query secrets (job logs, release assets). The signed URL
+  // is never logged on purpose; this is the backstop for a network error message
+  // or a future debug line that carries one.
+  {
+    pattern: /([?&](?:sig|signature|token|x-amz-signature|x-goog-signature|x-amz-security-token)=)[^&\s"']+/gi,
+    replace: `$1${REDACTED}`,
+  },
 ];
 
 /** Strip credentials from an arbitrary string. Pure; safe on empty input. */

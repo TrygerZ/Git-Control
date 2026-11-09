@@ -27,6 +27,8 @@ import type {
   IssueListFilter,
   IssueStateFilter,
   Lang,
+  LogLine,
+  LogState,
   PullRequestInfo,
   RunConclusion,
   RunJobInfo,
@@ -34,6 +36,14 @@ import type {
   WorkflowInfo,
   WorkflowRunInfo,
 } from './messages';
+import {
+  DEFAULT_LOG_LIMITS,
+  DEFAULT_MASKED_TEXT,
+  TailBuffer,
+  processLog,
+  validateLogLocation,
+  type LogLimits,
+} from './githubLog';
 import { hostText } from './hostText';
 import { validateHash } from './validation';
 
@@ -84,6 +94,11 @@ export interface FetchInit {
   method: string;
   headers: Record<string, string>;
   signal?: AbortSignal;
+  /**
+   * Manual redirects are required by the log path: hop 1 must see the 302 and
+   * read `Location` itself, and hop 2 must never follow a redirect at all.
+   */
+  redirect?: 'manual' | 'follow' | 'error';
 }
 
 export interface FetchResponseLike {
@@ -91,6 +106,13 @@ export interface FetchResponseLike {
   ok: boolean;
   headers: { get(name: string): string | null };
   text(): Promise<string>;
+  /** Streaming body, when the runtime provides one. The log path uses it. */
+  body?: {
+    getReader(): {
+      read(): Promise<{ done: boolean; value?: Uint8Array }>;
+      cancel(): Promise<void>;
+    };
+  } | null;
 }
 
 export interface GitHubClientOptions {
@@ -104,6 +126,12 @@ export interface GitHubClientOptions {
   /** Overridable so tests do not sleep for real. */
   sleep?: (ms: number) => Promise<void>;
   lang?: () => Lang;
+  /**
+   * Separate fetch for the log path. Hop 2 uses a whole-exchange timeout instead
+   * of the header timer `defaultFetch` clears, so a body that stalls mid-stream
+   * still aborts.
+   */
+  fetchLogImpl?: FetchLike;
 }
 
 /** Result envelope: the payload plus whether it came from cache. */
@@ -144,6 +172,18 @@ export const CACHE_MAX_ENTRIES = 200;
 export const AUTHOR_CACHE_MAX_ENTRIES = 1000;
 export const ETAG_MAX_ENTRIES = 200;
 export const AUTHOR_ETAG_MAX_ENTRIES = 1000;
+/** Processed tails kept in memory. Small on purpose: each is up to 32 KiB of text. */
+export const LOG_CACHE_MAX_ENTRIES = 10;
+/** Whole-exchange timeout for hop 2. Signed storage URLs live one minute. */
+const LOG_TIMEOUT_MS = 20_000;
+
+/** One job's processed tail plus the count of bytes read (for the host log line). */
+export interface ProcessedLog {
+  state: LogState;
+  lines: LogLine[];
+  headCut: boolean;
+  bytesRead: number;
+}
 
 interface CacheEntry {
   at: number;
@@ -159,6 +199,7 @@ export class GitHubClient {
   private readonly apiUrl: string;
   private readonly token: string | null;
   private readonly fetchImpl: FetchLike;
+  private readonly fetchLogImpl: FetchLike;
   private readonly now: () => number;
   private readonly logger: (line: string) => void;
   private readonly sleep: (ms: number) => Promise<void>;
@@ -194,6 +235,13 @@ export class GitHubClient {
     remaining: null,
     resetAt: null,
   };
+  /**
+   * Processed tails for completed jobs. Small on purpose: a tail is up to 32 KiB
+   * of text, so it is not the 200-entry response cache's business. Logs of a
+   * finished job do not change, which is why only completed jobs are cached.
+   */
+  private readonly logCache = new Map<number, ProcessedLog>();
+  private readonly logInFlight = new Map<number, Promise<Fetched<ProcessedLog>>>();
   /** Last `x-poll-interval` seen, in ms. `null` until GitHub sends one. */
   private lastPollIntervalMs: number | null = null;
 
@@ -208,6 +256,7 @@ export class GitHubClient {
     // `clearCache()` already drops everything when the client is rebuilt.
     this.tokenFingerprint = randomBytes(8).toString('hex');
     this.fetchImpl = options.fetchImpl ?? defaultFetch;
+    this.fetchLogImpl = options.fetchLogImpl ?? defaultLogFetch;
     this.now = options.now ?? ((): number => Date.now());
     this.logger = options.logger ?? ((): void => undefined);
     this.sleep = options.sleep ?? ((ms) => new Promise((r) => setTimeout(r, ms)));
@@ -269,6 +318,8 @@ export class GitHubClient {
     this.authorCache.clear();
     this.etags.clear();
     this.authorEtags.clear();
+    this.logCache.clear();
+    this.logInFlight.clear();
   }
 
   // ------------------------------------------------------------------ reads
@@ -569,6 +620,243 @@ export class GitHubClient {
         rateLimit: this.rateLimit(false),
       };
     }
+  }
+
+  /**
+   * Processed tail of one job log.
+   *
+   * Two hops. Hop 1 is the normal authenticated API call, with manual redirects
+   * so the signed `Location` can be inspected before it is used. Hop 2 is a
+   * plain GET to the signed storage URL with an empty header set: the token
+   * must never reach a storage host, and a signed URL already authorizes the
+   * read by itself. The URL stays inside this method; the result carries lines
+   * only.
+   *
+   * `blocked` is a result, not an error: the log exists, the host is untrusted,
+   * and the UI's remedy is `Open full log`.
+   */
+  async jobLogTail(
+    owner: string,
+    repo: string,
+    jobId: number,
+    opts: { completed?: boolean; limits?: Partial<LogLimits>; maskedText?: string } = {},
+  ): Promise<Fetched<ProcessedLog>> {
+    const cached = this.logCache.get(jobId);
+    if (cached !== undefined) {
+      return { data: cached, cached: true, rateLimit: this.rateLimit(true) };
+    }
+    const inFlight = this.logInFlight.get(jobId);
+    if (inFlight !== undefined) return inFlight;
+
+    if (this.breakerOpen) {
+      throw new GitHubError({
+        status: 503,
+        code: 'UNAVAILABLE',
+        message: this.text().unavailable,
+        detail: 'circuit open',
+      });
+    }
+
+    const promise = this.fetchJobLog(owner, repo, jobId, opts);
+    this.logInFlight.set(jobId, promise);
+    try {
+      return await promise;
+    } finally {
+      this.logInFlight.delete(jobId);
+    }
+  }
+
+  private async fetchJobLog(
+    owner: string,
+    repo: string,
+    jobId: number,
+    opts: { completed?: boolean; limits?: Partial<LogLimits>; maskedText?: string },
+  ): Promise<Fetched<ProcessedLog>> {
+    const limits: LogLimits = { ...DEFAULT_LOG_LIMITS, ...(opts.limits ?? {}) };
+    const maskedText = opts.maskedText ?? DEFAULT_MASKED_TEXT;
+    const path =
+      `/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/actions/jobs/${jobId}/logs`;
+    const first = await this.sendOnce(path);
+    const remaining = this.rateLimit(false);
+
+    if (first.status === 404 || first.status === 410) {
+      return this.finishLog(jobId, { state: 'expired', lines: [], headCut: false, bytesRead: 0 }, false, remaining);
+    }
+    if (first.status === 401) {
+      throw new GitHubError({ status: 401, code: 'AUTH_ERROR', message: this.text().invalidToken });
+    }
+    if (first.status === 403 || first.status === 429) {
+      throw await this.toError(first);
+    }
+
+    if (first.status === 200) {
+      // GitHub Enterprise Server may answer with the text directly.
+      const text = await first.text();
+      const processed = this.consume(text, limits, maskedText);
+      return this.finishLog(jobId, processed, opts.completed === true, remaining);
+    }
+
+    if (first.status !== 301 && first.status !== 302 && first.status !== 307) {
+      throw new GitHubError({
+        status: 503,
+        code: 'UNAVAILABLE',
+        message: this.text().unavailable,
+        detail: `status ${first.status}`,
+      });
+    }
+
+    const location = first.headers.get('location');
+    if (location === null || location.length === 0) {
+      throw new GitHubError({
+        status: 503,
+        code: 'UNAVAILABLE',
+        message: this.text().unavailable,
+        detail: 'redirect without location',
+      });
+    }
+    const target = validateLogLocation(location, this.apiUrl);
+    if (target === null) {
+      return this.finishLog(jobId, { state: 'blocked', lines: [], headCut: false, bytesRead: 0 }, false, remaining);
+    }
+
+    // Hop 2: no token, no GitHub headers, manual redirect, whole-exchange timeout.
+    let second: FetchResponseLike;
+    try {
+      second = await this.fetchLogImpl(target.toString(), {
+        method: 'GET',
+        headers: {},
+        redirect: 'manual',
+        signal: AbortSignal.timeout(LOG_TIMEOUT_MS),
+      });
+    } catch (err) {
+      // A transport failure here says nothing about the API's health, so it
+      // never counts toward the breaker. The message is redacted like any other.
+      throw new GitHubError({
+        status: 503,
+        code: 'UNAVAILABLE',
+        message: this.text().unavailable,
+        detail: messageOf(err),
+      });
+    }
+
+    if (second.status === 403 || second.status === 404 || second.status === 410 || (second.status >= 300 && second.status < 400)) {
+      // A redirect on hop 2 is refused, and 403/404/410 mean the signed URL has
+      // expired or the read is no longer allowed. Both read as `expired`.
+      return this.finishLog(jobId, { state: 'expired', lines: [], headCut: false, bytesRead: 0 }, false, remaining);
+    }
+    if (second.status < 200 || second.status >= 300) {
+      // Any other failure is the storage host misbehaving, not a missing log.
+      // Saying "expired" here would tell the user to stop trying.
+      throw new GitHubError({
+        status: 503,
+        code: 'UNAVAILABLE',
+        message: this.text().unavailable,
+        detail: `storage status ${second.status}`,
+      });
+    }
+
+    const processed = await this.consumeStream(second, limits, maskedText);
+    return this.finishLog(jobId, processed, opts.completed === true, remaining);
+  }
+
+  /** Cache a finished tail only for a completed job; a running log still changes. */
+  private finishLog(
+    jobId: number,
+    data: ProcessedLog,
+    cache: boolean,
+    rateLimit: GitHubRateLimit,
+  ): Fetched<ProcessedLog> {
+    if (cache && data.state !== 'expired' && data.state !== 'blocked') {
+      this.logCache.delete(jobId);
+      this.logCache.set(jobId, data);
+      while (this.logCache.size > LOG_CACHE_MAX_ENTRIES) {
+        const oldest = this.logCache.keys().next();
+        if (oldest.done === true) break;
+        this.logCache.delete(oldest.value);
+      }
+    }
+    return { data, cached: false, rateLimit };
+  }
+
+  /** Body already in memory (hop 1 answered 200). */
+  private consume(text: string, limits: LogLimits, maskedText: string): ProcessedLog {
+    const bytes = new TextEncoder().encode(text);
+    const buffer = new TailBuffer(limits);
+    const status = buffer.push(bytes);
+    const processed = processLog(
+      { bytes: buffer.bytes(), headDropped: buffer.headDropped, pemOpen: buffer.pemOpen },
+      limits,
+      maskedText,
+    );
+    return {
+      state: status === 'overflow' ? 'tooLarge' : processed.state,
+      lines: status === 'overflow' ? [] : processed.lines,
+      headCut: processed.headCut,
+      bytesRead: bytes.length,
+    };
+  }
+
+  /**
+   * Stream hop 2 into the rolling buffer.
+   *
+   * The reader is cancelled the moment the hard cap is crossed, so an oversized
+   * log costs bandwidth up to the cap and no more. A runtime without a streaming
+   * body falls back to `text()`, bounded by the same cap check after the fact.
+   */
+  private async consumeStream(
+    response: FetchResponseLike,
+    limits: LogLimits,
+    maskedText: string,
+  ): Promise<ProcessedLog> {
+    const body = response.body;
+    if (body === undefined || body === null) {
+      return this.consume(await response.text(), limits, maskedText);
+    }
+    const buffer = new TailBuffer(limits);
+    const reader = body.getReader();
+    for (;;) {
+      const step = await reader.read();
+      if (step.done) break;
+      const chunk = step.value;
+      if (chunk === undefined || chunk.length === 0) continue;
+      if (buffer.push(chunk) === 'overflow') {
+        await reader.cancel();
+        return { state: 'tooLarge', lines: [], headCut: false, bytesRead: buffer.total };
+      }
+    }
+    const processed = processLog(
+      { bytes: buffer.bytes(), headDropped: buffer.headDropped, pemOpen: buffer.pemOpen },
+      limits,
+      maskedText,
+    );
+    return { ...processed, bytesRead: buffer.total };
+  }
+
+  /**
+   * One request, no retry loop. Used by the log path where a retry would spend
+   * another rate-limit unit for a read the user can repeat by hand.
+   */
+  private async sendOnce(path: string): Promise<FetchResponseLike> {
+    let response: FetchResponseLike;
+    try {
+      response = await this.fetchImpl(`${this.apiUrl}${path}`, {
+        method: 'GET',
+        headers: this.headers(),
+        redirect: 'manual',
+      });
+    } catch (err) {
+      this.recordFailure(true);
+      throw new GitHubError({
+        status: 503,
+        code: 'UNAVAILABLE',
+        message: this.text().unavailable,
+        detail: messageOf(err),
+      });
+    }
+    this.readRateLimit(response.headers);
+    if (response.status >= 200 && response.status < 300) this.recordSuccess();
+    if (response.status >= 500) this.recordFailure(true);
+    return response;
   }
 
   /**
@@ -904,6 +1192,15 @@ const defaultFetch: FetchLike = async (url, init) => {
   } finally {
     clearTimeout(timer);
   }
+};
+
+/**
+ * Fetch for the log second hop: one whole-exchange timeout instead of the header
+ * timer `defaultFetch` clears. The body is streamed, so a stall mid-body has to
+ * abort too, and `AbortSignal.timeout` keeps ticking until the body is consumed.
+ */
+const defaultLogFetch: FetchLike = async (url, init) => {
+  return (await fetch(url, { ...init, signal: init.signal })) as unknown as FetchResponseLike;
 };
 
 /** `x-oauth-scopes: repo, read:org` → `['repo', 'read:org']`. */

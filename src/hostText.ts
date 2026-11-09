@@ -44,6 +44,7 @@ const en = {
     forbidden: 'GitHub access denied.',
     scopeMissing: 'Token lacks repo:status scope for private repository.',
     invalidHash: 'Invalid commit hash.',
+    maskedKey: '[masked key material]',
   },
   extension: {
     gitMissing: 'Git was not found on PATH.',
@@ -111,6 +112,7 @@ const id: HostCatalog = {
     forbidden: 'Akses GitHub ditolak.',
     scopeMissing: 'Token tidak punya scope repo:status untuk repository privat.',
     invalidHash: 'Hash commit tidak valid.',
+    maskedKey: '[materi kunci disamarkan]',
   },
   extension: {
     gitMissing: 'Git tidak ditemukan pada PATH.',

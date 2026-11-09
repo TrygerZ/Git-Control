@@ -3229,3 +3229,84 @@ test('the actions handlers answer UNAVAILABLE when the host lacks them', async (
   assert.equal(jobs.ok, false);
   if (!jobs.ok) assert.equal(jobs.error.code, 'UNAVAILABLE');
 });
+
+// ------------------------------------------------- actions log handler (P14)
+
+test('github/actionsLog reaches the host unchanged', async (t) => {
+  const seen: Array<{ owner: string; repo: string; jobId: number }> = [];
+  const h = harness(null, {
+    githubActionsLog: (payload) => {
+      seen.push(payload);
+      return Promise.resolve({
+        state: 'ok',
+        lines: [{ text: 'hello', tone: 'normal' }],
+        headCut: false,
+        rateLimit: { limit: 5000, remaining: 4999, resetAt: null, cached: false, offline: false },
+      });
+    },
+  });
+  t.after(() => h.bridge.dispose());
+
+  const reply = await h.webview.send(req('github/actionsLog', { owner: 'o', repo: 'r', jobId: 77 }));
+  assert.equal(reply.ok, true);
+  assert.deepEqual(seen, [{ owner: 'o', repo: 'r', jobId: 77 }]);
+});
+
+test('a bad actions log payload never reaches the host function', async (t) => {
+  let calls = 0;
+  const h = harness(null, {
+    githubActionsLog: () => {
+      calls += 1;
+      return Promise.resolve({
+        state: 'empty',
+        lines: [],
+        headCut: false,
+        rateLimit: { limit: 5000, remaining: 4999, resetAt: null, cached: false, offline: false },
+      });
+    },
+  });
+  t.after(() => h.bridge.dispose());
+
+  const bad: Array<Record<string, unknown>> = [
+    { owner: 'o wner', repo: 'r', jobId: 1 },
+    { owner: 'o', repo: 'r repo', jobId: 1 },
+    { owner: 'o', repo: 'r', jobId: 0 },
+    { owner: 'o', repo: 'r', jobId: -3 },
+    { owner: 'o', repo: 'r', jobId: 1.5 },
+    { owner: 'o', repo: 'r', jobId: '77' },
+    { owner: 'o', repo: 'r' },
+  ];
+  for (const payload of bad) {
+    const reply = await h.webview.send(req('github/actionsLog', payload));
+    assert.equal(reply.ok, false, JSON.stringify(payload));
+    if (!reply.ok) assert.equal(reply.error.code, 'VALIDATION_ERROR');
+  }
+  assert.equal(calls, 0, 'validation happens before the host call');
+});
+
+test('github/actionsLog answers UNAVAILABLE when the host lacks it', async (t) => {
+  const h = harness(null);
+  t.after(() => h.bridge.dispose());
+  const reply = await h.webview.send(req('github/actionsLog', { owner: 'o', repo: 'r', jobId: 1 }));
+  assert.equal(reply.ok, false);
+  if (!reply.ok) assert.equal(reply.error.code, 'UNAVAILABLE');
+});
+
+test('the actions log response carries no url-like string', async (t) => {
+  const h = harness(null, {
+    githubActionsLog: () =>
+      Promise.resolve({
+        state: 'ok',
+        lines: [{ text: 'line', tone: 'normal' }],
+        headCut: true,
+        rateLimit: { limit: 5000, remaining: 4999, resetAt: null, cached: false, offline: false },
+      }),
+  });
+  t.after(() => h.bridge.dispose());
+  const reply = await h.webview.send(req('github/actionsLog', { owner: 'o', repo: 'r', jobId: 5 }));
+  assert.equal(reply.ok, true);
+  if (!reply.ok) return;
+  const serialized = JSON.stringify(reply.data);
+  assert.ok(!serialized.includes('https://'), serialized);
+  assert.ok(!serialized.includes('sig='), serialized);
+});

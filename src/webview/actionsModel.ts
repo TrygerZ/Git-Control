@@ -5,7 +5,7 @@
  * decision the Actions view makes about what to draw is a function here, so it is
  * testable without a browser.
  */
-import type { Lang, RunConclusion, RunStatus, WorkflowRunInfo } from '../messages';
+import type { Lang, RunConclusion, RunJobInfo, RunStatus, WorkflowRunInfo } from '../messages';
 import { sanitizeGitText, shortHash } from './format';
 import { t } from './i18n';
 
@@ -13,6 +13,28 @@ export type RunTone = 'success' | 'danger' | 'running' | 'queued' | 'neutral' | 
 
 /** Rows the All branches group draws before it stops; the API page is larger. */
 export const ALL_BRANCHES_CAP = 20;
+
+/** A log exists only for a job that has finished. A running job has no stable tail. */
+export function canLoadLog(job: Pick<RunJobInfo, 'status'>): boolean {
+  return job.status === 'completed';
+}
+
+const FAILED_CONCLUSIONS: ReadonlySet<string> = new Set(['failure', 'timed_out', 'startup_failure']);
+
+/** First completed job that failed, so a run opens on the reason it broke. */
+export function firstFailedJob(jobs: readonly RunJobInfo[]): RunJobInfo | null {
+  for (const job of jobs) {
+    if (job.status === 'completed' && job.conclusion !== null && FAILED_CONCLUSIONS.has(job.conclusion)) {
+      return job;
+    }
+  }
+  return null;
+}
+
+/** Accessible name for the log region, sanitized like every other user string. */
+export function logAriaLabel(jobName: string, lang: Lang): string {
+  return t(lang).actions.logRegionAria(sanitizeGitText(jobName));
+}
 
 export function toneOf(run: Pick<WorkflowRunInfo, 'status' | 'conclusion'>): RunTone {
   // A running status wins over any stale conclusion from a previous attempt.

@@ -197,3 +197,25 @@ test('redact leaves plain email addresses alone (SEC-H1)', () => {
   assert.equal(redact('Author: Alice <alice@corp.example>'), 'Author: Alice <alice@corp.example>');
 });
 
+
+// ------------------------------------------------------------------- P14 logs
+
+test('redact strips signed-url query secrets but keeps the surrounding query', () => {
+  assert.equal(redact('https://x.blob.core.windows.net/a?sv=1&sig=abc123&se=2026'), 'https://x.blob.core.windows.net/a?sv=1&sig=[redacted]&se=2026');
+  assert.equal(redact('https://x/y?signature=zzz'), 'https://x/y?signature=[redacted]');
+  assert.equal(redact('https://x/y?x-amz-signature=zzz&a=1'), 'https://x/y?x-amz-signature=[redacted]&a=1');
+  assert.equal(redact('https://x/y?token=zzz'), 'https://x/y?token=[redacted]');
+  assert.equal(redact('https://x/y?x-amz-security-token=zzz'), 'https://x/y?x-amz-security-token=[redacted]');
+});
+
+test('the signed-url rule is idempotent', () => {
+  const line = 'GET https://x/y?sig=abc&x-goog-signature=def HTTP/1.1';
+  const once = redact(line);
+  assert.equal(redact(once), once);
+  assert.equal(once, 'GET https://x/y?sig=[redacted]&x-goog-signature=[redacted] HTTP/1.1');
+});
+
+test('the signed-url rule does not touch a bare 40-hex object id', () => {
+  const hash = '0123456789abcdef0123456789abcdef01234567';
+  assert.equal(redact(`log for ${hash}`), `log for ${hash}`);
+});

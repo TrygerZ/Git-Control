@@ -105,6 +105,16 @@ export function validateActionsJobsPayload(
   if (!isRunId(payload.runId)) fail('runId');
 }
 
+/** `github/actionsLog`. The job id is the only variable part of the path. */
+export function validateActionsLogPayload(
+  payload: { owner: unknown; repo: unknown; jobId: unknown; completed?: unknown },
+  fail: (detail: string) => never,
+): void {
+  if (!isSlug(payload.owner) || !isSlug(payload.repo)) fail('owner/repo');
+  if (!isPositiveInt(payload.jobId)) fail('jobId');
+  if (payload.completed !== undefined && typeof payload.completed !== 'boolean') fail('completed');
+}
+
 export function isIssueFilter(value: unknown): value is IssueListFilter {
   return value === 'assigned' || value === 'created' || value === 'mentioned';
 }

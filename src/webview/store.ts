@@ -40,6 +40,8 @@ import type {
   Route,
   RouteId,
   RunJobInfo,
+  LogLine,
+  LogState,
   SettingsSnapshot,
   StashEntry,
   StashFile,
@@ -48,7 +50,7 @@ import type {
   WorkflowRunInfo,
   WorktreeInfo,
 } from '../messages';
-import { failingDot } from './actionsModel';
+import { failingDot, firstFailedJob } from './actionsModel';
 import type { BranchesSectionKey, BranchSort } from './branchesModel';
 import { clampZoom, COLUMN_WIDTH, LANE_HEIGHT, partitionUnrequestedHashes } from './viewport';
 
@@ -1437,6 +1439,17 @@ export const useIssuesStore = create<IssuesState>((set, get) => ({
  * reply for a branch the user has already left must not repaint the list under
  * the new heading, the same rule the Issues slice follows.
  */
+/**
+ * One job's log as the UI reads it. `loading` and `error` are view states, not
+ * protocol states: the host answers `ok`, `empty`, `expired`, `tooLarge`,
+ * `binary`, or `blocked`.
+ */
+export interface LogEntry {
+  state: LogState | 'loading' | 'error';
+  lines: LogLine[];
+  headCut: boolean;
+}
+
 export interface ActionsState {
   runs: WorkflowRunInfo[];
   workflows: WorkflowInfo[];
@@ -1450,11 +1463,18 @@ export interface ActionsState {
   jobsByRun: Record<number, RunJobInfo[]>;
   jobsLoading: Set<number>;
   jobsError: Set<number>;
+  /** Job id -> processed tail. Cleared on a repository switch. */
+  logs: Record<number, LogEntry>;
+  /** Jobs whose log panel is open. */
+  expandedJobs: Set<number>;
   loading: boolean;
   error: ErrorBody | null;
   load(opts: { branch?: string | null; workflowId?: number | null; force?: boolean }): Promise<void>;
   loadJobs(runId: number): Promise<void>;
+  /** Idempotent per job id: a second call for a loaded tail sends nothing. */
+  loadLog(jobId: number, opts?: { completed?: boolean }): Promise<void>;
   toggleRun(runId: number): void;
+  toggleJob(jobId: number): void;
   selectBranch(branch: string | null): void;
   selectWorkflow(workflowId: number | null): void;
   /** Bounded dot refresh: five rows, current branch only, never while signed out. */
@@ -1470,6 +1490,7 @@ const ACTIONS_STALE_MS = 60_000;
 
 const inFlightActions = new Map<string, Promise<void>>();
 const inFlightJobs = new Map<number, Promise<void>>();
+const inFlightLogs = new Map<number, Promise<void>>();
 let inFlightDot: Promise<void> | null = null;
 /** Bumped by  so a reply for the previous repository is discarded. */
 let actionsGeneration = 0;
@@ -1491,6 +1512,8 @@ export const useActionsStore = create<ActionsState>((set, get) => {
     jobsByRun: {},
     jobsLoading: new Set<number>(),
     jobsError: new Set<number>(),
+    logs: {},
+    expandedJobs: new Set<number>(),
     loading: false,
     error: null,
 
@@ -1574,10 +1597,16 @@ export const useActionsStore = create<ActionsState>((set, get) => {
       const promise = (async () => {
         try {
           const result = await bridge.request('github/actionsJobs', { owner, repo, runId });
+          const failed = firstFailedJob(result.jobs);
           set((s) => ({
             jobsByRun: { ...s.jobsByRun, [runId]: result.jobs },
             jobsLoading: without(s.jobsLoading, runId),
             jobsError: without(s.jobsError, runId),
+            // D-P14-3: opening a run lands on the reason it broke. User-initiated,
+            // so it costs one extra read only when a failed job exists.
+            ...(failed === null
+              ? {}
+              : { expandedJobs: new Set(s.expandedJobs).add(failed.id) }),
           }));
           useGitHubStore.setState({ rateLimit: result.rateLimit });
         } catch {
@@ -1600,6 +1629,60 @@ export const useActionsStore = create<ActionsState>((set, get) => {
         if (next.has(runId)) next.delete(runId);
         else next.add(runId);
         return { expanded: next };
+      });
+    },
+
+    async loadLog(jobId, opts) {
+      const existing = get().logs[jobId];
+      // A tail is final once it loaded. `error` is retryable; every other state
+      // is the answer, and asking again would only spend a request to hear it.
+      if (existing !== undefined && existing.state !== 'error') return;
+      const inFlight = inFlightLogs.get(jobId);
+      if (inFlight !== undefined) return inFlight;
+      const auth = useGitHubStore.getState().auth;
+      if (auth?.connected !== true) return;
+      const linkage = useGitHubStore.getState().linkage;
+      if (!linkage || !linkage.available || !linkage.owner || !linkage.repo) return;
+      const { owner, repo } = linkage;
+      set((s) => ({
+        logs: { ...s.logs, [jobId]: { state: 'loading', lines: [], headCut: false } },
+      }));
+      const generation = actionsGeneration;
+      const promise = (async () => {
+        try {
+          const result = await bridge.request('github/actionsLog', {
+            owner,
+            repo,
+            jobId,
+            ...(opts?.completed === true ? { completed: true } : {}),
+          });
+          if (generation !== actionsGeneration) return;
+          set((s) => ({
+            logs: {
+              ...s.logs,
+              [jobId]: { state: result.state, lines: result.lines, headCut: result.headCut },
+            },
+          }));
+          useGitHubStore.setState({ rateLimit: result.rateLimit });
+        } catch {
+          if (generation !== actionsGeneration) return;
+          set((s) => ({
+            logs: { ...s.logs, [jobId]: { state: 'error', lines: [], headCut: false } },
+          }));
+        } finally {
+          inFlightLogs.delete(jobId);
+        }
+      })();
+      inFlightLogs.set(jobId, promise);
+      return promise;
+    },
+
+    toggleJob(jobId) {
+      set((s) => {
+        const next = new Set(s.expandedJobs);
+        if (next.has(jobId)) next.delete(jobId);
+        else next.add(jobId);
+        return { expandedJobs: next };
       });
     },
 
@@ -1649,6 +1732,7 @@ export const useActionsStore = create<ActionsState>((set, get) => {
       actionsGeneration += 1;
       inFlightActions.clear();
       inFlightJobs.clear();
+      inFlightLogs.clear();
       inFlightDot = null;
       set({
         runs: [],
@@ -1659,6 +1743,8 @@ export const useActionsStore = create<ActionsState>((set, get) => {
         jobsByRun: {},
         jobsLoading: new Set<number>(),
         jobsError: new Set<number>(),
+        logs: {},
+        expandedJobs: new Set<number>(),
         loading: false,
         error: null,
       });

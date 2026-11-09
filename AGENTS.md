@@ -157,7 +157,8 @@ Encodes module purity boundaries (pure logic vs I/O) and execution trust boundar
 | `src/errorBody.ts` | Pure shared transport fallback (`unknownErrorBody`) for host and webview without coupling typed error handling |
 | `src/repository.ts` | Repository state cache, commit graph layout invocation, commit pagination |
 | `src/watcher.ts` | Dual-source file watcher (`vscode.workspace` + `fs.watch` for `.git`) with 500ms debounce |
-| `src/logger.ts` | Diagnostic logger with regex credential redaction |
+| `src/logger.ts` | Diagnostic logger with regex credential redaction, including signed-URL query secrets (`sig`, `signature`, `token`, `x-amz-signature`, `x-goog-signature`, `x-amz-security-token`) |
+| `src/githubLog.ts` | Pure job log pipeline: `TailBuffer` rolling window with a hard cap, `processLog` (ANSI, CR progress, timestamp, PEM masking, marker tones, line and char caps, redaction), `validateLogLocation` and `isLogHostAllowed` for the signed-URL second hop. Zero `vscode` imports |
 | `src/github.ts` | GitHub REST client with bounded response cache (`CACHE_MAX_ENTRIES = 200`, `AUTHOR_CACHE_MAX_ENTRIES = 1000`), bounded ETag stores (`ETAG_MAX_ENTRIES = 200`, `AUTHOR_ETAG_MAX_ENTRIES = 1000`, split like the response cache) for conditional reads, and circuit breaker (5 failures / 60s). A 304 is a success, never a breaker failure |
 | `src/remoteUrl.ts` | Remote URL parser and credential stripper |
 | `src/layout.ts` | Deterministic DAG layout engine (pure: no DOM, no git, no vscode; identical inputs yield byte-identical output; used only by `src/repository.ts`) |
@@ -189,8 +190,9 @@ Encodes module purity boundaries (pure logic vs I/O) and execution trust boundar
 | `src/webview/listNav.ts` | Pure roving-focus key model for the PR list (`nextIndex`), reused by Issues and Actions |
 | `src/webview/actionsModel.ts` | Pure Actions view model (`toneOf`, `groupRuns`, `branchesWithRuns`, `filterByWorkflow`, `failingDot`, `needsPolling`, `durationText`, `metaLine`) plus `ALL_BRANCHES_CAP`. Zero `vscode`, react, or DOM imports |
 | `src/webview/ActionsView.tsx` | Sidebar Actions view. P07 gate with `view: 'actions'`, two collapsible groups, empty and error states, footer. Owns the P12 poll timer and the bounded nav dot probe |
-| `src/webview/ActionRunRow.tsx` | Run row: disclosure button with `aria-expanded`/`aria-controls`, tone icon plus a visually hidden status word, title, meta line, duration, job list on expand. No log text and no re-run control until P14 and P27 |
+| `src/webview/ActionRunRow.tsx` | Run row: disclosure button with `aria-expanded`/`aria-controls`, tone icon plus a visually hidden status word, title, meta line, duration, job list on expand, and a per-job log disclosure that mounts `ActionJobLog`. No re-run control until P27 |
 | `src/webview/ActionsFilters.tsx` | Branch and workflow filter triggers with anchored `role="menu"` popups (`menuitemradio`, Escape returns focus) |
+| `src/webview/ActionJobLog.tsx` | Job log block. Renders processed lines as text nodes only, states for loading, error with retry, empty, expired, too large, binary, blocked, and `Open full log`. Self-loads once on mount; sends no request for a running job |
 | `src/webview/focusTrap.ts` | Pure Tab-trap maths and shared focusable selector for modal dialogs (`FOCUSABLE_SELECTOR`, `trapTabTarget`) |
 | `src/webview/useDialogFocusTrap.ts` | Hook wiring `focusTrap.ts` and Escape handling into `GuardDialog`, `MergeDialog`, `PromptDialog` |
 | `src/webview/iconFontStyles.ts` | Nonce-bearing `<style>` / adopted stylesheet `@font-face` injector (strict CSP compliant) |
