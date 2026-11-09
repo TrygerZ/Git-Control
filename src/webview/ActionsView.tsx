@@ -53,7 +53,14 @@ export function ActionsView(): JSX.Element {
 
   const connectRef = useRef<HTMLButtonElement>(null);
 
-  const needsTick = rateLimit !== null && rateLimit.remaining === 0 && rateLimit.resetAt !== null;
+  /*
+   * The clock moves for two reasons: a quota countdown, and a running run whose
+   * duration is a live stopwatch. Without the second the text would only advance
+   * on a poll, so it would lag by one interval and freeze if polling stopped.
+   */
+  const needsTick =
+    (rateLimit !== null && rateLimit.remaining === 0 && rateLimit.resetAt !== null) ||
+    needsPolling(runs);
   useEffect(() => {
     if (!needsTick) return undefined;
     const timer = setTimeout(() => setNow(Date.now()), TICK_MS);

@@ -28,6 +28,8 @@ export function ActionsFilters(): JSX.Element {
 
   const [openMenu, setOpenMenu] = useState<'branch' | 'workflow' | null>(null);
   const [menuPos, setMenuPos] = useState({ x: 0, y: 0 });
+  // Roving tabindex: a menu is one tab stop, arrows move inside it.
+  const [activeItem, setActiveItem] = useState(0);
 
   const branchButtonRef = useRef<HTMLButtonElement>(null);
   const workflowButtonRef = useRef<HTMLButtonElement>(null);
@@ -55,6 +57,7 @@ export function ActionsFilters(): JSX.Element {
 
   useEffect(() => {
     if (openMenu === null) return undefined;
+    setActiveItem(0);
     menuRef.current?.querySelector<HTMLElement>('[role^="menuitem"]')?.focus();
     const onClickOutside = (e: MouseEvent): void => {
       if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
@@ -78,12 +81,16 @@ export function ActionsFilters(): JSX.Element {
     const items = menuItems();
     if (items.length === 0) return;
     const index = items.findIndex((item) => item === document.activeElement);
-    items[(index + delta + items.length) % items.length]?.focus();
+    const next = (index + delta + items.length) % items.length;
+    setActiveItem(next);
+    items[next]?.focus();
   };
 
   const jumpMenuFocus = (to: 'first' | 'last'): void => {
     const items = menuItems();
-    items[to === 'first' ? 0 : items.length - 1]?.focus();
+    const index = to === 'first' ? 0 : items.length - 1;
+    setActiveItem(index);
+    items[index]?.focus();
   };
 
   const onMenuKey = (event: KeyboardEvent<HTMLDivElement>): void => {
@@ -167,6 +174,7 @@ export function ActionsFilters(): JSX.Element {
                 type="button"
                 className="gc-menu__item"
                 role="menuitemradio"
+                tabIndex={activeItem === branchList.indexOf(b) ? 0 : -1}
                 aria-checked={branch === b}
                 onClick={() => {
                   selectBranch(b);
@@ -193,6 +201,7 @@ export function ActionsFilters(): JSX.Element {
               type="button"
               className="gc-menu__item"
               role="menuitemradio"
+              tabIndex={activeItem === branchList.length ? 0 : -1}
               aria-checked={branch === null}
               onClick={() => {
                 selectBranch(null);
@@ -227,6 +236,7 @@ export function ActionsFilters(): JSX.Element {
               type="button"
               className="gc-menu__item"
               role="menuitemradio"
+              tabIndex={activeItem === 0 ? 0 : -1}
               aria-checked={workflowId === null}
               onClick={() => {
                 selectWorkflow(null);
@@ -253,6 +263,7 @@ export function ActionsFilters(): JSX.Element {
                   type="button"
                   className="gc-menu__item"
                   role="menuitemradio"
+                  tabIndex={activeItem === workflows.indexOf(w) + 1 ? 0 : -1}
                   aria-checked={workflowId === w.id}
                   onClick={() => {
                     selectWorkflow(w.id);

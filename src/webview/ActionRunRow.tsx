@@ -1,5 +1,5 @@
 import type { JSX } from 'react';
-import type { Lang, RunConclusion, RunJobInfo, RunStatus, WorkflowRunInfo } from '../messages';
+import type { Lang, RunJobInfo, WorkflowRunInfo } from '../messages';
 import {
   durationText,
   formatDuration,

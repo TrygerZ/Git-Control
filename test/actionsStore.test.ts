@@ -382,3 +382,60 @@ test('a dot probe that answers after a repository switch does not repaint the do
   }
   assert.equal(useNavStore.getState().failing, false, 'the stale reply is dropped');
 });
+
+test('a list reply from the previous repository is discarded after a switch', async () => {
+  resetAll();
+  let release: (() => void) | undefined;
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  let first = true;
+  const original = bridge.request;
+  bridge.request = (async (kind: string) => {
+    if (kind !== 'github/actionsRuns') return { connected: true, login: 'me', scopes: [] };
+    if (first) {
+      first = false;
+      await gate;
+      return { runs: [run({ id: 111 })], workflows: [], rateLimit: RATE };
+    }
+    return { runs: [run({ id: 222 })], workflows: [], rateLimit: RATE };
+  }) as typeof bridge.request;
+  try {
+    const stale = useActionsStore.getState().load({});
+    // The repository switches while the old read is still in flight.
+    useActionsStore.getState().reset();
+    release?.();
+    await stale;
+    await useActionsStore.getState().load({ force: true });
+  } finally {
+    bridge.request = original;
+  }
+  assert.deepEqual(
+    useActionsStore.getState().runs.map((r) => r.id),
+    [222],
+    'the old repository reply must not repaint the new one',
+  );
+});
+
+test('a stale list reply does not seed the cache or move the dot', async () => {
+  resetAll();
+  let release: (() => void) | undefined;
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const original = bridge.request;
+  bridge.request = (async () => {
+    await gate;
+    return { runs: [run({ conclusion: 'failure' })], workflows: [], rateLimit: RATE };
+  }) as typeof bridge.request;
+  try {
+    const stale = useActionsStore.getState().load({});
+    useActionsStore.getState().reset();
+    release?.();
+    await stale;
+  } finally {
+    bridge.request = original;
+  }
+  assert.deepEqual(useActionsStore.getState().loadedAt, {}, 'no cache entry from the old repo');
+  assert.equal(useNavStore.getState().failing, false, 'no dot from the old repo');
+});

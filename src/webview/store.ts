@@ -1039,6 +1039,7 @@ const requestedCommitAuthorHashes = new Set<string>();
 let inFlightLoad: Promise<void> | null = null;
 let inFlightPullRequests: Promise<void> | null = null;
 let inFlightClosedPullRequests: Promise<void> | null = null;
+let inFlightLinkage: Promise<void> | null = null;
 
 /**
  * Drop everything learned about commit authors. Avatars belong to one repository and
@@ -1118,6 +1119,10 @@ export const useGitHubStore = create<GitHubState>((set, get) => ({
   },
 
   async refreshLinkage() {
+    // The watcher coalesces at 250 ms but can still fire twice in a burst; one
+    // probe at a time is enough, and the second would only race the first.
+    if (inFlightLinkage !== null) return inFlightLinkage;
+    inFlightLinkage = (async () => {
     try {
       const [auth, linkage] = await Promise.all([
         bridge.request('github/auth', {}),
@@ -1143,7 +1148,11 @@ export const useGitHubStore = create<GitHubState>((set, get) => ({
       });
     } catch {
       // Linkage is metadata; a failed probe leaves the previous snapshot alone.
+    } finally {
+      inFlightLinkage = null;
     }
+    })();
+    return inFlightLinkage;
   },
 
   async loadPullRequests(opts?: { refresh?: boolean }) {
@@ -1508,6 +1517,11 @@ export const useActionsStore = create<ActionsState>((set, get) => {
       }
 
       set({ loading: true });
+      // A read can outlive the repository it was asked about: `reset()` bumps the
+      // generation, and `stillSelected` cannot catch that because reset keeps the
+      // persisted filter. Without this guard the old reply repaints the new
+      // repository's rows and seeds its cache with the previous owner's data.
+      const generation = actionsGeneration;
       const promise = (async () => {
         try {
           const result = await bridge.request('github/actionsRuns', {
@@ -1517,6 +1531,7 @@ export const useActionsStore = create<ActionsState>((set, get) => {
             ...(workflowId === null ? {} : { workflowId }),
             perPage: ACTIONS_PAGE_SIZE,
           });
+          if (generation !== actionsGeneration) return;
           set((s) => {
             const stillSelected = s.branch === branch && s.workflowId === workflowId;
             return {
@@ -1538,6 +1553,7 @@ export const useActionsStore = create<ActionsState>((set, get) => {
             useNavStore.getState().setFailing(failingDot(result.runs, repoBranch));
           }
         } catch (err) {
+          if (generation !== actionsGeneration) return;
           set({ loading: false, error: toErrorBody(err) });
         } finally {
           inFlightActions.delete(key);
