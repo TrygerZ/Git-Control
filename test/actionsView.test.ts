@@ -56,13 +56,33 @@ test('the actions view sends no request of its own beyond the store actions', ()
   assert.doesNotMatch(src, /bridge\.request\(/);
 });
 
-test('no run, re-run, log, or annotation control exists in this phase', () => {
+test('re-run, annotation, and dispatch controls do not exist yet', () => {
   const view = read('src/webview/ActionsView.tsx');
   const row = read('src/webview/ActionRunRow.tsx');
-  for (const forbidden of ['Run workflow', 'Re-run', 'Open full log', 'Annotations', 'workflow_dispatch']) {
-    assert.ok(!view.includes(forbidden), `ActionsView must not draw ${forbidden}`);
-    assert.ok(!row.includes(forbidden), `ActionRunRow must not draw ${forbidden}`);
+  const log = read('src/webview/ActionJobLog.tsx');
+  for (const forbidden of ['Run workflow', 'Re-run', 'Annotations', 'workflow_dispatch']) {
+    for (const src of [view, row, log]) {
+      assert.ok(!src.includes(forbidden), `${forbidden} must not be drawn`);
+    }
   }
+});
+
+test('the job log renders text nodes only and reaches the host through openUrl', () => {
+  const log = read('src/webview/ActionJobLog.tsx');
+  assert.doesNotMatch(log, /dangerouslySetInnerHTML|innerHTML|href=/);
+  assert.match(log, /role="region"/);
+  assert.match(log, /tabIndex=\{0\}/);
+  assert.match(log, /openFullLog/);
+  // No Markdown, no link rendering: every line is a plain text node.
+  assert.match(log, /\{line\.text\}/);
+});
+
+test('the job row gains a disclosure button that targets the log region', () => {
+  const row = read('src/webview/ActionRunRow.tsx');
+  assert.match(row, /aria-expanded=\{jobExpanded\}/);
+  assert.match(row, /aria-controls=\{jobExpanded \? logId : undefined\}/);
+  assert.match(row, /<ActionJobLog/);
+  assert.match(row, /canLoadLog/);
 });
 
 test('the run row is a button with aria-expanded and an aria-controls target', () => {

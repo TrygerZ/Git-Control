@@ -5320,6 +5320,95 @@ h3 {
   font-size: var(--gc-fs-2xs);
 }
 
+/* Job disclosure: the name is the button, so the whole row reads as one target. */
+.gc-actions__job-head {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--gc-space-2);
+  min-width: 0;
+  width: 100%;
+}
+
+.gc-actions__job-toggle {
+  display: flex;
+  flex: 1 1 auto;
+  align-items: flex-start;
+  gap: var(--gc-space-1);
+  min-width: 0;
+  min-height: var(--gc-hit);
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--gc-text-primary);
+  font: inherit;
+  font-size: var(--gc-fs-xs);
+  text-align: left;
+  cursor: pointer;
+}
+
+.gc-actions__job-toggle .gc-actions__job-name {
+  white-space: normal;
+}
+
+/*
+ * The log block. Monospace because it is machine output, a fixed max height
+ * because a log is unbounded, and `pre-wrap` plus `anywhere` so a 1000-char
+ * line wraps instead of forcing a horizontal scrollbar on a 300 px sidebar.
+ */
+.gc-actions__log {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gc-space-2);
+  margin: var(--gc-space-1) 0 var(--gc-space-2);
+  padding: var(--gc-space-2) var(--gc-space-3);
+  border: 1px solid var(--gc-border-subtle);
+  border-radius: var(--gc-radius-sm);
+  background: var(--gc-surface-1);
+}
+
+.gc-actions__log-body {
+  max-height: 240px;
+  margin: 0;
+  overflow: auto;
+  color: var(--gc-text-primary);
+  font-family: var(--vscode-editor-font-family, monospace);
+  font-size: var(--gc-fs-2xs);
+  line-height: 1.45;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.gc-actions__log-line {
+  display: block;
+}
+
+.gc-actions__log-line--error {
+  color: var(--gc-state-danger);
+}
+
+.gc-actions__log-line--warning {
+  color: var(--gc-state-warning);
+}
+
+.gc-actions__log-line--group {
+  color: var(--gc-text-secondary);
+  font-weight: var(--gc-weight-strong);
+}
+
+.gc-actions__log-line--command {
+  color: var(--gc-text-muted);
+}
+
+.gc-actions__log-note {
+  margin: 0;
+  color: var(--gc-text-muted);
+  font-size: var(--gc-fs-2xs);
+}
+
+.gc-actions__log-open {
+  align-self: flex-start;
+}
+
 .gc-actions__footer {
   display: flex;
   flex-wrap: wrap;
