@@ -163,6 +163,7 @@ async function repoScenario() {
     'gitControl.internal.navigate is registered',
   );
   await vscode.commands.executeCommand('gitControl.internal.navigate', 'prs');
+  await vscode.commands.executeCommand('gitControl.internal.navigate', 'actions');
   await vscode.commands.executeCommand('gitControl.internal.navigate', { id: 'branches', sub: 'tags' });
   await vscode.commands.executeCommand('gitControl.internal.navigate', { id: 'nope' });
   await vscode.commands.executeCommand('gitControl.internal.navigate');

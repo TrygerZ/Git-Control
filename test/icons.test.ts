@@ -70,6 +70,10 @@ const ALL_ICON_NAMES: readonly IconName[] = [
   'issue',
   'pr',
   'play',
+  // Actions run status (P13).
+  'status-running',
+  'status-queued',
+  'status-skipped',
 ];
 
 test('every IconName has an SVG render function in ICON_PATHS and no orphan paths exist', () => {

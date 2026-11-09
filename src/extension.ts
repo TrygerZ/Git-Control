@@ -24,6 +24,10 @@ import { clampZoom } from './webview/viewport';
 import { MAX_COMMIT_LIMIT, RepositoryService } from './repository';
 import { RepoWatcher } from './watcher';
 import type {
+  ActionsJobsPayload,
+  ActionsJobsResult,
+  ActionsRunsPayload,
+  ActionsRunsResult,
   CommitAuthorsPayload,
   CommitAuthorsResult,
   ContributorIdentity,
@@ -327,6 +331,7 @@ class Controller implements vscode.Disposable {
     );
     register('gitControl.openPullRequests', () => this.navigate('prs'));
     register('gitControl.openIssues', () => this.navigate('issues'));
+    register('gitControl.openActions', () => this.navigate('actions'));
     register('gitControl.openBranches', () => this.navigate('branches'));
     register('gitControl.refresh', async () => {
       for (const repo of this.repositories.values()) repo.invalidate();
@@ -718,6 +723,8 @@ class Controller implements vscode.Disposable {
       githubRepo: (payload) => this.githubRepo(payload),
       githubPullRequests: (payload) => this.githubPullRequests(payload),
       githubIssues: (payload) => this.githubIssues(payload),
+      githubActionsRuns: (payload) => this.githubActionsRuns(payload),
+      githubActionsJobs: (payload) => this.githubActionsJobs(payload),
       githubCommitAuthors: (payload) => this.githubCommitAuthors(payload),
       githubContributorIdentity: (payload) => this.githubContributorIdentity(payload),
       githubLinkage: () => this.githubLinkage(),
@@ -1021,6 +1028,34 @@ class Controller implements vscode.Disposable {
       login: viewer.data.login,
     });
     return { issues: result.data, rateLimit: client.rateLimit(result.cached) };
+  }
+
+  /**
+   * Runs plus the workflow list for the dropdown.
+   *
+   * The workflow list is only fetched when the request is unfiltered: it is the
+   * same data every unfiltered request wants, so the client cache answers the
+   * second call for free, and a filtered request would pay for a list it cannot
+   * use to narrow anything.
+   */
+  private async githubActionsRuns(payload: ActionsRunsPayload): Promise<ActionsRunsResult> {
+    const { client } = await this.githubClient();
+    const result = await client.workflowRuns(payload.owner, payload.repo, {
+      ...(payload.branch === undefined ? {} : { branch: payload.branch }),
+      ...(payload.workflowId === undefined ? {} : { workflowId: payload.workflowId }),
+      ...(payload.perPage === undefined ? {} : { perPage: payload.perPage }),
+    });
+    const workflows =
+      payload.branch === undefined && payload.workflowId === undefined
+        ? (await client.workflows(payload.owner, payload.repo)).data
+        : [];
+    return { runs: result.data, workflows, rateLimit: client.rateLimit(result.cached) };
+  }
+
+  private async githubActionsJobs(payload: ActionsJobsPayload): Promise<ActionsJobsResult> {
+    const { client } = await this.githubClient();
+    const result = await client.runJobs(payload.owner, payload.repo, payload.runId);
+    return { jobs: result.data, rateLimit: client.rateLimit(result.cached) };
   }
 
   private async githubCommitAuthors(payload: CommitAuthorsPayload): Promise<CommitAuthorsResult> {

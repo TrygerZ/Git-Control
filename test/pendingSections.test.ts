@@ -682,12 +682,12 @@ test('pending panel mounts the nav strip directly under the sidebar header', () 
   assert.equal(src.match(/<NavStrip \/>/g)?.length, 1, 'mounted once');
 });
 
-test('Changes, Pull requests, Issues, and Branches are registered, so the strip is visible', () => {
-  // P07, P08, and P11 add destinations, which is what makes the strip render (D-06).
-  // The order is the strip's left-to-right order.
+test('Changes, Pull requests, Issues, Actions, and Branches are registered, so the strip is visible', () => {
+  // P07, P08, P11, and P13 add destinations, which is what makes the strip render
+  // (D-06). The order is the strip's left-to-right order, as frame 08 draws it.
   assert.deepEqual(
     navRegistry.list().map((d) => d.id),
-    ['changes', 'prs', 'issues', 'branches'],
+    ['changes', 'prs', 'issues', 'actions', 'branches'],
   );
   assert.equal(isNavVisible(navRegistry.list().length), true);
 });

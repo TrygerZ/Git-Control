@@ -28,6 +28,11 @@ import type {
   IssueStateFilter,
   Lang,
   PullRequestInfo,
+  RunConclusion,
+  RunJobInfo,
+  RunStatus,
+  WorkflowInfo,
+  WorkflowRunInfo,
 } from './messages';
 import { hostText } from './hostText';
 import { validateHash } from './validation';
@@ -117,6 +122,16 @@ const BREAKER_WINDOW_MS = 60_000;
 const REPO_TTL_MS = 300_000;
 const PR_TTL_MS = 60_000;
 export const ISSUES_TTL_MS = 60_000;
+/**
+ * Workflow runs and jobs answer two questions with one request: what happened,
+ * and what is happening now. A run that is still going can change any second, so
+ * its copy expires fast; a finished list is history and can live a minute.
+ */
+export const RUNS_ACTIVE_TTL_MS = 15_000;
+export const RUNS_TTL_MS = 60_000;
+const WORKFLOWS_TTL_MS = 300_000;
+export const JOBS_ACTIVE_TTL_MS = 15_000;
+export const JOBS_TTL_MS = 300_000;
 const VIEWER_TTL_MS = 300_000;
 const AUTHOR_TTL_MS = 300_000;
 const REQUEST_TIMEOUT_MS = 15_000;
@@ -323,6 +338,51 @@ export class GitHubClient {
     return this.get<PullRequestInfo[]>(path, `commitPulls:${owner}/${repo}:${hash}`, PR_TTL_MS, (body) =>
       toPullRequests(body),
     );
+  }
+
+  /**
+   * Workflow runs, newest first.
+   *
+   * `workflowId` switches to the per-workflow route. Both routes support the
+   * `branch` query.
+   */
+  async workflowRuns(
+    owner: string,
+    repo: string,
+    opts: { branch?: string; workflowId?: number; perPage?: number } = {},
+  ): Promise<Fetched<WorkflowRunInfo[]>> {
+    const perPage = clampPerPage(opts.perPage ?? 30);
+    const base = `/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}`;
+    const branchPart = opts.branch === undefined ? '' : `&branch=${encodeURIComponent(opts.branch)}`;
+    const path =
+      opts.workflowId === undefined
+        ? `${base}/actions/runs?per_page=${perPage}&exclude_pull_requests=false${branchPart}`
+        : `${base}/actions/workflows/${opts.workflowId}/runs?per_page=${perPage}${branchPart}`;
+    const key = `runs:${owner}/${repo}:${opts.branch ?? '*'}:${opts.workflowId ?? '*'}:${perPage}`;
+    // The TTL depends on what is cached, not on the request: a list with a run
+    // still going is stale in seconds, a finished one is history.
+    const cached = this.readAny<WorkflowRunInfo[]>(key);
+    const ttl = cached !== undefined && runsActive(cached) ? RUNS_ACTIVE_TTL_MS : RUNS_TTL_MS;
+    return this.get<WorkflowRunInfo[]>(path, key, ttl, (body) => toWorkflowRuns(body));
+  }
+
+  async workflows(owner: string, repo: string): Promise<Fetched<WorkflowInfo[]>> {
+    const path =
+      `/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}` +
+      `/actions/workflows?per_page=100`;
+    return this.get<WorkflowInfo[]>(path, `workflows:${owner}/${repo}`, WORKFLOWS_TTL_MS, (body) =>
+      toWorkflows(body),
+    );
+  }
+
+  async runJobs(owner: string, repo: string, runId: number): Promise<Fetched<RunJobInfo[]>> {
+    const path =
+      `/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}` +
+      `/actions/runs/${runId}/jobs?filter=latest&per_page=100`;
+    const key = `jobs:${owner}/${repo}:${runId}`;
+    const cached = this.readAny<RunJobInfo[]>(key);
+    const ttl = cached !== undefined && jobsActive(cached) ? JOBS_ACTIVE_TTL_MS : JOBS_TTL_MS;
+    return this.get<RunJobInfo[]>(path, key, ttl, (body) => toJobs(body));
   }
 
   async issues(
@@ -800,6 +860,13 @@ export class GitHubClient {
     if (pollSeconds !== null && pollSeconds >= 0) this.lastPollIntervalMs = pollSeconds * 1000;
   }
 
+  /** Cached value regardless of age, for callers that pick their own TTL. */
+  private readAny<T>(key: string): T | undefined {
+    const isAuthor = key.startsWith('commitAuthor:') || key.startsWith('contributorId:');
+    const targetCache = isAuthor ? this.authorCache : this.cache;
+    return targetCache.get(key)?.value as T | undefined;
+  }
+
   private readCache<T>(key: string, ttlMs: number): T | undefined {
     const isAuthor = key.startsWith('commitAuthor:') || key.startsWith('contributorId:');
     const targetCache = isAuthor ? this.authorCache : this.cache;
@@ -854,6 +921,165 @@ export function parseScopes(header: string | null): string[] {
  */
 export function hasPrivateScope(scopes: readonly string[]): boolean {
   return scopes.includes('repo') || scopes.includes(REQUIRED_PRIVATE_SCOPE);
+}
+
+// ------------------------------------------------------------------ actions
+
+const RUN_STATUSES: ReadonlySet<string> = new Set([
+  'queued',
+  'in_progress',
+  'completed',
+  'waiting',
+  'requested',
+  'pending',
+]);
+
+const RUN_CONCLUSIONS: ReadonlySet<string> = new Set([
+  'success',
+  'failure',
+  'cancelled',
+  'skipped',
+  'timed_out',
+  'neutral',
+  'action_required',
+  'stale',
+  'startup_failure',
+]);
+
+/** A status the UI does not know is not a completed run, so it maps to `pending`. */
+function toRunStatus(value: unknown): RunStatus {
+  return typeof value === 'string' && RUN_STATUSES.has(value) ? (value as RunStatus) : 'pending';
+}
+
+function toRunConclusion(value: unknown): RunConclusion {
+  return typeof value === 'string' && RUN_CONCLUSIONS.has(value) ? (value as RunConclusion) : null;
+}
+
+/**
+ * Only `https:` links survive. Everything else becomes an empty string, which the
+ * view reads as "no link", so a crafted `javascript:` URL cannot reach a click.
+ */
+function httpsUrl(value: unknown): string {
+  return typeof value === 'string' && value.startsWith('https://') ? value : '';
+}
+
+/** A count that could have come from JSON. Out-of-range values become `fallback`. */
+function safeInt(value: unknown, fallback = 0): number {
+  return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0 ? value : fallback;
+}
+
+function isoOrNull(value: unknown): string | null {
+  return typeof value === 'string' && value.length > 0 ? value : null;
+}
+
+function isoOrEmpty(value: unknown): string {
+  return typeof value === 'string' ? value : '';
+}
+
+export function toWorkflowRuns(body: unknown): WorkflowRunInfo[] {
+  const list = (body as { workflow_runs?: unknown } | null)?.workflow_runs;
+  if (!Array.isArray(list)) return [];
+  return list.map((raw) => {
+    const run = raw as {
+      id?: unknown;
+      workflow_id?: unknown;
+      name?: unknown;
+      display_title?: unknown;
+      run_number?: unknown;
+      event?: unknown;
+      status?: unknown;
+      conclusion?: unknown;
+      head_branch?: unknown;
+      head_sha?: unknown;
+      html_url?: unknown;
+      created_at?: unknown;
+      run_started_at?: unknown;
+      updated_at?: unknown;
+      run_attempt?: unknown;
+    };
+    return {
+      id: safeInt(run.id),
+      workflowId: safeInt(run.workflow_id),
+      name: typeof run.name === 'string' ? run.name : '',
+      title: typeof run.display_title === 'string' ? run.display_title : '',
+      runNumber: safeInt(run.run_number),
+      event: typeof run.event === 'string' ? run.event : '',
+      status: toRunStatus(run.status),
+      conclusion: toRunConclusion(run.conclusion),
+      branch: typeof run.head_branch === 'string' && run.head_branch.length > 0 ? run.head_branch : null,
+      sha: typeof run.head_sha === 'string' ? run.head_sha : '',
+      url: httpsUrl(run.html_url),
+      createdAt: isoOrEmpty(run.created_at),
+      startedAt: isoOrNull(run.run_started_at),
+      updatedAt: isoOrEmpty(run.updated_at),
+      attempt: safeInt(run.run_attempt, 1) || 1,
+    };
+  });
+}
+
+export function toWorkflows(body: unknown): WorkflowInfo[] {
+  const list = (body as { workflows?: unknown } | null)?.workflows;
+  if (!Array.isArray(list)) return [];
+  return list.map((raw) => {
+    const wf = raw as { id?: unknown; name?: unknown; path?: unknown; state?: unknown };
+    return {
+      id: safeInt(wf.id),
+      name: typeof wf.name === 'string' ? wf.name : '',
+      path: typeof wf.path === 'string' ? wf.path : '',
+      state: typeof wf.state === 'string' ? wf.state : '',
+    };
+  });
+}
+
+export function toJobs(body: unknown): RunJobInfo[] {
+  const list = (body as { jobs?: unknown } | null)?.jobs;
+  if (!Array.isArray(list)) return [];
+  return list.map((raw) => {
+    const job = raw as {
+      id?: unknown;
+      name?: unknown;
+      status?: unknown;
+      conclusion?: unknown;
+      started_at?: unknown;
+      completed_at?: unknown;
+      html_url?: unknown;
+      steps?: unknown;
+    };
+    return {
+      id: safeInt(job.id),
+      name: typeof job.name === 'string' ? job.name : '',
+      status: toRunStatus(job.status),
+      conclusion: toRunConclusion(job.conclusion),
+      startedAt: isoOrNull(job.started_at),
+      completedAt: isoOrNull(job.completed_at),
+      url: httpsUrl(job.html_url),
+      steps: Array.isArray(job.steps)
+        ? job.steps.map((rawStep) => {
+            const step = rawStep as {
+              number?: unknown;
+              name?: unknown;
+              status?: unknown;
+              conclusion?: unknown;
+            };
+            return {
+              number: safeInt(step.number),
+              name: typeof step.name === 'string' ? step.name : '',
+              status: typeof step.status === 'string' ? step.status : '',
+              conclusion: typeof step.conclusion === 'string' ? step.conclusion : null,
+            };
+          })
+        : [],
+    };
+  });
+}
+
+/** True while any run can still change without a user action. */
+function runsActive(runs: readonly WorkflowRunInfo[]): boolean {
+  return runs.some((run) => run.status !== 'completed');
+}
+
+function jobsActive(jobs: readonly RunJobInfo[]): boolean {
+  return jobs.some((job) => job.status !== 'completed');
 }
 
 function toPullRequests(body: unknown): PullRequestInfo[] {

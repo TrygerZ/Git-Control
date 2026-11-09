@@ -79,11 +79,15 @@ test('each registry is independent, and the shared one is a registry', () => {
   assert.ok(Array.isArray(navRegistry.list()));
 });
 
-test('the shared navRegistry registers changes, prs, issues, and branches in order', () => {
+test('the shared navRegistry registers changes, prs, issues, actions, and branches in order', () => {
   assert.deepEqual(
     navRegistry.list().map((d) => d.id),
-    ['changes', 'prs', 'issues', 'branches'],
+    ['changes', 'prs', 'issues', 'actions', 'branches'],
   );
+  const actions = navRegistry.list().find((d) => d.id === 'actions');
+  assert.ok(actions !== undefined, 'P13 registers Actions fourth, as frame 08 draws it');
+  assert.equal(actions.requiresGitHub, true, 'Actions has no anonymous mode');
+  assert.equal(actions.icon, 'play');
   const issues = navRegistry.list().find((d) => d.id === 'issues');
   assert.ok(issues !== undefined);
   assert.equal(issues.requiresGitHub, true);
@@ -92,6 +96,27 @@ test('the shared navRegistry registers changes, prs, issues, and branches in ord
   assert.ok(branches !== undefined, 'P11 registers the fifth destination');
   assert.equal(branches.requiresGitHub, false, 'Branches works without a token');
   assert.equal(branches.icon, 'git-branch');
+});
+
+test('actions destination uses resting accessible name and navTabs reflects failing state', () => {
+  const actions = navRegistry.list().find((d) => d.id === 'actions');
+  assert.ok(actions !== undefined);
+  const stringsEn = t('en');
+  assert.equal(actions.ariaName(stringsEn, null), stringsEn.nav.actions);
+
+  const tabsFailing = navTabs([actions], stringsEn, {
+    counts: {},
+    failing: true,
+    signedIn: true,
+  });
+  assert.equal(tabsFailing[0]?.ariaLabel, stringsEn.nav.actionsFailingAria);
+
+  const tabsOk = navTabs([actions], stringsEn, {
+    counts: {},
+    failing: false,
+    signedIn: true,
+  });
+  assert.equal(tabsOk[0]?.ariaLabel, stringsEn.nav.actions);
 });
 
 test('the strip needs at least two destinations to show', () => {

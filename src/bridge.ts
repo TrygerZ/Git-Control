@@ -30,6 +30,8 @@ import {
   parseRequest,
   shouldRemember,
   validateAction as validateActionPure,
+  validateActionsJobsPayload,
+  validateActionsRunsPayload,
   validateEmptyPayload as validateEmptyPayloadPure,
 } from './bridgePure';
 import type { RepositoryService } from './repository';
@@ -43,6 +45,10 @@ import {
 } from './validation';
 import type {
   ActionResult,
+  ActionsJobsPayload,
+  ActionsJobsResult,
+  ActionsRunsPayload,
+  ActionsRunsResult,
   CommitAuthorInfo,
   CommitAuthorsPayload,
   CommitAuthorsResult,
@@ -135,6 +141,9 @@ export interface BridgeHost {
   githubRepo?(payload: GitHubRepoPayload): Promise<GitHubRepoInfo>;
   githubPullRequests?(payload: PullRequestsPayload): Promise<PullRequestsResult>;
   githubIssues?(payload: IssuesPayload): Promise<IssuesResult>;
+  /** Workflow runs. Sign-in required, so the host also needs a token to answer. */
+  githubActionsRuns?(payload: ActionsRunsPayload): Promise<ActionsRunsResult>;
+  githubActionsJobs?(payload: ActionsJobsPayload): Promise<ActionsJobsResult>;
   githubCommitAuthors?(payload: CommitAuthorsPayload): Promise<CommitAuthorsResult>;
   githubContributorIdentity?(payload: ContributorIdentityPayload): Promise<ContributorIdentity>;
   githubLinkage?(): Promise<GitHubLinkage>;
@@ -378,6 +387,10 @@ export class MessageBridge {
         return this.handleGitHubPullRequests(request.payload as PullRequestsPayload);
       case 'github/issues':
         return this.handleGitHubIssues(request.payload as IssuesPayload);
+      case 'github/actionsRuns':
+        return this.handleGitHubActionsRuns(request.payload as ActionsRunsPayload);
+      case 'github/actionsJobs':
+        return this.handleGitHubActionsJobs(request.payload as ActionsJobsPayload);
       case 'github/commitAuthors':
         return this.handleGitHubCommitAuthors(request.payload as CommitAuthorsPayload);
       case 'github/contributorIdentity':
@@ -713,6 +726,24 @@ export class MessageBridge {
     const list = this.host.githubIssues;
     if (list === undefined) fail(503, 'UNAVAILABLE', this.text().githubPending);
     return list(payload);
+  }
+
+  private async handleGitHubActionsRuns(payload: ActionsRunsPayload): Promise<ActionsRunsResult> {
+    const invalid = (detail: string): never =>
+      fail(400, 'VALIDATION_ERROR', this.text().invalid, { detail });
+    validateActionsRunsPayload(payload, invalid);
+    const list = this.host.githubActionsRuns;
+    if (list === undefined) fail(503, 'UNAVAILABLE', this.text().githubPending);
+    return list(payload);
+  }
+
+  private async handleGitHubActionsJobs(payload: ActionsJobsPayload): Promise<ActionsJobsResult> {
+    const invalid = (detail: string): never =>
+      fail(400, 'VALIDATION_ERROR', this.text().invalid, { detail });
+    validateActionsJobsPayload(payload, invalid);
+    const jobs = this.host.githubActionsJobs;
+    if (jobs === undefined) fail(503, 'UNAVAILABLE', this.text().githubPending);
+    return jobs(payload);
   }
 
   private async handleGitHubCommitAuthors(payload: CommitAuthorsPayload): Promise<CommitAuthorsResult> {

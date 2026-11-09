@@ -5,6 +5,14 @@ All notable changes to the "Git Control" extension will be documented in this fi
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.9.0] - 2026-11-09
+
+### Added
+- Actions view in the sidebar lists GitHub Actions workflow runs for the current branch and for all branches, with filters for branch and workflow.
+- Run rows expand to show their jobs. Running workflows refresh automatically.
+- The Actions tab shows a red dot when the latest run on the current branch failed.
+- Git Control: Open Actions command.
+
 ## [3.8.1] - 2026-11-08
 
 ### Changed

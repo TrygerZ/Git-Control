@@ -130,7 +130,7 @@ test('the nav destination registers as branches with no badge and no GitHub requ
   assert.equal(branches.icon, 'git-branch');
   assert.deepEqual(
     navRegistry.list().map((d) => d.id),
-    ['changes', 'prs', 'issues', 'branches'],
+    ['changes', 'prs', 'issues', 'actions', 'branches'],
     'order is the strip order',
   );
 });

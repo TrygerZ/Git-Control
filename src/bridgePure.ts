@@ -75,6 +75,36 @@ export function isNonNegativeInt(value: unknown): boolean { return typeof value 
 export function isSlug(value: unknown): boolean {
   return typeof value === 'string' && value.length > 0 && value.length <= 100 && /^[A-Za-z0-9._-]+$/.test(value);
 }
+/** A GitHub Actions run or workflow id. Same rule as any other positive integer. */
+export function isRunId(value: unknown): boolean {
+  return isPositiveInt(value);
+}
+
+/**
+ * `github/actionsRuns`. `branch` reaches a query string and `workflowId` reaches
+ * a path segment, so both are validated with the same rules the git argv uses.
+ */
+export function validateActionsRunsPayload(
+  payload: { owner: unknown; repo: unknown; branch?: unknown; workflowId?: unknown; perPage?: unknown },
+  fail: (detail: string) => never,
+): void {
+  if (!isSlug(payload.owner) || !isSlug(payload.repo)) fail('owner/repo');
+  if (payload.branch !== undefined && !validateBranchName(payload.branch)) fail('branch');
+  if (payload.workflowId !== undefined && !isPositiveInt(payload.workflowId)) fail('workflowId');
+  if (payload.perPage !== undefined && (!isPositiveInt(payload.perPage) || (payload.perPage as number) > 50)) {
+    fail('perPage');
+  }
+}
+
+/** `github/actionsJobs`. The run id is the only variable part of the path. */
+export function validateActionsJobsPayload(
+  payload: { owner: unknown; repo: unknown; runId: unknown },
+  fail: (detail: string) => never,
+): void {
+  if (!isSlug(payload.owner) || !isSlug(payload.repo)) fail('owner/repo');
+  if (!isRunId(payload.runId)) fail('runId');
+}
+
 export function isIssueFilter(value: unknown): value is IssueListFilter {
   return value === 'assigned' || value === 'created' || value === 'mentioned';
 }
