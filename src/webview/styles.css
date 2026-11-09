@@ -5299,8 +5299,9 @@ h3 {
 
 .gc-actions__job {
   display: flex;
-  align-items: flex-start;
-  gap: var(--gc-space-2);
+  /* Column, not the flex default: the head and the log stack, they never share a row. */
+  flex-direction: column;
+  gap: var(--gc-space-1);
   min-width: 0;
   padding: var(--gc-space-1) 0;
 }
