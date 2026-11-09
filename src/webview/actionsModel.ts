@@ -181,11 +181,14 @@ export function statusWord(status: RunStatus, conclusion: RunConclusion, lang: L
     case 'cancelled':
       return strings.statusCancelled;
     case 'skipped':
+      return strings.statusSkipped;
     case 'neutral':
     case 'stale':
     case null:
     default:
-      return strings.statusSkipped;
+      // Finished with no verdict worth a word of its own. "Skipped" would claim
+      // the run was deliberately passed over, which is a different fact.
+      return strings.statusNeutral;
   }
 }
 

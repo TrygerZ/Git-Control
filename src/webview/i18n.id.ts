@@ -894,6 +894,7 @@ const id: Catalog = {
     statusRunning: 'Berjalan',
     statusQueued: 'Antre',
     statusSkipped: 'Dilewati',
+    statusNeutral: 'Tanpa hasil',
     statusCancelled: 'Dibatalkan',
     statusActionRequired: 'Perlu persetujuan Anda',
     durationRunning: (when: string) => `berjalan ${when}`,

@@ -412,6 +412,7 @@ import {
   ALL_BRANCHES_CAP,
   formatDuration,
   runRowLabel,
+  statusWord,
 } from '../src/webview/actionsModel';
 import type { WorkflowRunInfo } from '../src/messages';
 
@@ -656,4 +657,16 @@ test('formatDuration says 0s for a finished run that never started', () => {
   // A startup_failure has completed_at but no run_started_at.
   assert.equal(formatDuration(null, Date.parse('2026-11-01T10:00:00Z'), false, 'en'), '0s');
   assert.equal(formatDuration(null, 0, true, 'en'), 'queued');
+});
+
+// ------------------------------------------------------------------ statusWord
+
+test('statusWord names a finished run without a verdict as no result, not skipped', () => {
+  for (const conclusion of ["neutral", "stale", null] as const) {
+    assert.equal(statusWord("completed", conclusion, "en"), "No result", String(conclusion));
+  }
+  assert.equal(statusWord("completed", "skipped", "en"), "Skipped");
+  assert.equal(statusWord("completed", "neutral", "id"), "Tanpa hasil");
+  assert.equal(statusWord("in_progress", null, "en"), "Running");
+  assert.equal(statusWord("queued", null, "en"), "Queued");
 });

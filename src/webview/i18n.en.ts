@@ -897,6 +897,7 @@ const en = {
     statusRunning: 'Running',
     statusQueued: 'Queued',
     statusSkipped: 'Skipped',
+    statusNeutral: 'No result',
     statusCancelled: 'Cancelled',
     statusActionRequired: 'Needs your approval',
     durationRunning: (when: string) => `running ${when}`,
