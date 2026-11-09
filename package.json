@@ -96,6 +96,17 @@
       {
         "command": "gitControl.pickRepository",
         "title": "Git Control: Pick Repository"
+      },
+      {
+        "command": "gitControl.quickActions",
+        "title": "Git Control: Quick Actions"
+      }
+    ],
+    "keybindings": [
+      {
+        "command": "gitControl.quickActions",
+        "key": "ctrl+k g",
+        "mac": "cmd+k g"
       }
     ],
     "menus": {
