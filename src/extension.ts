@@ -26,6 +26,8 @@ import { RepoWatcher } from './watcher';
 import type {
   ActionsJobsPayload,
   ActionsJobsResult,
+  ActionsLogPayload,
+  ActionsLogResult,
   ActionsRunsPayload,
   ActionsRunsResult,
   CommitAuthorsPayload,
@@ -725,6 +727,7 @@ class Controller implements vscode.Disposable {
       githubIssues: (payload) => this.githubIssues(payload),
       githubActionsRuns: (payload) => this.githubActionsRuns(payload),
       githubActionsJobs: (payload) => this.githubActionsJobs(payload),
+      githubActionsLog: (payload) => this.githubActionsLog(payload),
       githubCommitAuthors: (payload) => this.githubCommitAuthors(payload),
       githubContributorIdentity: (payload) => this.githubContributorIdentity(payload),
       githubLinkage: () => this.githubLinkage(),
@@ -1056,6 +1059,31 @@ class Controller implements vscode.Disposable {
     const { client } = await this.githubClient();
     const result = await client.runJobs(payload.owner, payload.repo, payload.runId);
     return { jobs: result.data, rateLimit: client.rateLimit(result.cached) };
+  }
+
+  /**
+   * Processed job log tail.
+   *
+   * Only counts reach the output channel: the job id, the bytes read, and the
+   * lines kept. The signed storage URL never leaves the client method, and no
+   * line of log text is ever written anywhere.
+   */
+  private async githubActionsLog(payload: ActionsLogPayload): Promise<ActionsLogResult> {
+    const { client } = await this.githubClient();
+    const result = await client.jobLogTail(payload.owner, payload.repo, payload.jobId, {
+      completed: payload.completed === true,
+      maskedText: extText().github.maskedKey,
+    });
+    this.logger.info(
+      'github/log',
+      `job=${payload.jobId} bytes=${result.data.bytesRead} lines=${result.data.lines.length}`,
+    );
+    return {
+      state: result.data.state,
+      lines: result.data.lines,
+      headCut: result.data.headCut,
+      rateLimit: client.rateLimit(result.cached),
+    };
   }
 
   private async githubCommitAuthors(payload: CommitAuthorsPayload): Promise<CommitAuthorsResult> {
