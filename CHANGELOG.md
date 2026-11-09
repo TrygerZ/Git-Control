@@ -5,6 +5,16 @@ All notable changes to the "Git Control" extension will be documented in this fi
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.10.0] - 2026-11-09
+
+### Added
+- Job rows in the Actions view expand to show the last 200 lines of the job log, so a failed step can be read without leaving the editor. The first failed job opens automatically when a run expands.
+- Open full log opens the job page on GitHub.
+
+### Security
+- Job logs are downloaded from the signed storage link without sending the GitHub token, only from validated HTTPS hosts, with size, time, and line limits.
+- Signed URL secrets are redacted from the Git Control output channel.
+
 ## [3.9.0] - 2026-11-09
 
 ### Added
