@@ -1232,11 +1232,14 @@ test('jobLogTail surfaces a transport abort as UNAVAILABLE without retrying', as
   assert.equal(calls.length, 1, 'no retry on the log path');
 });
 
-test('jobLogTail does not retry a 503 on hop 2', async () => {
+test('jobLogTail does not retry a 503 on hop 2 and calls it unavailable, not expired', async () => {
   const { gh, calls } = logClient([response(302, '', { location: SIGNED }), response(503, '')]);
-  const result = await gh.jobLogTail('o', 'r', 1);
-  assert.equal(result.data.state, 'expired');
-  assert.equal(calls.length, 2);
+  await assert.rejects(() => gh.jobLogTail('o', 'r', 1), (err: unknown) => {
+    assert.ok(err instanceof GitHubError);
+    assert.equal(err.code, 'UNAVAILABLE');
+    return true;
+  });
+  assert.equal(calls.length, 2, 'no retry');
 });
 
 test('jobLogTail caches a completed job and not a running one', async () => {
@@ -1280,7 +1283,14 @@ test('jobLogTail never puts the signed url in an error detail or a log line', as
   const { gh } = logClient([response(302, '', { location: SIGNED }), response(500, '')], {
     logger: (line) => lines.push(line),
   });
-  await gh.jobLogTail('o', 'r', 1);
+  // A storage 5xx is UNAVAILABLE, not a missing log. Its detail carries the
+  // status only, never the URL it was asked for.
+  await assert.rejects(() => gh.jobLogTail('o', 'r', 1), (err: unknown) => {
+    assert.ok(err instanceof GitHubError);
+    assert.equal(err.code, 'UNAVAILABLE');
+    assert.ok(!String(err.detail ?? '').includes('SECRETSIG'));
+    return true;
+  });
   assert.ok(!lines.join('\n').includes('SECRETSIG'));
   const { gh: broken } = logClient([response(302, '', { location: SIGNED }), new Error(`fetch failed ${SIGNED}`)]);
   await assert.rejects(() => broken.jobLogTail('o', 'r', 1), (err: unknown) => {

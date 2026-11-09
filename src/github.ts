@@ -739,10 +739,20 @@ export class GitHubClient {
       });
     }
 
-    if (second.status < 200 || second.status >= 300) {
+    if (second.status === 403 || second.status === 404 || second.status === 410 || (second.status >= 300 && second.status < 400)) {
       // A redirect on hop 2 is refused, and 403/404/410 mean the signed URL has
       // expired or the read is no longer allowed. Both read as `expired`.
       return this.finishLog(jobId, { state: 'expired', lines: [], headCut: false, bytesRead: 0 }, false, remaining);
+    }
+    if (second.status < 200 || second.status >= 300) {
+      // Any other failure is the storage host misbehaving, not a missing log.
+      // Saying "expired" here would tell the user to stop trying.
+      throw new GitHubError({
+        status: 503,
+        code: 'UNAVAILABLE',
+        message: this.text().unavailable,
+        detail: `storage status ${second.status}`,
+      });
     }
 
     const processed = await this.consumeStream(second, limits, maskedText);
@@ -774,7 +784,7 @@ export class GitHubClient {
     const buffer = new TailBuffer(limits);
     const status = buffer.push(bytes);
     const processed = processLog(
-      { bytes: buffer.bytes(), headDropped: buffer.headDropped },
+      { bytes: buffer.bytes(), headDropped: buffer.headDropped, pemOpen: buffer.pemOpen },
       limits,
       maskedText,
     );
@@ -814,7 +824,11 @@ export class GitHubClient {
         return { state: 'tooLarge', lines: [], headCut: false, bytesRead: buffer.total };
       }
     }
-    const processed = processLog({ bytes: buffer.bytes(), headDropped: buffer.headDropped }, limits, maskedText);
+    const processed = processLog(
+      { bytes: buffer.bytes(), headDropped: buffer.headDropped, pemOpen: buffer.pemOpen },
+      limits,
+      maskedText,
+    );
     return { ...processed, bytesRead: buffer.total };
   }
 
