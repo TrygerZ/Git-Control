@@ -161,9 +161,13 @@ export class TailBuffer {
     const windowStart = this.seen - this.length;
     // The BEGIN must be behind the window, otherwise `processLog` finds it itself.
     if (this.lastBegin >= windowStart) return false;
-    // The END must not also be behind the window, or the block closed before the
-    // retained bytes began and nothing inside them is key material.
-    return this.lastEnd === null || this.lastEnd >= windowStart;
+    // Only an END that belongs to THIS block can close it. An earlier END from a
+    // different block is behind the window too, and treating it as a close would
+    // leak the body of a later unterminated block.
+    if (this.lastEnd === null || this.lastEnd < this.lastBegin) return true;
+    // This block's own END must not also be behind the window, or it closed
+    // before the retained bytes began and nothing inside them is key material.
+    return this.lastEnd >= windowStart;
   }
 
   /** The retained bytes, oldest first. One allocation, called once per download. */

@@ -345,3 +345,17 @@ test('a block that closed before the window start masks nothing inside it', () =
   const out = processLog({ bytes: buf.bytes(), headDropped: true, pemOpen: buf.pemOpen }, undefined, MASK);
   assert.equal(out.lines.at(-1)?.text, 'after line');
 });
+
+test('an unterminated block after an earlier closed block still masks its body', () => {
+  // Gate 3 residual: the earlier END belongs to a different block, so it must
+  // not make the later unterminated BEGIN look closed.
+  const buf = new TailBuffer({ tailBytes: 1024 * 1024, hardCapBytes: 64 * 1024 * 1024 });
+  buf.push(encode('-----BEGIN PRIVATE KEY-----\nAAAA\n-----END PRIVATE KEY-----\n'));
+  buf.push(encode('normal filler\n'.repeat(8000)));
+  buf.push(encode('-----BEGIN RSA PRIVATE KEY-----\n'));
+  for (let i = 0; i < 120000; i += 1) buf.push(encode('MIIEsecretline\n'));
+  assert.equal(buf.headDropped, true);
+  assert.equal(buf.pemOpen, true);
+  const out = processLog({ bytes: buf.bytes(), headDropped: true, pemOpen: buf.pemOpen }, undefined, MASK);
+  assert.ok(out.lines.every((l) => l.text === MASK), JSON.stringify(out.lines.slice(0, 2)));
+});
