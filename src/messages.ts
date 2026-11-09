@@ -828,6 +828,11 @@ export interface RequestMap {
    */
   'actions/openExplorer': { payload: Record<string, never>; response: { opened: boolean } };
   /**
+   * Open the Quick actions palette. Empty payload by design: the host decides
+   * what to show, so this cannot become a command channel for the webview.
+   */
+  'actions/openQuickActions': { payload: Record<string, never>; response: { opened: boolean } };
+  /**
    * Reveal a commit in the Git Control explorer canvas and select it.
    */
   'graph/revealCommit': { payload: RevealCommitPayload; response: { revealed: boolean } };

@@ -137,6 +137,8 @@ export interface BridgeHost {
   showLogs?(): void;
   /** Open the explorer webview panel. Takes no parameters, so it cannot run commands. */
   openExplorer?(): void;
+  /** Open the Quick actions palette. Takes no parameters, so it cannot run commands. */
+  openQuickActions?(): void;
   /** Reveal and focus a commit in the explorer canvas. */
   revealCommit?(hash: string): Promise<boolean> | boolean;
   /** Open an external URL. Host-side so the webview never navigates itself. */
@@ -373,6 +375,9 @@ export class MessageBridge {
         return this.handleShowLogs();
       case 'actions/openExplorer':
         return this.handleOpenExplorer();
+      case 'actions/openQuickActions':
+        validateEmptyPayload(request.payload, this.text().invalid);
+        return this.handleOpenQuickActions();
       case 'graph/revealCommit':
         return this.handleRevealCommit(request.payload as RevealCommitPayload);
       case 'actions/openExternal':
@@ -596,6 +601,19 @@ export class MessageBridge {
    */
   private handleOpenExplorer(): { opened: boolean } {
     const open = this.host.openExplorer;
+    if (open === undefined) return { opened: false };
+    open();
+    return { opened: true };
+  }
+
+  /**
+   * Open the Quick actions palette. Deliberately parameterless: there is no way
+   * to express "run command X" through this kind, so it cannot become an
+   * arbitrary command-execution channel for the webview. The empty payload is
+   * enforced by `validateEmptyPayload`, not merely by the type.
+   */
+  private handleOpenQuickActions(): { opened: boolean } {
+    const open = this.host.openQuickActions;
     if (open === undefined) return { opened: false };
     open();
     return { opened: true };
