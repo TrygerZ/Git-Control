@@ -33,7 +33,7 @@
 import { useEffect, useRef, useState, type JSX } from 'react';
 import { amendBlockedReason, formatCount, sanitizeGitText } from './format';
 import { useT } from './useT';
-import { COMMIT_MESSAGE_MIN, useChangesStore, useOperationStore, useRepoStore, useSettingsStore } from './store';
+import { COMMIT_MESSAGE_MIN, useChangesStore, useOperationStore, useRepoStore, useRouteStore, useSettingsStore } from './store';
 import { Icon, InfoBanner, Spinner } from './ui';
 import { firstRemoteName } from './NodeContextMenu';
 
@@ -60,6 +60,15 @@ export function CommitForm(): JSX.Element {
   const retryPush = useChangesStore((st) => st.retryPush);
   const changes = useChangesStore((st) => st.changes);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const pushRef = useRef<HTMLButtonElement>(null);
+  const pendingFocus = useRouteStore((s) => s.pendingFocus);
+
+  useEffect(() => {
+    if (pendingFocus === null) return;
+    const target = useRouteStore.getState().takeFocus();
+    if (target === 'commit') textareaRef.current?.focus();
+    else if (target === 'publish' || target === 'push') pushRef.current?.focus();
+  }, [pendingFocus]);
 
   // Pull focus back to the field the moment validation fails.
   useEffect(() => {
@@ -309,6 +318,7 @@ export function CommitForm(): JSX.Element {
         {remote !== null && (
           <button
             type="button"
+            ref={pushRef}
             className="gc-button gc-button--action"
             title={pushTitle}
             disabled={pushDisabled}

@@ -73,6 +73,18 @@ export function SidebarHeader(): JSX.Element | null {
     }
   };
 
+  const openQuickActions = async (): Promise<void> => {
+    try {
+      await bridge.request('actions/openQuickActions', {});
+    } catch (err) {
+      const body = toErrorBody(err);
+      pushToast({
+        level: body.code === 'UNAVAILABLE' ? 'warning' : 'error',
+        message: body.message,
+      });
+    }
+  };
+
   const syncLabel: Record<SyncBadge, string> = {
     local: shell.syncLocal,
     synced: shell.syncSynced,
@@ -100,6 +112,15 @@ export function SidebarHeader(): JSX.Element | null {
             onClick={refresh}
           >
             <Icon name="refresh" />
+          </button>
+          <button
+            type="button"
+            className="gc-icon-button"
+            aria-label={strings.palette.openAria}
+            title={strings.palette.openTitle}
+            onClick={() => void openQuickActions()}
+          >
+            <Icon name="search" />
           </button>
           <button
             type="button"

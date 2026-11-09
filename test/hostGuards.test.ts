@@ -271,3 +271,36 @@ test('bridge settle ignores malformed responses and does not resolve or crash', 
   assert.equal(rejected, true);
   assert.equal(bridgeInternal.pending.has('test-req'), false);
 });
+
+test('event/navigate keeps a known focus target and strips an unknown one', () => {
+  // P15: a quick-action row that only navigates is useless, so the event carries
+  // which control to focus once the view is mounted. The set is closed and
+  // validated here, because the payload crosses the host boundary.
+  const kept = validateHostEvent({
+    kind: 'event/navigate',
+    payload: { route: { id: 'changes', sub: 'changes' }, focus: 'publish' },
+  });
+  assert.deepEqual(kept, {
+    kind: 'event/navigate',
+    payload: { route: { id: 'changes', sub: 'changes' }, focus: 'publish' },
+  });
+
+  for (const focus of ['push', 'commit', 'create-pr', 'resolve']) {
+    const event = validateHostEvent({ kind: 'event/navigate', payload: { route: { id: 'prs' }, focus } });
+    assert.deepEqual(event, { kind: 'event/navigate', payload: { route: { id: 'prs' }, focus } });
+  }
+
+  // An unknown focus is dropped, not fatal: navigation still works against a
+  // host that learned a newer focus id than this build knows.
+  const stripped = validateHostEvent({
+    kind: 'event/navigate',
+    payload: { route: { id: 'prs' }, focus: 'launch-missiles' },
+  });
+  assert.deepEqual(stripped, { kind: 'event/navigate', payload: { route: { id: 'prs' } } });
+
+  const wrongType = validateHostEvent({
+    kind: 'event/navigate',
+    payload: { route: { id: 'prs' }, focus: 7 },
+  });
+  assert.deepEqual(wrongType, { kind: 'event/navigate', payload: { route: { id: 'prs' } } });
+});

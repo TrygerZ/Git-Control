@@ -9,7 +9,7 @@
  * Accessibility: each row's buttons name the file they act on, so a ten-file
  * conflict list does not read as ten identical `Selesaikan` buttons.
  */
-import { type JSX } from 'react';
+import { useEffect, useRef, type JSX } from 'react';
 import {
   conflictActionLabel,
   conflictLabel,
@@ -19,7 +19,7 @@ import {
 } from './format';
 import { useT } from './useT';
 import { bridge } from './bridge';
-import { toErrorBody, useChangesStore, useOperationStore, useSettingsStore } from './store';
+import { toErrorBody, useChangesStore, useOperationStore, useRouteStore, useSettingsStore } from './store';
 import { EmptyState, InfoBanner } from './ui';
 import type { ConflictEntry, GitActionRequest, OperationState, RepoStatus } from '../messages';
 
@@ -102,6 +102,15 @@ export function ConflictPanel({ conflicts, operation }: Props): JSX.Element {
   const runAction = useOperationStore((st) => st.runAction);
   const pushToast = useOperationStore((st) => st.pushToast);
   const blockedId = 'gc-conflicts-blocked';
+  const resolveRef = useRef<HTMLButtonElement>(null);
+  const continueRef = useRef<HTMLButtonElement>(null);
+  const pendingFocus = useRouteStore((s) => s.pendingFocus);
+
+  useEffect(() => {
+    if (pendingFocus === null) return;
+    if (useRouteStore.getState().takeFocus() !== 'resolve') return;
+    (resolveRef.current ?? continueRef.current)?.focus();
+  }, [pendingFocus]);
 
   const openMergeEditor = async (path: string): Promise<void> => {
     try {
@@ -137,7 +146,7 @@ export function ConflictPanel({ conflicts, operation }: Props): JSX.Element {
         {strings.conflict.hint}
       </p>
       <ul className="gc-conflicts__list">
-        {conflicts.map((entry) => {
+        {conflicts.map((entry, index) => {
           const safePath = sanitizeGitText(entry.path);
           return (
             <li key={entry.path} className="gc-conflicts__item">
@@ -148,6 +157,7 @@ export function ConflictPanel({ conflicts, operation }: Props): JSX.Element {
               <span className="gc-conflicts__actions">
                 <button
                   type="button"
+                  ref={index === 0 ? resolveRef : undefined}
                   className="gc-button gc-button--action"
                   aria-label={conflictActionLabel(strings.conflict.actionResolveIn, entry.path, language)}
                   title={strings.conflict.resolveTitle}
@@ -177,6 +187,7 @@ export function ConflictPanel({ conflicts, operation }: Props): JSX.Element {
         */}
         <button
           type="button"
+          ref={continueRef}
           className="gc-button gc-button--primary"
           disabled
           aria-describedby={blockedId}

@@ -72,15 +72,23 @@ test('the route store owns the one-shot focus target', () => {
   assert.match(src, /pendingFocus: payload\.focus \?\? null/, 'and the focus that came with it');
 });
 
-test('the Changes view consumes a pending focus target once', () => {
+test('the Changes view consumes a pending focus target when it arrives, not only on mount', () => {
   const src = read('src/webview/CommitForm.tsx');
-  assert.match(src, /takeFocus\(/, 'the form asks the store for the target');
+  // The view is usually already open when a quick action fires, so a mount-only
+  // effect would never run and the target would sit queued for a later remount.
+  assert.match(
+    src,
+    /useRouteStore\(\(s\) => s\.pendingFocus\)/,
+    'the form subscribes to the target instead of sampling it once',
+  );
+  assert.match(src, /takeFocus\(/, 'consumption is explicit and clears the target');
   assert.match(src, /textareaRef\.current\?\.focus\(\)/, 'the message field is one target');
   assert.match(src, /pushRef\.current\?\.focus\(\)/, 'the push and publish button is the other');
 });
 
-test('the conflict panel consumes a resolve focus target', () => {
+test('the conflict panel consumes a resolve focus target when it arrives', () => {
   const src = read('src/webview/ConflictPanel.tsx');
+  assert.match(src, /useRouteStore\(\(s\) => s\.pendingFocus\)/);
   assert.match(src, /takeFocus\(/);
 });
 

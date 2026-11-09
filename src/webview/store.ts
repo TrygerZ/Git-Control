@@ -26,6 +26,7 @@ import type {
   ContributorIdentity,
   ContributorInfo,
   ErrorBody,
+  FocusTarget,
   GitActionRequest,
   GitHubAuthState,
   GitHubLinkage,
@@ -936,7 +937,10 @@ export const useIconThemeStore = create<IconThemeState>((set) => ({
  */
 export interface RouteState {
   route: Route;
+  pendingFocus: FocusTarget | null;
   navigate(route: Route): void;
+  navigateWithFocus(route: Route, focus: FocusTarget | null): void;
+  takeFocus(): FocusTarget | null;
   hydrate(route: Route): void;
   /**
    * Pull the route queued by the host, if any. Called on mount after
@@ -948,10 +952,22 @@ export interface RouteState {
 
 export const useRouteStore = create<RouteState>((set, get) => ({
   route: DEFAULT_ROUTE,
+  pendingFocus: null,
 
   navigate(route) {
     set({ route });
     saveState({ route });
+  },
+
+  navigateWithFocus(route, focus) {
+    set({ route, pendingFocus: focus ?? null });
+    saveState({ route });
+  },
+
+  takeFocus() {
+    const focus = get().pendingFocus;
+    set({ pendingFocus: null });
+    return focus;
   },
 
   hydrate(route) {
@@ -960,10 +976,14 @@ export const useRouteStore = create<RouteState>((set, get) => ({
 
   async pullPending() {
     try {
-      const { route: pending } = await bridge.request('ui/takePendingRoute', {});
+      const { route: pending, focus } = await bridge.request('ui/takePendingRoute', {});
       const current = get().route;
       const next = resolveInitialRoute({ pending, local: current });
-      if (!sameRoute(next, current)) get().navigate(next);
+      if (focus !== undefined) {
+        get().navigateWithFocus(next, focus);
+      } else if (!sameRoute(next, current)) {
+        get().navigate(next);
+      }
     } catch {
       // A route is a convenience; the restored one stays.
     }
@@ -1907,7 +1927,8 @@ export function wireHostEvents(mode: 'explorer' | 'pending'): () => void {
   const offNavigate =
     mode === 'pending'
       ? bridge.on('event/navigate', (payload) => {
-          useRouteStore.getState().navigate(payload.route);
+          // Forward navigate(payload.route) with pendingFocus: payload.focus ?? null
+          useRouteStore.getState().navigateWithFocus(payload.route, payload.focus ?? null);
           // Clear the host's queued copy so the next mount does not replay a delivered route.
           void bridge.request('ui/takePendingRoute', {}).catch(() => undefined);
         })
