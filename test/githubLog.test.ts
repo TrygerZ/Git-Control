@@ -286,10 +286,10 @@ test('TailBuffer reports an open PEM block that started before the window', () =
   );
 });
 
-test('TailBuffer clears the open state once the END marker is inside the window', () => {
+test('a complete block inside the window is masked without help from the buffer', () => {
   const buf = new TailBuffer({ tailBytes: 4096, hardCapBytes: 1024 * 1024 });
   buf.push(encode('-----BEGIN PRIVATE KEY-----\nAAAA\n-----END PRIVATE KEY-----\nafter\n'));
-  assert.equal(buf.pemOpen, false);
+  assert.equal(buf.pemOpen, false, 'the window starts before the block, not inside it');
   const out = processLog({ bytes: buf.bytes(), headDropped: false, pemOpen: buf.pemOpen }, undefined, MASK);
   assert.deepEqual(out.lines.map((l) => l.text), [MASK, MASK, MASK, 'after']);
 });
@@ -313,4 +313,35 @@ test('TailBuffer detects a marker split across two chunks', () => {
   assert.equal(buf.pemOpen, true);
   const out = processLog({ bytes: buf.bytes(), headDropped: true, pemOpen: buf.pemOpen }, undefined, MASK);
   assert.ok(out.lines.every((l) => l.text === MASK), JSON.stringify(out.lines.map((l) => l.text)));
+});
+
+// -------------------------------------- PEM closing inside the window (gate 2)
+
+test('TailBuffer reports a block as open when its END is inside the window', () => {
+  // The normal shape: a small key whose BEGIN sits before the window start and
+  // whose END is retained. Answering "open at the end of the stream" here would
+  // return false and leak the whole body.
+  const buf = new TailBuffer({ tailBytes: 4096, hardCapBytes: 1024 * 1024 });
+  buf.push(encode('-----BEGIN RSA PRIVATE KEY-----\n'));
+  for (let i = 0; i < 1200; i += 1) buf.push(encode('MIIEsecretline\n'));
+  buf.push(encode('-----END RSA PRIVATE KEY-----\nafter line\n'));
+  assert.equal(buf.headDropped, true, 'the window moved past the BEGIN line');
+  assert.equal(buf.pemOpen, true, 'the window starts inside the block');
+  const out = processLog({ bytes: buf.bytes(), headDropped: true, pemOpen: buf.pemOpen }, undefined, MASK);
+  assert.equal(out.lines.at(-1)?.text, 'after line', 'the line after the block is kept');
+  assert.ok(
+    out.lines.slice(0, -1).every((l) => l.text === MASK),
+    `every body line must be masked, first was ${JSON.stringify(out.lines[0]?.text)}`,
+  );
+});
+
+test('a block that closed before the window start masks nothing inside it', () => {
+  // Window 24 bytes: the END is behind the window, so the retained text is
+  // ordinary log output, not key material.
+  const buf = new TailBuffer({ tailBytes: 24, hardCapBytes: 1024 * 1024 });
+  buf.push(encode('-----BEGIN PRIVATE KEY-----\nAAAA\n-----END PRIVATE KEY-----\nafter line\n'));
+  assert.equal(buf.headDropped, true);
+  assert.equal(buf.pemOpen, false, 'the block closed before the window');
+  const out = processLog({ bytes: buf.bytes(), headDropped: true, pemOpen: buf.pemOpen }, undefined, MASK);
+  assert.equal(out.lines.at(-1)?.text, 'after line');
 });

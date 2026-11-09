@@ -61,7 +61,8 @@ export class TailBuffer {
    * window alone would leak exactly that body. Markers can straddle a chunk
    * boundary, so the last few bytes are carried over and re-scanned.
    */
-  private openSince: number | null = null;
+  private lastBegin: number | null = null;
+  private lastEnd: number | null = null;
   private carry = '';
 
   constructor(limits: Pick<LogLimits, 'tailBytes' | 'hardCapBytes'>) {
@@ -118,14 +119,17 @@ export class TailBuffer {
       if (next === begin) {
         const lineEnd = text.indexOf('\n', begin);
         const head = lineEnd === -1 ? text.slice(begin) : text.slice(begin, lineEnd);
-        // Stream offset of this BEGIN, so the answer can be re-based on the
-        // window start later instead of on the end of the stream.
-        if (head.includes('PRIVATE KEY') && this.openSince === null) {
-          this.openSince = this.seen - chunk.length + this.carry.length + begin;
+        // Stream offset of this BEGIN. Kept as an offset, never as a boolean, so
+        // the answer can be re-based on the window start rather than the stream
+        // end. A later END must NOT clear it: the window boundary is what the
+        // question is about, and the END can be inside the window while the
+        // BEGIN is outside it, which is the normal shape for a small key.
+        if (head.includes('PRIVATE KEY')) {
+          this.lastBegin = this.seen - chunk.length + this.carry.length + begin;
         }
         index = begin + 11;
       } else {
-        this.openSince = null;
+        this.lastEnd = this.seen - chunk.length + this.carry.length + end;
         index = end + 9;
       }
     }
@@ -143,14 +147,23 @@ export class TailBuffer {
   /**
    * True when the retained window STARTS inside a PEM private key block.
    *
-   * The question is about the window boundary, not the stream end: a block whose
-   * BEGIN was dropped must still mask its body, while a block that begins inside
-   * the window is found by `processLog` itself. `openSince` is the stream offset
-   * of the opening BEGIN, so comparing it with the window start answers both.
+   * The question is about the window boundary, not the stream end. A block whose
+   * BEGIN was dropped must still mask its body even when its END is retained,
+   * while a block that begins inside the window is found by `processLog` itself.
+   *
+   * Both offsets are kept independently. Clearing the BEGIN when an END arrives
+   * would answer "is a block open at the end of the stream", which is false for
+   * exactly the leaking case: a small key that opened before the window and
+   * closed inside it.
    */
   get pemOpen(): boolean {
-    if (this.openSince === null) return false;
-    return this.openSince < this.seen - this.length;
+    if (this.lastBegin === null) return false;
+    const windowStart = this.seen - this.length;
+    // The BEGIN must be behind the window, otherwise `processLog` finds it itself.
+    if (this.lastBegin >= windowStart) return false;
+    // The END must not also be behind the window, or the block closed before the
+    // retained bytes began and nothing inside them is key material.
+    return this.lastEnd === null || this.lastEnd >= windowStart;
   }
 
   /** The retained bytes, oldest first. One allocation, called once per download. */
