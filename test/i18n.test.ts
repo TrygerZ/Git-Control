@@ -4,6 +4,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import ts from 'typescript';
 import { activeLang, setActiveLang, t, type Catalog } from '../src/webview/i18n';
+import { hostCatalogs, hostText } from '../src/hostText';
 import { useSettingsStore } from '../src/webview/store';
 
 test('i18n module provides complete catalogs for en and id without em-dash', () => {
@@ -409,4 +410,72 @@ test('the startWork namespace exists in both catalogs with the same shape', () =
   assert.match(buttonAriaEn('97'), /97/);
   assert.match(buttonAriaId('97'), /97/);
   assert.notEqual(buttonAriaEn('97'), buttonAriaId('97'));
+});
+
+// ---------------------------------------------------- host catalog (P15)
+
+test('host catalog keeps en and id in parity with no dash in either', () => {
+  const en = hostCatalogs.en;
+  const id = hostCatalogs.id;
+  assert.deepEqual(Object.keys(en).sort(), Object.keys(id).sort(), 'same namespaces');
+
+  for (const namespace of Object.keys(en) as Array<keyof typeof en>) {
+    assert.deepEqual(
+      Object.keys(en[namespace]).sort(),
+      Object.keys(id[namespace]).sort(),
+      `namespace ${namespace} keeps the same keys`,
+    );
+  }
+
+  function scan(value: unknown, where: string): void {
+    if (typeof value === 'string') {
+      assert.ok(!value.includes('\u2014'), `${where} contains em-dash`);
+      assert.ok(!value.includes('\u2013'), `${where} contains en-dash`);
+    } else if (typeof value === 'function') {
+      const out = (value as (...args: string[]) => string)('1', '2');
+      assert.equal(typeof out, 'string', `${where} returns a string`);
+      assert.ok(!out.includes('\u2014'), `${where}() contains em-dash`);
+      assert.ok(!out.includes('\u2013'), `${where}() contains en-dash`);
+    }
+  }
+  for (const lang of ['en', 'id'] as const) {
+    for (const [namespace, entries] of Object.entries(hostCatalogs[lang])) {
+      for (const [key, value] of Object.entries(entries)) scan(value, `${lang}.${namespace}.${key}`);
+    }
+  }
+
+  assert.equal(hostText('id').quickActions.publishTitle, 'Publikasikan branch');
+  assert.equal(hostText('en').quickActions.publishTitle, 'Publish branch');
+  assert.equal(hostText('id').quickActions.groupGo, 'Buka');
+  assert.equal(hostText('en').quickActions.groupGo, 'Go to');
+});
+
+test('quick actions function entries survive numeric-looking arguments', () => {
+  const en = hostText('en').quickActions;
+  const id = hostText('id').quickActions;
+  assert.equal(en.publishDetail('3'), 'Send your 3 local commits to the remote so others can see them');
+  assert.equal(id.publishDetail('3'), 'Kirim 3 commit lokal ke remote agar bisa dilihat orang lain');
+  assert.match(en.commitTitle('1'), /^Commit 1 staged file\b/);
+  assert.match(en.commitTitle('2'), /^Commit 2 staged files\b/);
+  assert.match(id.commitTitle('1'), /^Commit 1 file\b/);
+  assert.equal(en.resolveDetail('2'), '2 files need your decision before you can continue');
+  assert.equal(en.openActionsDetail('4'), '4 failing runs on this branch');
+  assert.equal(en.createPrDetail('feat/x'), 'Ask teammates to review feat/x');
+});
+
+test('the webview palette namespace names the header search button', () => {
+  const en = t('en').palette;
+  const id = t('id').palette;
+  assert.equal(en.openAria, 'Open quick actions');
+  assert.equal(id.openAria, 'Buka aksi cepat');
+  assert.equal(en.openTitle, 'Quick actions');
+  assert.equal(id.openTitle, 'Aksi cepat');
+  assert.notEqual(en.openAria, id.openAria);
+});
+
+test('the resolve detail has a ready form for a zero-conflict operation', () => {
+  // A merge whose conflicts are already resolved is still "in progress", and the
+  // row must not claim zero files need a decision.
+  assert.equal(hostText('en').quickActions.resolveDetailReady, 'This operation can continue now');
+  assert.equal(hostText('id').quickActions.resolveDetailReady, 'Operasi ini sudah bisa dilanjutkan');
 });

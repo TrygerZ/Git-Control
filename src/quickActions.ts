@@ -6,7 +6,7 @@
  * headless. Rows only navigate and focus; nothing in this module can run a git
  * or GitHub mutation (D-18).
  */
-import type { OperationState, Route, RouteId } from './messages';
+import type { FocusTarget, OperationState, Route, RouteId } from './messages';
 
 /** Non-route features. A phase that ships one adds it in the same commit (R2). */
 export type Feature = 'create-pr' | 'checklist';
@@ -42,7 +42,7 @@ export type QuickRowId =
 
 export type QuickGroup = 'suggested' | 'go' | 'help';
 
-export type FocusTarget = 'publish' | 'push' | 'commit' | 'create-pr' | 'resolve';
+export type { FocusTarget };
 
 export type QuickTarget =
   | { kind: 'navigate'; route: Route; focus?: FocusTarget }

@@ -66,6 +66,7 @@ import type {
   ErrorCode,
   EventKind,
   EventMap,
+  FocusTarget,
   GitActionPayload,
   GitActionRequest,
   GitHubAuthState,
@@ -166,7 +167,7 @@ export interface BridgeHost {
    * Take and clear the route queued by `gitControl.internal.navigate`, or `null`
    * when none is queued or it is stale. Takes no parameters, so it cannot run commands.
    */
-  takePendingRoute?(): Route | null;
+  takePendingRoute?(): { route: Route; focus?: FocusTarget } | null;
 }
 
 /**
@@ -425,9 +426,13 @@ export class MessageBridge {
           if (snapshot === undefined) fail(503, 'UNAVAILABLE', this.text().unavailable);
           return snapshot();
         }
-      case 'ui/takePendingRoute':
+      case 'ui/takePendingRoute': {
         validateEmptyPayload(request.payload, this.text().invalid);
-        return { route: this.host.takePendingRoute?.() ?? null };
+        const queued = this.host.takePendingRoute?.() ?? null;
+        return queued === null
+          ? { route: null }
+          : { route: queued.route, ...(queued.focus === undefined ? {} : { focus: queued.focus }) };
+      }
       default:
         return fail(400, 'VALIDATION_ERROR', this.text().invalid, {
           detail: `unknown kind: ${String(request.kind)}`,

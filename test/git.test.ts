@@ -1001,3 +1001,18 @@ test('createBranch carries uncommitted changes onto the new branch', async (t) =
   );
   assert.equal(await fs.readFile(path.join(dir, 'a.txt'), 'utf8'), 'uncommitted edit\n');
 });
+
+test('countCommits counts the commits a publish would send, and 0 without HEAD', async (t) => {
+  const empty = await makeFixture('empty');
+  t.after(() => cleanup(empty));
+  const emptyGit = new GitRunner({ gitPath: 'git', cwd: empty });
+  assert.equal(await emptyGit.countCommits(), 0, 'an empty repository has nothing to publish');
+
+  const dir = await makeFixture('triple');
+  t.after(() => cleanup(dir));
+  const git = new GitRunner({ gitPath: 'git', cwd: dir });
+  assert.equal(await git.countCommits(), 3, 'every commit reachable from HEAD');
+  // `side` branches off `main` after the three commits and adds one of its own,
+  // so the count is the whole reachable history, not just its own commit.
+  assert.equal(await git.countCommits('side'), 4, 'a named revision is honoured');
+});
