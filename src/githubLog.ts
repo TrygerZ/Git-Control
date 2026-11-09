@@ -44,28 +44,92 @@ export const DEFAULT_MASKED_TEXT = '[masked key material]';
 export class TailBuffer {
   private readonly tailBytes: number;
   private readonly hardCapBytes: number;
-  private buffer = new Uint8Array(0);
+  /** Fixed ring of `tailBytes`. Appending never reallocates or shifts. */
+  private readonly ring: Uint8Array;
+  /** Ring index of the oldest retained byte. */
+  private head = 0;
+  /** Bytes currently retained, at most `tailBytes`. */
+  private length = 0;
   private seen = 0;
   private dropped = false;
+  /**
+   * Whether a PEM private key block is open, tracked over EVERY byte pushed, not
+   * only the retained window.
+   *
+   * This is the whole point of the class: a key block whose `-----BEGIN` line was
+   * dropped by the window must still mask its body. Deriving the state from the
+   * window alone would leak exactly that body. Markers can straddle a chunk
+   * boundary, so the last few bytes are carried over and re-scanned.
+   */
+  private openSince: number | null = null;
+  private carry = '';
 
   constructor(limits: Pick<LogLimits, 'tailBytes' | 'hardCapBytes'>) {
-    this.tailBytes = limits.tailBytes;
+    this.tailBytes = Math.max(1, limits.tailBytes);
     this.hardCapBytes = limits.hardCapBytes;
+    this.ring = new Uint8Array(this.tailBytes);
   }
 
   push(chunk: Uint8Array): 'ok' | 'overflow' {
     if (chunk.length === 0) return 'ok';
     this.seen += chunk.length;
-    const combined = new Uint8Array(this.buffer.length + chunk.length);
-    combined.set(this.buffer, 0);
-    combined.set(chunk, this.buffer.length);
-    if (combined.length > this.tailBytes) {
-      this.dropped = true;
-      this.buffer = combined.slice(combined.length - this.tailBytes);
-    } else {
-      this.buffer = combined;
-    }
+
+    this.scan(chunk);
+    this.write(chunk);
     return this.seen > this.hardCapBytes ? 'overflow' : 'ok';
+  }
+
+  /** Copy into the ring, wrapping and overwriting the oldest bytes as needed. */
+  private write(chunk: Uint8Array): void {
+    if (chunk.length >= this.tailBytes) {
+      // The chunk alone fills the window: only its tail survives.
+      this.dropped = true;
+      this.ring.set(chunk.subarray(chunk.length - this.tailBytes));
+      this.head = 0;
+      this.length = this.tailBytes;
+      return;
+    }
+    const overflow = this.length + chunk.length - this.tailBytes;
+    if (overflow > 0) {
+      this.dropped = true;
+      this.head = (this.head + overflow) % this.tailBytes;
+      this.length -= overflow;
+    }
+    const tail = (this.head + this.length) % this.tailBytes;
+    const firstPart = Math.min(chunk.length, this.tailBytes - tail);
+    this.ring.set(chunk.subarray(0, firstPart), tail);
+    if (firstPart < chunk.length) {
+      this.ring.set(chunk.subarray(firstPart), 0);
+    }
+    this.length += chunk.length;
+  }
+
+  /** Update the PEM state from the raw byte stream, independent of the window. */
+  private scan(chunk: Uint8Array): void {
+    // Latin1 is byte-for-byte and cannot throw on a partial UTF-8 sequence; the
+    // markers are ASCII, so that is all this pass needs.
+    const text = this.carry + latin1(chunk);
+    let index = 0;
+    for (;;) {
+      const begin = text.indexOf('-----BEGIN ', index);
+      const end = text.indexOf('-----END ', index);
+      const next = begin === -1 ? end : end === -1 ? begin : Math.min(begin, end);
+      if (next === -1) break;
+      if (next === begin) {
+        const lineEnd = text.indexOf('\n', begin);
+        const head = lineEnd === -1 ? text.slice(begin) : text.slice(begin, lineEnd);
+        // Stream offset of this BEGIN, so the answer can be re-based on the
+        // window start later instead of on the end of the stream.
+        if (head.includes('PRIVATE KEY') && this.openSince === null) {
+          this.openSince = this.seen - chunk.length + this.carry.length + begin;
+        }
+        index = begin + 11;
+      } else {
+        this.openSince = null;
+        index = end + 9;
+      }
+    }
+    this.carry = text.slice(Math.max(0, text.length - 16));
   }
 
   get total(): number {
@@ -76,9 +140,36 @@ export class TailBuffer {
     return this.dropped;
   }
 
-  bytes(): Uint8Array {
-    return this.buffer;
+  /**
+   * True when the retained window STARTS inside a PEM private key block.
+   *
+   * The question is about the window boundary, not the stream end: a block whose
+   * BEGIN was dropped must still mask its body, while a block that begins inside
+   * the window is found by `processLog` itself. `openSince` is the stream offset
+   * of the opening BEGIN, so comparing it with the window start answers both.
+   */
+  get pemOpen(): boolean {
+    if (this.openSince === null) return false;
+    return this.openSince < this.seen - this.length;
   }
+
+  /** The retained bytes, oldest first. One allocation, called once per download. */
+  bytes(): Uint8Array {
+    const out = new Uint8Array(this.length);
+    const firstPart = Math.min(this.length, this.tailBytes - this.head);
+    out.set(this.ring.subarray(this.head, this.head + firstPart), 0);
+    if (firstPart < this.length) {
+      out.set(this.ring.subarray(0, this.length - firstPart), firstPart);
+    }
+    return out;
+  }
+}
+
+/** Byte-for-byte Latin1 decode. Cannot throw on a partial UTF-8 sequence. */
+function latin1(bytes: Uint8Array): string {
+  let out = '';
+  for (let i = 0; i < bytes.length; i += 1) out += String.fromCharCode(bytes[i] as number);
+  return out;
 }
 
 /** C0 controls except tab (0x09). Newlines are already handled by the split. */
@@ -112,7 +203,7 @@ function classify(line: string): LogLine {
  * Full pipeline, in the documented order. Never throws on hostile input.
  */
 export function processLog(
-  input: { bytes: Uint8Array; headDropped: boolean },
+  input: { bytes: Uint8Array; headDropped: boolean; pemOpen?: boolean },
   limits: Partial<LogLimits> = {},
   maskedText: string = DEFAULT_MASKED_TEXT,
 ): { state: Exclude<LogState, 'expired' | 'tooLarge' | 'blocked'>; lines: LogLine[]; headCut: boolean } {
@@ -141,7 +232,16 @@ export function processLog(
 
   // 6. Mask PEM blocks before anything is cut.
   const masked: string[] = [];
-  let inPem = false;
+  // The window may start inside a key block whose BEGIN was already dropped. The
+  // caller knows that from `TailBuffer.pemOpen`, and ignoring it would render the
+  // body in plaintext: exactly the case the masking step exists for.
+  let inPem = input.pemOpen === true;
+  if (inPem && cleaned.length > 0) {
+    // The first retained line is partial or the block's first body line.
+    masked.push(maskedText);
+    if (cleaned[0]?.includes('-----END ')) inPem = false;
+    cleaned.shift();
+  }
   for (const line of cleaned) {
     if (!inPem && line.includes('-----BEGIN ') && line.includes('PRIVATE KEY')) {
       inPem = true;

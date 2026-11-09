@@ -269,3 +269,48 @@ test('isLogHostAllowed follows the API host for an enterprise base', () => {
 test('isLogHostAllowed is case-insensitive', () => {
   assert.ok(isLogHostAllowed('API.GitHub.com', 'api.github.com'));
 });
+
+// ------------------------------------------- PEM across the tail window (gate)
+
+test('TailBuffer reports an open PEM block that started before the window', () => {
+  const buf = new TailBuffer({ tailBytes: 1024, hardCapBytes: 1024 * 1024 });
+  buf.push(encode('-----BEGIN RSA PRIVATE KEY-----\n'));
+  for (let i = 0; i < 200; i += 1) buf.push(encode(`MIIEsecretline${i}\n`));
+  assert.equal(buf.headDropped, true, 'the window moved past the BEGIN line');
+  assert.equal(buf.pemOpen, true, 'the block is still open at the window start');
+  const out = processLog({ bytes: buf.bytes(), headDropped: true, pemOpen: buf.pemOpen }, undefined, MASK);
+  assert.ok(out.lines.length > 0);
+  assert.ok(
+    out.lines.every((l) => l.text === MASK),
+    `every line must be masked, first was ${JSON.stringify(out.lines[0]?.text)}`,
+  );
+});
+
+test('TailBuffer clears the open state once the END marker is inside the window', () => {
+  const buf = new TailBuffer({ tailBytes: 4096, hardCapBytes: 1024 * 1024 });
+  buf.push(encode('-----BEGIN PRIVATE KEY-----\nAAAA\n-----END PRIVATE KEY-----\nafter\n'));
+  assert.equal(buf.pemOpen, false);
+  const out = processLog({ bytes: buf.bytes(), headDropped: false, pemOpen: buf.pemOpen }, undefined, MASK);
+  assert.deepEqual(out.lines.map((l) => l.text), [MASK, MASK, MASK, 'after']);
+});
+
+test('TailBuffer does not report a block as open when a later END closed it', () => {
+  const buf = new TailBuffer({ tailBytes: 64, hardCapBytes: 1024 * 1024 });
+  buf.push(encode('-----BEGIN PRIVATE KEY-----\nAAAA\n-----END PRIVATE KEY-----\n'));
+  for (let i = 0; i < 20; i += 1) buf.push(encode(`tail line ${i}\n`));
+  assert.equal(buf.headDropped, true);
+  assert.equal(buf.pemOpen, false, 'the BEGIN was closed before the window start');
+});
+
+test('TailBuffer detects a marker split across two chunks', () => {
+  // The split BEGIN must be found even though no single chunk contains it, and
+  // once the window has moved past it the block must still read as open.
+  const buf = new TailBuffer({ tailBytes: 32, hardCapBytes: 1024 * 1024 });
+  buf.push(encode('-----BEG'));
+  buf.push(encode('IN RSA PRIVATE KEY-----\nAAAA\n'));
+  for (let i = 0; i < 6; i += 1) buf.push(encode(`MIIEbody${i}\n`));
+  assert.equal(buf.headDropped, true);
+  assert.equal(buf.pemOpen, true);
+  const out = processLog({ bytes: buf.bytes(), headDropped: true, pemOpen: buf.pemOpen }, undefined, MASK);
+  assert.ok(out.lines.every((l) => l.text === MASK), JSON.stringify(out.lines.map((l) => l.text)));
+});
