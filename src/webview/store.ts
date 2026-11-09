@@ -1011,6 +1011,14 @@ export interface GitHubState {
   /** Set when GitHub itself failed; git keeps working regardless. */
   error: ErrorBody | null;
   load(): Promise<void>;
+  /**
+   * Re-read auth and linkage only, for `event/repoChanged`.
+   *
+   * The watcher fires on every save, so this path must not fetch a list: the
+   * views already reload on activation while stale. It does have to notice a
+   * repository switch, which is what clears the per-repository slices.
+   */
+  refreshLinkage(): Promise<void>;
   loadPullRequests(opts?: { refresh?: boolean }): Promise<void>;
   loadClosedPullRequests(): Promise<void>;
   loadCommitAuthors(hashes: string[]): Promise<void>;
@@ -1107,6 +1115,35 @@ export const useGitHubStore = create<GitHubState>((set, get) => ({
       }
     })();
     return inFlightLoad;
+  },
+
+  async refreshLinkage() {
+    try {
+      const [auth, linkage] = await Promise.all([
+        bridge.request('github/auth', {}),
+        bridge.request('github/linkage', {}),
+      ]);
+      const repoChanged = linkageChangedRepo(get().linkage, linkage);
+      if (repoChanged) {
+        resetCommitAuthors(set);
+        useIssuesStore.getState().reset();
+        useActionsStore.getState().reset();
+      }
+      set({
+        auth,
+        linkage,
+        ...(repoChanged
+          ? {
+              pullRequests: [],
+              pullRequestsLoadedAt: null,
+              closedPullRequests: [],
+              closedLoaded: false,
+            }
+          : {}),
+      });
+    } catch {
+      // Linkage is metadata; a failed probe leaves the previous snapshot alone.
+    }
   },
 
   async loadPullRequests(opts?: { refresh?: boolean }) {
@@ -1425,6 +1462,8 @@ const ACTIONS_STALE_MS = 60_000;
 const inFlightActions = new Map<string, Promise<void>>();
 const inFlightJobs = new Map<number, Promise<void>>();
 let inFlightDot: Promise<void> | null = null;
+/** Bumped by  so a reply for the previous repository is discarded. */
+let actionsGeneration = 0;
 
 function actionsFilterKey(branch: string | null, workflowId: number | null): string {
   return `${branch ?? '*'}:${workflowId ?? '*'}`;
@@ -1567,6 +1606,10 @@ export const useActionsStore = create<ActionsState>((set, get) => {
       const linkage = useGitHubStore.getState().linkage;
       if (!linkage || !linkage.available || !linkage.owner || !linkage.repo) return;
       const { owner, repo } = linkage;
+      // A probe can outlive the repository it was asked about. `reset()` bumps the
+      // generation, so a reply that lands after a switch is dropped instead of
+      // repainting the new repository's dot with the old repository's verdict.
+      const generation = actionsGeneration;
       inFlightDot = (async () => {
         try {
           const result = await bridge.request('github/actionsRuns', {
@@ -1575,6 +1618,7 @@ export const useActionsStore = create<ActionsState>((set, get) => {
             branch,
             perPage: DOT_PAGE_SIZE,
           });
+          if (generation !== actionsGeneration) return;
           useNavStore.getState().setFailing(failingDot(result.runs, branch));
         } catch {
           // A dot is decoration: a failed probe leaves the last verdict in place.
@@ -1586,6 +1630,7 @@ export const useActionsStore = create<ActionsState>((set, get) => {
     },
 
     reset() {
+      actionsGeneration += 1;
       inFlightActions.clear();
       inFlightJobs.clear();
       inFlightDot = null;
@@ -1707,7 +1752,7 @@ export function wireHostEvents(mode: 'explorer' | 'pending'): () => void {
     refreshTimer = setTimeout(() => {
       if (mode === 'explorer') void useRepoStore.getState().refresh();
       else {
-        void useGitHubStore.getState().load();
+        void useGitHubStore.getState().refreshLinkage();
         void useChangesStore.getState().load();
         void useRepoStore.getState().refresh();
         // Refs and worktrees move with the repository too, so an open Branches

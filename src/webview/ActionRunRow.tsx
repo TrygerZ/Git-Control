@@ -1,7 +1,14 @@
 import type { JSX } from 'react';
-import type { Catalog } from './i18n';
 import type { Lang, RunConclusion, RunJobInfo, RunStatus, WorkflowRunInfo } from '../messages';
-import { durationText, formatDuration, metaLine, toneOf, type RunTone } from './actionsModel';
+import {
+  durationText,
+  formatDuration,
+  metaLine,
+  runRowLabel,
+  statusWord,
+  toneOf,
+  type RunTone,
+} from './actionsModel';
 import { sanitizeGitText } from './format';
 import { Icon, type IconName } from './ui';
 import { useActionsStore, useGitHubStore, useSettingsStore } from './store';
@@ -25,38 +32,6 @@ function runStatusIcon(tone: RunTone): IconName {
   }
 }
 
-function runStatusWord(
-  status: RunStatus,
-  conclusion: RunConclusion,
-  strings: Catalog,
-): string {
-  if (status === 'in_progress') return strings.actions.statusRunning;
-  if (
-    status === 'queued' ||
-    status === 'waiting' ||
-    status === 'requested' ||
-    status === 'pending'
-  ) {
-    return strings.actions.statusQueued;
-  }
-  switch (conclusion) {
-    case 'success':
-      return strings.actions.statusSuccess;
-    case 'failure':
-    case 'timed_out':
-    case 'startup_failure':
-      return strings.actions.statusFailed;
-    case 'action_required':
-      return strings.actions.statusActionRequired;
-    case 'cancelled':
-      return strings.actions.statusCancelled;
-    case 'skipped':
-    default:
-      return strings.actions.statusSkipped;
-  }
-}
-
-/** A job's duration reuses the run formatter so the two can never drift. */
 function jobDuration(job: RunJobInfo, now: number, lang: Lang): string {
   const finished = job.status === 'completed' && job.completedAt !== null;
   return formatDuration(job.startedAt, finished ? Date.parse(job.completedAt as string) : now, !finished, lang);
@@ -81,7 +56,7 @@ export function ActionRunRow({ run, now }: ActionRunRowProps): JSX.Element {
   const jobsId = `gc-actions-jobs-${run.id}`;
   const tone = toneOf(run);
   const icon = runStatusIcon(tone);
-  const word = runStatusWord(run.status, run.conclusion, strings);
+  const word = statusWord(run.status, run.conclusion, language);
   const title = sanitizeGitText(run.title || run.name);
 
   const handleToggle = (): void => {
@@ -99,11 +74,10 @@ export function ActionRunRow({ run, now }: ActionRunRowProps): JSX.Element {
           className="gc-actions__toggle"
           aria-expanded={expanded}
           aria-controls={expanded ? jobsId : undefined}
-          aria-label={
-            expanded
-              ? strings.actions.collapseRun(title)
-              : strings.actions.expandRun(title)
-          }
+          // `aria-label` replaces the name from the contents, so it must carry
+          // everything the row shows: status, title, meta, duration, and the
+          // disclosure action. `runRowLabel` composes exactly that.
+          aria-label={runRowLabel(run, now, language, expanded)}
           onClick={handleToggle}
         >
           <span className="gc-actions__twisty" aria-hidden="true">
@@ -142,7 +116,7 @@ export function ActionRunRow({ run, now }: ActionRunRowProps): JSX.Element {
             jobs.map((job) => {
               const jobTone = toneOf(job);
               const jobIcon = runStatusIcon(jobTone);
-              const jobWord = runStatusWord(job.status, job.conclusion, strings);
+              const jobWord = statusWord(job.status, job.conclusion, language);
               return (
                 <li key={job.id} className="gc-actions__job">
                   <span

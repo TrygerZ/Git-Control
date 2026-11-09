@@ -5,7 +5,7 @@
  * decision the Actions view makes about what to draw is a function here, so it is
  * testable without a browser.
  */
-import type { Lang, WorkflowRunInfo } from '../messages';
+import type { Lang, RunConclusion, RunStatus, WorkflowRunInfo } from '../messages';
 import { sanitizeGitText, shortHash } from './format';
 import { t } from './i18n';
 
@@ -114,7 +114,9 @@ export function formatDuration(
   lang: Lang,
 ): string {
   const strings = t(lang).actions;
-  if (startedAt === null) return strings.durationQueued;
+  // A finished run with no start stamp (a startup_failure) ran for no measurable
+  // time. Only a run that has not started at all reads as queued.
+  if (startedAt === null) return running ? strings.durationQueued : '0s';
   const startMs = Date.parse(startedAt);
   if (Number.isNaN(startMs)) return strings.durationQueued;
   const validEnd = Number.isNaN(endMs) ? startMs : endMs;
@@ -134,6 +136,57 @@ export function durationText(run: WorkflowRunInfo, now: number, lang: Lang): str
   const running = run.status !== 'completed';
   const endMs = running ? now : Date.parse(run.updatedAt);
   return formatDuration(run.startedAt, endMs, running, lang);
+}
+
+/**
+ * The whole row as one accessible name.
+ *
+ * An `aria-label` on the toggle REPLACES the name computed from its contents, so
+ * the status word, meta line, and duration would otherwise stop being announced.
+ * Same shape as `format.ts` `rowLabel`: every fact a sighted user reads off the
+ * row has to appear in this string.
+ */
+export function runRowLabel(
+  run: WorkflowRunInfo,
+  now: number,
+  lang: Lang,
+  expanded: boolean,
+): string {
+  const strings = t(lang).actions;
+  const title = sanitizeGitText(run.title || run.name);
+  const parts = [
+    statusWord(run.status, run.conclusion, lang),
+    title,
+    metaLine(run, lang),
+    durationText(run, now, lang),
+    expanded ? strings.collapseRun(title) : strings.expandRun(title),
+  ];
+  return parts.join(', ');
+}
+
+/** The status as a word, so colour is never the only signal. */
+export function statusWord(status: RunStatus, conclusion: RunConclusion, lang: Lang): string {
+  const strings = t(lang).actions;
+  if (status === 'in_progress') return strings.statusRunning;
+  if (status !== 'completed') return strings.statusQueued;
+  switch (conclusion) {
+    case 'success':
+      return strings.statusSuccess;
+    case 'failure':
+    case 'timed_out':
+    case 'startup_failure':
+      return strings.statusFailed;
+    case 'action_required':
+      return strings.statusActionRequired;
+    case 'cancelled':
+      return strings.statusCancelled;
+    case 'skipped':
+    case 'neutral':
+    case 'stale':
+    case null:
+    default:
+      return strings.statusSkipped;
+  }
 }
 
 export function metaLine(run: WorkflowRunInfo, lang: Lang = 'en'): string {

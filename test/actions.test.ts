@@ -281,6 +281,16 @@ test('runs are cached 60 s while every run is finished', async () => {
   const again = await h.gh.workflowRuns('o', 'r', {});
   assert.equal(h.calls.length, 1);
   assert.equal(again.cached, true);
+
+  // The 15 s active TTL would have expired by now; the finished one must not.
+  h.advance(20_000);
+  const later = await h.gh.workflowRuns('o', 'r', {});
+  assert.equal(h.calls.length, 1, 'still inside 60 s');
+  assert.equal(later.cached, true);
+
+  h.advance(45_000);
+  await h.gh.workflowRuns('o', 'r', {});
+  assert.equal(h.calls.length, 2, 'past 60 s the read is real');
 });
 
 test('runs are cached only 15 s while one is still running', async () => {
@@ -401,6 +411,7 @@ import {
   toneOf,
   ALL_BRANCHES_CAP,
   formatDuration,
+  runRowLabel,
 } from '../src/webview/actionsModel';
 import type { WorkflowRunInfo } from '../src/messages';
 
@@ -615,6 +626,34 @@ test('metaLine sanitizes bidi control characters in name and event', () => {
 test('formatDuration clamps clock skew to zero and shares one ladder with jobs', () => {
   assert.equal(formatDuration('2026-11-01T10:00:00Z', Date.parse('2026-11-01T10:00:10Z'), true, 'en'), 'running 10s');
   assert.equal(formatDuration('2026-11-01T10:00:10Z', Date.parse('2026-11-01T10:00:00Z'), false, 'en'), '0s');
-  assert.equal(formatDuration(null, 0, false, 'en'), 'queued');
-  assert.equal(formatDuration(null, 0, false, 'id'), 'antre');
+  assert.equal(formatDuration(null, 0, true, 'en'), 'queued');
+  assert.equal(formatDuration(null, 0, true, 'id'), 'antre');
+  assert.equal(formatDuration(null, 0, false, 'en'), '0s', 'finished with no start stamp');
+});
+
+// -------------------------------------------------------------- runRowLabel
+
+test('runRowLabel names the status, meta, duration, and the disclosure action', () => {
+  const r = run({ startedAt: '2026-11-01T10:00:00Z', updatedAt: '2026-11-01T10:03:52Z' });
+  const now = Date.parse('2026-11-02T00:00:00Z');
+  const collapsed = runRowLabel(r, now, 'en', false);
+  for (const part of ['Succeeded', 'CI #482 - push 9f8e7d6', '3m 52s', 'Show jobs for']) {
+    assert.ok(collapsed.includes(part), `${part} missing from ${collapsed}`);
+  }
+  const expanded = runRowLabel(r, now, 'en', true);
+  assert.ok(expanded.includes('Hide jobs for'), expanded);
+  assert.ok(runRowLabel(r, now, 'id', false).includes('Berhasil'));
+});
+
+test('runRowLabel sanitizes the title it embeds', () => {
+  const label = runRowLabel(run({ title: 'evil\u202Etitle' }), 0, 'en', false);
+  assert.ok(!label.includes('\u202E'), label);
+});
+
+// ------------------------------------------------------- finished, no start
+
+test('formatDuration says 0s for a finished run that never started', () => {
+  // A startup_failure has completed_at but no run_started_at.
+  assert.equal(formatDuration(null, Date.parse('2026-11-01T10:00:00Z'), false, 'en'), '0s');
+  assert.equal(formatDuration(null, 0, true, 'en'), 'queued');
 });

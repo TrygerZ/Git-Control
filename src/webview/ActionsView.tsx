@@ -60,14 +60,19 @@ export function ActionsView(): JSX.Element {
     return () => clearTimeout(timer);
   }, [needsTick, now]);
 
+  /*
+   * `linkage` is in the deps so a repository switch refills the list: the switch
+   * clears the slice, and without this the view would sit empty until a manual
+   * retry. The selection itself is not a dep, because `selectBranch` and
+   * `selectWorkflow` already load; adding it would double every menu pick.
+   */
+  const linkageOwner = linkage?.owner ?? null;
+  const linkageRepo = linkage?.repo ?? null;
   useEffect(() => {
     if (route.id === 'actions' && auth?.connected === true) {
-      // `selectBranch`/`selectWorkflow` already trigger their own load, so this
-      // effect must not also fire on a filter change: it would double the request
-      // for every menu pick. It reacts to the route and the auth state only.
       void useActionsStore.getState().load({});
     }
-  }, [route.id, auth?.connected]);
+  }, [route.id, auth?.connected, linkageOwner, linkageRepo]);
 
   /*
    * Poll only while a run in view is unfinished. `load` already dedupes through

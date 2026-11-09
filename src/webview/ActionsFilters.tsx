@@ -115,7 +115,7 @@ export function ActionsFilters(): JSX.Element {
   };
 
   return (
-    <div className="gc-actions__filters" aria-label={strings.actions.filterMenuAria}>
+    <div className="gc-actions__filters" role="group" aria-label={strings.actions.filterMenuAria}>
       <button
         ref={branchButtonRef}
         type="button"
@@ -157,8 +157,10 @@ export function ActionsFilters(): JSX.Element {
           style={{ left: `${menuPos.x}px`, top: `${menuPos.y}px` }}
           onKeyDown={onMenuKey}
         >
-          <div className="gc-menu__group" role="group">
-            <div className="gc-menu__group-title">{strings.actions.branchMenuTitle}</div>
+          <div className="gc-menu__group" role="group" aria-label={strings.actions.branchMenuTitle}>
+            <div className="gc-menu__group-title" aria-hidden="true">
+              {strings.actions.branchMenuTitle}
+            </div>
             {branchList.map((b) => (
               <button
                 key={b}
@@ -217,8 +219,10 @@ export function ActionsFilters(): JSX.Element {
           style={{ left: `${menuPos.x}px`, top: `${menuPos.y}px` }}
           onKeyDown={onMenuKey}
         >
-          <div className="gc-menu__group" role="group">
-            <div className="gc-menu__group-title">{strings.actions.workflowLabel}</div>
+          <div className="gc-menu__group" role="group" aria-label={strings.actions.workflowLabel}>
+            <div className="gc-menu__group-title" aria-hidden="true">
+              {strings.actions.workflowLabel}
+            </div>
             <button
               type="button"
               className="gc-menu__item"

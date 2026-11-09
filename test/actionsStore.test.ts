@@ -317,3 +317,68 @@ test('a repository switch clears the actions slice through linkage change', asyn
   }
   assert.deepEqual(useActionsStore.getState().runs, []);
 });
+
+test('refreshLinkage re-reads auth and linkage and clears a changed repository only', async () => {
+  resetAll();
+  useActionsStore.setState({ runs: [run()] });
+  useGitHubStore.setState({ linkage: { ...LINKED, owner: 'old', repo: 'r' } });
+  const s = stub((kind) => {
+    if (kind === 'github/auth') return { connected: true, login: 'me', scopes: [] };
+    if (kind === 'github/linkage') return { ...LINKED, owner: 'new' };
+    return { pullRequests: [], issues: [], rateLimit: RATE };
+  });
+  try {
+    await useGitHubStore.getState().refreshLinkage();
+  } finally {
+    s.restore();
+  }
+  assert.deepEqual(useActionsStore.getState().runs, [], 'the old repository rows are gone');
+  assert.deepEqual(
+    s.calls.map((c) => c.kind),
+    ['github/auth', 'github/linkage'],
+    'the watcher path must not fetch any list: every save burst would cost a request',
+  );
+});
+
+test('refreshLinkage keeps the rows when the repository did not change', async () => {
+  resetAll();
+  useActionsStore.setState({ runs: [run()] });
+  const s = stub((kind) => {
+    if (kind === 'github/auth') return { connected: true, login: 'me', scopes: [] };
+    if (kind === 'github/linkage') return LINKED;
+    return { pullRequests: [], issues: [], rateLimit: RATE };
+  });
+  try {
+    await useGitHubStore.getState().refreshLinkage();
+  } finally {
+    s.restore();
+  }
+  assert.deepEqual(useActionsStore.getState().runs.map((r) => r.id), [1]);
+});
+
+test('a dot probe that answers after a repository switch does not repaint the dot', async () => {
+  resetAll();
+  let release: (() => void) | undefined;
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const original = bridge.request;
+  bridge.request = (async (kind: string) => {
+    if (kind === 'github/actionsRuns') {
+      await gate;
+      return { runs: [run({ conclusion: 'failure' })], workflows: [], rateLimit: RATE };
+    }
+    return { connected: true, login: 'me', scopes: [] };
+  }) as typeof bridge.request;
+  try {
+    const probe = useActionsStore.getState().refreshDot('main');
+    // The repository switches while the probe is still in flight.
+    useActionsStore.getState().reset();
+    useNavStore.setState({ failing: false });
+    release?.();
+    await probe;
+  } finally {
+    bridge.request = original;
+  }
+  assert.equal(useNavStore.getState().failing, false, 'the stale reply is dropped');
+});
