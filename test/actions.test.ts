@@ -402,10 +402,13 @@ test('the breaker serves stale runs instead of failing', async () => {
 
 import {
   branchesWithRuns,
+  canLoadLog,
   durationText,
   failingDot,
   filterByWorkflow,
+  firstFailedJob,
   groupRuns,
+  logAriaLabel,
   metaLine,
   needsPolling,
   toneOf,
@@ -414,7 +417,7 @@ import {
   runRowLabel,
   statusWord,
 } from '../src/webview/actionsModel';
-import type { WorkflowRunInfo } from '../src/messages';
+import type { RunJobInfo, WorkflowRunInfo } from '../src/messages';
 
 function run(patch: Partial<WorkflowRunInfo> = {}): WorkflowRunInfo {
   return {
@@ -433,6 +436,20 @@ function run(patch: Partial<WorkflowRunInfo> = {}): WorkflowRunInfo {
     startedAt: '2026-11-01T10:00:05Z',
     updatedAt: '2026-11-01T10:03:57Z',
     attempt: 1,
+    ...patch,
+  };
+}
+
+function job(patch: Partial<RunJobInfo> = {}): RunJobInfo {
+  return {
+    id: 1,
+    name: 'build',
+    status: 'completed',
+    conclusion: 'success',
+    startedAt: '2026-11-01T10:00:05Z',
+    completedAt: '2026-11-01T10:03:57Z',
+    url: 'https://github.com/o/r/actions/runs/1/job/1',
+    steps: [],
     ...patch,
   };
 }
@@ -669,4 +686,33 @@ test('statusWord names a finished run without a verdict as no result, not skippe
   assert.equal(statusWord("completed", "neutral", "id"), "Tanpa hasil");
   assert.equal(statusWord("in_progress", null, "en"), "Running");
   assert.equal(statusWord("queued", null, "en"), "Queued");
+});
+// ------------------------------------------------------------ job log (P14)
+
+test('canLoadLog is true only for a completed job', () => {
+  assert.equal(canLoadLog(job({ status: 'completed', conclusion: 'failure' })), true);
+  assert.equal(canLoadLog(job({ status: 'in_progress', conclusion: null })), false);
+  assert.equal(canLoadLog(job({ status: 'queued', conclusion: null })), false);
+});
+
+test('firstFailedJob picks the first failed job, else null', () => {
+  const failed = job({ id: 2, name: 'test', conclusion: 'failure' });
+  const jobs = [job({ id: 1, name: 'build', conclusion: 'success' }), failed, job({ id: 3, conclusion: 'failure' })];
+  assert.equal(firstFailedJob(jobs)?.id, 2);
+  assert.equal(firstFailedJob([job({ conclusion: 'timed_out' })])?.id, 1);
+  assert.equal(firstFailedJob([job({ conclusion: 'startup_failure' })])?.id, 1);
+  assert.equal(firstFailedJob([job({ conclusion: 'success' })]), null);
+  assert.equal(firstFailedJob([]), null);
+});
+
+test('firstFailedJob ignores a job that is not completed yet', () => {
+  assert.equal(firstFailedJob([job({ status: 'in_progress', conclusion: null })]), null);
+});
+
+test('logAriaLabel names the job and sanitizes it', () => {
+  const label = logAriaLabel('build ‮evil', 'en');
+  assert.ok(label.includes('build'), label);
+  assert.ok(!label.includes('‮'), label);
+  assert.equal(logAriaLabel('build', 'en'), 'Log output for build');
+  assert.equal(logAriaLabel('build', 'id'), 'Output log untuk build');
 });

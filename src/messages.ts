@@ -699,6 +699,45 @@ export interface ActionsJobsResult {
   rateLimit: GitHubRateLimit;
 }
 
+/** Tone of one rendered log line. Never carries colour, only a semantic role. */
+export type LogTone = 'normal' | 'error' | 'warning' | 'group' | 'command';
+
+export interface LogLine {
+  text: string;
+  tone: LogTone;
+}
+
+/**
+ * Outcome of a log read. `blocked` means the signed URL pointed at a host the
+ * policy does not trust: the UI offers `Open full log` instead.
+ */
+export type LogState = 'ok' | 'empty' | 'expired' | 'tooLarge' | 'binary' | 'blocked';
+
+export interface ActionsLogPayload {
+  owner: string;
+  repo: string;
+  jobId: number;
+  /**
+   * Cache hint from the webview, which read the job status from the host's own
+   * jobs reply. Only decides whether the processed tail may be cached, so a wrong
+   * value costs a stale tail for that view, never a security decision.
+   */
+  completed?: boolean;
+}
+
+/**
+ * Processed tail. Carries no URL by design: the signed `Location` never leaves
+ * the client method, so it cannot leak through the response or the webview.
+ */
+export interface ActionsLogResult {
+  state: LogState;
+  /** At most 200 lines, already stripped and redacted. */
+  lines: LogLine[];
+  /** True when earlier lines were dropped. */
+  headCut: boolean;
+  rateLimit: GitHubRateLimit;
+}
+
 export interface CommitAuthorInfo {
   hash: string;
   login: string | null;
@@ -820,6 +859,8 @@ export interface RequestMap {
   'github/actionsRuns': { payload: ActionsRunsPayload; response: ActionsRunsResult };
   /** Jobs of one workflow run. Sign-in required, like every Actions read. */
   'github/actionsJobs': { payload: ActionsJobsPayload; response: ActionsJobsResult };
+  /** Processed tail of one job log. Sign-in required. Carries no URL. */
+  'github/actionsLog': { payload: ActionsLogPayload; response: ActionsLogResult };
   'settings/get': { payload: SettingsGetPayload; response: SettingsSnapshot };
   'settings/set': { payload: SettingsSetPayload; response: SettingsSnapshot };
   /**
