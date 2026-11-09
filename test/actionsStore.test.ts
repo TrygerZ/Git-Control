@@ -439,3 +439,90 @@ test('a stale list reply does not seed the cache or move the dot', async () => {
   assert.deepEqual(useActionsStore.getState().loadedAt, {}, 'no cache entry from the old repo');
   assert.equal(useNavStore.getState().failing, false, 'no dot from the old repo');
 });
+// ------------------------------------------------------------- job log (P14)
+
+function logEntry(patch: Partial<{ state: string; lines: unknown[]; headCut: boolean }> = {}): unknown {
+  return {
+    state: 'ok',
+    lines: [{ text: 'line', tone: 'normal' }],
+    headCut: false,
+    rateLimit: RATE,
+    ...patch,
+  };
+}
+
+test('loadLog requests a job once and stores the tail', async () => {
+  resetAll();
+  const s = stub((kind) => (kind === 'github/actionsLog' ? logEntry() : {}));
+  try {
+    await useActionsStore.getState().loadLog(77);
+    await useActionsStore.getState().loadLog(77);
+  } finally {
+    s.restore();
+  }
+  const calls = s.calls.filter((c) => c.kind === 'github/actionsLog');
+  assert.equal(calls.length, 1, 'second call is answered from the store');
+  assert.deepEqual(calls[0]?.payload, { owner: 'o', repo: 'r', jobId: 77 });
+  const entry = useActionsStore.getState().logs[77];
+  assert.equal(entry?.state, 'ok');
+  assert.deepEqual(entry?.lines, [{ text: 'line', tone: 'normal' }]);
+});
+
+test('loadLog records a failed read and allows a retry', async () => {
+  resetAll();
+  let fail = true;
+  const s = stub((kind) => {
+    if (kind !== 'github/actionsLog') return {};
+    if (fail) throw new Error('nope');
+    return logEntry();
+  });
+  try {
+    await useActionsStore.getState().loadLog(5);
+    assert.equal(useActionsStore.getState().logs[5]?.state, 'error');
+    fail = false;
+    await useActionsStore.getState().loadLog(5);
+  } finally {
+    s.restore();
+  }
+  assert.equal(s.calls.filter((c) => c.kind === 'github/actionsLog').length, 2);
+  assert.equal(useActionsStore.getState().logs[5]?.state, 'ok');
+});
+
+test('loadLog keeps the expired and tooLarge states without a retry loop', async () => {
+  resetAll();
+  const s = stub((kind) => (kind === 'github/actionsLog' ? logEntry({ state: 'expired', lines: [] }) : {}));
+  try {
+    await useActionsStore.getState().loadLog(9);
+    await useActionsStore.getState().loadLog(9);
+  } finally {
+    s.restore();
+  }
+  assert.equal(s.calls.filter((c) => c.kind === 'github/actionsLog').length, 1);
+  assert.equal(useActionsStore.getState().logs[9]?.state, 'expired');
+});
+
+test('loadLog is a no-op while signed out', async () => {
+  resetAll();
+  useGitHubStore.setState({ auth: { connected: false, login: null, scopes: [] } });
+  const s = stub(() => logEntry());
+  try {
+    await useActionsStore.getState().loadLog(1);
+  } finally {
+    s.restore();
+  }
+  assert.equal(s.calls.filter((c) => c.kind === 'github/actionsLog').length, 0);
+  assert.equal(useActionsStore.getState().logs[1], undefined);
+});
+
+test('a repository reset clears every cached log', async () => {
+  resetAll();
+  const s = stub((kind) => (kind === 'github/actionsLog' ? logEntry() : {}));
+  try {
+    await useActionsStore.getState().loadLog(3);
+  } finally {
+    s.restore();
+  }
+  assert.ok(useActionsStore.getState().logs[3] !== undefined);
+  useActionsStore.getState().reset();
+  assert.deepEqual(useActionsStore.getState().logs, {});
+});
