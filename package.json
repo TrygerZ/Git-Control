@@ -3,7 +3,7 @@
   "displayName": "Git Control",
   "description": "Interactive 2D Git DAG explorer with a dedicated Pending Changes panel.",
   "publisher": "TrygerZ",
-  "version": "3.8.1",
+  "version": "3.9.0",
   "license": "MIT",
   "private": false,
   "repository": {
