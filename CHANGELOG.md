@@ -5,6 +5,17 @@ All notable changes to the "Git Control" extension will be documented in this fi
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.11.0] - 2026-11-10
+
+### Added
+- Quick actions command (`Git Control: Quick Actions`, `Ctrl+K G` or `Cmd+K G`) opens a palette with up to three suggested next steps for the current branch, followed by a shortcut to every sidebar view.
+- Suggestions follow the repository state: resolve conflicts while an operation is open, publish an unpublished branch, push commits that the remote does not have, and commit staged files. A branch whose latest run failed also offers Actions.
+- Search icon in the sidebar header opens the same palette.
+- Choosing a row opens the matching view and focuses its control. Nothing runs until you press the button.
+
+### Changed
+- The publish suggestion counts only commits the remote does not have, so a branch sitting on published history no longer offers a publish.
+
 ## [3.10.0] - 2026-11-09
 
 ### Added
