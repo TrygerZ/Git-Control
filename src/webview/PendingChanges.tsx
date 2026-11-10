@@ -13,12 +13,12 @@
  * helpers, view actions), then the grouped file list with its filter, then
  * sections with per-row and per-section staging only — no global Stage/Unstage.
  */
-import { useEffect, useId, useMemo, useRef, useState, type JSX } from 'react';
+import { createRef, useEffect, useId, useMemo, useRef, useState, type JSX } from 'react';
 import { ChangeTree } from './ChangeTree';
 import { CommitForm } from './CommitForm';
 import { ConflictPanel, OperationBanner } from './ConflictPanel';
 import { GuardDialog } from './GuardDialog';
-import { GetStartedCard } from './GetStartedCard';
+import { GetStartedCard as GetStartedCardBase } from './GetStartedCard';
 import { SidebarHeader } from './SidebarHeader';
 import { NavStrip } from './NavStrip';
 import { PullRequestsView } from './PullRequestsView';
@@ -70,6 +70,22 @@ const SECTION_ORDER: readonly ChangeSection[] = [
   'unstaged',
   'untracked',
 ] as const;
+
+/**
+ * The Changes tabpanel, the target the get started card returns focus to on an
+ * explicit dismiss. Module scope because there is one panel per webview and the
+ * card is mounted as a bare element by the shell below.
+ */
+const panelRef = createRef<HTMLDivElement>();
+
+/**
+ * The get started card, with the focus return its dismiss owes the panel. The
+ * panel is the only target that exists whether or not the file list has a
+ * search row (that row renders only when there are changes).
+ */
+function GetStartedCard(): JSX.Element | null {
+  return <GetStartedCardBase onDismissed={() => panelRef.current?.focus()} />;
+}
 
 export function PendingChangesApp(): JSX.Element {
   const strings = useT();
@@ -320,7 +336,14 @@ export function PendingChangesApp(): JSX.Element {
         </div>
       </div>
 
-      <div role="tabpanel" id={CHANGES_PANEL_ID} aria-labelledby={changesTabId(sub)} className="gc-pending__panel">
+      <div
+        role="tabpanel"
+        id={CHANGES_PANEL_ID}
+        aria-labelledby={changesTabId(sub)}
+        className="gc-pending__panel"
+        ref={panelRef}
+        tabIndex={-1}
+      >
         {sub === 'stashes' ? (
           <>
             {stashes.length > 0 && (

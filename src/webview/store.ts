@@ -36,6 +36,7 @@ import type {
   IssueStateFilter,
   MutationMeta,
   PullRequestInfo,
+  RemoteInfo,
   RepoGraph,
   RepoStatus,
   Route,
@@ -91,6 +92,12 @@ export interface RepoState {
   error: ErrorBody | null;
   /** Mirrors `graph.stale`: the payload is a cached snapshot. */
   stale: boolean;
+  /**
+   * Configured remotes from `repos/remotes`, or `null` while unknown. The graph
+   * ref list cannot answer this: `git remote add` creates no `refs/remotes/*`
+   * until a fetch or push, so a brand new remote is invisible there.
+   */
+  remotes: RemoteInfo[] | null;
   contributors: ContributorInfo[];
   contributorsLoading: boolean;
   contributorsLoaded: boolean;
@@ -103,6 +110,8 @@ export interface RepoState {
   loadMore(): Promise<void>;
   selectCommit(hash: string | null): void;
   focusCommit(hash: string): void;
+  loadRemotes(): Promise<void>;
+  invalidateRemotes(): void;
   loadContributors(): Promise<void>;
   loadContributorIdentity(email: string): Promise<ContributorIdentity | null>;
   toggleContributorsExpanded(): void;
@@ -114,6 +123,7 @@ export interface RepoState {
 let inFlightStatus: Promise<void> | null = null;
 let inFlightChanges: Promise<void> | null = null;
 let inFlightContributors: Promise<void> | null = null;
+let inFlightRemotes: Promise<void> | null = null;
 const inFlightContributorIdentities = new Map<string, Promise<ContributorIdentity | null>>();
 
 export const useRepoStore = create<RepoState>((set, get) => ({
@@ -124,6 +134,7 @@ export const useRepoStore = create<RepoState>((set, get) => ({
   paging: false,
   error: null,
   stale: false,
+  remotes: null,
   contributors: [],
   contributorsLoading: false,
   contributorsLoaded: false,
@@ -146,6 +157,27 @@ export const useRepoStore = create<RepoState>((set, get) => ({
       }
     })();
     return inFlightStatus;
+  },
+
+  async loadRemotes() {
+    if (get().remotes !== null) return;
+    if (inFlightRemotes !== null) return inFlightRemotes;
+    inFlightRemotes = (async () => {
+      try {
+        const result = await bridge.request('repos/remotes', {});
+        set({ remotes: result.remotes });
+      } catch {
+        // A failed read leaves the cache unknown, so the next mount retries and
+        // the card keeps treating existence as unknown rather than absent.
+      } finally {
+        inFlightRemotes = null;
+      }
+    })();
+    return inFlightRemotes;
+  },
+
+  invalidateRemotes() {
+    set({ remotes: null });
   },
 
   async loadGraph() {
@@ -1900,6 +1932,9 @@ export function wireHostEvents(mode: 'explorer' | 'pending'): () => void {
         void useGitHubStore.getState().refreshLinkage();
         void useChangesStore.getState().load();
         void useRepoStore.getState().refresh();
+        // Remotes live in `.git/config` and change on a repository switch, which
+        // the watcher reports as a repo change; the card must re-read them.
+        useRepoStore.getState().invalidateRemotes();
         // Refs and worktrees move with the repository too, so an open Branches
         // view would otherwise show a stale list after a checkout made
         // elsewhere. Guarded by the route: reading refs costs two git spawns and

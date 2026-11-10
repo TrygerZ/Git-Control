@@ -6,7 +6,6 @@
  * rest of the view already sends, so the card issues no request of its own.
  */
 import { useEffect, useRef, type JSX } from 'react';
-import { firstRemoteName } from './NodeContextMenu';
 import { sanitizeGitText } from './format';
 import {
   cardPhase,
@@ -23,14 +22,18 @@ import { useT } from './useT';
 /** The done card lingers this long before it hides itself. */
 const HIDE_DELAY_MS = 3000;
 
-export function GetStartedCard(): JSX.Element | null {
+export function GetStartedCard({ onDismissed }: { onDismissed?: () => void }): JSX.Element | null {
   const strings = useT();
   const status = useRepoStore((s) => s.status);
-  const graph = useRepoStore((s) => s.graph);
+  const remotes = useRepoStore((s) => s.remotes);
+  const loadRemotes = useRepoStore((s) => s.loadRemotes);
   const auth = useGitHubStore((s) => s.auth);
   const linkage = useGitHubStore((s) => s.linkage);
   const pullRequests = useGitHubStore((s) => s.pullRequests);
   const pullRequestsLoadedAt = useGitHubStore((s) => s.pullRequestsLoadedAt);
+  const closedPullRequests = useGitHubStore((s) => s.closedPullRequests);
+  const closedLoaded = useGitHubStore((s) => s.closedLoaded);
+  const loadClosedPullRequests = useGitHubStore((s) => s.loadClosedPullRequests);
   const connect = useGitHubStore((s) => s.connect);
   const openUrl = useGitHubStore((s) => s.openUrl);
   const checklistDismissed = useSettingsStore((s) => s.checklistDismissed);
@@ -40,10 +43,20 @@ export function GetStartedCard(): JSX.Element | null {
   const busy = useOperationStore((s) => s.state === 'loading');
 
   const branch = status?.branch ?? null;
-  const remote = firstRemoteName(graph?.refs ?? []);
-  // `null` means the graph has not loaded yet, which hides the card rather than
-  // guessing whether a remote exists.
-  const hasRemote = graph === null ? null : firstRemoteName(graph.refs) !== null;
+  const firstRemote = remotes === null ? null : remotes[0] ?? null;
+  // The remote the branch already tracks names the push target; otherwise the
+  // first configured remote does. Both are real names, never derived from refs.
+  const remote =
+    status?.upstream === null || status?.upstream === undefined
+      ? firstRemote?.name ?? null
+      : status?.upstream.split('/')[0] ?? null;
+  // `null` while the configured remotes are unread: the card hides rather than
+  // guessing. A remote added but never fetched still counts.
+  const hasRemote = remotes === null ? null : remotes.length > 0;
+
+  useEffect(() => {
+    void loadRemotes();
+  }, [loadRemotes]);
 
   const steps = computeSteps({
     head: status?.head ?? null,
@@ -57,10 +70,11 @@ export function GetStartedCard(): JSX.Element | null {
     },
     // The store's `[]` cannot be told apart from a loaded empty list, so the
     // loaded-at stamp decides: unknown stays unknown and the step stays put
-    // instead of flipping 3 of 4 to 4 of 4 a moment later.
+    // instead of flipping 3 of 4 to 4 of 4 a moment later. Merged rows only
+    // exist in the closed list, which the effect below loads once.
     pullRequests:
       auth?.connected === true || linkage?.available === true
-        ? pullRequestsLoadedAt === null ? null : pullRequests
+        ? pullRequestsLoadedAt === null ? null : [...pullRequests, ...(closedLoaded ? closedPullRequests : [])]
         : null,
     createPrAvailable: false,
   });
@@ -83,6 +97,20 @@ export function GetStartedCard(): JSX.Element | null {
     const timer = setTimeout(() => setChecklistDismissed(true), HIDE_DELAY_MS);
     return () => clearTimeout(timer);
   }, [phase, setChecklistDismissed]);
+
+  /*
+   * A merged pull request only lives in the closed list, so the PR step can
+   * never turn done until that list has been read once. The store action is
+   * idempotent (`closedLoaded` or an in-flight read returns early), so a plain
+   * effect on the step state is enough; no polling.
+   */
+  const prStep = steps?.find((step) => step.id === 'pull-request') ?? null;
+  const prSettled = prStep === null || prStep.state === 'done' || prStep.state === 'na';
+  const linkageAvailable = linkage?.available === true;
+  useEffect(() => {
+    if (closedLoaded || !linkageAvailable || prSettled) return;
+    void loadClosedPullRequests();
+  }, [closedLoaded, linkageAvailable, prSettled, loadClosedPullRequests]);
 
   if (phase === 'hidden' || steps === null) return null;
 
@@ -192,7 +220,10 @@ export function GetStartedCard(): JSX.Element | null {
           type="button"
           className="gc-icon-button gc-started__dismiss"
           aria-label={strings.onboarding.dismissAria}
-          onClick={() => setChecklistDismissed(true)}
+          onClick={() => {
+            setChecklistDismissed(true);
+            onDismissed?.();
+          }}
         >
           <Icon name="close" />
         </button>

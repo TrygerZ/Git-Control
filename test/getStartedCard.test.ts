@@ -110,6 +110,65 @@ test('the branch name in the card text is sanitized and the url comes from the p
   assert.match(card, /openUrl\(/, 'the compare link opens through the host');
 });
 
+test('remote existence comes from the configured remotes, not from remote-tracking refs', () => {
+  // `git remote add` writes `.git/config` and creates no `refs/remotes/*` entry
+  // until a fetch or push, so `firstRemoteName(graph.refs)` reports "no remote"
+  // for exactly the new-user state the card exists for. PHASE_16 precondition 4
+  // names `repos/remotes` as the source.
+  const card = read('src/webview/GetStartedCard.tsx');
+  assert.match(card, /useRepoStore\(\(s\) => s\.remotes\)/, 'the card reads the configured remotes');
+  assert.match(card, /loadRemotes/, 'and asks for them once');
+  assert.match(
+    card,
+    /hasRemote\s*=\s*remotes === null \? null : remotes\.length > 0/,
+    'a configured remote counts before anything is fetched',
+  );
+  assert.doesNotMatch(
+    card,
+    /firstRemoteName\(graph\.refs\) !== null/,
+    'the ref list is not a remote existence check',
+  );
+});
+
+test('the publish target prefers the upstream remote and falls back to the first configured remote', () => {
+  const card = read('src/webview/GetStartedCard.tsx');
+  assert.match(card, /status\?\.upstream\.split\('\/'\)\[0\]/, 'an existing upstream names the target');
+  assert.match(card, /remotes\[0\]/, 'otherwise the first configured remote does');
+  assert.doesNotMatch(card, /firstRemoteName\(graph\?\.refs/, 'no ref-derived remote name');
+});
+
+test('merged pull requests reach the model, from a closed list loaded when the step needs it', () => {
+  // A merged PR only exists in the closed list (`github.ts` maps `merged_at`),
+  // and that list loads on a PR view expand. Without this the card sits at
+  // 3 of 4 forever after the merge, so the done state never fires (AC4).
+  const card = read('src/webview/GetStartedCard.tsx');
+  assert.match(card, /closedPullRequests/, 'the closed list is read');
+  assert.match(card, /loadClosedPullRequests/, 'and requested when the step needs it');
+  assert.match(
+    card,
+    /pullRequests:[\s\S]{0,200}closedPullRequests/,
+    'both lists reach computeSteps',
+  );
+  assert.match(
+    card,
+    /closedLoaded/,
+    'an already loaded list is not requested again',
+  );
+});
+
+test('an explicit dismiss returns focus to the list, and the auto-hide does not steal it', () => {
+  const card = read('src/webview/GetStartedCard.tsx');
+  assert.match(card, /onDismissed/, 'the card hands focus back to its host');
+
+  const timer = card.slice(card.indexOf('setTimeout('), card.indexOf('setTimeout(') + 200);
+  assert.ok(timer.length > 0, 'the auto-hide timer exists');
+  assert.doesNotMatch(timer, /onDismissed/, 'a timer is not a user action and must not move focus');
+
+  const pending = read('src/webview/PendingChanges.tsx');
+  assert.match(pending, /onDismissed=\{/, 'the Changes view supplies the focus target');
+  assert.match(pending, /tabIndex=\{-1\}/, 'the panel itself can take focus when the list is empty');
+});
+
 test('the card styles use design tokens and no colour literal', () => {
   const css = read('src/webview/styles.css')
     .replace(/\/\*[\s\S]*?\*\//g, '');
