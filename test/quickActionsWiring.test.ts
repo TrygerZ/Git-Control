@@ -32,7 +32,12 @@ test('the request kind is declared with an empty payload and an opened flag', ()
 test('the host registers the command, the bridge member, and the pick', () => {
   const src = read('src/extension.ts');
   assert.match(src, /register\('gitControl\.quickActions'/, 'the command is registered');
-  assert.match(src, /openQuickActions: \(\) => this\.showQuickActions\(\)/, 'the bridge member is wired');
+  // The live wiring is a block body, so the promise is explicitly discarded.
+  assert.match(
+    src,
+    /openQuickActions: \(\) => \{\s*void this\.showQuickActions\(\);\s*\}/,
+    'the bridge member is wired and the promise is discarded',
+  );
   assert.match(src, /private async showQuickActions\(\): Promise<void>/, 'the pick lives on the controller');
   assert.match(src, /showQuickPick|createQuickPick/, 'a native QuickPick is used');
 });
@@ -68,8 +73,13 @@ test('the route store owns the one-shot focus target', () => {
   const src = read('src/webview/store.ts');
   assert.match(src, /pendingFocus: FocusTarget \| null;/, 'the field is typed');
   assert.match(src, /takeFocus\(\): FocusTarget \| null;/, 'consumption is explicit');
-  assert.match(src, /navigate\(payload\.route/, 'the event handler forwards the route');
-  assert.match(src, /pendingFocus: payload\.focus \?\? null/, 'and the focus that came with it');
+  // The live line, not a comment describing it.
+  assert.match(
+    src,
+    /useRouteStore\.getState\(\)\.navigateWithFocus\(payload\.route, payload\.focus \?\? null\);/,
+    'the event handler forwards the route and its focus',
+  );
+  assert.match(src, /saveState\(\{ route \}\);/, 'navigateWithFocus still persists the route');
 });
 
 test('the Changes view consumes a pending focus target when it arrives, not only on mount', () => {
@@ -84,6 +94,22 @@ test('the Changes view consumes a pending focus target when it arrives, not only
   assert.match(src, /takeFocus\(/, 'consumption is explicit and clears the target');
   assert.match(src, /textareaRef\.current\?\.focus\(\)/, 'the message field is one target');
   assert.match(src, /pushRef\.current\?\.focus\(\)/, 'the push and publish button is the other');
+});
+
+test('the push target stays pending until the push button exists', () => {
+  // The push button renders only when a remote is known, and `remote` falls back
+  // to the graph refs. Opening the palette with the sidebar closed mounts this
+  // form before the graph arrives, so a consume-then-focus-nothing would lose
+  // the target for good: the effect does not run again on `pendingFocus` alone.
+  const src = read('src/webview/CommitForm.tsx');
+  const start = src.indexOf('const pendingFocus');
+  const body = src.slice(start, start + 900);
+  assert.match(
+    body,
+    /if \(pushRef\.current === null\) return;/,
+    'a null ref leaves the target pending instead of clearing it',
+  );
+  assert.match(body, /remote/, 'the effect re-runs when the remote becomes known');
 });
 
 test('the conflict panel consumes a resolve focus target when it arrives', () => {

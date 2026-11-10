@@ -146,26 +146,7 @@ export function buildQuickRows(ctx: QuickContext): QuickRow[] {
     }
   }
 
-  if (
-    ctx.github.linked &&
-    ctx.branch !== null &&
-    ctx.branchHasPr !== true &&
-    ctx.available.has('create-pr') &&
-    FEATURES.has('create-pr')
-  ) {
-    suggested.push({
-      id: 'suggest.create-pr',
-      group: 'suggested',
-      icon: 'git-pull-request',
-      target: {
-        kind: 'navigate',
-        route: { id: 'changes', sub: 'changes' },
-        focus: 'create-pr',
-      },
-      count: null,
-      failing: null,
-    });
-  }
+  // suggest.create-pr ships with P22, together with the dialog that consumes its focus target
 
   if (ctx.failingRuns !== null && ctx.failingRuns > 0 && ctx.available.has('actions')) {
     suggested.push({

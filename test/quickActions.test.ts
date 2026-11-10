@@ -8,6 +8,8 @@
  */
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import * as fs from 'node:fs';
+import * as path from 'node:path';
 import {
   FEATURES,
   SHIPPED_ROUTES,
@@ -174,6 +176,18 @@ test('three suggestions appear in rank order, and the group never exceeds three'
 });
 
 // ------------------------------------------------------------- capabilities
+
+test('no row emits a focus target the webview cannot consume', () => {
+  // A target with no consumer sits in `pendingFocus` and is later claimed by an
+  // unrelated view, which is worse than not offering the row. `create-pr` has no
+  // consumer until P22 ships the dialog, so the module must not emit it.
+  const src = fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'quickActions.ts'), 'utf8');
+  assert.doesNotMatch(src, /focus: 'create-pr'/, 'create-pr focus ships with its consumer');
+
+  const messages = fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'messages.ts'), 'utf8');
+  const union = /export type FocusTarget = ([^;]+);/.exec(messages)?.[1] ?? '';
+  assert.doesNotMatch(union, /create-pr/, 'the type cannot express an unconsumed target');
+});
 
 test('no feature is shipped yet, so feature rows never appear', () => {
   assert.equal(FEATURES.has('create-pr'), false);

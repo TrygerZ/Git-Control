@@ -142,7 +142,6 @@ export function validateHostEvent(raw: unknown): HostEvent | null {
         rawFocus === 'publish' ||
         rawFocus === 'push' ||
         rawFocus === 'commit' ||
-        rawFocus === 'create-pr' ||
         rawFocus === 'resolve'
           ? (rawFocus as FocusTarget)
           : undefined;

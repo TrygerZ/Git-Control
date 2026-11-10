@@ -875,7 +875,6 @@ class Controller implements vscode.Disposable {
       openStashDiff: (payload) => this.openStashDiff(payload),
       showLogs: () => this.channel.show(true),
       openExplorer: () => this.openExplorer(),
-      // openQuickActions: () => this.showQuickActions()
       openQuickActions: () => {
         void this.showQuickActions();
       },

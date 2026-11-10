@@ -1927,7 +1927,6 @@ export function wireHostEvents(mode: 'explorer' | 'pending'): () => void {
   const offNavigate =
     mode === 'pending'
       ? bridge.on('event/navigate', (payload) => {
-          // Forward navigate(payload.route) with pendingFocus: payload.focus ?? null
           useRouteStore.getState().navigateWithFocus(payload.route, payload.focus ?? null);
           // Clear the host's queued copy so the next mount does not replay a delivered route.
           void bridge.request('ui/takePendingRoute', {}).catch(() => undefined);
