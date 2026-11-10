@@ -33,8 +33,6 @@ function ctx(overrides: Partial<QuickContext> = {}): QuickContext {
     conflictCount: 0,
     unpublishedCount: 3,
     operation: 'idle',
-    github: { linked: true, connected: true },
-    branchHasPr: null,
     failingRuns: null,
     counts: { changes: 6, stashes: 2, prs: 12, issues: 31 },
     available: new Set<Capability>([...SHIPPED_ROUTES]),

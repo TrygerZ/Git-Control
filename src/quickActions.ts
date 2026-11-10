@@ -69,8 +69,8 @@ export interface QuickContext {
   /** Local commits on an unpublished branch, used by the publish suggestion. */
   unpublishedCount: number;
   operation: OperationState;
-  github: { linked: boolean; connected: boolean };
-  branchHasPr: boolean | null;
+  // `github` and `branchHasPr` return with P22, in the commit that adds the
+  // create-pr row and the dialog that consumes its focus target.
   failingRuns: number | null;
   counts: { changes: number; stashes: number; prs: number | null; issues: number | null };
   available: ReadonlySet<Capability>;

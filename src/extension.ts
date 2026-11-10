@@ -415,8 +415,6 @@ class Controller implements vscode.Disposable {
     const unpublishedCount = hasUpstream ? 0 : await repo.git.countCommits().catch(() => 0);
     const stagedCount = status?.changes.filter((c) => c.staged).length ?? 0;
     const conflictCount = status?.conflicts.length ?? 0;
-    const linked = (await this.detectRemote().catch(() => null)) !== null;
-    const connected = (await Promise.resolve(this.context.secrets.get(TOKEN_SECRET_KEY)).catch(() => undefined)) !== undefined;
 
     const ctx: QuickContext = {
       branch: status?.branch ?? null,
@@ -428,8 +426,6 @@ class Controller implements vscode.Disposable {
       conflictCount,
       unpublishedCount,
       operation: status?.operation ?? 'idle',
-      github: { linked, connected },
-      branchHasPr: null,
       failingRuns: null,
       counts: {
         changes: status?.changes.length ?? 0,
