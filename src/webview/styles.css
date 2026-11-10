@@ -3284,6 +3284,134 @@ h3 {
   flex-wrap: wrap;
 }
 
+/* ------------------------------------------------------- get started */
+
+/*
+ * Onboarding card (P16, frames 103 and 104). It sits inside `.gc-pending`, a
+ * flex column with `overflow: hidden`, so it takes its natural height and caps
+ * itself: a long step list scrolls rather than pushing the file list off screen.
+ */
+.gc-started {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--gc-space-2);
+  padding: var(--gc-space-3);
+  border: 1px solid var(--gc-border-subtle);
+  border-radius: var(--gc-radius);
+  background: var(--gc-bg-surface);
+  max-height: 45%;
+  overflow-y: auto;
+  box-sizing: border-box;
+}
+
+.gc-started__head {
+  display: flex;
+  align-items: center;
+  gap: var(--gc-space-2);
+  color: var(--gc-text-secondary);
+  font-size: var(--gc-fs-sm);
+}
+
+.gc-started__title {
+  margin: 0;
+  flex: 1 1 auto;
+  color: var(--gc-text-primary);
+  font-size: var(--gc-fs-sm);
+  font-weight: 600;
+}
+
+.gc-started__count {
+  color: var(--gc-text-muted);
+  font-size: var(--gc-fs-xs);
+}
+
+.gc-started__dismiss {
+  min-width: var(--gc-hit);
+  min-height: var(--gc-hit);
+  color: var(--gc-text-secondary);
+}
+
+.gc-started__bar {
+  position: relative;
+  height: 4px;
+  border-radius: var(--gc-radius);
+  background: var(--gc-border-subtle);
+  overflow: hidden;
+}
+
+.gc-started__bar-fill {
+  display: block;
+  height: 100%;
+  background: var(--gc-accent);
+}
+
+.gc-started__bar--done .gc-started__bar-fill {
+  background: var(--gc-state-success);
+}
+
+.gc-started__steps {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gc-space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.gc-started__step {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--gc-space-2);
+  color: var(--gc-text-secondary);
+  font-size: var(--gc-fs-xs);
+}
+
+.gc-started__mark {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--gc-fs-sm);
+  height: var(--gc-fs-sm);
+  flex: 0 0 auto;
+  color: var(--gc-text-muted);
+}
+
+.gc-started__step--done .gc-started__mark {
+  color: var(--gc-state-success);
+}
+
+.gc-started__step--current .gc-started__mark {
+  color: var(--gc-accent);
+}
+
+.gc-started__step--todo .gc-started__mark {
+  color: var(--gc-text-muted);
+}
+
+.gc-started__body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gc-space-1);
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.gc-started__desc {
+  color: var(--gc-text-muted);
+  font-size: var(--gc-fs-2xs);
+}
+
+.gc-started__action {
+  flex: 0 0 auto;
+}
+
+.gc-started__note {
+  margin: 0;
+  color: var(--gc-text-muted);
+  font-size: var(--gc-fs-2xs);
+}
+
 /*
  * Sections with clear natural dividers and stable spacing rhythm.
  * The divider is a border-top on the following sibling, so whether a section

@@ -13,7 +13,7 @@ export type Feature = 'create-pr' | 'checklist';
 export type Capability = RouteId | Feature;
 
 /** Compile-time constant, never a runtime flag. Empty until P22 and P16 ship. */
-export const FEATURES: ReadonlySet<Feature> = new Set<Feature>([]);
+export const FEATURES: ReadonlySet<Feature> = new Set<Feature>(['checklist']);
 
 /** Routes this build registers. Mirrors `navRegistry`; a test keeps the two in step. */
 export const SHIPPED_ROUTES: ReadonlySet<RouteId> = new Set<RouteId>([

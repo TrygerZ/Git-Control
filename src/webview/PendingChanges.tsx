@@ -18,6 +18,7 @@ import { ChangeTree } from './ChangeTree';
 import { CommitForm } from './CommitForm';
 import { ConflictPanel, OperationBanner } from './ConflictPanel';
 import { GuardDialog } from './GuardDialog';
+import { GetStartedCard } from './GetStartedCard';
 import { SidebarHeader } from './SidebarHeader';
 import { NavStrip } from './NavStrip';
 import { PullRequestsView } from './PullRequestsView';
@@ -269,6 +270,7 @@ export function PendingChangesApp(): JSX.Element {
       <NavStrip />
       <Tablist tabs={subTabs} activeId={sub} onSelect={selectSub} ariaLabel={strings.nav.subTabsAria} idPrefix={CHANGES_TABS_PREFIX} classPrefix="gc-subtabs" />
       <div className="gc-pending__notifications">
+        {sub === 'changes' && <GetStartedCard />}
         <OperationBanner status={status} />
         {error !== null && <ErrorBanner error={error} onShowLogs={showLogs} />}
         {conflicts.length > 0 && (
