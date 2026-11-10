@@ -824,11 +824,18 @@ export interface SettingsState {
   search: string;
   language: 'en' | 'id';
   snapshot: SettingsSnapshot | null;
+  /** Workspace-scoped dismissal of the Get started card (P16). */
+  checklistDismissed: boolean;
+  /** Webview-only: set by the Help footer so a dismissed card comes back for this session. Never persisted. */
+  checklistForced: boolean;
   load(): Promise<void>;
   setZoom(zoom: number): void;
   setBranchFilter(filter: string): void;
   setSearch(search: string): void;
   setLanguage(language: 'en' | 'id'): void;
+  setChecklistDismissed(value: boolean): void;
+  /** Clear the dismissal and force the card back. Called by the Help footer (P17). */
+  reopenChecklist(): void;
 }
 
 export const useSettingsStore = create<SettingsState>((set, get) => ({
@@ -837,6 +844,8 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   search: '',
   language: 'en',
   snapshot: null,
+  checklistDismissed: false,
+  checklistForced: false,
 
   async load() {
     try {
@@ -847,6 +856,8 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
         language,
         zoom: clampZoom(snapshot.ui.zoom),
         branchFilter: snapshot.ui.branchFilter,
+        // An older host omits the field; absent reads as not dismissed.
+        checklistDismissed: snapshot.ui.checklistDismissed === true,
       });
     } catch {
       // Settings are advisory; defaults keep the view usable.
@@ -875,6 +886,18 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
     if (normalized === get().language) return;
     set({ language: normalized });
     void persist('language', normalized);
+  },
+
+  setChecklistDismissed(value) {
+    if (value === get().checklistDismissed) return;
+    // A fresh dismissal beats a stale force from the Help footer.
+    set({ checklistDismissed: value, checklistForced: false });
+    void persist('checklistDismissed', value);
+  },
+
+  reopenChecklist() {
+    set({ checklistDismissed: false, checklistForced: true });
+    void persist('checklistDismissed', false);
   },
 }));
 
