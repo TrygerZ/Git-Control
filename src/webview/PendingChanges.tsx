@@ -270,7 +270,7 @@ export function PendingChangesApp(): JSX.Element {
       <NavStrip />
       <Tablist tabs={subTabs} activeId={sub} onSelect={selectSub} ariaLabel={strings.nav.subTabsAria} idPrefix={CHANGES_TABS_PREFIX} classPrefix="gc-subtabs" />
       <div className="gc-pending__notifications">
-        {sub === 'changes' && <GetStartedCard />}
+        {route.id === 'changes' && sub === 'changes' && <GetStartedCard />}
         <OperationBanner status={status} />
         {error !== null && <ErrorBanner error={error} onShowLogs={showLogs} />}
         {conflicts.length > 0 && (

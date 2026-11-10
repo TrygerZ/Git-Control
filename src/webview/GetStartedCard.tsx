@@ -30,6 +30,7 @@ export function GetStartedCard(): JSX.Element | null {
   const auth = useGitHubStore((s) => s.auth);
   const linkage = useGitHubStore((s) => s.linkage);
   const pullRequests = useGitHubStore((s) => s.pullRequests);
+  const pullRequestsLoadedAt = useGitHubStore((s) => s.pullRequestsLoadedAt);
   const connect = useGitHubStore((s) => s.connect);
   const openUrl = useGitHubStore((s) => s.openUrl);
   const checklistDismissed = useSettingsStore((s) => s.checklistDismissed);
@@ -54,8 +55,13 @@ export function GetStartedCard(): JSX.Element | null {
       connected: auth?.connected === true,
       webUrl: linkage?.webUrl ?? null,
     },
+    // The store's `[]` cannot be told apart from a loaded empty list, so the
+    // loaded-at stamp decides: unknown stays unknown and the step stays put
+    // instead of flipping 3 of 4 to 4 of 4 a moment later.
     pullRequests:
-      auth?.connected === true || linkage?.available === true ? pullRequests : null,
+      auth?.connected === true || linkage?.available === true
+        ? pullRequestsLoadedAt === null ? null : pullRequests
+        : null,
     createPrAvailable: false,
   });
 

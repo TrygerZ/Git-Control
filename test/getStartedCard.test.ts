@@ -35,10 +35,27 @@ test('the card mounts in the Changes sub-tab only, under the sub-tabs', () => {
   assert.ok(tabs > 0, 'the sub-tab strip exists');
   assert.ok(card > tabs, 'the card follows the sub-tabs');
   assert.ok(search > card, 'and precedes the filter row');
+
+  // `changesSubOf` answers 'changes' for every non-Changes route, so the sub-tab
+  // test alone would draw the card above the Pull requests, Issues, Actions, and
+  // Branches views. The route has to be named too.
   assert.match(
     src,
-    /sub === 'changes' &&[\s\S]{0,80}<GetStartedCard \/>/,
-    'the Stashes sub-tab does not draw it',
+    /route\.id === 'changes' &&\s*sub === 'changes' &&[\s\S]{0,40}<GetStartedCard \/>/,
+    'the card needs the Changes route, not just the changes sub-tab',
+  );
+});
+
+test('an unloaded pull request list is passed as unknown, not as empty', () => {
+  // The store starts with `pullRequests: []`, which the pure model cannot tell
+  // apart from "loaded, and this branch has none". Passing that through would
+  // flash a 3 of 4 card and then flip to 4 of 4 a moment later.
+  const card = read('src/webview/GetStartedCard.tsx');
+  assert.match(card, /pullRequestsLoadedAt/, 'the store records whether the list ever loaded');
+  assert.match(
+    card,
+    /pullRequestsLoadedAt === null \? null :/,
+    'an unloaded list is handed over as unknown',
   );
 });
 
