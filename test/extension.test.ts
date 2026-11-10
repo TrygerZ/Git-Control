@@ -44,3 +44,26 @@ test('webview nonce is generated from 16 random bytes', () => {
 test('historical blob size limit remains bounded', () => {
   assert.match(source, /const MAX_DIFF_BYTES = 5 \* 1024 \* 1024;/);
 });
+
+test('checklistDismissed is read with a false default and written only as a boolean', () => {
+  // P16: the preference rides in `workspaceState` beside zoom and branchFilter.
+  // A missing key must read as "not dismissed", and a non-boolean value from the
+  // webview must not be able to store anything else.
+  const start = source.indexOf('private uiPreferences()');
+  assert.ok(start > 0, 'uiPreferences exists');
+  const body = source.slice(start, start + 1200);
+  assert.match(
+    body,
+    /checklistDismissed:\s*stored\.checklistDismissed === true/,
+    'a missing or non-true value reads as false',
+  );
+
+  const setStart = source.indexOf('private async setUiPreference');
+  assert.ok(setStart > 0, 'setUiPreference exists');
+  const setBody = source.slice(setStart, setStart + 1400);
+  assert.match(
+    setBody,
+    /payload\.key === 'checklistDismissed' && typeof payload\.value === 'boolean'/,
+    'only a boolean is accepted',
+  );
+});

@@ -104,7 +104,7 @@ const DEFAULT_SETTINGS: SettingsSnapshot = {
   githubApiUrl: 'https://api.github.com',
   fetchStalenessMs: 300_000,
   language: 'en',
-  ui: { zoom: 1, branchFilter: '' },
+  ui: { zoom: 1, branchFilter: '', checklistDismissed: false },
 };
 
 /** Directories to remove if a test forgets; best effort, on process exit. */

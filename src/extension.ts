@@ -953,6 +953,7 @@ class Controller implements vscode.Disposable {
     return {
       zoom: normalizedZoom,
       branchFilter: typeof stored.branchFilter === 'string' ? stored.branchFilter : '',
+      checklistDismissed: stored.checklistDismissed === true,
     };
   }
 
@@ -971,6 +972,9 @@ class Controller implements vscode.Disposable {
     const prefs = this.uiPreferences();
     if (payload.key === 'zoom' && typeof payload.value === 'number') prefs.zoom = clampZoom(payload.value);
     if (payload.key === 'branchFilter' && typeof payload.value === 'string') prefs.branchFilter = payload.value;
+    if (payload.key === 'checklistDismissed' && typeof payload.value === 'boolean') {
+      prefs.checklistDismissed = payload.value;
+    }
     await this.context.workspaceState.update(UI_PREFS_KEY, prefs);
     return this.settingsSnapshot();
   }

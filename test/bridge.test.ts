@@ -192,7 +192,7 @@ const SETTINGS: SettingsSnapshot = {
   githubApiUrl: 'https://api.github.com',
   fetchStalenessMs: 300_000,
   language: 'en',
-  ui: { zoom: 1, branchFilter: '' },
+  ui: { zoom: 1, branchFilter: '', checklistDismissed: false },
 };
 
 /** One commit, `a.txt` = `one\n`, on `main`. Copied from a shared template. */
@@ -1438,13 +1438,20 @@ test('persisted zoom is normalized to valid range host-side', async (t) => {
 
   // Stand-in host mirroring Controller.uiPreferences and setUiPreference
   const readPreferences = () => {
-    const stored = store.get<Partial<{ zoom: number; branchFilter: string }>>('gitControl.uiPreferences', {});
+    const stored = store.get<Partial<{ zoom: number; branchFilter: string; checklistDismissed: boolean }>>(
+      'gitControl.uiPreferences',
+      {},
+    );
     const raw = typeof stored.zoom === 'number' ? stored.zoom : 1;
     const clamped = Math.min(4, Math.max(0.35, raw));
     if (stored.zoom !== undefined && stored.zoom !== clamped) {
       void store.update('gitControl.uiPreferences', { ...stored, zoom: clamped });
     }
-    return { zoom: clamped, branchFilter: typeof stored.branchFilter === 'string' ? stored.branchFilter : '' };
+    return {
+      zoom: clamped,
+      branchFilter: typeof stored.branchFilter === 'string' ? stored.branchFilter : '',
+      checklistDismissed: stored.checklistDismissed === true,
+    };
   };
 
   const hostSnapshot = (): SettingsSnapshot => ({
@@ -1482,6 +1489,60 @@ test('persisted zoom is normalized to valid range host-side', async (t) => {
   assert.equal((setRes.data as SettingsSnapshot).ui.zoom, 4);
   const persistedAfterSet = store.get<{ zoom: number }>('gitControl.uiPreferences', { zoom: 1 });
   assert.equal(persistedAfterSet.zoom, 4);
+});
+
+test('persisted checklistDismissed is a boolean in workspace state and rejects other types', async (t) => {
+  const store = new MemoryStore();
+
+  // Stand-in host mirroring Controller.uiPreferences and setUiPreference (P16).
+  const readPreferences = () => {
+    const stored = store.get<Partial<{ zoom: number; branchFilter: string; checklistDismissed: boolean }>>(
+      'gitControl.uiPreferences',
+      {},
+    );
+    return {
+      zoom: typeof stored.zoom === 'number' ? stored.zoom : 1,
+      branchFilter: typeof stored.branchFilter === 'string' ? stored.branchFilter : '',
+      checklistDismissed: stored.checklistDismissed === true,
+    };
+  };
+
+  const hostSnapshot = (): SettingsSnapshot => ({ ...SETTINGS, ui: readPreferences() });
+
+  const withHost = harness(null, {
+    settings: hostSnapshot,
+    setUiPreference: async (payload) => {
+      const prefs = readPreferences();
+      if (payload.key === 'checklistDismissed' && typeof payload.value === 'boolean') {
+        prefs.checklistDismissed = payload.value;
+        await store.update('gitControl.uiPreferences', prefs);
+      }
+      return hostSnapshot();
+    },
+  });
+  t.after(() => withHost.bridge.dispose());
+
+  const initial = await withHost.webview.send(req('settings/get', {}));
+  assert.equal(initial.ok, true);
+  if (!initial.ok) return;
+  assert.equal((initial.data as SettingsSnapshot).ui.checklistDismissed, false, 'defaults to not dismissed');
+
+  const setRes = await withHost.webview.send(req('settings/set', { key: 'checklistDismissed', value: true }));
+  assert.equal(setRes.ok, true);
+  if (!setRes.ok) return;
+  assert.equal((setRes.data as SettingsSnapshot).ui.checklistDismissed, true);
+  const persisted = store.get<{ checklistDismissed?: unknown }>('gitControl.uiPreferences', {});
+  assert.equal(persisted.checklistDismissed, true, 'the value reaches workspace state');
+
+  // A non-boolean is refused before it can be stored.
+  const badRes = await withHost.webview.send(req('settings/set', { key: 'checklistDismissed', value: 'yes' }));
+  assert.equal(badRes.ok, true, 'settings/set accepts any primitive and the host decides');
+  if (!badRes.ok) return;
+  assert.equal(
+    (badRes.data as SettingsSnapshot).ui.checklistDismissed,
+    true,
+    'a string leaves the stored boolean alone',
+  );
 });
 
 test('persisted language is updated and normalized host-side', async (t) => {

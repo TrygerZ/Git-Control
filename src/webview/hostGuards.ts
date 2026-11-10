@@ -82,7 +82,8 @@ export function isValidSettingsSnapshot(payload: unknown): payload is SettingsSn
     (language === 'en' || language === 'id') &&
     isRecord(ui) &&
     typeof (ui as Record<string, unknown>).zoom === 'number' &&
-    typeof (ui as Record<string, unknown>).branchFilter === 'string'
+    typeof (ui as Record<string, unknown>).branchFilter === 'string' &&
+    typeof (ui as Record<string, unknown>).checklistDismissed === 'boolean'
   );
 }
 
