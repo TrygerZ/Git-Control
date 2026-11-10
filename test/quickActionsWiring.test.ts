@@ -92,6 +92,48 @@ test('the conflict panel consumes a resolve focus target when it arrives', () =>
   assert.match(src, /takeFocus\(/);
 });
 
+test('a view only consumes a focus target it owns, so a sibling cannot swallow it', () => {
+  // The commit form and the conflict panel are mounted at the same time. If the
+  // form cleared every target it saw, a `resolve` target would vanish before the
+  // panel could act on it.
+  const form = read('src/webview/CommitForm.tsx');
+  const guard = /if \(pendingFocus !== 'commit' && pendingFocus !== 'publish' && pendingFocus !== 'push'\) return;/;
+  assert.match(form, guard, 'the form ignores targets that are not its own');
+
+  const panel = read('src/webview/ConflictPanel.tsx');
+  assert.match(
+    panel,
+    /if \(pendingFocus !== 'resolve'\) return;/,
+    'the panel ignores targets that are not its own',
+  );
+});
+
+test('a zero-conflict operation focuses Continue, since the conflict panel is not mounted', () => {
+  // `ConflictPanel` renders only when there is at least one conflicted file, so
+  // the "can continue now" state has to be served by the banner above it.
+  const src = read('src/webview/ConflictPanel.tsx');
+  const banner = src.slice(0, src.indexOf('interface Props'));
+  assert.match(banner, /useRouteStore\(\(s\) => s\.pendingFocus\)/, 'the banner watches the target');
+  assert.match(banner, /continueRef\.current\?\.focus\(\)/, 'Continue is the target');
+});
+
+test('an unresolved operation focuses the first Resolve button, not the disabled Continue', () => {
+  // The banner's Continue is `disabled` while files remain conflicted, so
+  // focusing it would leave the user on a dead control. The panel owns the
+  // target in that state; the banner stands aside so the two cannot race.
+  const src = read('src/webview/ConflictPanel.tsx');
+  const banner = src.slice(0, src.indexOf('interface Props'));
+  assert.match(
+    banner,
+    /status\.conflicts\.length > 0\) return;/,
+    'the banner declines the target while the panel is mounted',
+  );
+
+  const panel = src.slice(src.indexOf('export function ConflictPanel'));
+  assert.match(panel, /useRouteStore\(\(s\) => s\.pendingFocus\)/, 'the panel watches the target');
+  assert.match(panel, /resolveRef\.current\?\.focus\(\)/, 'the first Resolve button is the target');
+});
+
 test('the webview palette catalog names the button in both languages', () => {
   const en = read('src/webview/i18n.en.ts');
   const id = read('src/webview/i18n.id.ts');

@@ -28,6 +28,20 @@ export function OperationBanner({ status }: { status: RepoStatus | null }): JSX.
   const strings = useT();
   const language = useSettingsStore((x) => x.language);
   const runAction = useOperationStore((st) => st.runAction);
+  const continueRef = useRef<HTMLButtonElement>(null);
+  const pendingFocus = useRouteStore((s) => s.pendingFocus);
+
+  // The panel renders only when conflicts exist, so the banner owns the
+  // `resolve` target for the zero-conflict "can continue now" state too.
+  useEffect(() => {
+    if (pendingFocus !== 'resolve') return;
+    // With conflicts present the panel is mounted and its Resolve button is the
+    // actionable control; this Continue button is disabled in that state.
+    if (status !== null && status.conflicts.length > 0) return;
+    if (useRouteStore.getState().takeFocus() !== 'resolve') return;
+    continueRef.current?.focus();
+  }, [pendingFocus, status]);
+
   if (status === null || status.operation === 'idle') return null;
   const resolved = status.conflicts.length === 0;
   const blockedId = 'gc-continue-blocked';
@@ -62,6 +76,7 @@ export function OperationBanner({ status }: { status: RepoStatus | null }): JSX.
       <span className="gc-banner__buttons">
         <button
           type="button"
+          ref={continueRef}
           className="gc-button gc-button--primary"
           disabled={!resolved}
           // The reason for the disabled state is announced, not only hovered.
@@ -103,13 +118,14 @@ export function ConflictPanel({ conflicts, operation }: Props): JSX.Element {
   const pushToast = useOperationStore((st) => st.pushToast);
   const blockedId = 'gc-conflicts-blocked';
   const resolveRef = useRef<HTMLButtonElement>(null);
-  const continueRef = useRef<HTMLButtonElement>(null);
   const pendingFocus = useRouteStore((s) => s.pendingFocus);
 
+  // The banner skips the `resolve` target while conflicts exist, so the panel
+  // owns it here: the first Resolve button is the actionable control.
   useEffect(() => {
-    if (pendingFocus === null) return;
+    if (pendingFocus !== 'resolve') return;
     if (useRouteStore.getState().takeFocus() !== 'resolve') return;
-    (resolveRef.current ?? continueRef.current)?.focus();
+    resolveRef.current?.focus();
   }, [pendingFocus]);
 
   const openMergeEditor = async (path: string): Promise<void> => {
@@ -187,7 +203,6 @@ export function ConflictPanel({ conflicts, operation }: Props): JSX.Element {
         */}
         <button
           type="button"
-          ref={continueRef}
           className="gc-button gc-button--primary"
           disabled
           aria-describedby={blockedId}

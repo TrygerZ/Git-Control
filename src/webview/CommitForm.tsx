@@ -64,7 +64,7 @@ export function CommitForm(): JSX.Element {
   const pendingFocus = useRouteStore((s) => s.pendingFocus);
 
   useEffect(() => {
-    if (pendingFocus === null) return;
+    if (pendingFocus !== 'commit' && pendingFocus !== 'publish' && pendingFocus !== 'push') return;
     const target = useRouteStore.getState().takeFocus();
     if (target === 'commit') textareaRef.current?.focus();
     else if (target === 'publish' || target === 'push') pushRef.current?.focus();
