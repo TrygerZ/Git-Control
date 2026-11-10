@@ -456,6 +456,7 @@ export interface CommitResult {
 export interface UiPreferences {
   zoom: number;
   branchFilter: string;
+  checklistDismissed: boolean;
 }
 
 export interface SettingsSnapshot {

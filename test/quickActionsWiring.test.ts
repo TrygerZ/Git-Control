@@ -168,3 +168,15 @@ test('the webview palette catalog names the button in both languages', () => {
   assert.match(id, /openAria: 'Buka aksi cepat'/);
   assert.match(id, /openTitle: 'Aksi cepat'/);
 });
+
+test('the host advertises the checklist capability once the card ships', () => {
+  // `buildQuickRows` needs BOTH `FEATURES.has('checklist')` (compile time) and
+  // `ctx.available.has('checklist')` (host). P16 shipped the card, so the host
+  // must advertise the capability or the Help row can never appear in the pick.
+  const src = read('src/extension.ts');
+  assert.match(
+    src,
+    /available: new Set<Capability>\(\[\.\.\.SHIPPED_ROUTES, 'checklist'\]\)/,
+    'the host adds the capability to the route set',
+  );
+});

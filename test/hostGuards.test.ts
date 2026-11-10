@@ -78,11 +78,44 @@ test('validateHostEvent accepts valid settingsChanged event', () => {
     githubApiUrl: 'https://api.github.com',
     fetchStalenessMs: 60000,
     language: 'id',
-    ui: { zoom: 1, branchFilter: 'all' },
+    ui: { zoom: 1, branchFilter: 'all', checklistDismissed: false },
   };
   const res = validateHostEvent({ kind: 'event/settingsChanged', payload: snapshot });
   assert.ok(res);
   assert.equal(res.kind, 'event/settingsChanged');
+});
+
+test('a settings snapshot without checklistDismissed is rejected', () => {
+  // P16 adds the field to `UiPreferences`, and the validator is a field-by-field
+  // allowlist: an old host that omits it must be refused rather than silently
+  // read as `undefined`, which the card would treat as "not dismissed".
+  const base = {
+    gitPath: '/usr/bin/git',
+    commitLimit: 1000,
+    pageSize: 50,
+    showIgnoredFiles: false,
+    githubApiUrl: 'https://api.github.com',
+    fetchStalenessMs: 60000,
+    language: 'en',
+  };
+  assert.equal(
+    validateHostEvent({ kind: 'event/settingsChanged', payload: { ...base, ui: { zoom: 1, branchFilter: 'all' } } }),
+    null,
+  );
+  assert.equal(
+    validateHostEvent({
+      kind: 'event/settingsChanged',
+      payload: { ...base, ui: { zoom: 1, branchFilter: 'all', checklistDismissed: 'true' } },
+    }),
+    null,
+    'a string is not a boolean',
+  );
+  assert.ok(
+    validateHostEvent({
+      kind: 'event/settingsChanged',
+      payload: { ...base, ui: { zoom: 1, branchFilter: 'all', checklistDismissed: true } },
+    }),
+  );
 });
 
 test('validateHostEvent rejects malformed settingsChanged event', () => {
@@ -96,7 +129,7 @@ test('validateHostEvent rejects malformed settingsChanged event', () => {
       githubApiUrl: 'https://api.github.com',
       fetchStalenessMs: 60000,
       language: 'fr', // invalid language
-      ui: { zoom: 1, branchFilter: 'all' },
+      ui: { zoom: 1, branchFilter: 'all', checklistDismissed: false },
     },
   }), null);
 
@@ -110,7 +143,7 @@ test('validateHostEvent rejects malformed settingsChanged event', () => {
       githubApiUrl: 'https://api.github.com',
       fetchStalenessMs: 60000,
       language: 'en',
-      ui: { zoom: 1, branchFilter: 'all' },
+      ui: { zoom: 1, branchFilter: 'all', checklistDismissed: false },
     },
   }), null);
 });

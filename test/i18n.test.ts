@@ -412,6 +412,77 @@ test('the startWork namespace exists in both catalogs with the same shape', () =
   assert.notEqual(buttonAriaEn('97'), buttonAriaId('97'));
 });
 
+test('the onboarding namespace exists in both catalogs with the same shape', () => {
+  const en = (t('en') as Record<string, unknown>).onboarding as Record<string, unknown>;
+  const id = (t('id') as Record<string, unknown>).onboarding as Record<string, unknown>;
+
+  assert.ok(en !== undefined, 'en.onboarding must exist');
+  assert.ok(id !== undefined, 'id.onboarding must exist');
+  assert.deepEqual(Object.keys(en).sort(), Object.keys(id).sort());
+
+  assert.equal(en.title, 'Get started');
+  assert.equal(id.title, 'Mulai di sini');
+  assert.equal(en.doneTitle, 'All set');
+  assert.equal(id.doneTitle, 'Semua siap');
+  assert.equal(en.dismissAria, 'Dismiss getting started');
+  assert.equal(id.dismissAria, 'Tutup panduan langkah awal');
+  assert.equal(en.doneNote, 'This card hides itself in a few seconds.');
+  assert.equal(id.doneNote, 'Kartu ini akan hilang sendiri dalam beberapa detik.');
+
+  assert.equal(en.connectTitle, 'Connect GitHub');
+  assert.equal(id.connectTitle, 'Hubungkan GitHub');
+  assert.equal(en.commitTitle, 'Save changes with a commit');
+  assert.equal(id.commitTitle, 'Simpan perubahan dengan commit');
+  assert.equal(en.publishTitle, 'Publish your branch');
+  assert.equal(id.publishTitle, 'Publikasikan branch Anda');
+  assert.equal(en.prTitle, 'Open a pull request');
+  assert.equal(id.prTitle, 'Buka pull request');
+
+  assert.equal(en.actionConnect, 'Connect');
+  assert.equal(id.actionConnect, 'Hubungkan');
+  assert.equal(en.actionPublish, 'Publish');
+  assert.equal(id.actionPublish, 'Publikasikan');
+  assert.equal(en.actionOpenCompare, 'Open on GitHub');
+  assert.equal(id.actionOpenCompare, 'Buka di GitHub');
+  assert.equal(en.actionCreatePr, 'Create pull request');
+  assert.equal(id.actionCreatePr, 'Buat pull request');
+
+  // Every step exposes its state as text, so the marks are not colour-only.
+  assert.equal(en.stepDoneAria, 'completed');
+  assert.equal(id.stepDoneAria, 'selesai');
+  assert.equal(en.stepCurrentAria, 'current step');
+  assert.equal(id.stepCurrentAria, 'langkah saat ini');
+  assert.equal(en.stepTodoAria, 'not started');
+  assert.equal(id.stepTodoAria, 'belum dimulai');
+
+  const progressEn = en.progress as (done: string, total: string) => string;
+  const progressId = id.progress as (done: string, total: string) => string;
+  assert.equal(progressEn('2', '4'), '2 of 4');
+  assert.equal(progressId('2', '4'), '2 dari 4');
+
+  const progressAriaEn = en.progressAria as (done: string, total: string) => string;
+  const progressAriaId = id.progressAria as (done: string, total: string) => string;
+  assert.equal(progressAriaEn('2', '4'), 'Getting started progress, 2 of 4 steps');
+  assert.equal(progressAriaId('2', '4'), 'Kemajuan langkah awal, 2 dari 4 langkah');
+
+  const connectDoneEn = en.connectDone as (login: string) => string;
+  const connectDoneId = id.connectDone as (login: string) => string;
+  assert.equal(connectDoneEn('TrygerZ'), 'Signed in as TrygerZ');
+  assert.equal(connectDoneId('TrygerZ'), 'Masuk sebagai TrygerZ');
+
+  // The publish copy names the host it sends to, because a non-GitHub remote
+  // would otherwise promise something the step cannot do.
+  const ghEn = en.publishDescGithub as (branch: string) => string;
+  const ghId = id.publishDescGithub as (branch: string) => string;
+  const remoteEn = en.publishDescRemote as (branch: string) => string;
+  const remoteId = id.publishDescRemote as (branch: string) => string;
+  assert.equal(ghEn('feat/a'), 'Send feat/a to GitHub so others can see it');
+  assert.equal(remoteEn('feat/a'), 'Send feat/a to the remote so others can see it');
+  assert.match(ghId('feat/a'), /feat\/a/);
+  assert.match(remoteId('feat/a'), /feat\/a/);
+  assert.notEqual(ghId('feat/a'), remoteId('feat/a'));
+});
+
 // ---------------------------------------------------- host catalog (P15)
 
 test('host catalog keeps en and id in parity with no dash in either', () => {

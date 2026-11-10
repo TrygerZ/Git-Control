@@ -5,6 +5,16 @@ All notable changes to the "Git Control" extension will be documented in this fi
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.12.0] - 2026-11-11
+
+### Added
+- Get started card in the Changes view guides a new repository from the first commit to a pull request. Each step is derived from the current branch and GitHub state, so nothing is stored and nothing can drift.
+- The current step carries its own action: connect GitHub, publish the branch, or open the compare page on GitHub. The publish button reuses the footer push, so the usual guards and confirmations apply.
+- The card can be dismissed at any time, and a completed card hides itself after three seconds. Dismissal is remembered per workspace, and the Quick actions palette offers a row that reopens the card.
+
+### Changed
+- Quick actions now lists the Get started checklist row.
+
 ## [3.11.0] - 2026-11-10
 
 ### Added

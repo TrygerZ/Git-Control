@@ -60,4 +60,6 @@ export type IconName =
   | 'play'
   | 'status-running'
   | 'status-queued'
-  | 'status-skipped';
+  | 'status-skipped'
+  // Get started card (P16).
+  | 'sparkle';

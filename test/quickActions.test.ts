@@ -187,19 +187,29 @@ test('no row emits a focus target the webview cannot consume', () => {
   assert.doesNotMatch(union, /create-pr/, 'the type cannot express an unconsumed target');
 });
 
-test('no feature is shipped yet, so feature rows never appear', () => {
+test('the checklist row appears once the card ships, and create-pr still does not', () => {
+  // P16 shipped the card, so the capability is on. `create-pr` stays off until
+  // P22 ships the dialog that would consume the focus target.
+  assert.equal(FEATURES.has('checklist'), true);
   assert.equal(FEATURES.has('create-pr'), false);
-  assert.equal(FEATURES.has('checklist'), false);
 
-  // Even a host that claims the capability is not believed while FEATURES lacks it.
   const rows = buildQuickRows(
     ctx({ available: new Set<Capability>([...SHIPPED_ROUTES, 'create-pr', 'checklist']) }),
   );
+  const checklist = row(rows, 'help.checklist');
+  assert.ok(checklist !== undefined, 'the checklist row is offered');
+  assert.deepEqual(checklist.target, {
+    kind: 'navigate',
+    route: { id: 'changes', sub: 'changes' },
+  });
   assert.equal(row(rows, 'suggest.create-pr'), undefined);
-  assert.equal(row(rows, 'help.checklist'), undefined);
 
   // `help.open` is gated on a route this build does not register at all.
   assert.equal(row(rows, 'help.open'), undefined);
+
+  // A host that does not advertise the capability still hides the row.
+  const withoutCapability = buildQuickRows(ctx({ available: new Set<Capability>([...SHIPPED_ROUTES]) }));
+  assert.equal(row(withoutCapability, 'help.checklist'), undefined);
 });
 
 test('a route missing from the available set hides its row', () => {
