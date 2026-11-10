@@ -54,9 +54,12 @@ export function GetStartedCard({ onDismissed }: { onDismissed?: () => void }): J
   // guessing. A remote added but never fetched still counts.
   const hasRemote = remotes === null ? null : remotes.length > 0;
 
+  // Depends on the cache value, not just the action: `event/repoChanged` drops
+  // the cache on every mutation (the commit step is one), and a mount-only
+  // effect would leave the card hidden until the route was left and re-entered.
   useEffect(() => {
-    void loadRemotes();
-  }, [loadRemotes]);
+    if (remotes === null) void loadRemotes();
+  }, [remotes, loadRemotes]);
 
   const steps = computeSteps({
     head: status?.head ?? null,

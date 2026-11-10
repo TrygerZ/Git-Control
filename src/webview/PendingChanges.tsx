@@ -13,7 +13,7 @@
  * helpers, view actions), then the grouped file list with its filter, then
  * sections with per-row and per-section staging only — no global Stage/Unstage.
  */
-import { createRef, useEffect, useId, useMemo, useRef, useState, type JSX } from 'react';
+import { createRef, useEffect, useId, useMemo, useRef, useState, type JSX, type RefObject } from 'react';
 import { ChangeTree } from './ChangeTree';
 import { CommitForm } from './CommitForm';
 import { ConflictPanel, OperationBanner } from './ConflictPanel';
@@ -72,19 +72,26 @@ const SECTION_ORDER: readonly ChangeSection[] = [
 ] as const;
 
 /**
- * The Changes tabpanel, the target the get started card returns focus to on an
- * explicit dismiss. Module scope because there is one panel per webview and the
- * card is mounted as a bare element by the shell below.
+ * Focus targets for the get started card's dismiss (section 10: the filter
+ * input). Module scope because there is one panel per webview and the card is
+ * mounted as a bare element by the shell below.
+ *
+ * The search row only renders when the list has rows, so the tabpanel is the
+ * fallback for an empty tree rather than an optional nicety.
  */
 const panelRef = createRef<HTMLDivElement>();
+const filterRef = createRef<HTMLInputElement>();
 
-/**
- * The get started card, with the focus return its dismiss owes the panel. The
- * panel is the only target that exists whether or not the file list has a
- * search row (that row renders only when there are changes).
- */
+/** The get started card, with the focus return its dismiss owes the view. */
 function GetStartedCard(): JSX.Element | null {
-  return <GetStartedCardBase onDismissed={() => panelRef.current?.focus()} />;
+  return (
+    <GetStartedCardBase
+      onDismissed={() => {
+        if (filterRef.current !== null) filterRef.current?.focus();
+        else panelRef.current?.focus();
+      }}
+    />
+  );
 }
 
 export function PendingChangesApp(): JSX.Element {
@@ -404,6 +411,7 @@ export function PendingChangesApp(): JSX.Element {
             <SearchRow
               value={filter}
               onChange={setFilter}
+              ref={filterRef}
               placeholder={strings.pending.searchPlaceholder}
               ariaLabel={strings.pending.searchAria}
               matchedText={strings.pending.searchMatched(
@@ -619,12 +627,15 @@ function SearchRow({
   placeholder,
   ariaLabel,
   matchedText,
+  ref,
 }: {
   value: string;
   onChange(next: string): void;
   placeholder: string;
   ariaLabel: string;
   matchedText: string;
+  /** Set by the Changes row so the get started card can return focus here. */
+  ref?: RefObject<HTMLInputElement | null>;
 }): JSX.Element {
   const countId = useId();
   return (
@@ -635,6 +646,7 @@ function SearchRow({
             <Icon name="search" />
           </span>
           <input
+            ref={ref}
             type="search"
             className="gc-listbar__input"
             value={value}

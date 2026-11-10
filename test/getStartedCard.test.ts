@@ -110,6 +110,20 @@ test('the branch name in the card text is sanitized and the url comes from the p
   assert.match(card, /openUrl\(/, 'the compare link opens through the host');
 });
 
+test('the remotes read retries whenever the cache is dropped, not once per mount', () => {
+  // `event/repoChanged` fires on every save and every mutation, and the pending
+  // handler drops the remotes cache on each one. The commit step IS a mutation,
+  // so a mount-only effect would leave `remotes` null right after the user
+  // commits: `computeSteps` returns null, the card hides, and nothing reloads
+  // until the user leaves the Changes view and comes back.
+  const card = read('src/webview/GetStartedCard.tsx');
+  assert.match(
+    card,
+    /useEffect\(\(\) => \{\s*if \(remotes === null\) void loadRemotes\(\);\s*\}, \[remotes, loadRemotes\]\);/,
+    'the effect depends on the cache value, so a dropped cache re-reads',
+  );
+});
+
 test('remote existence comes from the configured remotes, not from remote-tracking refs', () => {
   // `git remote add` writes `.git/config` and creates no `refs/remotes/*` entry
   // until a fetch or push, so `firstRemoteName(graph.refs)` reports "no remote"
@@ -156,7 +170,7 @@ test('merged pull requests reach the model, from a closed list loaded when the s
   );
 });
 
-test('an explicit dismiss returns focus to the list, and the auto-hide does not steal it', () => {
+test('an explicit dismiss returns focus to the filter input, and the auto-hide does not steal it', () => {
   const card = read('src/webview/GetStartedCard.tsx');
   assert.match(card, /onDismissed/, 'the card hands focus back to its host');
 
@@ -166,7 +180,13 @@ test('an explicit dismiss returns focus to the list, and the auto-hide does not 
 
   const pending = read('src/webview/PendingChanges.tsx');
   assert.match(pending, /onDismissed=\{/, 'the Changes view supplies the focus target');
-  assert.match(pending, /tabIndex=\{-1\}/, 'the panel itself can take focus when the list is empty');
+  // Section 10 names the filter input. It only renders when the list has rows,
+  // so the panel stays as the fallback for an empty tree.
+  assert.match(pending, /filterRef/, 'the search field is reachable');
+  assert.match(pending, /filterRef\.current\?\.focus\(\)/, 'the filter input is focused');
+  assert.match(pending, /panelRef\.current\?\.focus\(\)/, 'the panel is the fallback');
+  assert.match(pending, /tabIndex=\{-1\}/, 'the panel can take focus at all');
+  assert.match(pending, /ref=\{filterRef\}/, 'the ref reaches the input');
 });
 
 test('the card styles use design tokens and no colour literal', () => {
