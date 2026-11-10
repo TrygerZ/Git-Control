@@ -74,6 +74,8 @@ const ALL_ICON_NAMES: readonly IconName[] = [
   'status-running',
   'status-queued',
   'status-skipped',
+  // Get started card (P16).
+  'sparkle',
 ];
 
 test('every IconName has an SVG render function in ICON_PATHS and no orphan paths exist', () => {

@@ -540,4 +540,14 @@ export const ICON_PATHS: Record<IconName, () => JSX.Element> = {
       <path d="M4.4 11.6L11.6 4.4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
     </>
   ),
+  // Get started: a four-pointed sparkle marking the onboarding card.
+  sparkle: () => (
+    <path
+      d="M8 2.5c.6 3 2 4.4 5 5-3 .6-4.4 2-5 5-.6-3-2-4.4-5-5 3-.6 4.4-2 5-5z"
+      stroke="currentColor"
+      strokeWidth="1.5"
+      strokeLinejoin="round"
+      fill="none"
+    />
+  ),
 };
