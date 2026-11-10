@@ -121,6 +121,7 @@ Access these commands through the Command Palette (`Ctrl+Shift+P` / `Cmd+Shift+P
 
 * `Git Control: Open Explorer`: Opens the interactive 2D Branch Explorer canvas.
 * `Git Control: Open Pending Changes`: Focuses the Pending Changes panel in the sidebar.
+* `Git Control: Quick Actions`: Opens a palette of suggested next steps for the current branch plus a shortcut to every sidebar view. Rows navigate and focus a control; nothing runs until you press the button.
 * `Git Control: Refresh`: Forces an immediate re-fetch and re-render of repository state and history.
 * `Git Control: Pick Repository`: Switches active repository focus in multi-root workspaces.
 * `Git Control: Connect GitHub`: Securely stores a Personal Access Token to fetch PR details and remote stats.
@@ -133,6 +134,15 @@ Access these commands through the Command Palette (`Ctrl+Shift+P` / `Cmd+Shift+P
 * **Token Isolation**: GitHub authentication tokens are stored strictly within VS Code `SecretStorage` and are never serialized to configuration files, state logs, or webview message bridges.
 * **Strict Remote Trust Boundary**: Remote endpoints are validated before dispatching authenticated requests, preventing credential leaks to arbitrary hosts.
 * **Non-Destructive Defaults**: Force-push operations (such as force push) are intentionally omitted to maintain repository integrity.
+
+## Keyboard Shortcuts
+
+| Key | Action |
+|---|---|
+| `Ctrl + K G` (`Cmd + K G` on macOS) | Open Quick actions from the editor, the sidebar, or the Explorer panel |
+| `Ctrl + Shift + P` | Command Palette, where every Git Control command is available |
+
+The Quick actions chord is unscoped because a sidebar webview does not set `focusedView` or `sideBarFocus`, so a scoped clause could never fire there. It has no default binding in VS Code.
 
 ## Keyboard Shortcuts in Graph Explorer
 

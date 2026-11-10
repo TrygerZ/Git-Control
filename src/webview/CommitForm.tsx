@@ -33,7 +33,7 @@
 import { useEffect, useRef, useState, type JSX } from 'react';
 import { amendBlockedReason, formatCount, sanitizeGitText } from './format';
 import { useT } from './useT';
-import { COMMIT_MESSAGE_MIN, useChangesStore, useOperationStore, useRepoStore, useSettingsStore } from './store';
+import { COMMIT_MESSAGE_MIN, useChangesStore, useOperationStore, useRepoStore, useRouteStore, useSettingsStore } from './store';
 import { Icon, InfoBanner, Spinner } from './ui';
 import { firstRemoteName } from './NodeContextMenu';
 
@@ -60,6 +60,35 @@ export function CommitForm(): JSX.Element {
   const retryPush = useChangesStore((st) => st.retryPush);
   const changes = useChangesStore((st) => st.changes);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const pushRef = useRef<HTMLButtonElement>(null);
+
+  // Remote derivation rule:
+  // 1. If status.upstream is present, extract remote prefix (e.g. "origin/main" -> "origin").
+  // 2. Otherwise fall back to first remote-tracking ref prefix in repo graph.
+  // 3. If neither exists, remote is null and push button must not render.
+  const remote =
+    status?.upstream !== null && status?.upstream !== undefined
+      ? status.upstream.split('/')[0] ?? null
+      : firstRemoteName(graph?.refs ?? []);
+
+  const pendingFocus = useRouteStore((s) => s.pendingFocus);
+
+  useEffect(() => {
+    if (pendingFocus !== 'commit' && pendingFocus !== 'publish' && pendingFocus !== 'push') return;
+
+    if (pendingFocus === 'commit') {
+      if (textareaRef.current === null) return;
+      useRouteStore.getState().takeFocus();
+      textareaRef.current?.focus();
+      return;
+    }
+
+    // The push button renders only once a remote is known, so a null ref means
+    // "not mounted yet": leave the target pending and let the next render retry.
+    if (pushRef.current === null) return;
+    useRouteStore.getState().takeFocus();
+    pushRef.current?.focus();
+  }, [pendingFocus, remote]);
 
   // Pull focus back to the field the moment validation fails.
   useEffect(() => {
@@ -81,15 +110,6 @@ export function CommitForm(): JSX.Element {
     stagedCount === 0
       ? strings.commitForm.noStagedFiles
       : `${strings.commitForm.commitTitle} ${strings.commitForm.stagedFilesReady(formatCount(stagedCount, language))}`;
-
-  // Remote derivation rule:
-  // 1. If status.upstream is present, extract remote prefix (e.g. "origin/main" -> "origin").
-  // 2. Otherwise fall back to first remote-tracking ref prefix in repo graph.
-  // 3. If neither exists, remote is null and push button must not render.
-  const remote =
-    status?.upstream !== null && status?.upstream !== undefined
-      ? status.upstream.split('/')[0] ?? null
-      : firstRemoteName(graph?.refs ?? []);
 
   const branch = status?.branch ?? null;
   const hasUpstream = status?.upstream !== null && status?.upstream !== undefined;
@@ -309,6 +329,7 @@ export function CommitForm(): JSX.Element {
         {remote !== null && (
           <button
             type="button"
+            ref={pushRef}
             className="gc-button gc-button--action"
             title={pushTitle}
             disabled={pushDisabled}

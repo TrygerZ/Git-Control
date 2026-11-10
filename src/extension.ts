@@ -15,13 +15,22 @@ import {
   GitHubError,
   hasPrivateScope,
 } from './github';
-import { hostText } from './hostText';
+import { hostText, type HostCatalog } from './hostText';
 import { buildIconThemeSnapshot, iconThemeRootUri } from './iconTheme';
 import { Logger } from './logger';
 import { parseRemoteUrl, resolveGitHubApiBase, webUrlOf, type GitHubApiBase, type ParsedRemoteUrl } from './remoteUrl';
 import { isFresh, parseRoute, PENDING_ROUTE_TTL_MS } from './webview/route';
 import { clampZoom } from './webview/viewport';
 import { MAX_COMMIT_LIMIT, RepositoryService } from './repository';
+import {
+  buildQuickRows,
+  escapeCodicons,
+  SHIPPED_ROUTES,
+  type Capability,
+  type QuickContext,
+  type QuickGroup,
+  type QuickRow,
+} from './quickActions';
 import { RepoWatcher } from './watcher';
 import type {
   ActionsJobsPayload,
@@ -34,6 +43,7 @@ import type {
   CommitAuthorsResult,
   ContributorIdentity,
   ContributorIdentityPayload,
+  FocusTarget,
   GitHubAuthState,
   GitHubLinkage,
   GitHubRepoInfo,
@@ -102,7 +112,7 @@ class Controller implements vscode.Disposable {
   private panel: vscode.WebviewPanel | undefined;
   private pendingFocusHash: string | undefined;
   /** One-shot route for the sidebar. Memory only: a route is never written to `workspaceState`. */
-  private pendingRoute: { route: Route; at: number } | undefined;
+  private pendingRoute: { route: Route; focus?: FocusTarget; at: number } | undefined;
   /** Sidebar view webview, tracked so icon-theme options can be re-assigned. */
   private pendingView: vscode.WebviewView | undefined;
   private gitPath: string | null = null;
@@ -344,6 +354,7 @@ class Controller implements vscode.Disposable {
     register('gitControl.connectGitHub', () => this.connectGitHub());
     register('gitControl.disconnectGitHub', () => this.disconnectGitHub());
     register('gitControl.showLogs', () => this.channel.show(true));
+    register('gitControl.quickActions', () => this.showQuickActions());
     // Only useful in multi-root workspaces; harmless elsewhere.
     register('gitControl.pickRepository', () => this.pickRepository());
     // Not in `package.json`: views contribute their own commands (D-17). Takes one
@@ -357,24 +368,164 @@ class Controller implements vscode.Disposable {
    * view is hidden or still loading, and the webview then pulls the queued route
    * (`ui/takePendingRoute`) once its listeners exist.
    */
-  private async navigate(raw: unknown): Promise<void> {
+  private async navigate(raw: unknown, focus: FocusTarget | null = null): Promise<void> {
     // A bare id string is accepted so the command is usable from a keybinding or the palette.
     const route = parseRoute(typeof raw === 'string' ? { id: raw } : raw);
     if (route === null) {
       this.logger.info('command/navigate', 'ignored: not a valid route');
       return;
     }
-    this.pendingRoute = { route, at: Date.now() };
+    this.pendingRoute = {
+      route,
+      ...(focus !== null && focus !== undefined ? { focus } : {}),
+      at: Date.now(),
+    };
     await vscode.commands.executeCommand('gitControl.pendingChanges.focus');
-    for (const bridge of this.bridges) bridge.emit('event/navigate', { route });
+    const eventPayload: { route: Route; focus?: FocusTarget } = {
+      route,
+      ...(focus !== null && focus !== undefined ? { focus } : {}),
+    };
+    for (const bridge of this.bridges) bridge.emit('event/navigate', eventPayload);
   }
 
-  private takePendingRoute(): Route | null {
+  private takePendingRoute(): { route: Route; focus?: FocusTarget } | null {
     const queued = this.pendingRoute;
     this.pendingRoute = undefined;
     if (queued === undefined) return null;
-    return isFresh(queued.at, Date.now(), PENDING_ROUTE_TTL_MS) ? queued.route : null;
+    if (!isFresh(queued.at, Date.now(), PENDING_ROUTE_TTL_MS)) return null;
+    return {
+      route: queued.route,
+      ...(queued.focus !== undefined ? { focus: queued.focus } : {}),
+    };
   }
+
+  private async showQuickActions(): Promise<void> {
+    const repo = await this.resolveRepository();
+    if (repo === null) {
+      void vscode.window.showWarningMessage(extText().extension.notARepo);
+      return;
+    }
+
+    const status = await repo.status().catch(() => null);
+    const remotes = await repo.git.remoteList().catch(() => []);
+    const stashes = await repo.stashList().catch(() => []);
+
+    const hasRemote = remotes.length > 0;
+    const hasUpstream = status !== null && status.upstream !== null;
+    const unpublishedCount = hasUpstream ? 0 : await repo.git.countCommits().catch(() => 0);
+    const stagedCount = status?.changes.filter((c) => c.staged).length ?? 0;
+    const conflictCount = status?.conflicts.length ?? 0;
+
+    const ctx: QuickContext = {
+      branch: status?.branch ?? null,
+      hasUpstream,
+      hasRemote,
+      ahead: status?.ahead ?? 0,
+      behind: status?.behind ?? 0,
+      stagedCount,
+      conflictCount,
+      unpublishedCount,
+      operation: status?.operation ?? 'idle',
+      failingRuns: null,
+      counts: {
+        changes: status?.changes.length ?? 0,
+        stashes: stashes.length,
+        prs: null,
+        issues: null,
+      },
+      available: new Set<Capability>([...SHIPPED_ROUTES]),
+    };
+
+    const rows = buildQuickRows(ctx);
+    const text = extText().quickActions;
+    const groupLabels: Record<QuickGroup, string> = {
+      suggested: text.groupSuggested,
+      go: text.groupGo,
+      help: text.groupHelp,
+    };
+
+    const items: vscode.QuickPickItem[] = [];
+    const rowMap = new Map<vscode.QuickPickItem, QuickRow>();
+    let currentGroup: QuickGroup | null = null;
+
+    for (const row of rows) {
+      if (row.group !== currentGroup) {
+        items.push({ label: groupLabels[row.group], kind: vscode.QuickPickItemKind.Separator });
+        currentGroup = row.group;
+      }
+      const { title, detail } = this.formatQuickRow(row, ctx, text);
+      const item: vscode.QuickPickItem = {
+        label: `$(${row.icon}) ${escapeCodicons(title)}`,
+        detail: escapeCodicons(detail),
+        description: row.count !== null ? String(row.count) : row.failing !== null ? String(row.failing) : undefined,
+      };
+      items.push(item);
+      rowMap.set(item, row);
+    }
+
+    const picked = vscode.window.createQuickPick();
+    picked.items = items;
+    picked.placeholder = text.placeholder;
+    picked.onDidAccept(() => {
+      picked.hide();
+      const selected = picked.selectedItems[0];
+      if (selected === undefined) return;
+      const row = rowMap.get(selected);
+      if (row === undefined) return;
+      if (row.target.kind === 'navigate') {
+        void this.navigate(row.target.route, row.target.focus ?? null);
+      } else if (row.target.kind === 'openExplorer') {
+        this.openExplorer();
+      }
+    });
+    picked.onDidHide(() => picked.dispose());
+    picked.show();
+    this.logger.info('command/quickActions', `showing ${rows.length} quick action rows`);
+  }
+
+  private formatQuickRow(
+    row: QuickRow,
+    ctx: QuickContext,
+    text: HostCatalog['quickActions'],
+  ): { title: string; detail: string } {
+    switch (row.id) {
+      case 'suggest.resolve': {
+        const n = row.count ?? ctx.conflictCount;
+        return {
+          title: text.resolveTitle,
+          detail: n > 0 ? text.resolveDetail(String(n)) : text.resolveDetailReady,
+        };
+      }
+      case 'suggest.publish':
+        return { title: text.publishTitle, detail: text.publishDetail(String(row.count ?? ctx.unpublishedCount)) };
+      case 'suggest.push':
+        return { title: text.pushTitle, detail: text.pushDetail(String(row.count ?? ctx.ahead)) };
+      case 'suggest.commit':
+        return { title: text.commitTitle(String(row.count ?? ctx.stagedCount)), detail: text.commitDetail };
+      case 'suggest.create-pr':
+        return { title: text.createPrTitle, detail: text.createPrDetail(ctx.branch ?? '') };
+      case 'suggest.open-actions':
+        return { title: text.openActionsTitle, detail: text.openActionsDetail(String(row.failing ?? 0)) };
+      case 'go.changes':
+        return { title: text.goChanges, detail: text.goChangesDetail };
+      case 'go.pull-requests':
+        return { title: text.goPrs, detail: text.goPrsDetail };
+      case 'go.issues':
+        return { title: text.goIssues, detail: text.goIssuesDetail };
+      case 'go.actions':
+        return { title: text.goActions, detail: text.goActionsDetail };
+      case 'go.branches':
+        return { title: text.goBranches, detail: text.goBranchesDetail };
+      case 'go.stashes':
+        return { title: text.goStashes, detail: text.goStashesDetail };
+      case 'help.checklist':
+        return { title: text.helpChecklist, detail: text.helpChecklistDetail };
+      case 'help.open':
+        return { title: text.helpOpen, detail: text.helpOpenDetail };
+    }
+  }
+
+  // ------------------------------------------------------------------ helpers
 
   /**
    * Serve historical blobs from a private, read-only scheme.
@@ -720,6 +871,9 @@ class Controller implements vscode.Disposable {
       openStashDiff: (payload) => this.openStashDiff(payload),
       showLogs: () => this.channel.show(true),
       openExplorer: () => this.openExplorer(),
+      openQuickActions: () => {
+        void this.showQuickActions();
+      },
       revealCommit: (hash) => this.revealCommit(hash),
       openExternal: (url) => this.openExternal(url),
       githubRepo: (payload) => this.githubRepo(payload),

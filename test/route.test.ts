@@ -203,3 +203,29 @@ test('prFilter and prQuery survive a saveState/loadState round trip', () => {
   assert.equal(restored.prFilter, 'open');
   assert.equal(restored.prQuery, '');
 });
+
+test('a navigate event with a focus target lands in the pending-focus store', () => {
+  const receive = (message: unknown): void => (bridge as unknown as { receive(m: unknown): void }).receive(message);
+  const restore = stubRequest(() => ({ route: null }));
+  try {
+    useRouteStore.setState({ route: DEFAULT_ROUTE });
+    useRouteStore.setState({ pendingFocus: null });
+
+    const off = wireHostEvents('pending');
+    receive({ kind: 'event/navigate', payload: { route: { id: 'changes', sub: 'changes' }, focus: 'publish' } });
+    assert.deepEqual(useRouteStore.getState().route, { id: 'changes', sub: 'changes' });
+    assert.equal(useRouteStore.getState().pendingFocus, 'publish', 'the view consumes the focus once');
+
+    // Consuming clears it, so a later repaint cannot steal focus again.
+    assert.equal(useRouteStore.getState().takeFocus(), 'publish');
+    assert.equal(useRouteStore.getState().pendingFocus, null);
+    assert.equal(useRouteStore.getState().takeFocus(), null);
+
+    // A route without a focus target leaves nothing to consume.
+    receive({ kind: 'event/navigate', payload: { route: { id: 'issues' } } });
+    assert.equal(useRouteStore.getState().pendingFocus, null);
+    off();
+  } finally {
+    restore();
+  }
+});

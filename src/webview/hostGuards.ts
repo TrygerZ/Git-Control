@@ -6,6 +6,7 @@
  */
 import type {
   CommitFocusEvent,
+  FocusTarget,
   HostEvent,
   IconThemeSnapshot,
   NavigateEvent,
@@ -135,7 +136,16 @@ export function validateHostEvent(raw: unknown): HostEvent | null {
     case 'event/navigate': {
       // Re-emit the parsed route, not the raw object, so extra keys never reach a listener.
       const route = isRecord(payload) ? parseRoute(payload.route) : null;
-      return route === null ? null : { kind, payload: { route } };
+      if (route === null) return null;
+      const rawFocus = isRecord(payload) ? payload.focus : undefined;
+      const focus =
+        rawFocus === 'publish' ||
+        rawFocus === 'push' ||
+        rawFocus === 'commit' ||
+        rawFocus === 'resolve'
+          ? (rawFocus as FocusTarget)
+          : undefined;
+      return { kind, payload: focus !== undefined ? { route, focus } : { route } };
     }
     default:
       return null;

@@ -169,6 +169,13 @@ async function repoScenario() {
   await vscode.commands.executeCommand('gitControl.internal.navigate');
   pass('gitControl.internal.navigate resolves for valid and invalid routes and is not contributed');
 
+  // Quick actions: the command must return without waiting for a pick, or
+  // `executeCommand` would hang until the user dismissed the palette. Closing
+  // the quick open afterwards is what proves the pick actually opened.
+  await vscode.commands.executeCommand('gitControl.quickActions');
+  await vscode.commands.executeCommand('workbench.action.closeQuickOpen');
+  pass('gitControl.quickActions opens the palette and returns immediately');
+
   const folder = vscode.workspace.workspaceFolders?.[0];
   assert.ok(folder, 'a git workspace is open');
   const head = (await execGit(['rev-parse', 'HEAD'])).trim();

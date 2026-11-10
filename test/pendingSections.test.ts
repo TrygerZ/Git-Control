@@ -648,7 +648,9 @@ test('sidebar header keeps both icon buttons named and routes checkout through B
   assert.match(src, /title=\{strings\.pending\.openGraphAria\}/);
   assert.match(src, /aria-label=\{shell\.headerAria\}/);
   assert.doesNotMatch(src, /dangerouslySetInnerHTML|innerHTML/);
-  assert.doesNotMatch(src, /quick|help/i, 'no quick-actions or help button before P15 and P17');
+  // P15 adds the quick actions button; the Help button is still P17's.
+  assert.match(src, /aria-label=\{strings\.palette\.openAria\}/, 'P15: the search button is named');
+  assert.doesNotMatch(src, /strings\.help\./, 'no help button before P17');
 });
 
 test('sidebar header keeps the frame 20 geometry: 12 px inset, 28 px select and chip, tones scoped above .gc-chip', () => {

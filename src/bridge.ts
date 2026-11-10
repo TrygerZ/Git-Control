@@ -66,6 +66,7 @@ import type {
   ErrorCode,
   EventKind,
   EventMap,
+  FocusTarget,
   GitActionPayload,
   GitActionRequest,
   GitHubAuthState,
@@ -137,6 +138,8 @@ export interface BridgeHost {
   showLogs?(): void;
   /** Open the explorer webview panel. Takes no parameters, so it cannot run commands. */
   openExplorer?(): void;
+  /** Open the Quick actions palette. Takes no parameters, so it cannot run commands. */
+  openQuickActions?(): void;
   /** Reveal and focus a commit in the explorer canvas. */
   revealCommit?(hash: string): Promise<boolean> | boolean;
   /** Open an external URL. Host-side so the webview never navigates itself. */
@@ -164,7 +167,7 @@ export interface BridgeHost {
    * Take and clear the route queued by `gitControl.internal.navigate`, or `null`
    * when none is queued or it is stale. Takes no parameters, so it cannot run commands.
    */
-  takePendingRoute?(): Route | null;
+  takePendingRoute?(): { route: Route; focus?: FocusTarget } | null;
 }
 
 /**
@@ -373,6 +376,9 @@ export class MessageBridge {
         return this.handleShowLogs();
       case 'actions/openExplorer':
         return this.handleOpenExplorer();
+      case 'actions/openQuickActions':
+        validateEmptyPayload(request.payload, this.text().invalid);
+        return this.handleOpenQuickActions();
       case 'graph/revealCommit':
         return this.handleRevealCommit(request.payload as RevealCommitPayload);
       case 'actions/openExternal':
@@ -420,9 +426,13 @@ export class MessageBridge {
           if (snapshot === undefined) fail(503, 'UNAVAILABLE', this.text().unavailable);
           return snapshot();
         }
-      case 'ui/takePendingRoute':
+      case 'ui/takePendingRoute': {
         validateEmptyPayload(request.payload, this.text().invalid);
-        return { route: this.host.takePendingRoute?.() ?? null };
+        const queued = this.host.takePendingRoute?.() ?? null;
+        return queued === null
+          ? { route: null }
+          : { route: queued.route, ...(queued.focus === undefined ? {} : { focus: queued.focus }) };
+      }
       default:
         return fail(400, 'VALIDATION_ERROR', this.text().invalid, {
           detail: `unknown kind: ${String(request.kind)}`,
@@ -596,6 +606,19 @@ export class MessageBridge {
    */
   private handleOpenExplorer(): { opened: boolean } {
     const open = this.host.openExplorer;
+    if (open === undefined) return { opened: false };
+    open();
+    return { opened: true };
+  }
+
+  /**
+   * Open the Quick actions palette. Deliberately parameterless: there is no way
+   * to express "run command X" through this kind, so it cannot become an
+   * arbitrary command-execution channel for the webview. The empty payload is
+   * enforced by `validateEmptyPayload`, not merely by the type.
+   */
+  private handleOpenQuickActions(): { opened: boolean } {
+    const open = this.host.openQuickActions;
     if (open === undefined) return { opened: false };
     open();
     return { opened: true };

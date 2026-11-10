@@ -38,6 +38,8 @@ interface Manifest {
   };
   contributes?: {
     commands?: Array<{ command?: string; title?: string; icon?: string | { light?: string; dark?: string } }>;
+    keybindings?: Array<{ command?: string; key?: string; mac?: string; when?: string }>;
+    views?: Record<string, Array<{ id?: string; name?: string; type?: string }>>;
     configuration?: { properties?: Record<string, ConfigProperty> };
   };
 }
@@ -190,4 +192,39 @@ test('the open actions command is declared with a title', () => {
   const command = commands.find((c) => c.command === 'gitControl.openActions');
   assert.ok(command !== undefined, 'gitControl.openActions must be contributed');
   assert.equal(command.title, 'Git Control: Open Actions');
+});
+
+// ----------------------------------------------------- P15 quick actions
+
+test('the quick actions command is declared with a title', () => {
+  const commands = manifest().contributes?.commands ?? [];
+  const command = commands.find((c) => c.command === 'gitControl.quickActions');
+  assert.ok(command !== undefined, 'gitControl.quickActions must be contributed');
+  assert.equal(command.title, 'Git Control: Quick Actions');
+});
+
+test('one keybinding is contributed for quick actions, with a mac form', () => {
+  const bindings = manifest().contributes?.keybindings ?? [];
+  assert.equal(bindings.length, 1, 'the extension contributes exactly one keybinding');
+  const binding = bindings[0];
+  assert.ok(binding !== undefined);
+  assert.equal(binding.command, 'gitControl.quickActions');
+  assert.equal(binding.key, 'ctrl+k g');
+  assert.equal(binding.mac, 'cmd+k g');
+  // S1: `focusedView` and `sideBarFocus` are both false while the sidebar webview
+  // has focus, so the scoped clause the phase file proposed can never fire there.
+  // `ctrl+k g` has no default binding, so D-02 takes the unscoped form.
+  assert.equal(binding.when, undefined, 'unscoped: a scoped clause cannot fire from the sidebar');
+});
+
+test('every contributed keybinding names a declared command and no key repeats', () => {
+  const contributes = manifest().contributes;
+  const declared = new Set((contributes?.commands ?? []).map((c) => c.command));
+  const bindings = contributes?.keybindings ?? [];
+  for (const binding of bindings) {
+    assert.ok(declared.has(binding.command), `${String(binding.command)} must be declared`);
+    assert.ok(typeof binding.key === 'string' && binding.key.length > 0, 'every binding has a key');
+  }
+  const keys = bindings.map((b) => `${b.key}|${b.mac ?? ''}`);
+  assert.equal(new Set(keys).size, keys.length, 'no two bindings share a key');
 });

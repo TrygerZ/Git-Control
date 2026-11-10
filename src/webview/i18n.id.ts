@@ -113,6 +113,11 @@ const id: Catalog = {
     branchesAria: 'Branch',
   },
 
+  palette: {
+    openAria: 'Buka aksi cepat',
+    openTitle: 'Aksi cepat',
+  },
+
   // Sidebar branches view
   branches: {
     tabsAria: 'Tampilan branch',

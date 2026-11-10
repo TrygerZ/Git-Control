@@ -431,6 +431,22 @@ export class GitRunner {
     return upstream.length > 0 ? upstream : null;
   }
 
+  /**
+   * Commits a publish of `rev` would send: reachable from `rev`, absent from every
+   * remote-tracking ref. `rev-list --count <rev>` alone returns the whole history,
+   * which on a long-lived repository overstates the publish by orders of magnitude
+   * and shows a Publish suggestion for a branch with nothing to send.
+   */
+  async countCommits(rev = 'HEAD'): Promise<number> {
+    const { stdout, code } = await this.run(
+      ['rev-list', '--count', sanitizeRefArg(rev), '--not', '--remotes'],
+      { allowedExitCodes: [0, 128] },
+    );
+    if (code !== 0) return 0;
+    const n = Number(stdout.trim());
+    return Number.isFinite(n) && n > 0 ? n : 0;
+  }
+
   /** Ahead/behind counts of HEAD against its upstream. Zeros when no upstream. */
   async aheadBehind(): Promise<AheadBehind> {
     const { stdout, code } = await this.run(

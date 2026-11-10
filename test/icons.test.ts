@@ -99,8 +99,13 @@ test('every IconName has an SVG render function in ICON_PATHS and no orphan path
   }
 });
 
-test('no string "codicon" exists in src/ directory', () => {
-  const srcDir = path.resolve(__dirname, '..', '..', 'src');
+test('no string "codicon" exists in the webview, which draws SVG icons under strict CSP', () => {
+  // Scoped to `src/webview` on purpose. The ban exists because the webview has no
+  // codicon font: `default-src 'none'` blocks it, and every icon is an inline SVG
+  // from `iconPaths.tsx`. The extension host is a different context, where the
+  // native QuickPick resolves `$(name)` syntax itself, so a host string naming
+  // that syntax is not the failure this guard is protecting against.
+  const webviewDir = path.resolve(__dirname, '..', '..', 'src', 'webview');
   function scan(dir: string): void {
     const entries = fs.readdirSync(dir, { withFileTypes: true });
     for (const ent of entries) {
@@ -113,5 +118,5 @@ test('no string "codicon" exists in src/ directory', () => {
       }
     }
   }
-  scan(srcDir);
+  scan(webviewDir);
 });

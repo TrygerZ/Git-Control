@@ -1001,3 +1001,27 @@ test('createBranch carries uncommitted changes onto the new branch', async (t) =
   );
   assert.equal(await fs.readFile(path.join(dir, 'a.txt'), 'utf8'), 'uncommitted edit\n');
 });
+
+test('countCommits counts only what a publish would send, and 0 without HEAD', async (t) => {
+  const empty = await makeFixture('empty');
+  t.after(() => cleanup(empty));
+  const emptyGit = new GitRunner({ gitPath: 'git', cwd: empty });
+  assert.equal(await emptyGit.countCommits(), 0, 'an empty repository has nothing to publish');
+
+  // The count is "commits a publish would send", not "commits reachable from
+  // HEAD". On this repository the two differ by two orders of magnitude: the
+  // whole history is reachable, but almost all of it is already on a remote.
+  const dir = await makeFixture('branches');
+  t.after(() => cleanup(dir));
+  const git = new GitRunner({ gitPath: 'git', cwd: dir });
+
+  assert.equal(await git.countCommits('main'), 0, 'a fully published branch sends nothing');
+  assert.equal(await git.countCommits('feat/ahead'), 2, 'exactly the two commits after the push');
+  assert.equal(await git.countCommits('local-only'), 1, 'a never-published branch sends its one commit');
+
+  const all = await git.run(['rev-list', '--count', 'feat/ahead']);
+  assert.ok(
+    Number(all.stdout.trim()) > 2,
+    'the fixture must keep its published history, or this test proves nothing',
+  );
+});

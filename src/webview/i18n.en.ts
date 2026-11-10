@@ -117,6 +117,12 @@ const en = {
     branchesAria: 'Branches',
   },
 
+  // Quick actions (P15)
+  palette: {
+    openAria: 'Open quick actions',
+    openTitle: 'Quick actions',
+  },
+
   // Sidebar branches view
   branches: {
     tabsAria: 'Branch views',

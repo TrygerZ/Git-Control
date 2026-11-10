@@ -1059,6 +1059,36 @@ test('actions/openExplorer only opens the explorer panel and takes no parameters
   assert.equal(h.calls.openExplorer, 2);
 });
 
+test('actions/openQuickActions opens the palette and rejects any payload', async (t) => {
+  let opened = 0;
+  const h = harness(null, {
+    openQuickActions: () => {
+      opened += 1;
+    },
+  });
+  t.after(() => h.bridge.dispose());
+
+  const response = await h.webview.send(req('actions/openQuickActions', {}));
+  assert.equal(response.ok, true);
+  if (!response.ok) return;
+  assert.deepEqual(response.data, { opened: true });
+  assert.equal(opened, 1);
+
+  // Empty by contract: a non-empty payload is refused before the host is touched,
+  // so the kind can never grow into a command channel.
+  const rejected = await h.webview.send(req('actions/openQuickActions', { command: 'workbench.action.terminal.new' }));
+  assert.equal(rejected.ok, false);
+  if (!rejected.ok) assert.equal(rejected.error.code, 'VALIDATION_ERROR');
+  assert.equal(opened, 1);
+
+  // A host without the callback degrades to `opened: false`, not an error.
+  const absent = harness(null);
+  t.after(() => absent.bridge.dispose());
+  const missing = await absent.webview.send(req('actions/openQuickActions', {}));
+  assert.equal(missing.ok, true);
+  if (missing.ok) assert.deepEqual(missing.data, { opened: false });
+});
+
 test('graph/revealCommit validates hash and dispatches to host.revealCommit', async (t) => {
   const h = harness(null);
   t.after(() => h.bridge.dispose());
@@ -2794,7 +2824,7 @@ test('stash-drop requires level 2 confirmation with forceAcknowledgement and del
 
 test('ui/takePendingRoute returns the host value and is null when the host has none', async (t) => {
   const queued = { id: 'branches', sub: 'tags' } as const;
-  const withRoute = harness(null, { takePendingRoute: () => queued });
+  const withRoute = harness(null, { takePendingRoute: () => ({ route: queued }) });
   t.after(() => withRoute.bridge.dispose());
   const found = await withRoute.webview.send(req('ui/takePendingRoute', {}));
   assert.equal(found.ok, true);
@@ -3309,4 +3339,24 @@ test('the actions log response carries no url-like string', async (t) => {
   const serialized = JSON.stringify(reply.data);
   assert.ok(!serialized.includes('https://'), serialized);
   assert.ok(!serialized.includes('sig='), serialized);
+});
+
+test('ui/takePendingRoute carries the focus target and omits it when there is none', async (t) => {
+  // A quick action row only navigates, so the view needs to know which control
+  // to focus. The key is absent, not null, when the host has no target.
+  const queued = { route: { id: 'changes', sub: 'changes' }, focus: 'publish' } as const;
+  const withFocus = harness(null, { takePendingRoute: () => queued });
+  t.after(() => withFocus.bridge.dispose());
+  const found = await withFocus.webview.send(req('ui/takePendingRoute', {}));
+  assert.equal(found.ok, true);
+  if (found.ok) assert.deepEqual(found.data, { route: queued.route, focus: 'publish' });
+
+  const plain = harness(null, { takePendingRoute: () => ({ route: { id: 'prs' } as const }) });
+  t.after(() => plain.bridge.dispose());
+  const noFocus = await plain.webview.send(req('ui/takePendingRoute', {}));
+  assert.equal(noFocus.ok, true);
+  if (noFocus.ok) {
+    assert.deepEqual(noFocus.data, { route: { id: 'prs' } });
+    assert.equal('focus' in (noFocus.data as object), false, 'the key is omitted, never null');
+  }
 });

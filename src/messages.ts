@@ -828,6 +828,11 @@ export interface RequestMap {
    */
   'actions/openExplorer': { payload: Record<string, never>; response: { opened: boolean } };
   /**
+   * Open the Quick actions palette. Empty payload by design: the host decides
+   * what to show, so this cannot become a command channel for the webview.
+   */
+  'actions/openQuickActions': { payload: Record<string, never>; response: { opened: boolean } };
+  /**
    * Reveal a commit in the Git Control explorer canvas and select it.
    */
   'graph/revealCommit': { payload: RevealCommitPayload; response: { revealed: boolean } };
@@ -877,7 +882,7 @@ export interface RequestMap {
    * so the webview pulls on mount. Returns `null` when nothing is queued or the
    * queued route is older than the host TTL. Clears the queue.
    */
-  'ui/takePendingRoute': { payload: Record<string, never>; response: { route: Route | null } };
+  'ui/takePendingRoute': { payload: Record<string, never>; response: { route: Route | null; focus?: FocusTarget } };
 }
 
 export type RequestKind = keyof RequestMap;
@@ -975,8 +980,12 @@ export type Route =
   | { id: 'branches'; sub: BranchesSub }
   | { id: 'prs' | 'issues' | 'actions' };
 
+/** Which control a navigated view should focus. Closed set, validated at the boundary. */
+export type FocusTarget = 'publish' | 'push' | 'commit' | 'resolve';
+
 export interface NavigateEvent {
   route: Route;
+  focus?: FocusTarget;
 }
 
 /** Event kind → payload map for unsolicited host pushes. */
