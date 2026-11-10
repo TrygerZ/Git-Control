@@ -3290,15 +3290,20 @@ h3 {
  * Onboarding card (P16, frames 103 and 104). It sits inside `.gc-pending`, a
  * flex column with `overflow: hidden`, so it takes its natural height and caps
  * itself: a long step list scrolls rather than pushing the file list off screen.
+ *
+ * The inline margin is what puts the card on the same 12 px gutter as the
+ * sub-tabs above it: `.gc-pending` already insets 4 px, and the segmented
+ * control adds 8 px of its own (frame 103 draws both at x=12).
  */
 .gc-started {
   flex: 0 0 auto;
   display: flex;
   flex-direction: column;
-  gap: var(--gc-space-2);
-  padding: var(--gc-space-3);
+  gap: var(--gc-space-3);
+  margin-inline: var(--gc-space-3);
+  padding: var(--gc-space-4);
   border: 1px solid var(--gc-border-subtle);
-  border-radius: var(--gc-radius);
+  border-radius: var(--gc-radius-lg);
   background: var(--gc-bg-surface);
   max-height: 45%;
   overflow-y: auto;
