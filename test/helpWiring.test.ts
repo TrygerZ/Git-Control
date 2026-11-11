@@ -31,10 +31,16 @@ test('the shell draws the panel for the help route and no sub-tabs there', () =>
   const src = read('src/webview/PendingChanges.tsx');
   assert.match(src, /route\.id === 'help' \? \(\s*<HelpPanel \/>/, 'the panel takes the body');
   assert.match(src, /'help'/, 'the sub-tab list knows the route has none');
-  // The toast region stays mounted on every route that is not Changes.
-  const toast = src.indexOf("route.id === 'prs' || route.id === 'issues'");
+  // The toast region stays mounted on every route that is not Changes. There is
+  // also one inside the Changes footer, so anchor on the LAST mount and read its
+  // own condition back. The id list also guards the sub-tab strip, so the
+  // window has to reach the end of the line.
+  const toast = src.lastIndexOf('<ToastRegion />');
   assert.ok(toast > 0, 'the non-Changes toast region exists');
-  assert.match(src.slice(toast, toast + 260), /'help'/, 'help gets a live region too');
+  const open = src.lastIndexOf('{(', toast);
+  assert.ok(open > 0, 'the condition opens before the region');
+  const condition = src.slice(open, toast);
+  assert.match(condition, /'help'/, 'help gets a live region too');
 });
 
 test('Help is not a nav strip destination: it opens from the header, not the strip', () => {
