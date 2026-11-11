@@ -115,7 +115,7 @@ test('closing returns focus to the opener only after the repo header is back', (
   // instead of `SidebarHeader`, so the `[data-help-open]` button is not in the
   // document. A synchronous query from the close handler finds nothing, the
   // optional chain swallows it, and focus falls to `<body>`. The return has to
-  // run after the shell re-renders, which is an effect keyed on the route.
+  // run after the shell re-renders.
   const panel = read('src/webview/HelpPanel.tsx');
   assert.doesNotMatch(
     panel,
@@ -129,5 +129,25 @@ test('closing returns focus to the opener only after the repo header is back', (
     /querySelector<HTMLElement>\('\[data-help-open\]'\)\?\.focus\(\)/,
     'the shell focuses the header button once it is mounted again',
   );
-  assert.match(shell, /route\.id !== 'help'/, 'and only on the way out of help');
+});
+
+test('the shell only takes focus back when close asked for it', () => {
+  // "The route used to be help" is not the same question as "the user pressed
+  // Back or Close". A nav strip click, a feature row, and the Publish row all
+  // leave help and all own their focus target; an unconditional return steals it.
+  // The store answers the narrower question with a one-shot flag.
+  const shell = read('src/webview/PendingChanges.tsx');
+  assert.match(shell, /takeHelpFocusReturn\(\)/, 'the shell consumes the one-shot request');
+  assert.doesNotMatch(
+    shell,
+    /prevRouteId/,
+    'route history alone cannot tell close from navigation, so it must not decide',
+  );
+  const store = read('src/webview/store.ts');
+  const close = store.slice(store.indexOf('closeHelp()'), store.indexOf('takeFocus()'));
+  assert.match(close, /helpFocusReturn/, 'closeHelp raises the request');
+  for (const action of ['navigate(route)', 'navigateWithFocus(route, focus)']) {
+    const body = store.slice(store.indexOf(action), store.indexOf('},', store.indexOf(action)));
+    assert.doesNotMatch(body, /helpFocusReturn/, `${action} never raises it`);
+  }
 });

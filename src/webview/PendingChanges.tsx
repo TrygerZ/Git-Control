@@ -213,14 +213,12 @@ export function PendingChangesApp(): JSX.Element {
    * help is open this shell draws `HelpHeader` in place of `SidebarHeader`, so
    * the `[data-help-open]` button is unmounted. This effect runs after the commit
    * that swaps the repo header back, which is the first moment the button exists.
-   * The ref is seeded with the current id, so mounting never fires.
+   * Only `closeHelp` raises the request: every other exit owns its focus target.
    */
-  const prevRouteId = useRef<string>(route.id);
   useEffect(() => {
-    if (prevRouteId.current === 'help' && route.id !== 'help') {
+    if (useRouteStore.getState().takeHelpFocusReturn()) {
       document.querySelector<HTMLElement>('[data-help-open]')?.focus();
     }
-    prevRouteId.current = route.id;
   }, [route.id]);
   const sub = changesSubOf(route);
   /*
