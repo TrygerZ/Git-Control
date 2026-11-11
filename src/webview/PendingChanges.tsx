@@ -25,7 +25,7 @@ import { PullRequestsView } from './PullRequestsView';
 import { ActionsView } from './ActionsView';
 import { IssuesView } from './IssuesView';
 import { BranchesView } from './BranchesView';
-import { HelpPanel } from './HelpPanel';
+import { HelpHeader, HelpPanel } from './HelpPanel';
 import { Tablist } from './Tablist';
 import { CHANGES_PANEL_ID, CHANGES_TABS_PREFIX, changesSubTabs, changesTabId } from './navRegistry';
 import { changesSubOf, parseRoute } from './route';
@@ -208,6 +208,18 @@ export function PendingChangesApp(): JSX.Element {
   }, [githubConnected, currentBranch]);
 
   const route = useRouteStore((s) => s.route);
+  /*
+   * Return focus to the opener after leaving Help. The panel cannot do it: while
+   * help is open this shell draws `HelpHeader` in place of `SidebarHeader`, so
+   * the `[data-help-open]` button is unmounted. This effect runs after the commit
+   * that swaps the repo header back, which is the first moment the button exists.
+   * Only `closeHelp` raises the request: every other exit owns its focus target.
+   */
+  useEffect(() => {
+    if (useRouteStore.getState().takeHelpFocusReturn()) {
+      document.querySelector<HTMLElement>('[data-help-open]')?.focus();
+    }
+  }, [route.id]);
   const sub = changesSubOf(route);
   /*
    * The shell keeps its sub-tab slot for every destination. Destinations without
@@ -290,7 +302,11 @@ export function PendingChangesApp(): JSX.Element {
 
   return (
     <div className="gc-pending">
-      <SidebarHeader />
+      {route.id === 'help' ? (
+        <HelpHeader />
+      ) : (
+        <SidebarHeader />
+      )}
       <NavStrip />
       <Tablist tabs={subTabs} activeId={sub} onSelect={selectSub} ariaLabel={strings.nav.subTabsAria} idPrefix={CHANGES_TABS_PREFIX} classPrefix="gc-subtabs" />
       <div className="gc-pending__notifications">

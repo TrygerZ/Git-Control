@@ -834,6 +834,16 @@ export interface RequestMap {
    */
   'actions/openQuickActions': { payload: Record<string, never>; response: { opened: boolean } };
   /**
+   * Reveal the sidebar and navigate it to a parsed route. The route is untrusted,
+   * so the host re-parses it through `parseRoute` before it reaches the UI.
+   */
+  'actions/openSidebarView': { payload: { route: Route }; response: { opened: boolean } };
+  /**
+   * Open the repository picker. Empty payload by design: it takes no parameters,
+   * so it cannot be used to run an arbitrary host command.
+   */
+  'actions/pickRepository': { payload: Record<string, never>; response: { opened: boolean } };
+  /**
    * Reveal a commit in the Git Control explorer canvas and select it.
    */
   'graph/revealCommit': { payload: RevealCommitPayload; response: { revealed: boolean } };

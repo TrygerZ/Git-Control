@@ -50,6 +50,55 @@ const SHORTCUT_HEADING: Record<ShortcutGroup['id'], string> = {
   anywhere: 'gAnywhere',
 };
 
+/**
+ * The 44 px header slot, drawn by the shell above the nav strip (frame 105), so
+ * the strip sits between the header and the body rather than under a second one.
+ */
+export function HelpHeader(): JSX.Element {
+  const strings = useT();
+  const closeHelp = useRouteStore((s) => s.closeHelp);
+
+  const titleRef = useRef<HTMLHeadingElement>(null);
+
+  // Opening lands on the heading (section 10). Closing restores the route in the
+  // store; the shell returns focus once it has mounted the repo header again.
+  useEffect(() => {
+    titleRef.current?.focus();
+  }, []);
+
+  /**
+   * Close only. Focus cannot be returned from here: this header replaces the repo
+   * header while help is open, so the opener button is not in the document until
+   * the shell re-renders. A feature row does not come through here either: it
+   * navigates to a view that owns its own focus target.
+   */
+  const leave = (): void => {
+    closeHelp();
+  };
+
+  const close = (): void => {
+    leave();
+  };
+
+  const back = (): void => {
+    leave();
+  };
+
+  return (
+    <header className="gc-help__head">
+      <button type="button" className="gc-icon-button" aria-label={strings.help.backAria} onClick={back}>
+        <Icon name="chevron-left" />
+      </button>
+      <h2 id={TITLE_ID} className="gc-help__title" tabIndex={-1} ref={titleRef}>
+        {strings.help.title}
+      </h2>
+      <button type="button" className="gc-icon-button" aria-label={strings.help.closeAria} onClick={close}>
+        <Icon name="close" />
+      </button>
+    </header>
+  );
+}
+
 export function HelpPanel(): JSX.Element {
   const strings = useT();
   // The catalog is a fixed object, so a row's key type is `string`, not a keyof.
@@ -57,16 +106,7 @@ export function HelpPanel(): JSX.Element {
 
   const route = useRouteStore((s) => s.route);
   const openHelp = useRouteStore((s) => s.openHelp);
-  const closeHelp = useRouteStore((s) => s.closeHelp);
   const pushToast = useOperationStore((s) => s.pushToast);
-
-  const titleRef = useRef<HTMLHeadingElement>(null);
-
-  // Opening lands on the heading (section 10). Closing restores the route in the
-  // store; the header's info button carries `data-help-open` as the return target.
-  useEffect(() => {
-    titleRef.current?.focus();
-  }, []);
 
   const tab = route.id === 'help' ? route.tab : 'features';
 
@@ -123,24 +163,6 @@ export function HelpPanel(): JSX.Element {
     }
   };
 
-  /**
-   * Close and return focus to the header button that opened the panel. A feature
-   * row does not come through here: it navigates to a view that owns its own
-   * focus target, and stealing it back to the header would fight that.
-   */
-  const leave = (): void => {
-    closeHelp();
-    document.querySelector<HTMLElement>('[data-help-open]')?.focus();
-  };
-
-  const close = (): void => {
-    leave();
-  };
-
-  const back = (): void => {
-    leave();
-  };
-
   const showChecklist = (): void => {
     useSettingsStore.getState().reopenChecklist();
     useRouteStore.getState().navigate({ id: 'changes', sub: 'changes' });
@@ -150,18 +172,6 @@ export function HelpPanel(): JSX.Element {
 
   return (
     <section className="gc-help" aria-labelledby={TITLE_ID}>
-      <div className="gc-help__head">
-        <button type="button" className="gc-icon-button" aria-label={strings.help.backAria} onClick={back}>
-          <Icon name="chevron-left" />
-        </button>
-        <h2 id={TITLE_ID} className="gc-help__title" tabIndex={-1} ref={titleRef}>
-          {strings.help.title}
-        </h2>
-        <button type="button" className="gc-icon-button" aria-label={strings.help.closeAria} onClick={close}>
-          <Icon name="close" />
-        </button>
-      </div>
-
       <Tablist
         tabs={tabs}
         activeId={tab}

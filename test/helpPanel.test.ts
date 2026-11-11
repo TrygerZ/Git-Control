@@ -73,15 +73,101 @@ test('the footer button reopens the checklist and is gated on the capability', (
   assert.match(src, /id: 'changes'/, 'the footer navigates to Changes');
 });
 
-test('opening moves focus to the heading and closing returns it to the opener', () => {
+test('the help route swaps the repo header for its own and keeps the strip below (frames 105 and 106)', () => {
+  // Frame 105 stacks Header (back, title, close), Nav/Wrap, SubTabs, list. The
+  // repo header must not survive on help or the strip moves down a whole header.
+  const src = read('src/webview/PendingChanges.tsx');
+  const shell = src.slice(src.indexOf('return ('));
+  assert.match(
+    shell,
+    /route\.id === 'help' \? \(\s*<HelpHeader \/>\s*\) : \(\s*<SidebarHeader \/>\s*\)/,
+    'one header slot, chosen by the route',
+  );
+  const header = shell.indexOf('<HelpHeader />');
+  const strip = shell.indexOf('<NavStrip />');
+  const panel = shell.indexOf('<HelpPanel />');
+  assert.ok(header > 0 && strip > header && panel > strip, 'header, then strip, then the panel body');
+});
+
+test('the panel splits into a header and a body so the strip can sit between them', () => {
+  const src = read('src/webview/HelpPanel.tsx');
+  assert.match(src, /export function HelpHeader\(\)/, 'the header is its own component');
+  assert.match(src, /export function HelpPanel\(\)/, 'the body keeps the panel name');
+  const header = src.slice(src.indexOf('export function HelpHeader'), src.indexOf('export function HelpPanel'));
+  assert.match(header, /strings\.help\.backAria/, 'back lives in the header');
+  assert.match(header, /strings\.help\.closeAria/, 'close lives in the header');
+  assert.match(header, /<h2\b/, 'the title is the header heading');
+  assert.match(header, /\.focus\(\)/, 'opening still lands on the heading');
+  assert.doesNotMatch(header, /<Tablist\b/, 'the tabs belong to the body, below the strip');
+  const body = src.slice(src.indexOf('export function HelpPanel'));
+  assert.match(body, /<Tablist\b/, 'the body owns the tabs');
+});
+
+test('opening moves focus to the heading', () => {
   const src = read('src/webview/HelpPanel.tsx');
   assert.match(src, /\.focus\(\)/, 'focus is moved explicitly');
   assert.match(src, /tabIndex=\{-1\}/, 'the heading is focusable for that move');
-  assert.match(src, /data-help-open/, 'the header button is the named return target');
   assert.match(src, /closeHelp\(/, 'back and close share one action');
-  assert.match(
-    src,
-    /querySelector<HTMLElement>\('\[data-help-open\]'\)\?\.focus\(\)/,
-    'closing hands focus back to the opener',
+});
+
+test('closing returns focus to the opener only after the repo header is back', () => {
+  // Frame 105 swaps the header: while help is open the shell draws `HelpHeader`
+  // instead of `SidebarHeader`, so the `[data-help-open]` button is not in the
+  // document. A synchronous query from the close handler finds nothing, the
+  // optional chain swallows it, and focus falls to `<body>`. The return has to
+  // run after the shell re-renders.
+  const panel = read('src/webview/HelpPanel.tsx');
+  assert.doesNotMatch(
+    panel,
+    /querySelector<HTMLElement>\('\[data-help-open\]'\)/,
+    'the panel cannot reach a button that is unmounted while it is open',
   );
+  const shell = read('src/webview/PendingChanges.tsx');
+  assert.match(shell, /useEffect\(/, 'the return runs from an effect, after the commit');
+  assert.match(
+    shell,
+    /querySelector<HTMLElement>\('\[data-help-open\]'\)\?\.focus\(\)/,
+    'the shell focuses the header button once it is mounted again',
+  );
+});
+
+test('the shell only takes focus back when close asked for it', () => {
+  // "The route used to be help" is not the same question as "the user pressed
+  // Back or Close". A nav strip click, a feature row, and the Publish row all
+  // leave help and all own their focus target; an unconditional return steals it.
+  // The store answers the narrower question with a one-shot flag.
+  const shell = read('src/webview/PendingChanges.tsx');
+  // The guard is the contract: consuming the flag and then focusing anyway is the
+  // same bug under a different name, so the call has to sit inside the `if`.
+  assert.match(
+    shell,
+    /if \(useRouteStore\.getState\(\)\.takeHelpFocusReturn\(\)\) \{\s*document\.querySelector<HTMLElement>\('\[data-help-open\]'\)\?\.focus\(\);/,
+    'focus runs only when the consume returned true',
+  );
+  assert.doesNotMatch(
+    shell,
+    /prevRouteId/,
+    'route history alone cannot tell close from navigation, so it must not decide',
+  );
+  const store = read('src/webview/store.ts');
+  // Slice the IMPLEMENTATION, not the interface block that also spells `closeHelp()`.
+  const impl = store.indexOf('closeHelp() {');
+  assert.ok(impl > 0, 'the implementation exists');
+  const close = store.slice(impl, store.indexOf('takeHelpFocusReturn() {', impl));
+  assert.match(
+    close,
+    /set\(\{[^}]*helpFocusReturn: true/,
+    'closeHelp raises the request in its own set',
+  );
+  assert.doesNotMatch(
+    close,
+    /saveState\([^)]*helpFocusReturn/,
+    'and never persists it',
+  );
+  for (const action of ['navigate(route) {', 'navigateWithFocus(route, focus) {']) {
+    const start = store.indexOf(action);
+    assert.ok(start > 0, `${action} is implemented`);
+    const body = store.slice(start, store.indexOf('\n  },', start));
+    assert.doesNotMatch(body, /helpFocusReturn: true/, `${action} never raises it`);
+  }
 });

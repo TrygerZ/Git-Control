@@ -123,6 +123,30 @@ test('a persisted return route that is not a valid route is dropped, not stored'
   assert.equal(loadState().helpReturn, null, 'help cannot return to itself');
 });
 
+test('only close asks for focus back, navigation away does not', () => {
+  // The shell returns focus to the opener on the way out of help. That is correct
+  // for Back and Close, which have no other target, and wrong for every other exit:
+  // a nav strip click, a feature row, or the Publish row already own their focus.
+  // So the request is a one-shot flag set by `closeHelp` and consumed by the shell,
+  // never inferred from "the route used to be help".
+  reset({ id: 'prs' });
+  useRouteStore.getState().openHelp();
+  assert.equal(useRouteStore.getState().takeHelpFocusReturn(), false, 'opening does not ask');
+  useRouteStore.getState().closeHelp();
+  assert.equal(useRouteStore.getState().takeHelpFocusReturn(), true, 'closing asks once');
+  assert.equal(useRouteStore.getState().takeHelpFocusReturn(), false, 'and only once');
+
+  for (const exit of [
+    () => useRouteStore.getState().navigate({ id: 'actions' }),
+    () => useRouteStore.getState().navigateWithFocus({ id: 'changes', sub: 'changes' }, 'publish'),
+  ]) {
+    reset({ id: 'prs' });
+    useRouteStore.getState().openHelp();
+    exit();
+    assert.equal(useRouteStore.getState().takeHelpFocusReturn(), false, 'navigation never asks');
+  }
+});
+
 test('hydrate never rewrites the saved route and leaves the return memory alone', () => {
   reset({ id: 'issues' });
   saveState({ route: { id: 'issues' } });

@@ -1022,6 +1022,21 @@ const en = {
     or: 'or',
     showChecklist: 'Show the Get started checklist again',
   },
+  // Explorer More menu (P18)
+  explorerMenu: {
+    moreAria: 'More actions',
+    moreTitle: 'More',
+    menuAria: 'Explorer actions',
+    groupViews: 'Sidebar views',
+    groupGithub: 'GitHub',
+    quickActions: 'Quick actions',
+    refreshGraph: 'Refresh graph',
+    showGitOutput: 'Show Git output',
+    connectGithub: 'Connect GitHub',
+    disconnectGithub: 'Disconnect GitHub',
+    pickRepository: 'Pick repository...',
+    itemWithCount: (label: string, count: string) => `${label}, ${count}`,
+  },
 };
 
 

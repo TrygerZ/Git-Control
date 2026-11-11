@@ -36,6 +36,7 @@ import {
   validateEmptyPayload as validateEmptyPayloadPure,
 } from './bridgePure';
 import type { RepositoryService } from './repository';
+import { parseRoute } from './webview/route';
 import {
   validateBranchName,
   validateEmail,
@@ -140,6 +141,10 @@ export interface BridgeHost {
   openExplorer?(): void;
   /** Open the Quick actions palette. Takes no parameters, so it cannot run commands. */
   openQuickActions?(): void;
+  /** Reveal the sidebar and navigate to a route the bridge already parsed. */
+  openSidebarView?(route: Route): Promise<boolean> | boolean;
+  /** Open the repository picker. Takes no parameters, so it cannot run commands. */
+  pickRepository?(): Promise<void> | void;
   /** Reveal and focus a commit in the explorer canvas. */
   revealCommit?(hash: string): Promise<boolean> | boolean;
   /** Open an external URL. Host-side so the webview never navigates itself. */
@@ -379,6 +384,11 @@ export class MessageBridge {
       case 'actions/openQuickActions':
         validateEmptyPayload(request.payload, this.text().invalid);
         return this.handleOpenQuickActions();
+      case 'actions/openSidebarView':
+        return this.handleOpenSidebarView(request.payload as { route?: unknown });
+      case 'actions/pickRepository':
+        validateEmptyPayload(request.payload, this.text().invalid);
+        return this.handlePickRepository();
       case 'graph/revealCommit':
         return this.handleRevealCommit(request.payload as RevealCommitPayload);
       case 'actions/openExternal':
@@ -621,6 +631,32 @@ export class MessageBridge {
     const open = this.host.openQuickActions;
     if (open === undefined) return { opened: false };
     open();
+    return { opened: true };
+  }
+
+  /**
+   * Reveal the sidebar and navigate it to a route. The route is untrusted, so it
+   * passes the same `parseRoute` gate the host uses; only the parsed value reaches
+   * the UI, and an invalid route never reaches it at all.
+   */
+  private handleOpenSidebarView(payload: { route?: unknown }): { opened: boolean } {
+    const route = parseRoute(payload?.route);
+    if (route === null) fail(400, 'VALIDATION_ERROR', this.text().invalid, { detail: 'route' });
+    const open = this.host.openSidebarView;
+    if (open === undefined) return { opened: false };
+    void open(route);
+    return { opened: true };
+  }
+
+  /**
+   * Open the repository picker. Deliberately parameterless: there is no way to
+   * express "run command X" through this kind. The empty payload is enforced by
+   * `validateEmptyPayload` in the dispatch arm, not merely by the type.
+   */
+  private handlePickRepository(): { opened: boolean } {
+    const pick = this.host.pickRepository;
+    if (pick === undefined) return { opened: false };
+    void pick();
     return { opened: true };
   }
 

@@ -3421,3 +3421,92 @@ test('ui/takePendingRoute carries the focus target and omits it when there is no
     assert.equal('focus' in (noFocus.data as object), false, 'the key is omitted, never null');
   }
 });
+
+test('actions/openSidebarView rejects any route outside the allowlist', async (t) => {
+  const opened: unknown[] = [];
+  const h = harness(null, {
+    openSidebarView: (route) => {
+      opened.push(route);
+      return true;
+    },
+  });
+  t.after(() => h.bridge.dispose());
+
+  // The route arrives from an untrusted webview, so it is parsed, never cast:
+  // prototype keys, a bare string, an unknown id, and a `sub` on a view without
+  // sub-tabs are all refused before the host is touched.
+  for (const route of [
+    '__proto__',
+    'changes',
+    { id: 'constructor' },
+    { id: 'changes', sub: 'nope' },
+    { id: 'help', tab: 'nope' },
+    { id: 'prs', sub: 'changes' },
+    null,
+    7,
+  ]) {
+    const reply = await h.webview.send(req('actions/openSidebarView', { route }));
+    assert.equal(reply.ok, false, JSON.stringify(route));
+    if (!reply.ok) assert.equal(reply.error.code, 'VALIDATION_ERROR');
+  }
+  assert.deepEqual(opened, [], 'the host is never called with an invalid route');
+});
+
+test('actions/openSidebarView calls the host once with the parsed route', async (t) => {
+  const opened: unknown[] = [];
+  const h = harness(null, {
+    openSidebarView: (route) => {
+      opened.push(route);
+      return true;
+    },
+  });
+  t.after(() => h.bridge.dispose());
+
+  const reply = await h.webview.send(
+    req('actions/openSidebarView', { route: { id: 'changes', sub: 'changes', extra: 'ignored' } }),
+  );
+  assert.equal(reply.ok, true);
+  if (!reply.ok) return;
+  assert.deepEqual(reply.data, { opened: true });
+  // Only known fields survive the parse, so a future key cannot ride along.
+  assert.deepEqual(opened, [{ id: 'changes', sub: 'changes' }]);
+
+  const help = await h.webview.send(req('actions/openSidebarView', { route: { id: 'help' } }));
+  assert.equal(help.ok, true);
+  assert.deepEqual(opened[1], { id: 'help', tab: 'features' }, 'a missing tab takes its default');
+});
+
+test('actions/openSidebarView degrades to opened false without the host member', async (t) => {
+  const h = harness(null);
+  t.after(() => h.bridge.dispose());
+  const reply = await h.webview.send(req('actions/openSidebarView', { route: { id: 'prs' } }));
+  assert.equal(reply.ok, true);
+  if (reply.ok) assert.deepEqual(reply.data, { opened: false });
+});
+
+test('actions/pickRepository takes no parameters and degrades without the host member', async (t) => {
+  let picked = 0;
+  const h = harness(null, {
+    pickRepository: () => {
+      picked += 1;
+    },
+  });
+  t.after(() => h.bridge.dispose());
+
+  const reply = await h.webview.send(req('actions/pickRepository', {}));
+  assert.equal(reply.ok, true);
+  if (!reply.ok) return;
+  assert.deepEqual(reply.data, { opened: true });
+  assert.equal(picked, 1);
+
+  const rejected = await h.webview.send(req('actions/pickRepository', { path: '/etc/passwd' }));
+  assert.equal(rejected.ok, false);
+  if (!rejected.ok) assert.equal(rejected.error.code, 'VALIDATION_ERROR');
+  assert.equal(picked, 1, 'the host is never called with a payload');
+
+  const absent = harness(null);
+  t.after(() => absent.bridge.dispose());
+  const missing = await absent.webview.send(req('actions/pickRepository', {}));
+  assert.equal(missing.ok, true);
+  if (missing.ok) assert.deepEqual(missing.data, { opened: false });
+});

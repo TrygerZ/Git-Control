@@ -38,6 +38,7 @@ const PURE_MODULES = [
   'src/webview/onboarding.ts',
   'src/webview/shortcuts.ts',
   'src/webview/helpModel.ts',
+  'src/webview/explorerMenu.ts',
 ];
 
 test('pure modules contain no vscode imports', () => {
@@ -93,4 +94,8 @@ test('the P17 pure modules are listed', () => {
   for (const relativePath of ['src/webview/shortcuts.ts', 'src/webview/helpModel.ts']) {
     assert.ok(PURE_MODULES.includes(relativePath), relativePath);
   }
+});
+
+test('the P18 pure module is listed', () => {
+  assert.ok(PURE_MODULES.includes('src/webview/explorerMenu.ts'));
 });

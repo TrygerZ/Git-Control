@@ -8,6 +8,7 @@ import { GraphCanvas } from './GraphCanvas';
 import { GuardDialog } from './GuardDialog';
 import { Inspector } from './Inspector';
 import { Contributors } from './Contributors';
+import { ExplorerHeaderActions } from './ExplorerHeaderActions';
 import { MergeDialog, mergeActionPayload, mergeIntoActionPayload } from './MergeDialog';
 import { PromptDialog } from './PromptDialog';
 import { ToastRegion } from './Toast';
@@ -136,7 +137,14 @@ export function ExplorerApp(): JSX.Element {
 
   return (
     <div className="gc-explorer">
-      <ContextBar status={status} subject={newestSubject} />
+      {/*
+        Help and More live beside the crumbs, not inside them: `ContextBar` returns
+        null until the first status arrives, and both buttons must survive that.
+      */}
+      <div className="gc-explorer__top">
+        <ContextBar status={status} subject={newestSubject} />
+        <ExplorerHeaderActions />
+      </div>
 
       <OperationBanner status={status} />
 
