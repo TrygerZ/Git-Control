@@ -125,6 +125,16 @@ export function SidebarHeader(): JSX.Element | null {
           <button
             type="button"
             className="gc-icon-button"
+            aria-label={strings.help.openAria}
+            title={strings.help.openTitle}
+            data-help-open=""
+            onClick={() => useRouteStore.getState().openHelp()}
+          >
+            <Icon name="info" />
+          </button>
+          <button
+            type="button"
+            className="gc-icon-button"
             aria-label={strings.pending.openGraphAria}
             title={strings.pending.openGraphAria}
             onClick={() => void openExplorer()}

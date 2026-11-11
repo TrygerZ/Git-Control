@@ -355,6 +355,7 @@ class Controller implements vscode.Disposable {
     register('gitControl.disconnectGitHub', () => this.disconnectGitHub());
     register('gitControl.showLogs', () => this.channel.show(true));
     register('gitControl.quickActions', () => this.showQuickActions());
+    register('gitControl.openHelp', () => this.navigate({ id: 'help' }));
     // Only useful in multi-root workspaces; harmless elsewhere.
     register('gitControl.pickRepository', () => this.pickRepository());
     // Not in `package.json`: views contribute their own commands (D-17). Takes one
@@ -433,7 +434,7 @@ class Controller implements vscode.Disposable {
         prs: null,
         issues: null,
       },
-      available: new Set<Capability>([...SHIPPED_ROUTES, 'checklist']),
+      available: new Set<Capability>([...SHIPPED_ROUTES, 'checklist', 'help']),
     };
 
     const rows = buildQuickRows(ctx);

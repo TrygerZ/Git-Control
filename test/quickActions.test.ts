@@ -204,12 +204,20 @@ test('the checklist row appears once the card ships, and create-pr still does no
   });
   assert.equal(row(rows, 'suggest.create-pr'), undefined);
 
-  // `help.open` is gated on a route this build does not register at all.
-  assert.equal(row(rows, 'help.open'), undefined);
+  // P17 shipped the Help route, so the row is offered and it opens the panel.
+  const helpOpen = row(rows, 'help.open');
+  assert.ok(helpOpen !== undefined, 'the help row is offered once the route exists');
+  assert.deepEqual(helpOpen.target, { kind: 'navigate', route: { id: 'help', tab: 'features' } });
 
   // A host that does not advertise the capability still hides the row.
   const withoutCapability = buildQuickRows(ctx({ available: new Set<Capability>([...SHIPPED_ROUTES]) }));
   assert.equal(row(withoutCapability, 'help.checklist'), undefined);
+
+  // A build without the route drops the row, exactly like a missing go row.
+  const withoutHelp = buildQuickRows(
+    ctx({ available: new Set<Capability>([...SHIPPED_ROUTES].filter((id) => id !== 'help')) }),
+  );
+  assert.equal(row(withoutHelp, 'help.open'), undefined);
 });
 
 test('a route missing from the available set hides its row', () => {
@@ -228,6 +236,8 @@ test('go rows keep the fixed order of frame 102', () => {
     'go.actions',
     'go.branches',
     'go.stashes',
+    // P17: the help group closes the list, after every go row.
+    'help.open',
   ]);
 });
 
@@ -246,7 +256,9 @@ test('counts pass through unchanged and stashes opens the stashes sub-tab', () =
 
 test('every row is grouped in the order suggested, go, help', () => {
   const groups = buildQuickRows(ctx()).map((entry) => entry.group);
-  assert.deepEqual([...new Set(groups)], ['suggested', 'go']);
+  // `help.checklist` is absent from this context (no `checklist` capability), so
+  // the help group opens with `help.open` once P17 registers the route.
+  assert.deepEqual([...new Set(groups)], ['suggested', 'go', 'help']);
 });
 
 // --------------------------------------------------------------- codicons
@@ -266,6 +278,11 @@ test('equal input yields an identical row list', () => {
 
 test('SHIPPED_ROUTES matches the destinations the strip actually registers', () => {
   // The host cannot import `navRegistry` (it pulls in the webview stores), so the
-  // set is duplicated. This test is what keeps the copy honest.
-  assert.deepEqual([...SHIPPED_ROUTES].sort(), navRegistry.list().map((d) => d.id).sort());
+  // set is duplicated. This test is what keeps the copy honest. Help is the one
+  // route with no strip destination (it opens from the header), so it is the
+  // single documented exception.
+  const strip = navRegistry.list().map((d) => d.id);
+  const shipped = [...SHIPPED_ROUTES].filter((id) => id !== 'help').sort();
+  assert.deepEqual(shipped, [...strip].sort());
+  assert.ok(SHIPPED_ROUTES.has('help'), 'the Help route is served by this build');
 });

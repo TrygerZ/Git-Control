@@ -79,7 +79,13 @@ test('the route store owns the one-shot focus target', () => {
     /useRouteStore\.getState\(\)\.navigateWithFocus\(payload\.route, payload\.focus \?\? null\);/,
     'the event handler forwards the route and its focus',
   );
-  assert.match(src, /saveState\(\{ route \}\);/, 'navigateWithFocus still persists the route');
+  // P17 rides the help return route in the same call, so the assertion allows
+  // the extra key without weakening the rule that the route is persisted.
+  assert.match(
+    src,
+    /saveState\(\{ route(?:, helpReturn)? \}\);/,
+    'navigateWithFocus still persists the route',
+  );
 });
 
 test('the Changes view consumes a pending focus target when it arrives, not only on mount', () => {
@@ -169,14 +175,15 @@ test('the webview palette catalog names the button in both languages', () => {
   assert.match(id, /openTitle: 'Aksi cepat'/);
 });
 
-test('the host advertises the checklist capability once the card ships', () => {
+test('the host advertises the checklist capability and the help route', () => {
   // `buildQuickRows` needs BOTH `FEATURES.has('checklist')` (compile time) and
   // `ctx.available.has('checklist')` (host). P16 shipped the card, so the host
   // must advertise the capability or the Help row can never appear in the pick.
+  // P17 adds the `help` route beside it, for the same reason.
   const src = read('src/extension.ts');
   assert.match(
     src,
-    /available: new Set<Capability>\(\[\.\.\.SHIPPED_ROUTES, 'checklist'\]\)/,
-    'the host adds the capability to the route set',
+    /available: new Set<Capability>\(\[\.\.\.SHIPPED_ROUTES, 'checklist', 'help'\]\)/,
+    'the host adds the capability and the route to the set',
   );
 });

@@ -5,6 +5,16 @@ All notable changes to the "Git Control" extension will be documented in this fi
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.13.0] - 2026-11-11
+
+### Added
+- Help panel in the sidebar with two tabs. Features explains every shipped view in one sentence and opens it, and Shortcuts lists the keys that actually drive the graph, the change list, and the menus. Open it from the info button in the sidebar header or from `Git Control: Help and Shortcuts`.
+- Every listed shortcut is tied to the handler that implements it by a test, so a key that disappears from the code cannot stay in the panel.
+- The Help footer brings the Get started checklist back after it was dismissed.
+
+### Changed
+- Quick actions gains a Help row and the sidebar header gains the info button.
+
 ## [3.12.0] - 2026-11-11
 
 ### Added

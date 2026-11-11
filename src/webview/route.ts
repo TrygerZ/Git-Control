@@ -23,7 +23,7 @@ const BRANCHES_SUBS: readonly BranchesSub[] = ['local', 'remote', 'tags'];
  */
 export function parseRoute(raw: unknown): Route | null {
   if (typeof raw !== 'object' || raw === null) return null;
-  const { id, sub } = raw as { id?: unknown; sub?: unknown };
+  const { id, sub, tab } = raw as { id?: unknown; sub?: unknown; tab?: unknown };
   switch (id) {
     case 'changes':
       if (sub === undefined) return { id, sub: 'changes' };
@@ -31,6 +31,12 @@ export function parseRoute(raw: unknown): Route | null {
     case 'branches':
       if (sub === undefined) return { id, sub: 'local' };
       return BRANCHES_SUBS.find((s) => s === sub) === undefined ? null : { id, sub: sub as BranchesSub };
+    case 'help':
+      // `tab` is validated like `sub`: the route arrives from the host and from
+      // storage, so an unknown tab is dropped rather than rendered as a blank panel.
+      if (sub !== undefined) return null;
+      if (tab === undefined) return { id, tab: 'features' };
+      return tab === 'features' || tab === 'shortcuts' ? { id, tab } : null;
     case 'prs':
     case 'issues':
     case 'actions':
@@ -42,6 +48,9 @@ export function parseRoute(raw: unknown): Route | null {
 
 export function sameRoute(a: Route, b: Route): boolean {
   if (a.id !== b.id) return false;
+  // Help is the only view whose second dimension is not a `sub`. Comparing just
+  // the id would drop a queued help route that only changes tab.
+  if (a.id === 'help' && b.id === 'help') return a.tab === b.tab;
   return ('sub' in a ? a.sub : undefined) === ('sub' in b ? b.sub : undefined);
 }
 
