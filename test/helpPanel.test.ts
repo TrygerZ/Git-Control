@@ -103,15 +103,31 @@ test('the panel splits into a header and a body so the strip can sit between the
   assert.match(body, /<Tablist\b/, 'the body owns the tabs');
 });
 
-test('opening moves focus to the heading and closing returns it to the opener', () => {
+test('opening moves focus to the heading', () => {
   const src = read('src/webview/HelpPanel.tsx');
   assert.match(src, /\.focus\(\)/, 'focus is moved explicitly');
   assert.match(src, /tabIndex=\{-1\}/, 'the heading is focusable for that move');
-  assert.match(src, /data-help-open/, 'the header button is the named return target');
   assert.match(src, /closeHelp\(/, 'back and close share one action');
-  assert.match(
-    src,
-    /querySelector<HTMLElement>\('\[data-help-open\]'\)\?\.focus\(\)/,
-    'closing hands focus back to the opener',
+});
+
+test('closing returns focus to the opener only after the repo header is back', () => {
+  // Frame 105 swaps the header: while help is open the shell draws `HelpHeader`
+  // instead of `SidebarHeader`, so the `[data-help-open]` button is not in the
+  // document. A synchronous query from the close handler finds nothing, the
+  // optional chain swallows it, and focus falls to `<body>`. The return has to
+  // run after the shell re-renders, which is an effect keyed on the route.
+  const panel = read('src/webview/HelpPanel.tsx');
+  assert.doesNotMatch(
+    panel,
+    /querySelector<HTMLElement>\('\[data-help-open\]'\)/,
+    'the panel cannot reach a button that is unmounted while it is open',
   );
+  const shell = read('src/webview/PendingChanges.tsx');
+  assert.match(shell, /useEffect\(/, 'the return runs from an effect, after the commit');
+  assert.match(
+    shell,
+    /querySelector<HTMLElement>\('\[data-help-open\]'\)\?\.focus\(\)/,
+    'the shell focuses the header button once it is mounted again',
+  );
+  assert.match(shell, /route\.id !== 'help'/, 'and only on the way out of help');
 });

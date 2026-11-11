@@ -61,19 +61,19 @@ export function HelpHeader(): JSX.Element {
   const titleRef = useRef<HTMLHeadingElement>(null);
 
   // Opening lands on the heading (section 10). Closing restores the route in the
-  // store; the header's info button carries `data-help-open` as the return target.
+  // store; the shell returns focus once it has mounted the repo header again.
   useEffect(() => {
     titleRef.current?.focus();
   }, []);
 
   /**
-   * Close and return focus to the header button that opened the panel. A feature
-   * row does not come through here: it navigates to a view that owns its own
-   * focus target, and stealing it back to the header would fight that.
+   * Close only. Focus cannot be returned from here: this header replaces the repo
+   * header while help is open, so the opener button is not in the document until
+   * the shell re-renders. A feature row does not come through here either: it
+   * navigates to a view that owns its own focus target.
    */
   const leave = (): void => {
     closeHelp();
-    document.querySelector<HTMLElement>('[data-help-open]')?.focus();
   };
 
   const close = (): void => {

@@ -208,6 +208,20 @@ export function PendingChangesApp(): JSX.Element {
   }, [githubConnected, currentBranch]);
 
   const route = useRouteStore((s) => s.route);
+  /*
+   * Return focus to the opener after leaving Help. The panel cannot do it: while
+   * help is open this shell draws `HelpHeader` in place of `SidebarHeader`, so
+   * the `[data-help-open]` button is unmounted. This effect runs after the commit
+   * that swaps the repo header back, which is the first moment the button exists.
+   * The ref is seeded with the current id, so mounting never fires.
+   */
+  const prevRouteId = useRef<string>(route.id);
+  useEffect(() => {
+    if (prevRouteId.current === 'help' && route.id !== 'help') {
+      document.querySelector<HTMLElement>('[data-help-open]')?.focus();
+    }
+    prevRouteId.current = route.id;
+  }, [route.id]);
   const sub = changesSubOf(route);
   /*
    * The shell keeps its sub-tab slot for every destination. Destinations without

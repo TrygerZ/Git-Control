@@ -69,10 +69,21 @@ test('every menu row routes through the pure model and the store actions', () =>
   assert.match(src, /\.disconnect\(\)/, 'Disconnect GitHub uses the existing request');
 });
 
-test('the first open loads GitHub once so the menu can show counts and the login', () => {
+test('the first open loads GitHub, guarded by the open edge and the auth state', () => {
+  // The guard is the whole contract: an unguarded `load()` would fire on mount
+  // (the Explorer already loads this slice there) and again on every re-render.
+  // So the effect must (a) depend on the open flag, (b) compare against the
+  // previous value, and (c) test `auth === null` before requesting.
   const src = read('src/webview/ExplorerHeaderActions.tsx');
-  assert.match(src, /load\(\)/, 'the menu pulls the GitHub slice');
-  assert.match(src, /auth/, 'guarded by the auth state, not fired on mount');
+  const start = src.indexOf('const wasOpen');
+  assert.ok(start > 0, 'the guard ref exists');
+  const effect = src.slice(start, src.indexOf('useLayoutEffect', start));
+  assert.match(effect, /useEffect\(/, 'it runs from an effect');
+  assert.match(effect, /\[open\]/, 'keyed on the open flag, not on mount');
+  assert.match(effect, /!wasOpen\.current/, 'only on the closed-to-open edge');
+  assert.match(effect, /auth === null/, 'and only while the slice is unknown');
+  assert.match(effect, /\.load\(\)/, 'the menu pulls the GitHub slice');
+  assert.match(effect, /wasOpen\.current = open/, 'the previous value is recorded every run');
 });
 
 test('the Changes count comes from a slice the Explorer actually loads', () => {
