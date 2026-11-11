@@ -875,6 +875,31 @@ h3 {
   box-sizing: border-box;
 }
 
+/*
+ * Frame 01 top bar: the crumbs take the width, the two icon buttons keep theirs.
+ * The container exists because `ContextBar` is null until the first status, and
+ * the actions must not disappear with it.
+ */
+.gc-explorer__top {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--gc-space-2);
+}
+
+.gc-explorer__top .gc-context {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.gc-explorer__actions {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: var(--gc-space-1);
+}
+
 .gc-explorer__split {
   display: flex;
   flex: 1 1 auto;
