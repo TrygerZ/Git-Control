@@ -1018,6 +1018,20 @@ const id: Catalog = {
     or: 'atau',
     showChecklist: 'Tampilkan lagi panduan langkah awal',
   },
+  explorerMenu: {
+    moreAria: 'Aksi lainnya',
+    moreTitle: 'Lainnya',
+    menuAria: 'Aksi Explorer',
+    groupViews: 'Tampilan sidebar',
+    groupGithub: 'GitHub',
+    quickActions: 'Aksi cepat',
+    refreshGraph: 'Muat ulang grafik',
+    showGitOutput: 'Tampilkan output Git',
+    connectGithub: 'Hubungkan GitHub',
+    disconnectGithub: 'Putuskan GitHub',
+    pickRepository: 'Pilih repository...',
+    itemWithCount: (label: string, count: string) => `${label}, ${count}`,
+  },
 };
 
 
