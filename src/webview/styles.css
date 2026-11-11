@@ -886,11 +886,17 @@ h3 {
   align-items: center;
   justify-content: flex-end;
   gap: var(--gc-space-2);
+  /* The rule and the fill belong to the whole bar, not to the crumbs alone:
+     inside the row the bar no longer owns the full width. */
+  border-bottom: 1px solid var(--gc-border);
+  background: var(--gc-surface-1);
 }
 
 .gc-explorer__top .gc-context {
   flex: 1 1 auto;
   min-width: 0;
+  border-bottom: 0;
+  background: transparent;
 }
 
 .gc-explorer__actions {
