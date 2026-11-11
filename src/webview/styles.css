@@ -3417,6 +3417,183 @@ h3 {
   font-size: var(--gc-fs-2xs);
 }
 
+/* ---------------------------------------------------------------------- help */
+
+.gc-help {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
+  gap: var(--gc-space-2);
+  padding: var(--gc-space-3);
+  overflow-y: auto;
+  box-sizing: border-box;
+}
+
+.gc-help__head {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: var(--gc-space-2);
+}
+
+.gc-help__title {
+  margin: 0;
+  flex: 1 1 auto;
+  font-size: var(--gc-fs-sm);
+  font-weight: var(--gc-weight-strong);
+  color: var(--gc-text-primary);
+}
+
+.gc-help__group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gc-space-2);
+}
+
+.gc-help__group-title {
+  margin: 0;
+  font-size: var(--gc-fs-2xs);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--gc-text-muted);
+  font-weight: var(--gc-weight-strong);
+}
+
+.gc-help__rows {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gc-space-1);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.gc-help__row {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--gc-space-2);
+  width: 100%;
+  min-height: var(--gc-hit);
+  padding: var(--gc-space-2) var(--gc-space-2);
+  border: 0;
+  border-radius: var(--gc-radius-lg);
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  box-sizing: border-box;
+}
+
+.gc-help__row:hover {
+  background: var(--gc-bg-surface);
+}
+
+.gc-help__icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--gc-fs-xl);
+  height: var(--gc-fs-xl);
+  flex: 0 0 auto;
+  color: var(--gc-text-secondary);
+}
+
+.gc-help__body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gc-space-1);
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.gc-help__desc {
+  color: var(--gc-text-muted);
+  font-size: var(--gc-fs-2xs);
+}
+
+.gc-help__open {
+  flex: 0 0 auto;
+  color: var(--gc-accent-primary);
+  font-size: var(--gc-fs-2xs);
+  align-self: center;
+}
+
+.gc-help__intro {
+  margin: 0;
+  color: var(--gc-text-muted);
+  font-size: var(--gc-fs-xs);
+}
+
+.gc-help__keys {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--gc-space-2);
+}
+
+.gc-help__key {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--gc-space-3);
+  flex-wrap: wrap;
+}
+
+.gc-help__keys dt {
+  color: var(--gc-text-primary);
+  font-size: var(--gc-fs-xs);
+}
+
+.gc-help__keys dd {
+  margin: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--gc-space-1);
+  flex-wrap: wrap;
+  color: var(--gc-text-muted);
+  font-size: var(--gc-fs-2xs);
+}
+
+.gc-kbd {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: calc(var(--gc-space-5) + var(--gc-space-2));
+  min-height: var(--gc-space-5);
+  padding: 0 var(--gc-space-2);
+  border: 1px solid var(--gc-border);
+  border-radius: var(--gc-radius);
+  background: var(--vscode-keybindingLabel-background, transparent);
+  color: var(--vscode-keybindingLabel-foreground, inherit);
+  font-family: var(--vscode-editor-font-family, monospace);
+  font-size: var(--gc-fs-2xs);
+  line-height: 1;
+  box-sizing: border-box;
+}
+
+.gc-help__footer {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--gc-space-2);
+  min-height: var(--gc-hit-lg);
+  border: 1px solid var(--gc-border-subtle);
+  border-radius: var(--gc-radius-lg);
+  background: var(--gc-bg-surface);
+  color: var(--gc-text-primary);
+  font: inherit;
+  cursor: pointer;
+  padding: 0 var(--gc-space-3);
+  box-sizing: border-box;
+}
+
+.gc-help__footer:hover {
+  background: var(--gc-bg-raised);
+}
+
 /*
  * Sections with clear natural dividers and stable spacing rhythm.
  * The divider is a border-top on the following sibling, so whether a section
