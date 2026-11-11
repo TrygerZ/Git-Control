@@ -100,6 +100,10 @@
       {
         "command": "gitControl.quickActions",
         "title": "Git Control: Quick Actions"
+      },
+      {
+        "command": "gitControl.openHelp",
+        "title": "Git Control: Help and Shortcuts"
       }
     ],
     "keybindings": [

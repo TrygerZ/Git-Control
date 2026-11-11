@@ -22,6 +22,7 @@ export const SHIPPED_ROUTES: ReadonlySet<RouteId> = new Set<RouteId>([
   'issues',
   'actions',
   'branches',
+  'help',
 ]);
 
 export type QuickRowId =
@@ -235,7 +236,16 @@ export function buildQuickRows(ctx: QuickContext): QuickRow[] {
       failing: null,
     });
   }
-  // help.open ships with P17 when the help route exists
+  if (ctx.available.has('help')) {
+    help.push({
+      id: 'help.open',
+      group: 'help',
+      icon: 'question',
+      target: { kind: 'navigate', route: { id: 'help', tab: 'features' } },
+      count: null,
+      failing: null,
+    });
+  }
 
   return [...suggested.slice(0, 3), ...go, ...help];
 }

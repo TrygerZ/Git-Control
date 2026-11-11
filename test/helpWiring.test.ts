@@ -32,7 +32,7 @@ test('the shell draws the panel for the help route and no sub-tabs there', () =>
   assert.match(src, /route\.id === 'help' \? \(\s*<HelpPanel \/>/, 'the panel takes the body');
   assert.match(src, /'help'/, 'the sub-tab list knows the route has none');
   // The toast region stays mounted on every route that is not Changes.
-  const toast = src.indexOf("{route.id === 'prs' || route.id === 'issues'");
+  const toast = src.indexOf("route.id === 'prs' || route.id === 'issues'");
   assert.ok(toast > 0, 'the non-Changes toast region exists');
   assert.match(src.slice(toast, toast + 260), /'help'/, 'help gets a live region too');
 });
@@ -103,7 +103,7 @@ test('the palette offers the Help row once the route exists', () => {
   assert.match(src, /help\.open/, 'the row id ships with the route');
   assert.match(src, /available\.has\('help'\)/, 'gated on the route, like every go row');
   const host = read('src/extension.ts');
-  assert.match(host, /SHIPPED_ROUTES,\s*'help'/, 'the host advertises the route it now serves');
+  assert.match(host, /SHIPPED_ROUTES,[^)]*'help'/, 'the host advertises the route it now serves');
 });
 
 test('the integration suite runs the new command against a real repository', () => {

@@ -25,6 +25,7 @@ import { PullRequestsView } from './PullRequestsView';
 import { ActionsView } from './ActionsView';
 import { IssuesView } from './IssuesView';
 import { BranchesView } from './BranchesView';
+import { HelpPanel } from './HelpPanel';
 import { Tablist } from './Tablist';
 import { CHANGES_PANEL_ID, CHANGES_TABS_PREFIX, changesSubTabs, changesTabId } from './navRegistry';
 import { changesSubOf, parseRoute } from './route';
@@ -214,7 +215,7 @@ export function PendingChangesApp(): JSX.Element {
    * and the body below never move between routes.
    */
   const subTabs =
-    route.id === 'prs' || route.id === 'issues' || route.id === 'actions' || route.id === 'branches'
+    route.id === 'prs' || route.id === 'issues' || route.id === 'actions' || route.id === 'branches' || route.id === 'help'
       ? []
       : changesSubTabs(strings, { changes: changes.length, stashes: stashes.length });
   /**
@@ -323,6 +324,8 @@ export function PendingChangesApp(): JSX.Element {
         <ActionsView />
       ) : route.id === 'branches' ? (
         <BranchesView />
+      ) : route.id === 'help' ? (
+        <HelpPanel />
       ) : (
         <>
       <div
@@ -608,7 +611,7 @@ export function PendingChangesApp(): JSX.Element {
         The commit footer is Changes-only; a toast pushed from the GitHub
         views (prs, issues) would otherwise have no live region.
       */}
-      {(route.id === 'prs' || route.id === 'issues' || route.id === 'actions' || route.id === 'branches') && <ToastRegion />}
+      {(route.id === 'prs' || route.id === 'issues' || route.id === 'actions' || route.id === 'branches' || route.id === 'help') && <ToastRegion />}
 
       <GuardDialog />
     </div>
