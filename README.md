@@ -80,7 +80,14 @@ Right-click any commit node or branch ref to perform standard Git actions:
 * **Rate Limit Monitoring**: Real-time indicator for GitHub REST API quotas and cache status.
 * **Contributor Identity Resolution**: Resolves author email addresses to GitHub profiles and avatars with cached API queries.
 
-### 9. Bilingual Interface
+### 9. Help Panel
+
+* **Feature Guide**: One plain sentence per shipped view, grouped into Everyday, With GitHub, and Organize, each row opening the view it describes.
+* **Verified Shortcut List**: Every key listed is tied to the handler that implements it by a test, so a key that disappears from the code cannot stay in the panel.
+* **Checklist Return**: The footer brings the Get started checklist back after it was dismissed.
+* **Reachable Everywhere**: Open it from the info button in the sidebar header or from `Git Control: Help and Shortcuts`.
+
+### 10. Bilingual Interface
 
 Git Control ships a complete English and Bahasa Indonesia UI, switched from the status bar toggle or the `gitControl.language` setting. Panel chrome, section headers, buttons, tooltips, and accessible names are all translated, and the selection controls keep identical widths in both languages.
 
@@ -122,6 +129,7 @@ Access these commands through the Command Palette (`Ctrl+Shift+P` / `Cmd+Shift+P
 * `Git Control: Open Explorer`: Opens the interactive 2D Branch Explorer canvas.
 * `Git Control: Open Pending Changes`: Focuses the Pending Changes panel in the sidebar.
 * `Git Control: Quick Actions`: Opens a palette of suggested next steps for the current branch plus a shortcut to every sidebar view. Rows navigate and focus a control; nothing runs until you press the button.
+* `Git Control: Help and Shortcuts`: Opens the Help panel, which explains every sidebar view and lists the keyboard shortcuts that drive the graph, the change list, and the menus.
 * `Git Control: Refresh`: Forces an immediate re-fetch and re-render of repository state and history.
 * `Git Control: Pick Repository`: Switches active repository focus in multi-root workspaces.
 * `Git Control: Connect GitHub`: Securely stores a Personal Access Token to fetch PR details and remote stats.
