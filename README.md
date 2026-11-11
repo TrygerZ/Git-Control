@@ -113,6 +113,7 @@ Git Control ships a complete English and Bahasa Indonesia UI, switched from the 
    * The graph icon on the Source Control panel title bar.
    * Command Palette: `Git Control: Open Explorer`.
 4. Stage changes, review commit history, and execute branch operations directly through the interface.
+5. Use the Help button or the More menu at the top right of the Explorer to open any sidebar view, run Quick actions, or reach the repository picker without leaving the graph.
 
 ## Extension Settings
 
