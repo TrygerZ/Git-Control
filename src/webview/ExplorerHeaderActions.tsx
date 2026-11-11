@@ -24,11 +24,11 @@ import {
   type MenuItemId,
   type MoreMenuItem,
 } from './explorerMenu';
-import { countByFilter } from './prFilters';
+import { badgeCount, countByFilter, PR_PAGE_SIZE } from './prFilters';
+import { formatBadge } from './navCounts';
 import { SHIPPED_ROUTES } from '../quickActions';
 import {
   toErrorBody,
-  useChangesStore,
   useGitHubStore,
   useOperationStore,
   useRepoStore,
@@ -55,7 +55,7 @@ function groupOf(item: MoreMenuItem): MenuGroupId {
 export function ExplorerHeaderActions(): JSX.Element {
   const strings = useT();
   const pushToast = useOperationStore((s) => s.pushToast);
-  const changes = useChangesStore((s) => s.changes.length);
+  const status = useRepoStore((s) => s.status);
   const auth = useGitHubStore((s) => s.auth);
   const linkage = useGitHubStore((s) => s.linkage);
   const pullRequests = useGitHubStore((s) => s.pullRequests);
@@ -86,7 +86,7 @@ export function ExplorerHeaderActions(): JSX.Element {
   const groups = buildMoreMenu({
     available: SHIPPED_ROUTES,
     quickActionsAvailable: true,
-    counts: { changes, prs: countByFilter(pullRequests, { viewerLogin }).open },
+    counts: { changes: status?.changes.length ?? null, prs: countByFilter(pullRequests, { viewerLogin }).open },
     github: {
       linked: linkage !== null && linkage.available,
       connected: auth?.connected === true,
@@ -294,9 +294,17 @@ export function ExplorerHeaderActions(): JSX.Element {
                   flatIndex += 1;
                   const index = flatIndex;
                   const label = labels[item.id];
+                  // Same formatter the nav badge uses, so both read alike: null
+                  // below one, `99+` for Changes and `50+` for Pull requests.
+                  const count =
+                    item.count === null
+                      ? null
+                      : item.id === 'view.prs'
+                        ? badgeCount(item.count, PR_PAGE_SIZE)
+                        : formatBadge(item.count);
                   const hint =
-                    item.count !== null
-                      ? String(item.count)
+                    count !== null
+                      ? count
                       : item.hint === 'shortcut'
                         ? quickActionsHint()
                         : item.hint === 'login'
@@ -310,8 +318,8 @@ export function ExplorerHeaderActions(): JSX.Element {
                       className="gc-menu__item"
                       tabIndex={index === active ? 0 : -1}
                       aria-label={
-                        item.count !== null
-                          ? strings.explorerMenu.itemWithCount(label, String(item.count))
+                        count !== null
+                          ? strings.explorerMenu.itemWithCount(label, count)
                           : undefined
                       }
                       onFocus={() => setActive(index)}

@@ -75,6 +75,27 @@ test('the first open loads GitHub once so the menu can show counts and the login
   assert.match(src, /auth/, 'guarded by the auth state, not fired on mount');
 });
 
+test('the Changes count comes from a slice the Explorer actually loads', () => {
+  // The sidebar badge reads `useChangesStore`, which the Pending Changes document
+  // fills. The Explorer never mounts that document and never calls its `load`, so
+  // reading it here would always report 0 while the badge showed the real number.
+  // The Explorer already holds the same `repos/status` payload in `useRepoStore`.
+  const src = read('src/webview/ExplorerHeaderActions.tsx');
+  assert.doesNotMatch(src, /useChangesStore/, 'the Explorer document never loads that store');
+  assert.match(src, /status\?\.changes\.length/, 'the count comes from the status payload');
+  const explorer = read('src/webview/ExplorerApp.tsx');
+  assert.match(explorer, /refresh\(\)/, 'and that payload is refreshed on mount and on repo change');
+});
+
+test('the menu count is formatted by the same helper the nav badge uses', () => {
+  // Acceptance criterion 5: the menu number equals the badge for the same state.
+  // The badge hides zero and caps at 99+, so a raw `String(count)` would show "0"
+  // where the strip shows nothing, and "128" where it shows "99+".
+  const src = read('src/webview/ExplorerHeaderActions.tsx');
+  assert.match(src, /formatBadge/, 'Changes reuses the nav badge formatter');
+  assert.match(src, /badgeCount/, 'Pull requests reuses the PR page-cap formatter');
+});
+
 test('the explorer menu strings exist in both languages with the same keys', () => {
   const en = read('src/webview/i18n.en.ts');
   const id = read('src/webview/i18n.id.ts');
