@@ -676,11 +676,13 @@ test('pending panel mounts the nav strip directly under the sidebar header', () 
   );
   assert.match(src, /import \{ NavStrip \} from '\.\/NavStrip';/);
   // P06 puts the sub-tabs between the strip and the banners (S3 row 11), so the order is
-  // header, strip, sub-tabs, notifications. The strip stays directly under the header.
+  // header, strip, sub-tabs, notifications. P17 swaps the repo header for the help one
+  // on the help route, so the header slot is a ternary; the strip stays under it.
+  assert.match(src, /<SidebarHeader \/>[\s\S]{0,40}?<NavStrip \/>/, 'the strip follows the header slot');
   assert.match(
     src,
-    /<SidebarHeader \/>\s*<NavStrip \/>\s*<Tablist\b[\s\S]{0,500}?\/>\s*<div className="gc-pending__notifications">/,
-    'header, then strip, then the sub-tabs, then the notifications',
+    /<NavStrip \/>\s*<Tablist\b[\s\S]{0,500}?\/>\s*<div className="gc-pending__notifications">/,
+    'strip, then the sub-tabs, then the notifications',
   );
   assert.equal(src.match(/<NavStrip \/>/g)?.length, 1, 'mounted once');
 });

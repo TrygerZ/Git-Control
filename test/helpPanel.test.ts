@@ -73,6 +73,36 @@ test('the footer button reopens the checklist and is gated on the capability', (
   assert.match(src, /id: 'changes'/, 'the footer navigates to Changes');
 });
 
+test('the help route swaps the repo header for its own and keeps the strip below (frames 105 and 106)', () => {
+  // Frame 105 stacks Header (back, title, close), Nav/Wrap, SubTabs, list. The
+  // repo header must not survive on help or the strip moves down a whole header.
+  const src = read('src/webview/PendingChanges.tsx');
+  const shell = src.slice(src.indexOf('return ('));
+  assert.match(
+    shell,
+    /route\.id === 'help' \? \(\s*<HelpHeader \/>\s*\) : \(\s*<SidebarHeader \/>\s*\)/,
+    'one header slot, chosen by the route',
+  );
+  const header = shell.indexOf('<HelpHeader />');
+  const strip = shell.indexOf('<NavStrip />');
+  const panel = shell.indexOf('<HelpPanel />');
+  assert.ok(header > 0 && strip > header && panel > strip, 'header, then strip, then the panel body');
+});
+
+test('the panel splits into a header and a body so the strip can sit between them', () => {
+  const src = read('src/webview/HelpPanel.tsx');
+  assert.match(src, /export function HelpHeader\(\)/, 'the header is its own component');
+  assert.match(src, /export function HelpPanel\(\)/, 'the body keeps the panel name');
+  const header = src.slice(src.indexOf('export function HelpHeader'), src.indexOf('export function HelpPanel'));
+  assert.match(header, /strings\.help\.backAria/, 'back lives in the header');
+  assert.match(header, /strings\.help\.closeAria/, 'close lives in the header');
+  assert.match(header, /<h2\b/, 'the title is the header heading');
+  assert.match(header, /\.focus\(\)/, 'opening still lands on the heading');
+  assert.doesNotMatch(header, /<Tablist\b/, 'the tabs belong to the body, below the strip');
+  const body = src.slice(src.indexOf('export function HelpPanel'));
+  assert.match(body, /<Tablist\b/, 'the body owns the tabs');
+});
+
 test('opening moves focus to the heading and closing returns it to the opener', () => {
   const src = read('src/webview/HelpPanel.tsx');
   assert.match(src, /\.focus\(\)/, 'focus is moved explicitly');

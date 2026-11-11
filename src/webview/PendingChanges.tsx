@@ -25,7 +25,7 @@ import { PullRequestsView } from './PullRequestsView';
 import { ActionsView } from './ActionsView';
 import { IssuesView } from './IssuesView';
 import { BranchesView } from './BranchesView';
-import { HelpPanel } from './HelpPanel';
+import { HelpHeader, HelpPanel } from './HelpPanel';
 import { Tablist } from './Tablist';
 import { CHANGES_PANEL_ID, CHANGES_TABS_PREFIX, changesSubTabs, changesTabId } from './navRegistry';
 import { changesSubOf, parseRoute } from './route';
@@ -290,7 +290,11 @@ export function PendingChangesApp(): JSX.Element {
 
   return (
     <div className="gc-pending">
-      <SidebarHeader />
+      {route.id === 'help' ? (
+        <HelpHeader />
+      ) : (
+        <SidebarHeader />
+      )}
       <NavStrip />
       <Tablist tabs={subTabs} activeId={sub} onSelect={selectSub} ariaLabel={strings.nav.subTabsAria} idPrefix={CHANGES_TABS_PREFIX} classPrefix="gc-subtabs" />
       <div className="gc-pending__notifications">
