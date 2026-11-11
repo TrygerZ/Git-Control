@@ -23,7 +23,7 @@ const BRANCHES_SUBS: readonly BranchesSub[] = ['local', 'remote', 'tags'];
  */
 export function parseRoute(raw: unknown): Route | null {
   if (typeof raw !== 'object' || raw === null) return null;
-  const { id, sub } = raw as { id?: unknown; sub?: unknown };
+  const { id, sub, tab } = raw as { id?: unknown; sub?: unknown; tab?: unknown };
   switch (id) {
     case 'changes':
       if (sub === undefined) return { id, sub: 'changes' };
@@ -31,6 +31,12 @@ export function parseRoute(raw: unknown): Route | null {
     case 'branches':
       if (sub === undefined) return { id, sub: 'local' };
       return BRANCHES_SUBS.find((s) => s === sub) === undefined ? null : { id, sub: sub as BranchesSub };
+    case 'help':
+      // `tab` is validated like `sub`: the route arrives from the host and from
+      // storage, so an unknown tab is dropped rather than rendered as a blank panel.
+      if (sub !== undefined) return null;
+      if (tab === undefined) return { id, tab: 'features' };
+      return tab === 'features' || tab === 'shortcuts' ? { id, tab } : null;
     case 'prs':
     case 'issues':
     case 'actions':

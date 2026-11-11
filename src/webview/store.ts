@@ -31,6 +31,7 @@ import type {
   GitHubAuthState,
   GitHubLinkage,
   GitHubRateLimit,
+  HelpTab,
   IssueInfo,
   IssueListFilter,
   IssueStateFilter,
@@ -993,8 +994,17 @@ export const useIconThemeStore = create<IconThemeState>((set) => ({
 export interface RouteState {
   route: Route;
   pendingFocus: FocusTarget | null;
+  /**
+   * Route the help panel was opened from, so its close button has somewhere to
+   * go. Webview-only session memory: never persisted, never sent to the host.
+   */
+  helpReturn: Route | null;
   navigate(route: Route): void;
   navigateWithFocus(route: Route, focus: FocusTarget | null): void;
+  /** Open the help panel, remembering the current route unless already on help. */
+  openHelp(tab?: HelpTab): void;
+  /** Return from the help panel to the remembered route, or the default. */
+  closeHelp(): void;
   takeFocus(): FocusTarget | null;
   hydrate(route: Route): void;
   /**
@@ -1008,15 +1018,29 @@ export interface RouteState {
 export const useRouteStore = create<RouteState>((set, get) => ({
   route: DEFAULT_ROUTE,
   pendingFocus: null,
+  helpReturn: null,
 
   navigate(route) {
-    set({ route });
+    set({ route, helpReturn: route.id === 'help' ? get().helpReturn : null });
     saveState({ route });
   },
 
   navigateWithFocus(route, focus) {
-    set({ route, pendingFocus: focus ?? null });
+    set({ route, pendingFocus: focus ?? null, helpReturn: route.id === 'help' ? get().helpReturn : null });
     saveState({ route });
+  },
+
+  openHelp(tab = 'features') {
+    const current = get().route;
+    const route: Route = { id: 'help', tab };
+    set({ route, helpReturn: current.id === 'help' ? get().helpReturn : current });
+    saveState({ route });
+  },
+
+  closeHelp() {
+    const back = get().helpReturn ?? DEFAULT_ROUTE;
+    set({ route: back, helpReturn: null });
+    saveState({ route: back });
   },
 
   takeFocus() {

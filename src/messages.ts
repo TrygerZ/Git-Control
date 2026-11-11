@@ -971,14 +971,16 @@ export interface CommitFocusEvent {
   hash: string;
 }
 
-export type RouteId = 'changes' | 'prs' | 'issues' | 'actions' | 'branches';
+export type RouteId = 'changes' | 'prs' | 'issues' | 'actions' | 'branches' | 'help';
 export type ChangesSub = 'changes' | 'stashes';
 export type BranchesSub = 'local' | 'remote' | 'tags';
+export type HelpTab = 'features' | 'shortcuts';
 
 /** Which sidebar view and sub-tab is active. Validated by `parseRoute` at every trust boundary. */
 export type Route =
   | { id: 'changes'; sub: ChangesSub }
   | { id: 'branches'; sub: BranchesSub }
+  | { id: 'help'; tab: HelpTab }
   | { id: 'prs' | 'issues' | 'actions' };
 
 /** Which control a navigated view should focus. Closed set, validated at the boundary. */

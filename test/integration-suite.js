@@ -149,6 +149,8 @@ async function repoScenario() {
   await vscode.commands.executeCommand('gitControl.refresh');
   // Only useful with several repositories, but it must not throw with one.
   await vscode.commands.executeCommand('gitControl.pickRepository');
+  // P17: the Help route has to reveal the sidebar and return without waiting.
+  await vscode.commands.executeCommand('gitControl.openHelp');
   pass('all commands execute against a real repository');
 
   // Internal navigation: registered in the host, absent from the manifest, and
