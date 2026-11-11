@@ -875,6 +875,11 @@ class Controller implements vscode.Disposable {
       openQuickActions: () => {
         void this.showQuickActions();
       },
+      openSidebarView: (route) => {
+        void this.navigate(route);
+        return true;
+      },
+      pickRepository: () => this.pickRepository(),
       revealCommit: (hash) => this.revealCommit(hash),
       openExternal: (url) => this.openExternal(url),
       githubRepo: (payload) => this.githubRepo(payload),
