@@ -137,17 +137,37 @@ test('the shell only takes focus back when close asked for it', () => {
   // leave help and all own their focus target; an unconditional return steals it.
   // The store answers the narrower question with a one-shot flag.
   const shell = read('src/webview/PendingChanges.tsx');
-  assert.match(shell, /takeHelpFocusReturn\(\)/, 'the shell consumes the one-shot request');
+  // The guard is the contract: consuming the flag and then focusing anyway is the
+  // same bug under a different name, so the call has to sit inside the `if`.
+  assert.match(
+    shell,
+    /if \(useRouteStore\.getState\(\)\.takeHelpFocusReturn\(\)\) \{\s*document\.querySelector<HTMLElement>\('\[data-help-open\]'\)\?\.focus\(\);/,
+    'focus runs only when the consume returned true',
+  );
   assert.doesNotMatch(
     shell,
     /prevRouteId/,
     'route history alone cannot tell close from navigation, so it must not decide',
   );
   const store = read('src/webview/store.ts');
-  const close = store.slice(store.indexOf('closeHelp()'), store.indexOf('takeFocus()'));
-  assert.match(close, /helpFocusReturn/, 'closeHelp raises the request');
-  for (const action of ['navigate(route)', 'navigateWithFocus(route, focus)']) {
-    const body = store.slice(store.indexOf(action), store.indexOf('},', store.indexOf(action)));
-    assert.doesNotMatch(body, /helpFocusReturn/, `${action} never raises it`);
+  // Slice the IMPLEMENTATION, not the interface block that also spells `closeHelp()`.
+  const impl = store.indexOf('closeHelp() {');
+  assert.ok(impl > 0, 'the implementation exists');
+  const close = store.slice(impl, store.indexOf('takeHelpFocusReturn() {', impl));
+  assert.match(
+    close,
+    /set\(\{[^}]*helpFocusReturn: true/,
+    'closeHelp raises the request in its own set',
+  );
+  assert.doesNotMatch(
+    close,
+    /saveState\([^)]*helpFocusReturn/,
+    'and never persists it',
+  );
+  for (const action of ['navigate(route) {', 'navigateWithFocus(route, focus) {']) {
+    const start = store.indexOf(action);
+    assert.ok(start > 0, `${action} is implemented`);
+    const body = store.slice(start, store.indexOf('\n  },', start));
+    assert.doesNotMatch(body, /helpFocusReturn: true/, `${action} never raises it`);
   }
 });
