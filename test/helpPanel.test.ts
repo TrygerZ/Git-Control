@@ -79,4 +79,9 @@ test('opening moves focus to the heading and closing returns it to the opener', 
   assert.match(src, /tabIndex=\{-1\}/, 'the heading is focusable for that move');
   assert.match(src, /data-help-open/, 'the header button is the named return target');
   assert.match(src, /closeHelp\(/, 'back and close share one action');
+  assert.match(
+    src,
+    /querySelector<HTMLElement>\('\[data-help-open\]'\)\?\.focus\(\)/,
+    'closing hands focus back to the opener',
+  );
 });

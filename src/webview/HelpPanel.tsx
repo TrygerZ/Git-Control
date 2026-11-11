@@ -123,12 +123,22 @@ export function HelpPanel(): JSX.Element {
     }
   };
 
-  const close = (): void => {
+  /**
+   * Close and return focus to the header button that opened the panel. A feature
+   * row does not come through here: it navigates to a view that owns its own
+   * focus target, and stealing it back to the header would fight that.
+   */
+  const leave = (): void => {
     closeHelp();
+    document.querySelector<HTMLElement>('[data-help-open]')?.focus();
+  };
+
+  const close = (): void => {
+    leave();
   };
 
   const back = (): void => {
-    closeHelp();
+    leave();
   };
 
   const showChecklist = (): void => {
