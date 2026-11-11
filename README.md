@@ -87,7 +87,13 @@ Right-click any commit node or branch ref to perform standard Git actions:
 * **Checklist Return**: The footer brings the Get started checklist back after it was dismissed.
 * **Reachable Everywhere**: Open it from the info button in the sidebar header or from `Git Control: Help and Shortcuts`.
 
-### 10. Bilingual Interface
+### 10. Explorer Header
+
+* **Help Button**: Opens the Help panel in the sidebar, revealing the sidebar when it was never opened in this session.
+* **More Menu**: Quick actions, every sidebar view, Refresh graph, Show Git output, GitHub connect or disconnect, and Pick repository, with the Changes and Pull requests counts.
+* **One Header In Every State**: Both buttons render while the repository is still loading, and the menu never runs a git mutation.
+
+### 11. Bilingual Interface
 
 Git Control ships a complete English and Bahasa Indonesia UI, switched from the status bar toggle or the `gitControl.language` setting. Panel chrome, section headers, buttons, tooltips, and accessible names are all translated, and the selection controls keep identical widths in both languages.
 
