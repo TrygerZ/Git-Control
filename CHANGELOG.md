@@ -5,6 +5,20 @@ All notable changes to the "Git Control" extension will be documented in this fi
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.14.0] - 2026-11-11
+
+### Added
+- Explorer header gains a Help button and a More menu. The menu lists Quick actions, every sidebar view with its Changes and Pull requests counts, Refresh graph, Show Git output, GitHub connect or disconnect, and Pick repository.
+- Choosing a view reveals the sidebar on that view, even when the sidebar was never opened in this session.
+- Both header buttons render in every Explorer state, including while the repository is still loading.
+
+### Changed
+- GitHub connect and disconnect are reachable from the Explorer More menu instead of the removed details panel.
+
+### Fixed
+- The Help panel draws its back, title, and close in the header slot the repository header otherwise owns, so the nav strip sits below it instead of under a second header.
+- Closing Help returns focus to the info button that opened it, and only that path moves focus: a nav strip click, a feature row, and the Publish row keep their own target.
+
 ## [3.13.0] - 2026-11-11
 
 ### Added
