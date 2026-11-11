@@ -48,6 +48,9 @@ export function parseRoute(raw: unknown): Route | null {
 
 export function sameRoute(a: Route, b: Route): boolean {
   if (a.id !== b.id) return false;
+  // Help is the only view whose second dimension is not a `sub`. Comparing just
+  // the id would drop a queued help route that only changes tab.
+  if (a.id === 'help' && b.id === 'help') return a.tab === b.tab;
   return ('sub' in a ? a.sub : undefined) === ('sub' in b ? b.sub : undefined);
 }
 

@@ -2,12 +2,13 @@
  * Help route and store actions (P17).
  *
  * Help is a route like any other, so it goes through `parseRoute` at every trust
- * boundary. It is the only route that has somewhere to go back to, and that
- * memory is webview-only: it never reaches the host and never survives a reload.
+ * boundary. It is the only route that has somewhere to go back to. That memory
+ * never reaches the host, but it is persisted beside the route so a rebuilt
+ * webview can still return, which the reload case below pins.
  */
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { DEFAULT_ROUTE, changesSubOf, parseRoute } from '../src/webview/route';
+import { DEFAULT_ROUTE, changesSubOf, parseRoute, sameRoute } from '../src/webview/route';
 import { loadState, saveState } from '../src/webview/bridge';
 import { useRouteStore } from '../src/webview/store';
 import type { Route } from '../src/messages';
@@ -105,6 +106,14 @@ test('a reload that restores the help route still knows where to go back to', ()
   useRouteStore.getState().hydrate(persisted.route, persisted.helpReturn);
   useRouteStore.getState().closeHelp();
   assert.deepEqual(useRouteStore.getState().route, { id: 'branches', sub: 'tags' });
+});
+
+test('a queued help route that only changes tab is not dropped as already current', () => {
+  // `sameRoute` compares the second dimension. Help's is `tab`, not `sub`, so a
+  // queued switch from Shortcuts to Features has to survive the comparison.
+  reset({ id: 'help', tab: 'shortcuts' });
+  assert.equal(sameRoute({ id: 'help', tab: 'shortcuts' }, { id: 'help', tab: 'features' }), false);
+  assert.equal(sameRoute({ id: 'help', tab: 'features' }, { id: 'help', tab: 'features' }), true);
 });
 
 test('a persisted return route that is not a valid route is dropped, not stored', () => {

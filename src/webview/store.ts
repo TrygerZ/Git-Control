@@ -996,7 +996,9 @@ export interface RouteState {
   pendingFocus: FocusTarget | null;
   /**
    * Route the help panel was opened from, so its close button has somewhere to
-   * go. Webview-only session memory: never persisted, never sent to the host.
+   * go. Persisted beside `route` in the webview state blob, because the sidebar
+   * is rebuilt on every reveal and session memory alone would be lost; never
+   * sent to the host.
    */
   helpReturn: Route | null;
   navigate(route: Route): void;

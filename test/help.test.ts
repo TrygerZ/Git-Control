@@ -70,6 +70,18 @@ test('every feature title and description key exists in both catalogs', () => {
   }
 });
 
+test('every group and shortcut-group heading key exists in both catalogs', () => {
+  // Same cast, same failure mode: the panel resolves these through the group
+  // tables rather than through a row, so the row loop above cannot see them.
+  const headingKeys = ['gGraph', 'gChanges', 'gMenus', 'gAnywhere'];
+  for (const lang of ['en', 'id'] as const) {
+    const help = t(lang).help as Record<string, unknown>;
+    for (const key of headingKeys) {
+      assert.equal(typeof help[key], 'string', `${lang}.help.${key} is missing`);
+    }
+  }
+});
+
 test('the checklist capability gates only the footer button, never a feature row', () => {
   const withFlag = helpFeatureRows(ALL).map((r) => r.id);
   const withoutFlag = helpFeatureRows(new Set<Capability>(SHIPPED_ROUTES)).map((r) => r.id);
