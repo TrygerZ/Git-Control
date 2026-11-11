@@ -62,6 +62,8 @@ export interface WebviewState {
   pushAfterCommit: boolean;
   showRibbons: boolean;
   route: Route;
+  /** Help return route. Rides beside `route` because a rebuilt webview has no session memory. */
+  helpReturn: Route | null;
   prFilter: PrFilterId;
   prQuery: string;
   issueFilter: IssueListFilter;
@@ -87,6 +89,7 @@ const DEFAULT_STATE: WebviewState = {
   pushAfterCommit: false,
   showRibbons: true,
   route: DEFAULT_ROUTE,
+  helpReturn: null,
   prFilter: 'open',
   prQuery: '',
   issueFilter: 'assigned',
@@ -282,6 +285,15 @@ export function fetchContributorIdentity(email: string): Promise<ContributorIden
 
 // ------------------------------------------------------------------- state
 
+/**
+ * Persisted help return route, or null. Excludes help itself: the panel cannot
+ * return to the panel, and `parseRoute` already drops unknown ids and extra keys.
+ */
+function parseHelpReturn(raw: unknown): Route | null {
+  const parsed = parseRoute(raw);
+  return parsed !== null && parsed.id !== 'help' ? parsed : null;
+}
+
 /** Restore the persisted view state, filling gaps with defaults. */
 export function loadState(): WebviewState {
   const raw = api.getState();
@@ -304,6 +316,7 @@ export function loadState(): WebviewState {
     pushAfterCommit: partial.pushAfterCommit === true,
     showRibbons: partial.showRibbons !== false,
     route: parseRoute(partial.route) ?? DEFAULT_ROUTE,
+    helpReturn: parseHelpReturn(partial.helpReturn),
     prFilter: PR_FILTERS.find((id) => id === partial.prFilter) ?? 'open',
     prQuery: typeof partial.prQuery === 'string' ? partial.prQuery : '',
     issueFilter: ISSUE_FILTERS.find((id) => id === partial.issueFilter) ?? 'assigned',

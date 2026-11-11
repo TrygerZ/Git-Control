@@ -10,6 +10,7 @@ import assert from 'node:assert/strict';
 import { DEFAULT_ROUTE, changesSubOf, parseRoute } from '../src/webview/route';
 import { loadState, saveState } from '../src/webview/bridge';
 import { useRouteStore } from '../src/webview/store';
+import type { Route } from '../src/messages';
 
 function reset(route = DEFAULT_ROUTE): void {
   useRouteStore.setState({ route, pendingFocus: null, helpReturn: null });
@@ -77,6 +78,40 @@ test('the help route is persisted like every other route', () => {
   reset({ id: 'prs' });
   useRouteStore.getState().openHelp('shortcuts');
   assert.deepEqual(loadState().route, { id: 'help', tab: 'shortcuts' });
+});
+
+test('opening help from the host or the palette still remembers where to go back to', () => {
+  // The command and the Quick actions row push `event/navigate`, which lands in
+  // `navigateWithFocus`; `openHelp` is never called. The transition into help is
+  // what has to capture the origin, or close lands on the default route.
+  reset({ id: 'issues' });
+  useRouteStore.getState().navigateWithFocus({ id: 'help', tab: 'features' }, null);
+  assert.deepEqual(useRouteStore.getState().helpReturn, { id: 'issues' });
+  useRouteStore.getState().closeHelp();
+  assert.deepEqual(useRouteStore.getState().route, { id: 'issues' });
+});
+
+test('a reload that restores the help route still knows where to go back to', () => {
+  // `helpReturn` is session memory and the route is persisted, so a rebuilt
+  // webview restores `{ id: 'help' }` with nothing to return to. The persisted
+  // return route is what closes that gap.
+  reset({ id: 'branches', sub: 'tags' });
+  saveState({ route: { id: 'help', tab: 'features' }, helpReturn: { id: 'branches', sub: 'tags' } });
+  const persisted = loadState();
+  assert.deepEqual(persisted.route, { id: 'help', tab: 'features' });
+  assert.deepEqual(persisted.helpReturn, { id: 'branches', sub: 'tags' });
+
+  useRouteStore.setState({ route: DEFAULT_ROUTE, helpReturn: null });
+  useRouteStore.getState().hydrate(persisted.route, persisted.helpReturn);
+  useRouteStore.getState().closeHelp();
+  assert.deepEqual(useRouteStore.getState().route, { id: 'branches', sub: 'tags' });
+});
+
+test('a persisted return route that is not a valid route is dropped, not stored', () => {
+  saveState({ helpReturn: { id: 'nope' } as unknown as Route });
+  assert.equal(loadState().helpReturn, null);
+  saveState({ helpReturn: { id: 'help', tab: 'features' } });
+  assert.equal(loadState().helpReturn, null, 'help cannot return to itself');
 });
 
 test('hydrate never rewrites the saved route and leaves the return memory alone', () => {

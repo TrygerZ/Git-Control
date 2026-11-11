@@ -1006,7 +1006,8 @@ export interface RouteState {
   /** Return from the help panel to the remembered route, or the default. */
   closeHelp(): void;
   takeFocus(): FocusTarget | null;
-  hydrate(route: Route): void;
+  /** Restore a route, and optionally the help return memory, without persisting either. */
+  hydrate(route: Route, helpReturn?: Route | null): void;
   /**
    * Pull the route queued by the host, if any. Called on mount after
    * `wireHostEvents()`. Never overwrites with "nothing queued", so a route
@@ -1015,32 +1016,43 @@ export interface RouteState {
   pullPending(): Promise<void>;
 }
 
+/**
+ * Return route for the help panel: capture the origin on entry, keep it across
+ * a help-to-help tab switch, clear it on any other target.
+ */
+function nextHelpReturn(current: Route, target: Route, existing: Route | null): Route | null {
+  if (target.id !== 'help') return null;
+  return current.id === 'help' ? existing : current;
+}
+
 export const useRouteStore = create<RouteState>((set, get) => ({
   route: DEFAULT_ROUTE,
   pendingFocus: null,
   helpReturn: null,
 
   navigate(route) {
-    set({ route, helpReturn: route.id === 'help' ? get().helpReturn : null });
-    saveState({ route });
+    const helpReturn = nextHelpReturn(get().route, route, get().helpReturn);
+    set({ route, helpReturn });
+    saveState({ route, helpReturn });
   },
 
   navigateWithFocus(route, focus) {
-    set({ route, pendingFocus: focus ?? null, helpReturn: route.id === 'help' ? get().helpReturn : null });
-    saveState({ route });
+    const helpReturn = nextHelpReturn(get().route, route, get().helpReturn);
+    set({ route, pendingFocus: focus ?? null, helpReturn });
+    saveState({ route, helpReturn });
   },
 
   openHelp(tab = 'features') {
-    const current = get().route;
     const route: Route = { id: 'help', tab };
-    set({ route, helpReturn: current.id === 'help' ? get().helpReturn : current });
-    saveState({ route });
+    const helpReturn = nextHelpReturn(get().route, route, get().helpReturn);
+    set({ route, helpReturn });
+    saveState({ route, helpReturn });
   },
 
   closeHelp() {
     const back = get().helpReturn ?? DEFAULT_ROUTE;
     set({ route: back, helpReturn: null });
-    saveState({ route: back });
+    saveState({ route: back, helpReturn: null });
   },
 
   takeFocus() {
@@ -1049,8 +1061,8 @@ export const useRouteStore = create<RouteState>((set, get) => ({
     return focus;
   },
 
-  hydrate(route) {
-    set({ route });
+  hydrate(route, helpReturn) {
+    set(helpReturn === undefined ? { route } : { route, helpReturn });
   },
 
   async pullPending() {

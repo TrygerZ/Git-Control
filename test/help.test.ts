@@ -8,6 +8,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { helpFeatureRows, shortcutGroups } from '../src/webview/helpModel';
+import { t } from '../src/webview/i18n';
 import { SHORTCUTS } from '../src/webview/shortcuts';
 import type { Capability } from '../src/quickActions';
 import { SHIPPED_ROUTES } from '../src/quickActions';
@@ -53,6 +54,19 @@ test('a feature row carries an icon and a catalog key, so nothing is hardcoded',
     assert.ok(row.icon.length > 0, `${row.id} has no icon`);
     assert.ok(row.titleKey.length > 0, `${row.id} has no title key`);
     assert.ok(row.descKey.length > 0, `${row.id} has no description key`);
+  }
+});
+
+test('every feature title and description key exists in both catalogs', () => {
+  // The panel reads the catalog through a `Record<string, string>` cast, so a
+  // typo in a key would render `undefined` and no compiler would notice.
+  for (const row of helpFeatureRows(ALL)) {
+    for (const lang of ['en', 'id'] as const) {
+      const help = t(lang).help as Record<string, unknown>;
+      for (const key of [row.titleKey, row.descKey]) {
+        assert.equal(typeof help[key], 'string', `${lang}.help.${key} is missing (${row.id})`);
+      }
+    }
   }
 });
 

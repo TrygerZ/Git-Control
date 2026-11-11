@@ -79,7 +79,13 @@ test('the route store owns the one-shot focus target', () => {
     /useRouteStore\.getState\(\)\.navigateWithFocus\(payload\.route, payload\.focus \?\? null\);/,
     'the event handler forwards the route and its focus',
   );
-  assert.match(src, /saveState\(\{ route \}\);/, 'navigateWithFocus still persists the route');
+  // P17 rides the help return route in the same call, so the assertion allows
+  // the extra key without weakening the rule that the route is persisted.
+  assert.match(
+    src,
+    /saveState\(\{ route(?:, helpReturn)? \}\);/,
+    'navigateWithFocus still persists the route',
+  );
 });
 
 test('the Changes view consumes a pending focus target when it arrives, not only on mount', () => {
