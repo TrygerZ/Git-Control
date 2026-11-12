@@ -78,7 +78,13 @@ export class GitHubError extends Error {
 
 export interface ViewerInfo {
   login: string;
-  scopes: string[];
+  /**
+   * `null` when the response carried no `x-oauth-scopes` header at all, which is
+   * what a fine-grained PAT does: the token type cannot report scopes, so the
+   * answer is unknown, not empty. A classic token with nothing granted sends a
+   * present-but-empty header, which parses to `[]` and is a real "no".
+   */
+  scopes: string[] | null;
 }
 
 export interface RepoInfo {
@@ -353,9 +359,10 @@ export class GitHubClient {
     }
     return this.get<ViewerInfo>('/user', 'viewer', VIEWER_TTL_MS, (body, headers) => {
       const json = body as { login?: unknown };
+      const raw = headers.get('x-oauth-scopes');
       return {
         login: typeof json.login === 'string' ? json.login : '',
-        scopes: parseScopes(headers.get('x-oauth-scopes')),
+        scopes: raw === null ? null : parseScopes(raw),
       };
     });
   }
@@ -956,21 +963,23 @@ export class GitHubClient {
   /**
    * Drop every cached response whose key starts with one of `prefixes`.
    *
-   * Both the response cache and the validators are swept, and the validator
-   * sweep is independent of the body sweep: the two stores are bounded
-   * separately (`ETAG_MAX_ENTRIES` vs `CACHE_MAX_ENTRIES`) and desync as soon
-   * as one 200 carries no ETag, so a key present in one says nothing about the
-   * other. A surviving validator would answer the next read with a 304 and
-   * re-serve the pre-write body.
+   * Both response stores (`cache` and `authorCache`) and both validator stores
+   * are swept, and the validator sweep is independent of the body sweep: they
+   * are bounded separately (`ETAG_MAX_ENTRIES` vs `CACHE_MAX_ENTRIES`) and
+   * desync as soon as one 200 carries no ETag, so a key present in one says
+   * nothing about the other. A surviving validator would answer the next read
+   * with a 304 and re-serve the pre-write body.
    *
-   * Returns the number of body-cache entries removed.
+   * Returns the total number of body entries removed across both stores.
    */
   invalidate(prefixes: readonly string[]): number {
     let removed = 0;
-    for (const key of [...this.cache.keys()]) {
-      if (!prefixes.some((prefix) => key.startsWith(prefix))) continue;
-      this.cache.delete(key);
-      removed += 1;
+    for (const store of [this.cache, this.authorCache]) {
+      for (const key of [...store.keys()]) {
+        if (!prefixes.some((prefix) => key.startsWith(prefix))) continue;
+        store.delete(key);
+        removed += 1;
+      }
     }
     const salt = `${this.tokenFingerprint}|`;
     for (const store of [this.etags, this.authorEtags]) {

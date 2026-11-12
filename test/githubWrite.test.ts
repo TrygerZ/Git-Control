@@ -325,6 +325,21 @@ test('invalidate clears a validator whose cached body was already evicted', asyn
   assert.equal(h.gh.etagSize, 0, 'but the validator must go too, or the next 304 revives the old body');
 });
 
+test('invalidate sweeps the author cache too, not only the response cache', async () => {
+  // Author responses live in their own bounded store, so a prefix sweep that
+  // only walks `cache` leaves them behind. Nothing invalidates an author key
+  // today, and the next phase that does would silently keep a stale login.
+  const h = writeClient([
+    response(200, { author: { login: 'octocat', avatar_url: 'https://avatars.githubusercontent.com/u/1' } }),
+  ]);
+  await h.gh.commitAuthors('o', 'r', ['a'.repeat(40)]);
+  assert.equal(h.gh.authorCacheSize, 1);
+
+  assert.equal(writer(h.gh).invalidate(['commitAuthor:']), 1);
+  assert.equal(h.gh.authorCacheSize, 0);
+  assert.equal(h.gh.authorEtagSize, 0);
+});
+
 test('a failed write invalidates nothing', async () => {
   const h = writeClient([
     response(200, [{ number: 1, title: 'one', state: 'open', html_url: 'u' }]),

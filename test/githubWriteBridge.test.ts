@@ -168,6 +168,16 @@ test('a classic token that grants no scopes is refused with the missing-scope me
   assert.equal(body.message, hostText('en').github.missingScope('repo'));
 });
 
+test('an unknown scope set allows a write: a fine-grained token must not be refused', async () => {
+  // The mirror of the test above. `null` is what `viewer()` reports when the
+  // token sends no scope header, and refusing there would block every
+  // fine-grained PAT before GitHub ever sees the request.
+  const body = await blocked({ githubWriteContext: () => Promise.resolve({ ...CONNECTED, scopes: null }) }, MERGE, {
+    confirm: true,
+  });
+  assert.equal(body, null);
+});
+
 test('a host that cannot answer the write context fails closed with 503', async () => {
   const body = await blocked({ githubWriteContext: undefined }, MERGE);
   assert.ok(body !== null);

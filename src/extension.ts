@@ -1136,9 +1136,13 @@ class Controller implements vscode.Disposable {
     }
   }
 
-  /** Warn only when it matters: a private repository plus a token missing the scope. */
-  private async scopeWarning(scopes: readonly string[]): Promise<string | null> {
-    if (hasPrivateScope(scopes)) return null;
+  /**
+   * Warn only when it matters: a private repository plus a token missing the
+   * scope. `null` scopes mean the token type cannot report them, and crying
+   * wolf about a private repo when the answer is unknown is worse than silence.
+   */
+  private async scopeWarning(scopes: readonly string[] | null): Promise<string | null> {
+    if (scopes === null || hasPrivateScope(scopes)) return null;
     const remote = await this.detectRemote();
     if (remote === null) return null;
     try {
@@ -1196,7 +1200,9 @@ class Controller implements vscode.Disposable {
     try {
       const { client } = await this.githubClient();
       const viewer = await client.viewer();
-      return hasPrivateScope(viewer.data.scopes) ? null : extText().github.scopeMissing;
+      const scopes = viewer.data.scopes;
+      if (scopes === null) return null;
+      return hasPrivateScope(scopes) ? null : extText().github.scopeMissing;
     } catch {
       return null;
     }
