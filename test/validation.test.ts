@@ -5,6 +5,7 @@ import {
   sanitizeRefArg,
   validateBranchName,
   validateCommitMessage,
+  validateDeletableBranch,
   validateFullHash,
   validateHash,
   validateLimit,
@@ -294,6 +295,35 @@ test('validateMainline accepts positive integers and rejects everything else', (
   assert.equal(validateMainline(undefined), false, 'undefined');
   assert.equal(validateMainline({}), false, 'object');
   assert.equal(validateMainline([]), false, 'array');
+});
+
+/**
+ * The branch a user is on is the one branch a delete may never name, so the
+ * refusal has to live in the shared validator rather than in one caller: the
+ * guard and the bridge both reach it, and neither may disagree.
+ */
+test('validateDeletableBranch accepts a branch that is not the current one', () => {
+  assert.equal(validateDeletableBranch('feat/a', 'main'), true);
+  assert.equal(validateDeletableBranch('main', null), true, 'detached HEAD has no branch to protect');
+  assert.equal(validateDeletableBranch('fix/b', 'main'), true);
+  assert.equal(validateDeletableBranch('feat/a', 'feat/a'), false, 'current branch');
+  assert.equal(validateDeletableBranch('feat/a', 'main '), true, 'comparison is exact, not trimmed');
+});
+
+test('validateDeletableBranch keeps every branch-name rule', () => {
+  for (const [value, current] of [
+    ['-x', 'main'],
+    ['refs/heads/x', 'main'],
+    ['', 'main'],
+    ['a..b', 'main'],
+    ['a b', 'main'],
+    ['@', 'main'],
+  ] as const) {
+    assert.equal(validateDeletableBranch(value, current), false, value);
+  }
+  for (const value of [null, undefined, 1, {}, []]) {
+    assert.equal(validateDeletableBranch(value, 'main'), false, String(value));
+  }
 });
 
 
