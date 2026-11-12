@@ -89,6 +89,7 @@ Right-click any commit node or branch ref to perform standard Git actions:
 
 ### 10. Explorer Header
 
+* **Sync Buttons**: Fetch, Pull, and Publish or Push sit beside the breadcrumbs with ahead and behind counts, running the same actions and guard flow as the sidebar footer. The group is hidden when the repository has no remote.
 * **Help Button**: Opens the Help panel in the sidebar, revealing the sidebar when it was never opened in this session.
 * **More Menu**: Quick actions, every sidebar view, Refresh graph, Show Git output, GitHub connect or disconnect, and Pick repository, with the Changes and Pull requests counts.
 * **One Header In Every State**: Both buttons render while the repository is still loading, and the menu never runs a git mutation.
