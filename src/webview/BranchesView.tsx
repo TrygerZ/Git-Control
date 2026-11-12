@@ -198,10 +198,18 @@ export function BranchesView(): JSX.Element {
       pushToast({ level: 'info', message: strings.cleanup.doneToast(String(result.ok)) });
       return;
     }
+    /*
+     * Criterion 9: every skipped branch is named. The toast carries the list, and
+     * the same line goes into the operation log so the record survives the toast
+     * timing out. `showLogs` gives the user the button that reaches it.
+     */
+    const skipped = result.failed.map((name) => sanitizeGitText(name)).join(', ');
+    useOperationStore.getState().appendProgress(`${strings.cleanup.deleteFailed}: ${skipped}`);
     pushToast({
       level: 'warning',
       message: strings.cleanup.partial(String(result.ok), String(result.failed.length)),
-      detail: result.failed.map((name) => sanitizeGitText(name)).join(', '),
+      detail: skipped,
+      showLogs: true,
     });
   };
 

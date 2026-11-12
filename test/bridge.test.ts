@@ -3636,6 +3636,18 @@ test('branch-delete-remote needs level 2 and removes the ref only with both flag
   assert.doesNotMatch(remote.stdout, /refs\/heads\/feat\/a$/m);
   // The local branch survives: a remote delete removes one ref, not two.
   assert.ok((await repo.git.refs()).some((r) => r.refName === 'refs/heads/feat/a'));
+
+  // Criterion 6: after a fetch with prune the tracking ref is gone too, which is
+  // what the Remote sub-tab reads.
+  await repo.git.fetch({ remote: 'origin', prune: true });
+  // `GitRunner.refs()` returns `ParsedRef`, which carries no `kind`; filter on the
+  // ref name, or the filter silently matches nothing and the assertion passes
+  // for the wrong reason.
+  const remoteRefs = (await repo.git.refs())
+    .map((r) => r.refName)
+    .filter((name) => name.startsWith('refs/remotes/'));
+  assert.ok(!remoteRefs.includes('refs/remotes/origin/feat/a'));
+  assert.ok(remoteRefs.includes('refs/remotes/origin/fix/b'), 'the sibling stays');
 });
 
 test('branch-delete-remote refuses a remote the repository does not have', async (t) => {
