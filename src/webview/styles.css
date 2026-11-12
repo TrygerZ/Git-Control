@@ -906,6 +906,59 @@ h3 {
   gap: var(--gc-space-1);
 }
 
+/*
+ * Frame 01: Fetch and Pull are quiet, Publish carries the accent wash. The group
+ * renders only when a remote exists, so it never appears as three dead controls.
+ */
+.gc-explorer__sync {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: var(--gc-space-1);
+}
+
+.gc-explorer__sync__button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--gc-space-1);
+  min-height: var(--gc-hit);
+  min-width: var(--gc-hit);
+  padding: 0 var(--gc-space-3);
+  border: 1px solid transparent;
+  border-radius: var(--gc-radius);
+  background: transparent;
+  color: var(--gc-text-secondary);
+  font-family: inherit;
+  font-size: var(--gc-fs-2xs);
+  font-weight: var(--gc-weight-strong);
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background var(--gc-dur-fast) var(--gc-ease);
+}
+
+.gc-explorer__sync__button:hover:not(:disabled) {
+  background: var(--gc-bg-hover);
+  color: var(--gc-text-primary);
+}
+
+.gc-explorer__sync__button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.gc-explorer__sync__button--accent {
+  background: var(--gc-accent-subtle);
+  color: var(--gc-accent-primary);
+}
+
+/* The label already spells the count, so the badge is narrow-width only. */
+.gc-explorer__sync__count {
+  display: none;
+  color: var(--gc-text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
 .gc-explorer__split {
   display: flex;
   flex: 1 1 auto;
@@ -5960,6 +6013,15 @@ h3 {
 
   .gc-minimap-wrap {
     bottom: var(--gc-space-3);
+  }
+
+  /* The header keeps the icons; the labels would push the crumbs off the row. */
+  .gc-explorer__sync__label {
+    display: none;
+  }
+
+  .gc-explorer__sync__count {
+    display: inline;
   }
 }
 
