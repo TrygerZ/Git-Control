@@ -356,6 +356,10 @@ const id: Catalog = {
       cherryPick: (hash: string) => `Terapkan perubahan dari ${hash} ke branch aktif. Konflik mungkin muncul.`,
       cherryPickContinue: 'Melanjutkan cherry-pick setelah semua konflik selesai.',
       cherryPickAbort: 'Membatalkan cherry-pick dan kembali ke keadaan sebelum cherry-pick.',
+      branchDelete: (branch: string) =>
+        `Hapus branch ${branch}. Git menolak bila branch punya commit yang belum digabung.`,
+      branchDeleteRemote: (branch: string, remote: string) =>
+        `Hapus branch ${branch} di ${remote}. Semua orang kehilangannya, dan tidak ada undo.`,
       defaultAction: 'Menjalankan perintah git.',
     },
 
@@ -382,6 +386,8 @@ const id: Catalog = {
       cherryPick: (hash: string) => `Cherry-pick ${hash}`,
       cherryPickContinue: 'Lanjutkan cherry-pick',
       cherryPickAbort: 'Batalkan cherry-pick',
+      branchDelete: (branch: string) => `Hapus branch ${branch}`,
+      branchDeleteRemote: (branch: string) => `Hapus ${branch} di remote`,
       defaultAction: 'Tindakan git',
     },
 

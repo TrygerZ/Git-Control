@@ -39,6 +39,7 @@ import {
   truncate,
 } from '../src/webview/format';
 import { ICON_PATHS } from '../src/webview/iconPaths';
+import { t } from '../src/webview/i18n';
 import type {
   ChangeEntry,
   ErrorCode,
@@ -676,6 +677,8 @@ const ACTIONS: GitActionRequest[] = [
   { action: 'cherry-pick', hash: HASH },
   { action: 'cherry-pick-continue' },
   { action: 'cherry-pick-abort' },
+  { action: 'branch-delete', branch: 'fitur' },
+  { action: 'branch-delete-remote', remote: 'origin', branch: 'fitur' },
 ];
 
 test('gitCommandOf renders a runnable command for every action', () => {
@@ -732,6 +735,38 @@ test('actionTarget picks the branch, name, hash, or remote', () => {
   assert.equal(actionTarget({ action: 'stash-pop' }), '?');
   assert.equal(actionTarget({ action: 'stash-apply', index: 0 }), 'stash@{0}');
   assert.equal(actionTarget({ action: 'stash-drop', index: 1 }), 'stash@{1}');
+});
+
+test('the delete commands read exactly as git runs them', () => {
+  assert.equal(gitCommandOf({ action: 'branch-delete', branch: 'fitur' }), 'git branch -d fitur');
+  assert.equal(
+    gitCommandOf({ action: 'branch-delete-remote', remote: 'origin', branch: 'fitur' }),
+    'git push origin --delete fitur',
+  );
+});
+
+test('delete titles and consequences are translated in both languages', () => {
+  for (const lang of ['en', 'id'] as const) {
+    for (const action of [
+      { action: 'branch-delete', branch: 'fitur' },
+      { action: 'branch-delete-remote', remote: 'origin', branch: 'fitur' },
+    ] satisfies GitActionRequest[]) {
+      const title = actionTitle(action, lang);
+      const consequence = consequenceOf(action, lang);
+      assert.ok(title.length > 0, action.action);
+      assert.ok(consequence.length > 0, action.action);
+      assert.doesNotMatch(title, /–|—/);
+      assert.doesNotMatch(consequence, /–|—/);
+      assert.notEqual(title, t('en').format.actionTitles.defaultAction, action.action);
+      assert.notEqual(consequence, t('en').format.actionConsequences.defaultAction, action.action);
+    }
+  }
+  assert.equal(actionTarget({ action: 'branch-delete', branch: 'fitur' }), 'fitur');
+  assert.equal(actionTarget({ action: 'branch-delete-remote', remote: 'origin', branch: 'fitur' }), 'fitur');
+  assert.notEqual(
+    actionTitle({ action: 'branch-delete', branch: 'fitur' }, 'en'),
+    actionTitle({ action: 'branch-delete', branch: 'fitur' }, 'id'),
+  );
 });
 
 // ------------------------------------------------------------------ numbers

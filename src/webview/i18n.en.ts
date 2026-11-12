@@ -361,6 +361,10 @@ const en = {
       cherryPick: (hash: string) => `Apply changes from ${hash} onto active branch. Conflicts may arise.`,
       cherryPickContinue: 'Continue cherry-pick after all conflicts are resolved.',
       cherryPickAbort: 'Abort cherry-pick and return to state before cherry-pick.',
+      branchDelete: (branch: string) =>
+        `Delete branch ${branch}. Git refuses when the branch has commits that are not merged.`,
+      branchDeleteRemote: (branch: string, remote: string) =>
+        `Delete branch ${branch} on ${remote}. Everyone loses it, and there is no undo.`,
       defaultAction: 'Run git command.',
     },
 
@@ -387,6 +391,8 @@ const en = {
       cherryPick: (hash: string) => `Cherry-pick ${hash}`,
       cherryPickContinue: 'Continue cherry-pick',
       cherryPickAbort: 'Abort cherry-pick',
+      branchDelete: (branch: string) => `Delete branch ${branch}`,
+      branchDeleteRemote: (branch: string) => `Delete ${branch} on the remote`,
       defaultAction: 'Git action',
     },
 

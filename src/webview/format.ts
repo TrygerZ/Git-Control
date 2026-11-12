@@ -922,6 +922,10 @@ export function gitCommandOf(
       return 'git cherry-pick --continue';
     case 'cherry-pick-abort':
       return 'git cherry-pick --abort';
+    case 'branch-delete':
+      return `git branch -d ${s(action.branch)}`;
+    case 'branch-delete-remote':
+      return `git push ${s(action.remote)} --delete ${s(action.branch)}`;
     default:
       return 'git';
   }
@@ -978,6 +982,10 @@ export function consequenceOf(action: GitActionRequest, lang: Lang = 'en'): stri
       return strings.cherryPickContinue;
     case 'cherry-pick-abort':
       return strings.cherryPickAbort;
+    case 'branch-delete':
+      return strings.branchDelete(s(action.branch));
+    case 'branch-delete-remote':
+      return strings.branchDeleteRemote(s(action.branch), s(action.remote));
     default:
       return strings.defaultAction;
   }
@@ -1034,6 +1042,10 @@ export function actionTitle(action: GitActionRequest, lang: Lang = 'en'): string
       return strings.cherryPickContinue;
     case 'cherry-pick-abort':
       return strings.cherryPickAbort;
+    case 'branch-delete':
+      return strings.branchDelete(s(action.branch));
+    case 'branch-delete-remote':
+      return strings.branchDeleteRemote(s(action.branch));
     default:
       return strings.defaultAction;
   }
