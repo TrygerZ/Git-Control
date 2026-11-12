@@ -5,6 +5,22 @@ All notable changes to the "Git Control" extension will be documented in this fi
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.16.0] - 2026-11-12
+
+### Added
+- Branches view can clean up merged local branches from one dialog. Git's own refusal is shown when a branch is not safe to delete.
+- Optional second step deletes the same branches on the remote, after an explicit acknowledgement in the same dialog.
+- A single merged branch can be deleted from its row menu.
+- The cleanup banner names how many branches are merged and disappears when none remain.
+
+### Changed
+- The guard dialog's stage 2 acknowledgement describes the loss that is actually about to happen, so a remote branch delete no longer warns about uncommitted local changes.
+- `GuardSnapshot` carries the current branch, so the guard itself can refuse deleting the branch you are on instead of leaving it to git.
+
+### Security
+- Branch deletion uses the safe delete only. Unmerged branches and the current branch are never removed, and no forced delete exists anywhere in the code.
+- Remote deletion is a separate operation from push, so the force-push rejection is unchanged.
+
 ## [3.15.1] - 2026-11-12
 
 ### Changed
