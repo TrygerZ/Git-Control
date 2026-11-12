@@ -3,6 +3,12 @@ import { validateBranchName, validateHash, validateRemoteName, validateRepoRelat
 
 export type Outcome = { ok: true; data: unknown } | { ok: false; error: { code: ErrorCode } };
 export const MUTATION_KINDS = new Set<string>(['actions/stage', 'actions/commit', 'actions/git']);
+/**
+ * GitHub mutations. Empty until the endpoint phases (P22 to P28) register one;
+ * the set exists now so `idempotencyKeyOf` has a single place to consult and a
+ * later phase cannot add a kind to only one of the two sets.
+ */
+export const GITHUB_MUTATION_KINDS = new Set<string>();
 const RETRYABLE_CODES = new Set<ErrorCode>([
   'CONFIRMATION_REQUIRED',
   'DIRTY_TREE',
@@ -21,7 +27,7 @@ export function parseRequest(raw: unknown): Request | null {
 }
 
 export function idempotencyKeyOf(request: Request): string | null {
-  if (!MUTATION_KINDS.has(request.kind)) return null;
+  if (!MUTATION_KINDS.has(request.kind) && !GITHUB_MUTATION_KINDS.has(request.kind)) return null;
   const payload = request.payload as { idempotencyKey?: unknown };
   if (typeof payload.idempotencyKey !== 'string' || payload.idempotencyKey.length === 0) return null;
   return `${request.kind}:${payload.idempotencyKey}`;

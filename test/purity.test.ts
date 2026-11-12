@@ -34,6 +34,7 @@ const PURE_MODULES = [
   'src/webview/pollPlan.ts',
   'src/webview/actionsModel.ts',
   'src/githubLog.ts',
+  'src/githubGuard.ts',
   'src/quickActions.ts',
   'src/webview/onboarding.ts',
   'src/webview/shortcuts.ts',
@@ -103,4 +104,8 @@ test('the P18 pure module is listed', () => {
 
 test('the P18b pure module is listed', () => {
   assert.ok(PURE_MODULES.includes('src/webview/syncActions.ts'));
+});
+
+test('the P19 pure module is listed', () => {
+  assert.ok(PURE_MODULES.includes('src/githubGuard.ts'));
 });

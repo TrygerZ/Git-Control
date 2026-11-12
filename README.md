@@ -144,6 +144,30 @@ Access these commands through the Command Palette (`Ctrl+Shift+P` / `Cmd+Shift+P
 * `Git Control: Disconnect GitHub`: Clears stored authentication tokens and removes GitHub API linkage.
 * `Git Control: Show Logs`: Opens the Git Control output channel to inspect Git execution and diagnostic logs.
 
+## Token Scopes
+
+Git Control uses a Personal Access Token stored in VS Code `SecretStorage`. Reads and writes need different permissions, and a token that can read may not be allowed to change anything.
+
+| Capability | Classic PAT scope | Fine-grained token permission |
+|---|---|---|
+| Read pull requests, issues, workflow runs, job logs | `repo` for private repositories, none for public | Pull requests: Read. Actions: Read. Contents: Read |
+| Read the private-repository warning state | `repo:status` | Metadata: Read |
+| Create, merge, or close pull requests and issues | `repo` | Pull requests: Read and write. Issues: Read and write |
+| Re-run workflows and dispatch a workflow | `repo` | Actions: Read and write |
+| Create releases and tags through the API | `repo` | Contents: Read and write |
+
+Behavior that applies to both token types:
+
+* A write is refused before anything is sent when the connection is missing, the API base came from a repository remote rather than your settings, the circuit breaker is open, or the granted scopes are known to lack `repo`.
+* Fine-grained tokens do not report their scopes, so Git Control cannot check them ahead of time. The write is attempted and a `403` from GitHub is reported as a permission problem instead.
+* Writes are never retried automatically. A repeated `POST` would create a second pull request, comment, or release, so a failed write is yours to retry.
+
+**After changing a token's scopes**, reconnect so the new permissions are read:
+
+1. Run `Git Control: Disconnect GitHub`.
+2. Run `Git Control: Connect GitHub` and paste the token again.
+3. Reload the window if the Pull requests view still shows the old permission state.
+
 ## Security Architecture
 
 * **Zero Shell Interpolation**: All Git commands execute via direct process spawning without shell evaluation, preventing command injection vulnerabilities.

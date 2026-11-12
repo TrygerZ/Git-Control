@@ -16,6 +16,7 @@ import { GitError } from './git';
 import { GitHubError } from './github';
 import { unknownErrorBody } from './errorBody';
 import { SafetyGuard, DEFAULT_STALENESS_MS, type GuardAction, type GuardSnapshot, type GuardVerdict } from './guard';
+import { evaluateGitHubAction, type GitHubGuardContext, type GitHubWriteAction } from './githubGuard';
 import { hostText } from './hostText';
 import { redact, type Logger } from './logger';
 import { parseRemoteUrl, stripCredentials } from './remoteUrl';
@@ -72,6 +73,7 @@ import type {
   GitActionRequest,
   GitHubAuthState,
   GitHubLinkage,
+  GitHubMutationMeta,
   GitHubRepoInfo,
   GitHubRepoPayload,
   GraphPayload,
@@ -131,6 +133,12 @@ export interface BridgeHost {
   githubAuth(): Promise<GitHubAuthState>;
   connectGitHub(): Promise<GitHubAuthState>;
   disconnectGitHub(): Promise<GitHubAuthState>;
+  /**
+   * Everything `evaluateGitHubAction` needs to decide a write: connection,
+   * scopes, whether the token may travel to this base, and breaker state.
+   * Optional so a host without GitHub wiring fails closed instead of throwing.
+   */
+  githubWriteContext?(): Promise<GitHubGuardContext>;
   /** Open a real diff editor. Implemented in `extension.ts`, which owns `vscode`. */
   openDiff?(payload: OpenDiffPayload): Promise<OpenDiffResult>;
   /** Open a stash diff editor. Implemented in `extension.ts`, which owns `vscode`. */
@@ -1228,6 +1236,33 @@ export class MessageBridge {
     });
   }
 
+  /**
+   * Apply the GitHub write guard and enforce confirmation host-side.
+   *
+   * Same shape as {@link gate}, different policy: the verdict comes from
+   * `evaluateGitHubAction`, which knows nothing about a repository but everything
+   * about the connection. A host that cannot produce a context fails closed with
+   * `UNAVAILABLE` rather than guessing a connection state.
+   */
+  private async gateGitHub(action: GitHubWriteAction, meta: GitHubMutationMeta): Promise<void> {
+    const ctx = this.host.githubWriteContext;
+    if (ctx === undefined) fail(503, 'UNAVAILABLE', this.text().unavailable);
+    const lang = this.host.settings().language ?? 'en';
+    const verdict = evaluateGitHubAction(action, await ctx(), lang);
+    if (verdict.allow) return;
+    if (verdict.requiresConfirmation === true && this.confirmed(verdict, meta)) return;
+    fail(verdictStatus(verdict), verdict.code, verdict.message, {
+      remedies: verdict.remedies,
+      ...(verdict.requiresConfirmation === undefined
+        ? {}
+        : { requiresConfirmation: verdict.requiresConfirmation }),
+      ...(verdict.confirmationLevel === undefined
+        ? {}
+        : { confirmationLevel: verdict.confirmationLevel }),
+      ...(verdict.risk === undefined ? {} : { risk: verdict.risk }),
+    });
+  }
+
   private confirmed(verdict: Extract<GuardVerdict, { allow: false }>, meta: MutationMeta): boolean {
     if (meta.confirm !== true) return false;
     if (verdict.confirmationLevel === 2) return meta.forceAcknowledgement === true;
@@ -1347,8 +1382,6 @@ function validateEmptyPayload(payload: object, msg: string = 'Invalid request.')
   validateEmptyPayloadPure(payload, (detail) => fail(400, 'VALIDATION_ERROR', msg, { detail }));
 }
 
-const MUTATION_KINDS = new Set<string>(['actions/stage', 'actions/commit', 'actions/git']);
-
 /**
  * Codes that describe the *request*, not the repository, and that the user
  * resolves by sending the same request again with more on it.
@@ -1381,6 +1414,14 @@ function validateAction(action: GitActionPayload, msg: string = 'Invalid request
 
 function verdictStatus(verdict: Extract<GuardVerdict, { allow: false }>): number {
   switch (verdict.code) {
+    // The GitHub write guard produces these three; the git guard never does, so
+    // widening the mapping here cannot change a git verdict.
+    case 'AUTH_ERROR':
+      return 401;
+    case 'FORBIDDEN':
+      return 403;
+    case 'UNAVAILABLE':
+      return 503;
     case 'DIRTY_TREE':
     case 'STALE_STATUS':
       return 412;

@@ -289,6 +289,19 @@ export interface MutationMeta {
   statusToken?: string;
 }
 
+/**
+ * Fields every GitHub write carries, so the endpoint phases (P22 to P28) do not
+ * each invent their own. Deliberately narrower than {@link MutationMeta}: a
+ * GitHub write has no repository status to fingerprint, and `statusToken` would
+ * be a lie there. `confirm` and `forceAcknowledgement` are checked host-side
+ * exactly like the git path.
+ */
+export interface GitHubMutationMeta {
+  idempotencyKey: string;
+  confirm?: boolean;
+  forceAcknowledgement?: boolean;
+}
+
 export interface StatusPayload {
   includeIgnored?: boolean;
 }
@@ -473,7 +486,12 @@ export interface SettingsSnapshot {
 export interface GitHubAuthState {
   connected: boolean;
   login: string | null;
-  scopes: string[];
+  /**
+   * Granted scopes from `x-oauth-scopes`. `null` means the token type does not
+   * expose them (fine-grained PATs) or the answer could not be obtained; `[]`
+   * is a real answer from a classic token that grants nothing.
+   */
+  scopes: string[] | null;
   /**
    * `true` when a token was stored but the API rejected it. The host deletes the
    * token in that case, so this is a one-shot report, not a persistent state.

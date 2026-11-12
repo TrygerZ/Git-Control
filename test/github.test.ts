@@ -100,6 +100,19 @@ test('sends the documented headers and a bearer token', async () => {
   assert.equal(sent.Authorization, `Bearer ${TOKEN}`);
 });
 
+test('a missing scope header reads as null, not as an empty grant', async () => {
+  // Fine-grained PATs send no `x-oauth-scopes` at all, while a classic token with
+  // nothing checked sends a present-but-empty one. The two must not collapse:
+  // `null` means "this token cannot report", `[]` means "it reported nothing".
+  const absent = client([response(200, { login: 'octocat' })]);
+  const fineGrained = await absent.gh.viewer();
+  assert.equal(fineGrained.data.scopes, null, 'no header is unknown, not empty');
+
+  const empty = client([response(200, { login: 'octocat' }, { 'x-oauth-scopes': '' })]);
+  const scopeless = await empty.gh.viewer();
+  assert.deepEqual(scopeless.data.scopes, [], 'a present but empty header is a real answer');
+});
+
 test('anonymous requests omit Authorization but still work', async () => {
   const h = client([response(200, { default_branch: 'main', private: false, html_url: 'u' })], {
     token: null,

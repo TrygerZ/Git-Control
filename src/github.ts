@@ -78,7 +78,13 @@ export class GitHubError extends Error {
 
 export interface ViewerInfo {
   login: string;
-  scopes: string[];
+  /**
+   * `null` when the response carried no `x-oauth-scopes` header at all, which is
+   * what a fine-grained PAT does: the token type cannot report scopes, so the
+   * answer is unknown, not empty. A classic token with nothing granted sends a
+   * present-but-empty header, which parses to `[]` and is a real "no".
+   */
+  scopes: string[] | null;
 }
 
 export interface RepoInfo {
@@ -93,6 +99,8 @@ export type FetchLike = (url: string, init: FetchInit) => Promise<FetchResponseL
 export interface FetchInit {
   method: string;
   headers: Record<string, string>;
+  /** Serialized JSON body. Only the write path sets this; reads never send one. */
+  body?: string;
   signal?: AbortSignal;
   /**
    * Manual redirects are required by the log path: hop 1 must see the 302 and
@@ -141,6 +149,21 @@ export interface Fetched<T> {
   rateLimit: GitHubRateLimit;
   /** True when the server confirmed the stored copy with a 304. */
   revalidated?: boolean;
+}
+
+/** Verbs that change server state. `GET` never reaches {@link GitHubClient.mutate}. */
+export type WriteMethod = 'POST' | 'PUT' | 'PATCH' | 'DELETE';
+
+/**
+ * One write request. `invalidate` lists cache-key prefixes the write makes
+ * stale; `map` turns the response body into the endpoint's DTO.
+ */
+export interface MutateOptions<T> {
+  method: WriteMethod;
+  path: string;
+  body?: unknown;
+  invalidate?: readonly string[];
+  map(body: unknown, headers: { get(name: string): string | null }): T;
 }
 
 const RETRY_DELAYS_MS = [500, 1000, 2000];
@@ -336,9 +359,10 @@ export class GitHubClient {
     }
     return this.get<ViewerInfo>('/user', 'viewer', VIEWER_TTL_MS, (body, headers) => {
       const json = body as { login?: unknown };
+      const raw = headers.get('x-oauth-scopes');
       return {
         login: typeof json.login === 'string' ? json.login : '',
-        scopes: parseScopes(headers.get('x-oauth-scopes')),
+        scopes: raw === null ? null : parseScopes(raw),
       };
     });
   }
@@ -857,6 +881,121 @@ export class GitHubClient {
     if (response.status >= 200 && response.status < 300) this.recordSuccess();
     if (response.status >= 500) this.recordFailure(true);
     return response;
+  }
+
+  // ----------------------------------------------------------------- writes
+
+  /**
+   * One write request. Exactly one attempt, always.
+   *
+   * A write is not idempotent: a retried `POST` can open a second pull request
+   * or post a second comment, so the retry ladder of {@link send} is wrong here
+   * even for 429/502/503/504 and transport failures. The user repeats the
+   * action explicitly. For the same reason there is no stale-cache fallback:
+   * serving a cached read while offline is safe, pretending a write landed is
+   * not. GitHub REST has no `Idempotency-Key`, so no such header is sent.
+   */
+  private async mutate<T>(options: MutateOptions<T>): Promise<{ data: T; rateLimit: GitHubRateLimit }> {
+    if (this.breakerOpen) {
+      throw new GitHubError({
+        status: 503,
+        code: 'UNAVAILABLE',
+        message: this.text().unavailable,
+        detail: 'circuit open',
+      });
+    }
+
+    const headers = this.headers();
+    const init: FetchInit = { method: options.method, headers };
+    if (options.body !== undefined) {
+      headers['Content-Type'] = 'application/json';
+      init.body = JSON.stringify(options.body);
+    }
+
+    let response: FetchResponseLike;
+    this.logger(redact(`github/write ${options.method} ${options.path}`));
+    try {
+      response = await this.fetchImpl(`${this.apiUrl}${options.path}`, init);
+    } catch (err) {
+      this.recordFailure(true);
+      throw new GitHubError({
+        status: 503,
+        code: 'UNAVAILABLE',
+        message: this.text().unavailable,
+        detail: messageOf(err),
+      });
+    }
+
+    this.readRateLimit(response.headers);
+
+    if (response.status >= 200 && response.status < 300) {
+      this.recordSuccess();
+      // The write landed. Drop the stale cache before touching the body: a
+      // connection that dies mid-read must not leave a pre-write list behind.
+      this.invalidate(options.invalidate ?? []);
+      try {
+        const parsed = parseJson(await response.text());
+        return { data: options.map(parsed, response.headers), rateLimit: this.rateLimit(false) };
+      } catch (err) {
+        if (err instanceof GitHubError) throw err;
+        // The write already committed on GitHub's side. Reporting a raw error
+        // would map to 500 SERVER_ERROR and invite a duplicate POST, so say
+        // plainly that the outcome is unknown.
+        throw new GitHubError({
+          status: 503,
+          code: 'UNAVAILABLE',
+          message: this.text().unavailable,
+          detail: messageOf(err),
+        });
+      }
+    }
+
+    // Write-only mappings, kept together. A 422 was understood and refused: a
+    // client mistake, not an outage. A non-quota 403 means the token lacks a
+    // permission, and a write knows which one it needed, so name it. The read
+    // path keeps `text.forbidden` because a read has no scope to name.
+    let error: GitHubError;
+    if (response.status === 422) {
+      error = new GitHubError({ status: 422, code: 'VALIDATION_ERROR', message: this.text().invalidWrite });
+    } else if (response.status === 403 && numberOf(response.headers.get('x-ratelimit-remaining')) !== 0) {
+      error = new GitHubError({ status: 403, code: 'FORBIDDEN', message: this.text().missingScope('repo') });
+    } else {
+      // Quota 403/429 and every other status keep the read mapping.
+      error = await this.toError(response);
+    }
+    this.recordFailure(response.status >= 500 || response.status === 429);
+    throw error;
+  }
+
+  /**
+   * Drop every cached response whose key starts with one of `prefixes`.
+   *
+   * Both response stores (`cache` and `authorCache`) and both validator stores
+   * are swept, and the validator sweep is independent of the body sweep: they
+   * are bounded separately (`ETAG_MAX_ENTRIES` vs `CACHE_MAX_ENTRIES`) and
+   * desync as soon as one 200 carries no ETag, so a key present in one says
+   * nothing about the other. A surviving validator would answer the next read
+   * with a 304 and re-serve the pre-write body.
+   *
+   * Returns the total number of body entries removed across both stores.
+   */
+  invalidate(prefixes: readonly string[]): number {
+    let removed = 0;
+    for (const store of [this.cache, this.authorCache]) {
+      for (const key of [...store.keys()]) {
+        if (!prefixes.some((prefix) => key.startsWith(prefix))) continue;
+        store.delete(key);
+        removed += 1;
+      }
+    }
+    const salt = `${this.tokenFingerprint}|`;
+    for (const store of [this.etags, this.authorEtags]) {
+      for (const key of [...store.keys()]) {
+        const cacheKey = key.startsWith(salt) ? key.slice(salt.length) : key;
+        if (prefixes.some((prefix) => cacheKey.startsWith(prefix))) store.delete(key);
+      }
+    }
+    return removed;
   }
 
   /**

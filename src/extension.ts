@@ -16,6 +16,7 @@ import {
   hasPrivateScope,
 } from './github';
 import { hostText, type HostCatalog } from './hostText';
+import type { GitHubGuardContext } from './githubGuard';
 import { buildIconThemeSnapshot, iconThemeRootUri } from './iconTheme';
 import { Logger } from './logger';
 import { parseRemoteUrl, resolveGitHubApiBase, webUrlOf, type GitHubApiBase, type ParsedRemoteUrl } from './remoteUrl';
@@ -868,6 +869,7 @@ class Controller implements vscode.Disposable {
       githubAuth: () => this.githubAuth(),
       connectGitHub: () => this.connectGitHub(),
       disconnectGitHub: () => this.disconnectGitHub(),
+      githubWriteContext: () => this.githubWriteContext(),
       openDiff: (payload) => this.openDiff(payload),
       openStashDiff: (payload) => this.openStashDiff(payload),
       showLogs: () => this.channel.show(true),
@@ -1061,6 +1063,29 @@ class Controller implements vscode.Disposable {
   }
 
   /**
+   * Everything the GitHub write guard needs, from the values already computed
+   * for reads: connection, granted scopes, token trust, and breaker state.
+   *
+   * `scopes` is passed through unchanged. `null` (fine-grained PATs send no
+   * `x-oauth-scopes`) means unknown and never blocks; `[]` is a known answer
+   * from a classic token that grants nothing, which the guard must refuse.
+   * An untrusted base reports `tokenAllowed: false` rather than a scope list,
+   * so the guard refuses before the token is anywhere near the request.
+   */
+  private async githubWriteContext(): Promise<GitHubGuardContext> {
+    const state = await this.githubAuth();
+    const remote = await this.detectRemote();
+    const base = this.resolveApiBase(remote);
+    const { client } = await this.githubClient();
+    return {
+      connected: state.connected,
+      scopes: state.scopes,
+      tokenAllowed: base.tokenAllowed,
+      circuitOpen: client.circuitOpen,
+    };
+  }
+
+  /**
    * Connection state. A stored token that the API rejects is reported as NOT
    * connected and deleted from SecretStorage, per the PRD: a token that cannot
    * work is worse than no token, because it makes every later call fail.
@@ -1077,7 +1102,7 @@ class Controller implements vscode.Disposable {
       return {
         connected: false,
         login: null,
-        scopes: [],
+        scopes: null,
         apiUrl,
         scopeWarning: `${extText().extension.githubUntrustedBase} (${apiUrl})`,
       };
@@ -1107,13 +1132,17 @@ class Controller implements vscode.Disposable {
       }
       // Network or rate-limit trouble is not an auth verdict: the token stands.
       this.logger.info('github/auth', err instanceof Error ? err.message : String(err));
-      return { connected: true, login: null, scopes: [], apiUrl };
+      return { connected: true, login: null, scopes: null, apiUrl };
     }
   }
 
-  /** Warn only when it matters: a private repository plus a token missing the scope. */
-  private async scopeWarning(scopes: readonly string[]): Promise<string | null> {
-    if (hasPrivateScope(scopes)) return null;
+  /**
+   * Warn only when it matters: a private repository plus a token missing the
+   * scope. `null` scopes mean the token type cannot report them, and crying
+   * wolf about a private repo when the answer is unknown is worse than silence.
+   */
+  private async scopeWarning(scopes: readonly string[] | null): Promise<string | null> {
+    if (scopes === null || hasPrivateScope(scopes)) return null;
     const remote = await this.detectRemote();
     if (remote === null) return null;
     try {
@@ -1171,7 +1200,9 @@ class Controller implements vscode.Disposable {
     try {
       const { client } = await this.githubClient();
       const viewer = await client.viewer();
-      return hasPrivateScope(viewer.data.scopes) ? null : extText().github.scopeMissing;
+      const scopes = viewer.data.scopes;
+      if (scopes === null) return null;
+      return hasPrivateScope(scopes) ? null : extText().github.scopeMissing;
     } catch {
       return null;
     }
