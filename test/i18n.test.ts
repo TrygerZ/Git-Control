@@ -485,6 +485,27 @@ test('the onboarding namespace exists in both catalogs with the same shape', () 
 
 // ---------------------------------------------------- host catalog (P15)
 
+test('the explorerSync namespace exists in both catalogs with the same shape', () => {
+  const en = t('en').explorerSync;
+  const id = t('id').explorerSync;
+
+  assert.deepEqual(Object.keys(en).sort(), Object.keys(id).sort());
+  assert.equal(en.groupAria, 'Sync actions');
+  assert.equal(id.groupAria, 'Aksi sinkronisasi');
+  assert.equal(en.fetchButton, 'Fetch');
+  assert.equal(id.fetchButton, 'Fetch');
+
+  // Function entries are called with the values the component passes, which is
+  // how the dash scan in the first test also reaches them.
+  assert.equal(en.fetchTitle('origin'), 'Fetch from origin.');
+  assert.equal(id.fetchTitle('origin'), 'Ambil pembaruan dari origin.');
+
+  // The reasons unique to this surface stay distinct from their commitForm
+  // siblings, or the two surfaces would explain the same block differently.
+  assert.notEqual(en.fetchDisabledBusy, en.pullDisabledNoUpstream);
+  assert.notEqual(id.fetchDisabledBusy, id.pullDisabledNoUpstream);
+});
+
 test('host catalog keeps en and id in parity with no dash in either', () => {
   const en = hostCatalogs.en;
   const id = hostCatalogs.id;

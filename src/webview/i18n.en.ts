@@ -1037,6 +1037,16 @@ const en = {
     pickRepository: 'Pick repository...',
     itemWithCount: (label: string, count: string) => `${label}, ${count}`,
   },
+  // Explorer header sync buttons (P18b). Labels, action titles, and the busy and
+  // detached-HEAD reasons come from `commitForm`, so the header and the sidebar
+  // footer cannot drift apart. Only the strings unique to this surface live here.
+  explorerSync: {
+    groupAria: 'Sync actions',
+    fetchButton: 'Fetch',
+    fetchTitle: (remote: string) => `Fetch from ${remote}.`,
+    fetchDisabledBusy: 'Operation in progress.',
+    pullDisabledNoUpstream: 'Publish this branch before pulling.',
+  },
 };
 
 
