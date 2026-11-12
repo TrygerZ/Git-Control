@@ -5,6 +5,17 @@ All notable changes to the "Git Control" extension will be documented in this fi
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.15.1] - 2026-11-12
+
+### Changed
+- GitHub changes are checked by a guard that verifies the connection, token trust, and granted permissions before anything is sent.
+- A GitHub change is sent once. The client never retries a write and never answers one from cache, so a repeated request cannot create a duplicate pull request, comment, or release.
+- Duplicate clicks on a GitHub action are joined into one request instead of racing each other.
+- A write refused for lack of permission now names the permission it needs instead of reporting a bare access denial.
+
+### Security
+- Write requests are refused when the API host was derived from a repository remote, so the token is never sent there.
+
 ## [3.15.0] - 2026-11-12
 
 ### Added
