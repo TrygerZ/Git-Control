@@ -151,6 +151,8 @@ const id: Catalog = {
     menuCheckout: 'Checkout',
     menuMerge: 'Merge ke branch saat ini...',
     menuCopyName: 'Salin nama branch',
+    menuDelete: 'Hapus branch...',
+    menuDeleteHint: 'hanya yang sudah digabung',
     copied: 'Nama branch disalin',
     copiedPath: 'Path worktree disalin',
     newBranch: 'Branch baru',
@@ -672,6 +674,30 @@ const id: Catalog = {
     menuAria: (short: string) => `Tindakan untuk commit ${short}`,
     riskyWord: 'berisiko',
     riskyAria: (label: string, hint: string) => `${label}: berisiko. ${hint}`.trim(),
+  },
+
+  // Branch cleanup (P20)
+  cleanup: {
+    title: 'Bersihkan branch yang sudah digabung',
+    intro:
+      'Hanya branch yang sudah digabung yang ditampilkan. Git tetap bisa menolak penghapusan, dan penolakannya ditampilkan. Pekerjaan yang belum digabung tidak pernah dihapus.',
+    mergedAgo: (age: string) => `digabung ${age} lalu`,
+    upstreamGone: 'upstream hilang',
+    alsoRemote: (remote: string) => `Hapus juga branch remote di ${remote}`,
+    remoteNeedsSecond: 'Penghapusan remote perlu konfirmasi kedua.',
+    deleteN: (n: string) => `Hapus ${n} branch`,
+    empty: 'Tidak ada yang perlu dibersihkan.',
+    doneToast: (n: string) => `${n} branch dihapus.`,
+    partial: (ok: string, fail: string) => `Terhapus ${ok}, dilewati ${fail}. Lihat log.`,
+    openButton: 'Bersihkan',
+    openAria: (n: string) => `Bersihkan ${n} branch yang sudah digabung`,
+    banner: (n: string) => `${n} branch sudah digabung ke branch dasar`,
+    bannerHint: 'Hapus aman memakai git branch -d. Pekerjaan yang belum digabung tidak pernah dihapus.',
+    selectAll: 'Pilih semua',
+    clearAll: 'Kosongkan',
+    rowAria: (name: string, state: string) => `Hapus ${name}, ${state}`,
+    commandLabel: 'Perintah yang akan dijalankan',
+    deleteFailed: 'Tidak dihapus',
   },
 
   // Merge confirmation dialog

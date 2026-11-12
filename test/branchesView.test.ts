@@ -74,16 +74,39 @@ test('the controls owned by later phases are absent', () => {
   // Checked against the rendered strings and the action payloads, not the
   // component's prose, so a comment naming a deferred control is not a failure.
   const src = code('src/webview/BranchesView.tsx');
-  for (const forbidden of ['branchDelete', 'deleteBranch', 'newTag', 'addWorktree', 'compareRange']) {
+  for (const forbidden of ['newTag', 'addWorktree', 'compareRange']) {
     assert.doesNotMatch(src, new RegExp(forbidden), forbidden);
   }
   const actions = [...src.matchAll(/action:\s*'([a-z-]+)'/g)].map((m) => m[1]);
   assert.deepEqual(
     [...new Set(actions)].sort(),
     ['create-branch'],
-    'the only inline action is branch creation; checkout and merge ride the shared payload helpers',
+    'the only inline action is branch creation; checkout, merge, and delete ride shared helpers',
   );
-  assert.doesNotMatch(src, /'delete-branch'|'delete-tag'|'worktree-add'|'compare'/);
+  assert.doesNotMatch(src, /'delete-tag'|'worktree-add'|'compare'/);
+});
+
+test('cleanup is wired through the pure selector and the store, never a direct delete', () => {
+  const src = code('src/webview/BranchesView.tsx');
+  assert.match(src, /selectCleanupCandidates\(/, 'the candidate list comes from the pure selector');
+  assert.match(src, /deleteBranches\(/, 'removal goes through the store action');
+  assert.match(src, /<CleanupDialog/, 'the dialog is mounted here');
+  // The view must not build a delete payload itself: the store owns the
+  // sequencing and each action is guarded host-side.
+  assert.doesNotMatch(src, /action:\s*'branch-delete/);
+  assert.doesNotMatch(src, /<GuardDialog/, 'the shell still hosts the only guard dialog');
+});
+
+test('the cleanup dialog carries the frame 61 structure and the shared focus trap', () => {
+  const src = read('src/webview/CleanupDialog.tsx');
+  assert.match(src, /role="dialog"/);
+  assert.match(src, /aria-modal="true"/);
+  assert.match(src, /useDialogFocusTrap\(/, 'P02 focus trap, not a hand-rolled one');
+  assert.match(src, /gitCommandOf\(/, 'the command preview reuses the shared formatter');
+  assert.match(src, /sanitizeGitText\(/, 'branch names are git-sourced');
+  assert.match(src, /type="checkbox"/, 'every row is a real checkbox');
+  assert.doesNotMatch(src, /dangerouslySetInnerHTML|innerHTML/);
+  assert.doesNotMatch(src, /branch -D|'-D'/, 'the dialog can never show a forced delete');
 });
 
 test('remote rows offer no checkout control', () => {

@@ -156,6 +156,8 @@ const en = {
     menuCheckout: 'Checkout',
     menuMerge: 'Merge into current...',
     menuCopyName: 'Copy branch name',
+    menuDelete: 'Delete branch...',
+    menuDeleteHint: 'merged only',
     copied: 'Branch name copied',
     copiedPath: 'Worktree path copied',
     newBranch: 'New branch',
@@ -677,6 +679,30 @@ const en = {
     menuAria: (short: string) => `Actions for commit ${short}`,
     riskyWord: 'risky',
     riskyAria: (label: string, hint: string) => `${label}: risky. ${hint}`.trim(),
+  },
+
+  // Branch cleanup (P20)
+  cleanup: {
+    title: 'Clean up merged branches',
+    intro:
+      'Only merged branches are listed. Git can still refuse a delete, and the refusal is shown. Unmerged work is never removed.',
+    mergedAgo: (age: string) => `merged ${age} ago`,
+    upstreamGone: 'upstream gone',
+    alsoRemote: (remote: string) => `Also delete the remote branches on ${remote}`,
+    remoteNeedsSecond: 'Remote deletion needs a second confirmation.',
+    deleteN: (n: string) => `Delete ${n} branch${n === '1' ? '' : 'es'}`,
+    empty: 'Nothing to clean up.',
+    doneToast: (n: string) => `Deleted ${n} branch${n === '1' ? '' : 'es'}.`,
+    partial: (ok: string, fail: string) => `Deleted ${ok}, skipped ${fail}. See the log.`,
+    openButton: 'Clean up',
+    openAria: (n: string) => `Clean up ${n} merged branch${n === '1' ? '' : 'es'}`,
+    banner: (n: string) => `${n} branch${n === '1' ? ' is' : 'es are'} merged into the base branch`,
+    bannerHint: 'Safe delete uses git branch -d. Unmerged work is never removed.',
+    selectAll: 'Select all',
+    clearAll: 'Clear',
+    rowAria: (name: string, state: string) => `Delete ${name}, ${state}`,
+    commandLabel: 'Command that will run',
+    deleteFailed: 'Not deleted',
   },
 
   // Merge confirmation dialog

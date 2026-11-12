@@ -6581,3 +6581,188 @@ h3 {
     display: none;
   }
 }
+
+/* ---------------------------------------------------------- branch cleanup */
+
+/*
+ * Frame 63 banner: one sentence and one button, the button on the trailing edge
+ * so it lines up with the row menu triggers below it.
+ */
+.gc-cleanup__banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--gc-space-3);
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.gc-cleanup__banner > span:first-child {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gc-space-1);
+  min-width: 0;
+}
+
+.gc-cleanup__banner-hint {
+  color: var(--gc-text-secondary);
+  font-size: var(--gc-fs-2xs);
+}
+
+/*
+ * Frame 61 dialog. Narrower than the shared `.gc-modal` because the design is a
+ * 340 px sidebar dialog, and the shared 38em width would leave the row facts
+ * floating far from the names they describe.
+ */
+.gc-cleanup {
+  width: min(26em, 100%);
+  gap: var(--gc-space-3);
+  padding: var(--gc-space-4);
+}
+
+.gc-cleanup__head {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--gc-space-3);
+}
+
+.gc-cleanup__badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: 36px;
+  height: 36px;
+  border-radius: var(--gc-radius-lg);
+  background: var(--gc-state-warning-subtle);
+  color: var(--gc-state-warning);
+}
+
+.gc-cleanup__titles {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gc-space-1);
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.gc-cleanup__title {
+  margin: 0;
+  font-size: var(--gc-fs-xl);
+  font-weight: var(--gc-weight-strong);
+}
+
+.gc-cleanup__intro {
+  margin: 0;
+  color: var(--gc-text-secondary);
+  font-size: var(--gc-fs-xs);
+}
+
+.gc-cleanup__close {
+  flex: 0 0 auto;
+}
+
+/*
+ * The list scrolls rather than growing the dialog: a repository with forty
+ * merged branches would otherwise push the command preview and the buttons off
+ * the panel.
+ */
+.gc-cleanup__list {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  overflow-y: auto;
+  border: 1px solid var(--gc-border);
+  border-radius: var(--gc-radius);
+  background: var(--gc-surface-3);
+  list-style: none;
+}
+
+.gc-cleanup__row {
+  display: flex;
+  align-items: center;
+  gap: var(--gc-space-3);
+  min-height: var(--gc-hit-lg);
+  padding: 0 var(--gc-space-3);
+}
+
+.gc-cleanup__row + .gc-cleanup__row {
+  border-top: 1px solid var(--gc-border);
+}
+
+.gc-cleanup__label {
+  display: flex;
+  align-items: center;
+  gap: var(--gc-space-3);
+  flex: 1 1 auto;
+  min-width: 0;
+  cursor: pointer;
+}
+
+.gc-cleanup__label input {
+  flex: 0 0 auto;
+  margin: 0;
+}
+
+.gc-cleanup__name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--vscode-editor-font-family, monospace);
+  font-size: var(--gc-fs-xs);
+}
+
+.gc-cleanup__fact {
+  flex: 0 0 auto;
+  color: var(--gc-text-muted);
+  font-size: var(--gc-fs-2xs);
+  white-space: nowrap;
+}
+
+.gc-cleanup__remote {
+  align-items: flex-start;
+}
+
+.gc-cleanup__command {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gc-space-1);
+}
+
+.gc-cleanup__command-label {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--gc-space-1);
+  color: var(--gc-text-muted);
+  font-size: var(--gc-fs-2xs);
+}
+
+.gc-cleanup__command code {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gc-space-1);
+  padding: var(--gc-space-2) var(--gc-space-3);
+  border: 1px solid var(--gc-border);
+  border-radius: var(--gc-radius);
+  background: var(--vscode-textCodeBlock-background, var(--gc-bg-editor));
+  font-family: var(--vscode-editor-font-family, monospace);
+  font-size: var(--gc-fs-2xs);
+  overflow-wrap: anywhere;
+}
+
+.gc-cleanup__command-line {
+  color: var(--gc-text-secondary);
+}
+
+.gc-cleanup__empty {
+  margin: 0;
+  padding: var(--gc-space-3) 0;
+  color: var(--gc-text-muted);
+  font-size: var(--gc-fs-xs);
+}
+
+.gc-cleanup__all {
+  align-self: flex-start;
+  padding: 0;
+}

@@ -8,7 +8,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { bridge, loadState, saveState } from '../src/webview/bridge';
-import { useBranchesStore, useRouteStore, wireHostEvents } from '../src/webview/store';
+import { useBranchesStore, useOperationStore, useRouteStore, wireHostEvents } from '../src/webview/store';
 import type { BranchRef, RefsResult, WorktreeInfo } from '../src/messages';
 
 function ref(over: Partial<BranchRef> & { shortName: string }): BranchRef {
@@ -222,4 +222,72 @@ test('a repo change reloads the list only while the Branches route is active', a
     s.restore();
   }
   assert.ok(s.calls.some((c) => c.kind === 'repos/refs'), 'the open view refreshed its refs');
+});
+
+// ------------------------------------------------------- cleanup (P20)
+
+/**
+ * Deleting N branches is N mutations, not one: each has its own guard verdict
+ * and its own git refusal. The store runs them in order and reports what
+ * happened, because a partial run is the normal case when one branch turned out
+ * to be unmerged.
+ */
+test('deleteBranches runs one action per branch and reports the tally', async () => {
+  const calls: Array<{ action: string; branch?: string }> = [];
+  const original = useOperationStore.getState().runAction;
+  const originalLoad = useBranchesStore.getState().load;
+  useBranchesStore.setState({ load: async () => undefined });
+  useOperationStore.setState({
+    runAction: async (request) => {
+      calls.push({ action: request.action, ...('branch' in request ? { branch: request.branch } : {}) });
+      return true;
+    },
+  });
+  try {
+    const result = await useBranchesStore.getState().deleteBranches(['feat/a', 'fix/b'], null);
+    assert.deepEqual(calls, [
+      { action: 'branch-delete', branch: 'feat/a' },
+      { action: 'branch-delete', branch: 'fix/b' },
+    ]);
+    assert.deepEqual(result, { ok: 2, failed: [] });
+  } finally {
+    useOperationStore.setState({ runAction: original });
+    useBranchesStore.setState({ load: originalLoad });
+  }
+});
+
+test('deleteBranches collects each skipped branch by name', async () => {
+  const original = useOperationStore.getState().runAction;
+  const originalLoad = useBranchesStore.getState().load;
+  useBranchesStore.setState({ load: async () => undefined });
+  useOperationStore.setState({
+    runAction: async (request) => ('branch' in request ? request.branch !== 'fix/b' : true),
+  });
+  try {
+    const result = await useBranchesStore.getState().deleteBranches(['feat/a', 'fix/b'], null);
+    assert.deepEqual(result, { ok: 1, failed: ['fix/b'] });
+  } finally {
+    useOperationStore.setState({ runAction: original });
+    useBranchesStore.setState({ load: originalLoad });
+  }
+});
+
+test('deleteBranches with the remote flag follows each local delete with a remote one', async () => {
+  const calls: string[] = [];
+  const original = useOperationStore.getState().runAction;
+  const originalLoad = useBranchesStore.getState().load;
+  useBranchesStore.setState({ load: async () => undefined });
+  useOperationStore.setState({
+    runAction: async (request) => {
+      calls.push(request.action);
+      return true;
+    },
+  });
+  try {
+    await useBranchesStore.getState().deleteBranches(['feat/a'], 'origin');
+    assert.deepEqual(calls, ['branch-delete', 'branch-delete-remote']);
+  } finally {
+    useOperationStore.setState({ runAction: original });
+    useBranchesStore.setState({ load: originalLoad });
+  }
 });

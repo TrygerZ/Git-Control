@@ -4,9 +4,14 @@
  * Frames 11, 63, 64, 65, 87. Lists local branches, remote branches, and tags,
  * and runs checkout, merge, and create through the actions that already exist.
  *
- * Controls the design draws but later phases own stay out (R2): Clean up and
- * Delete branch (P20), New tag (P28), Compare and Add worktree (P29). No
- * control ships without behaviour.
+ * Controls the design draws but later phases own stay out (R2): New tag (P28),
+ * Compare and Add worktree (P29). No control ships without behaviour.
+ *
+ * Clean up (P20) is here: the banner counts what `selectCleanupCandidates`
+ * offers, the footer button opens the dialog, and the row menu carries a single
+ * delete. Nothing in this file deletes anything itself; every removal is a
+ * guarded mutation through the store, so the guard dialog and git's own refusal
+ * stay the only authorities.
  *
  * The sidebar owns its own prompt and merge hosts. `ExplorerApp` keeps its own
  * copies of that state; importing it would tie two roots together. The guard
@@ -14,8 +19,10 @@
  * second host would render two modal dialogs for a single verdict.
  */
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type JSX, type KeyboardEvent } from 'react';
+import { CleanupDialog } from './CleanupDialog';
 import { MergeDialog, mergeActionPayload } from './MergeDialog';
 import { PromptDialog } from './PromptDialog';
+import { selectCleanupCandidates } from '../branchCleanup';
 import { Tablist } from './Tablist';
 import { checkoutActionPayload } from './BranchLegend';
 import {
@@ -48,7 +55,7 @@ import {
   useSettingsStore,
   wireHostEvents,
 } from './store';
-import { EmptyState, ErrorBanner, Icon, Spinner } from './ui';
+import { EmptyState, ErrorBanner, Icon, InfoBanner, Spinner } from './ui';
 import type { BranchRef, Lang } from '../messages';
 
 /** DOM id of the one tabpanel all three sub-tabs control. */
@@ -79,6 +86,8 @@ export function BranchesView(): JSX.Element {
   const status = useRepoStore((s) => s.status);
 
   const refs = useBranchesStore((s) => s.refs);
+  const base = useBranchesStore((s) => s.base);
+  const deleteBranches = useBranchesStore((s) => s.deleteBranches);
   const worktrees = useBranchesStore((s) => s.worktrees);
   const sort = useBranchesStore((s) => s.sort);
   const filter = useBranchesStore((s) => s.filter);
@@ -97,6 +106,8 @@ export function BranchesView(): JSX.Element {
   const [menu, setMenu] = useState<MenuAnchor | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
   const [mergeFor, setMergeFor] = useState<string | null>(null);
+  const [cleanupOpen, setCleanupOpen] = useState(false);
+  const [singleDelete, setSingleDelete] = useState<string | null>(null);
 
   /*
    * The sidebar shell already wired the host events, so this call is a no-op
@@ -152,11 +163,46 @@ export function BranchesView(): JSX.Element {
   const recentTags = useMemo(() => tagRows(refs, RECENT_TAG_LIMIT), [refs]);
   const shownWorktrees = useMemo(() => visibleWorktrees(worktrees), [worktrees]);
 
+  /*
+   * The cleanup banner and dialog read the same selection, so the count in the
+   * banner can never promise a row the dialog does not list.
+   */
+  const cleanupCandidates = useMemo(
+    () => selectCleanupCandidates(refs, currentBranch, base ?? ''),
+    [refs, currentBranch, base],
+  );
+  /** The remote a cleanup may also delete on, when every candidate agrees on one. */
+  const cleanupRemote = useMemo(() => {
+    const remotes = new Set(cleanupCandidates.map((c) => c.remote));
+    if (remotes.size !== 1) return null;
+    const [only] = [...remotes];
+    return only ?? null;
+  }, [cleanupCandidates]);
+
   const runAndReload = async (request: Parameters<typeof runAction>[0]): Promise<void> => {
     const ok = await runAction(request);
     // A guard rejection parks the request in the dialog; the dialog's own retry
     // refetches, so only a completed action needs the list reloaded here.
     if (ok) await load();
+  };
+
+  /**
+   * One cleanup run. The store does the sequencing and the tally; this only
+   * decides what the user is told, and it reports partial success as a warning
+   * rather than a success, because some branches are still there.
+   */
+  const runCleanup = async (names: readonly string[], remote: string | null): Promise<void> => {
+    const result = await deleteBranches(names, remote);
+    if (result.ok === 0) return;
+    if (result.failed.length === 0) {
+      pushToast({ level: 'info', message: strings.cleanup.doneToast(String(result.ok)) });
+      return;
+    }
+    pushToast({
+      level: 'warning',
+      message: strings.cleanup.partial(String(result.ok), String(result.failed.length)),
+      detail: result.failed.map((name) => sanitizeGitText(name)).join(', '),
+    });
   };
 
   /**
@@ -240,6 +286,31 @@ export function BranchesView(): JSX.Element {
 
       {error !== null && <ErrorBanner error={error} onShowLogs={showLogs} />}
 
+      {/*
+        Frame 63: the banner appears only when there is something to clean, and
+        disappears on its own when the last candidate goes. It names the count and
+        the safe command, so the offer is legible before the dialog opens.
+      */}
+      {cleanupCandidates.length > 0 && (
+        <InfoBanner tone="info" glyph="trash">
+          <div className="gc-cleanup__banner">
+            <span>
+              <strong>{strings.cleanup.banner(String(cleanupCandidates.length))}</strong>
+              <span className="gc-cleanup__banner-hint">{strings.cleanup.bannerHint}</span>
+            </span>
+            <button
+              type="button"
+              className="gc-button gc-button--quiet"
+              aria-label={strings.cleanup.openAria(String(cleanupCandidates.length))}
+              onClick={() => setCleanupOpen(true)}
+            >
+              <Icon name="trash" />
+              {strings.cleanup.openButton}
+            </button>
+          </div>
+        </InfoBanner>
+      )}
+
       <div role="tabpanel" id={BRANCHES_PANEL_ID} aria-label={tabLabel(sub)} className="gc-branches__panel">
         {loading && refs.length === 0 ? (
           <Spinner label={strings.branches.tabsAria} />
@@ -310,6 +381,40 @@ export function BranchesView(): JSX.Element {
           onCopy={(name) => {
             setMenu(null);
             copyName(name);
+          }}
+          onDelete={(name) => {
+            setMenu(null);
+            setSingleDelete(name);
+          }}
+          deletable={cleanupCandidates.some((c) => c.name === menu.ref.shortName)}
+        />
+      )}
+
+      {cleanupOpen && (
+        <CleanupDialog
+          candidates={cleanupCandidates}
+          remote={cleanupRemote}
+          onCancel={() => setCleanupOpen(false)}
+          onDelete={(names, remote) => {
+            setCleanupOpen(false);
+            void runCleanup(names, remote);
+          }}
+        />
+      )}
+
+      {/*
+        One branch from the row menu goes through the same dialog, so the command
+        preview and the guard flow are identical whether the user arrived from the
+        banner or from a row.
+      */}
+      {singleDelete !== null && (
+        <CleanupDialog
+          candidates={cleanupCandidates.filter((c) => c.name === singleDelete)}
+          remote={cleanupRemote}
+          onCancel={() => setSingleDelete(null)}
+          onDelete={(names, remote) => {
+            setSingleDelete(null);
+            void runCleanup(names, remote);
           }}
         />
       )}
@@ -807,6 +912,9 @@ function BranchRowMenu(props: {
   onCheckout(name: string): void;
   onMerge(name: string): void;
   onCopy(name: string): void;
+  onDelete(name: string): void;
+  /** `true` when this branch is in the cleanup selection, so Delete is offered. */
+  deletable: boolean;
 }): JSX.Element {
   const strings = useT();
   const { ref_, anchor } = props;
@@ -859,7 +967,12 @@ function BranchRowMenu(props: {
   const isCurrent = ref_.shortName === props.currentBranch;
   const mutable = canCheckout(ref_) && !isCurrent;
 
-  const item = (label: string, icon: 'git-branch' | 'merge' | 'copy', run: () => void): JSX.Element => (
+  const item = (
+    label: string,
+    icon: 'git-branch' | 'merge' | 'copy' | 'trash',
+    run: () => void,
+    hint?: string,
+  ): JSX.Element => (
     <button type="button" role="menuitem" className="gc-menu__item" onClick={run}>
       <span className="gc-menu__icon" aria-hidden="true">
         <Icon name={icon} />
@@ -868,6 +981,7 @@ function BranchRowMenu(props: {
         <span className="gc-menu__label">
           <span>{label}</span>
         </span>
+        {hint !== undefined && <span className="gc-menu__hint">{hint}</span>}
       </span>
     </button>
   );
@@ -885,6 +999,29 @@ function BranchRowMenu(props: {
         {mutable && item(strings.branches.menuCheckout, 'git-branch', () => props.onCheckout(ref_.shortName))}
         {mutable && item(strings.branches.menuMerge, 'merge', () => props.onMerge(ref_.shortName))}
         {item(strings.branches.menuCopyName, 'copy', () => props.onCopy(ref_.shortName))}
+        {/*
+          Frame 63: Delete branch, merged only. The menu offers it exactly when the
+          cleanup selection would list the branch, so a row that cannot be safely
+          deleted has no dead entry. The hint is a word, not a colour.
+        */}
+        {props.deletable && (
+          <button
+            type="button"
+            role="menuitem"
+            className="gc-menu__item gc-menu__item--risky"
+            onClick={() => props.onDelete(ref_.shortName)}
+          >
+            <span className="gc-menu__icon" aria-hidden="true">
+              <Icon name="trash" />
+            </span>
+            <span className="gc-menu__body">
+              <span className="gc-menu__label">
+                <span>{strings.branches.menuDelete}</span>
+                <span className="gc-menu__hint">{strings.branches.menuDeleteHint}</span>
+              </span>
+            </span>
+          </button>
+        )}
       </div>
     </div>
   );

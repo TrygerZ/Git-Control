@@ -1908,6 +1908,20 @@ export interface BranchesState {
   setSort(sort: BranchSort): void;
   setFilter(text: string): void;
   toggleSection(key: BranchesSectionKey): void;
+  /**
+   * Delete each named branch in turn, then optionally the same branches on
+   * `remote`. Serial by design: each delete is its own guarded mutation with its
+   * own git refusal, and running them together would turn one failure into an
+   * unknown state for the rest.
+   */
+  deleteBranches(names: readonly string[], remote: string | null): Promise<CleanupResult>;
+}
+
+/** Outcome of a cleanup run: how many were removed and which were not. */
+export interface CleanupResult {
+  ok: number;
+  /** Branch names git or the guard refused, in the order they were attempted. */
+  failed: string[];
 }
 
 let inFlightBranchesLoad: Promise<void> | null = null;
@@ -1964,6 +1978,37 @@ export const useBranchesStore = create<BranchesState>((set, get) => {
       }
       set({ collapsed: next });
       saveState({ collapsedBranchSections: [...next] });
+    },
+    async deleteBranches(names, remote) {
+      const ops = useOperationStore.getState();
+      const result: CleanupResult = { ok: 0, failed: [] };
+      for (const name of names) {
+        // `runAction` returns false for BOTH a guard rejection and a git failure.
+        // Either way the branch is still there, and the guard dialog or the toast
+        // already told the user why, so this only tallies.
+        const removed = await ops.runAction({ action: 'branch-delete', branch: name });
+        if (!removed) {
+          result.failed.push(name);
+          continue;
+        }
+        if (remote !== null) {
+          const remoteRemoved = await ops.runAction({
+            action: 'branch-delete-remote',
+            remote,
+            branch: name,
+          });
+          if (!remoteRemoved) {
+            // The local delete succeeded, so the branch is gone locally. Reporting
+            // it as skipped would be a lie; the toast for the remote failure says
+            // what happened.
+            result.ok += 1;
+            continue;
+          }
+        }
+        result.ok += 1;
+      }
+      if (result.ok > 0) await get().load();
+      return result;
     },
   };
 });
