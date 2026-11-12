@@ -717,7 +717,12 @@ export interface OperationState_ {
   pendingGuard: PendingGuard | null;
   toasts: Toast[];
   lastError: ErrorBody | null;
-  runAction(request: GitActionRequest): Promise<boolean>;
+  /**
+   * Run one action. `extra` carries the confirmation flags: a surface that has
+   * already asked the user (the cleanup dialog) passes `confirm`, and a level 2
+   * action also needs `forceAcknowledgement`.
+   */
+  runAction(request: GitActionRequest, extra?: Partial<MutationMeta>): Promise<boolean>;
   confirmGuard(extra: Partial<MutationMeta>): Promise<void>;
   dismissGuard(): void;
   pushToast(toast: Omit<Toast, 'id'>): void;
@@ -746,7 +751,7 @@ export const useOperationStore = create<OperationState_>((set, get) => ({
    * than captured once: the user reads the dialog, thinks, and clicks Confirm, and
    * the request that lands must be judged against the tree as it is then.
    */
-  async runAction(request) {
+  async runAction(request, extra) {
     set({ state: 'loading', lastError: null });
     const handle = mutation('actions/git', request);
     const send = async (extra: Partial<MutationMeta>): Promise<boolean> => {
@@ -785,7 +790,7 @@ export const useOperationStore = create<OperationState_>((set, get) => ({
       return false;
     };
     try {
-      return await send({});
+      return await send(extra ?? {});
     } catch (err) {
       return handleFailure(err);
     }
@@ -1986,17 +1991,19 @@ export const useBranchesStore = create<BranchesState>((set, get) => {
         // `runAction` returns false for BOTH a guard rejection and a git failure.
         // Either way the branch is still there, and the guard dialog or the toast
         // already told the user why, so this only tallies.
-        const removed = await ops.runAction({ action: 'branch-delete', branch: name });
+        // The dialog that produced this list IS the level 1 confirmation, so each
+        // request carries it. Without the flag every branch would park in the
+        // guard dialog and the tally would report a run that never happened.
+        const removed = await ops.runAction({ action: 'branch-delete', branch: name }, { confirm: true });
         if (!removed) {
           result.failed.push(name);
           continue;
         }
         if (remote !== null) {
-          const remoteRemoved = await ops.runAction({
-            action: 'branch-delete-remote',
-            remote,
-            branch: name,
-          });
+          const remoteRemoved = await ops.runAction(
+            { action: 'branch-delete-remote', remote, branch: name },
+            { confirm: true, forceAcknowledgement: true },
+          );
           if (!remoteRemoved) {
             // The local delete succeeded, so the branch is gone locally. Reporting
             // it as skipped would be a lie; the toast for the remote failure says

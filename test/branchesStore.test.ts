@@ -291,3 +291,31 @@ test('deleteBranches with the remote flag follows each local delete with a remot
     useBranchesStore.setState({ load: originalLoad });
   }
 });
+
+/**
+ * The dialog the user pressed IS the level 1 confirmation, so each delete must
+ * carry `confirm: true`. Without it every branch parks in the guard dialog
+ * instead of being deleted, and the run reports a tally that never happened.
+ */
+test('deleteBranches confirms each delete and asks for the level 2 acknowledgement', async () => {
+  const extras: Array<Record<string, unknown>> = [];
+  const original = useOperationStore.getState().runAction;
+  const originalLoad = useBranchesStore.getState().load;
+  useBranchesStore.setState({ load: async () => undefined });
+  useOperationStore.setState({
+    runAction: async (_request, extra) => {
+      extras.push(extra ?? {});
+      return true;
+    },
+  });
+  try {
+    await useBranchesStore.getState().deleteBranches(['feat/a'], 'origin');
+    assert.equal(extras.length, 2);
+    assert.equal(extras[0]?.confirm, true, 'the local delete is already confirmed by the dialog');
+    assert.equal(extras[1]?.confirm, true);
+    assert.equal(extras[1]?.forceAcknowledgement, true, 'the remote delete needs the level 2 flag');
+  } finally {
+    useOperationStore.setState({ runAction: original });
+    useBranchesStore.setState({ load: originalLoad });
+  }
+});
