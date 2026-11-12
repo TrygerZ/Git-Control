@@ -686,7 +686,8 @@ const en = {
     title: 'Clean up merged branches',
     intro:
       'Only merged branches are listed. Git can still refuse a delete, and the refusal is shown. Unmerged work is never removed.',
-    mergedAgo: (age: string) => `merged ${age} ago`,
+    /** `age` is already relative (`relativeTime`), so no suffix is appended here. */
+    mergedAgo: (age: string) => `merged ${age}`,
     upstreamGone: 'upstream gone',
     alsoRemote: (remote: string) => `Also delete the remote branches on ${remote}`,
     remoteNeedsSecond: 'Remote deletion needs a second confirmation.',

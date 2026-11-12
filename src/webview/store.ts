@@ -1987,7 +1987,7 @@ export const useBranchesStore = create<BranchesState>((set, get) => {
     async deleteBranches(names, remote) {
       const ops = useOperationStore.getState();
       const result: CleanupResult = { ok: 0, failed: [] };
-      for (const name of names) {
+      for (const [index, name] of names.entries()) {
         // `runAction` returns false for BOTH a guard rejection and a git failure.
         // Either way the branch is still there, and the guard dialog or the toast
         // already told the user why, so this only tallies.
@@ -1999,17 +1999,33 @@ export const useBranchesStore = create<BranchesState>((set, get) => {
           result.failed.push(name);
           continue;
         }
-        if (remote !== null) {
-          const remoteRemoved = await ops.runAction(
-            { action: 'branch-delete-remote', remote, branch: name },
-            { confirm: true, forceAcknowledgement: true },
-          );
-          if (!remoteRemoved) {
-            // The local delete succeeded, so the branch is gone locally. Reporting
-            // it as skipped would be a lie; the toast for the remote failure says
-            // what happened.
+        /*
+         * A branch with no tracking ref has nothing to delete on the remote, and
+         * asking would produce a conflict toast for a branch the user never
+         * expected to exist there. The checkbox is offered per run, not per row.
+         */
+        const onRemote =
+          remote !== null &&
+          get().refs.some((ref) => ref.refName === `refs/remotes/${remote}/${name}`);
+        if (onRemote) {
+          /*
+           * `confirm` only. The level 2 acknowledgement belongs to the guard
+           * dialog (frame 62), which shows the target, the risk, and the exact
+           * `git push --delete` before it asks for the checkbox. Sending
+           * `forceAcknowledgement` from here would answer that gate on the user's
+           * behalf, and the dialog would never appear.
+           */
+          await ops.runAction({ action: 'branch-delete-remote', remote, branch: name });
+          /*
+           * A guard verdict parks the request and opens the modal. The run stops
+           * here rather than stacking dialogs: the local delete already happened,
+           * so it counts, and every branch not yet attempted is reported as
+           * skipped rather than silently dropped.
+           */
+          if (useOperationStore.getState().pendingGuard !== null) {
             result.ok += 1;
-            continue;
+            result.failed.push(...names.slice(index + 1));
+            break;
           }
         }
         result.ok += 1;

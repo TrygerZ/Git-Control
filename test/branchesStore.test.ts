@@ -276,7 +276,10 @@ test('deleteBranches with the remote flag follows each local delete with a remot
   const calls: string[] = [];
   const original = useOperationStore.getState().runAction;
   const originalLoad = useBranchesStore.getState().load;
-  useBranchesStore.setState({ load: async () => undefined });
+  useBranchesStore.setState({
+    load: async () => undefined,
+    refs: [ref({ shortName: 'feat/a' }), ref({ shortName: 'origin/feat/a', kind: 'remote', refName: 'refs/remotes/origin/feat/a' })],
+  });
   useOperationStore.setState({
     runAction: async (request) => {
       calls.push(request.action);
@@ -293,15 +296,19 @@ test('deleteBranches with the remote flag follows each local delete with a remot
 });
 
 /**
- * The dialog the user pressed IS the level 1 confirmation, so each delete must
- * carry `confirm: true`. Without it every branch parks in the guard dialog
- * instead of being deleted, and the run reports a tally that never happened.
+ * The dialog the user pressed IS the level 1 confirmation, so the local delete
+ * carries `confirm: true`. The level 2 acknowledgement is NOT carried: it belongs
+ * to the guard dialog, which shows the target and the command before asking for
+ * the checkbox. Pre-answering it would make frame 62 unreachable.
  */
-test('deleteBranches confirms each delete and asks for the level 2 acknowledgement', async () => {
+test('deleteBranches confirms the local delete but leaves the level 2 gate to the dialog', async () => {
   const extras: Array<Record<string, unknown>> = [];
   const original = useOperationStore.getState().runAction;
   const originalLoad = useBranchesStore.getState().load;
-  useBranchesStore.setState({ load: async () => undefined });
+  useBranchesStore.setState({
+    load: async () => undefined,
+    refs: [ref({ shortName: 'feat/a' }), ref({ shortName: 'origin/feat/a', kind: 'remote', refName: 'refs/remotes/origin/feat/a' })],
+  });
   useOperationStore.setState({
     runAction: async (_request, extra) => {
       extras.push(extra ?? {});
@@ -311,9 +318,38 @@ test('deleteBranches confirms each delete and asks for the level 2 acknowledgeme
   try {
     await useBranchesStore.getState().deleteBranches(['feat/a'], 'origin');
     assert.equal(extras.length, 2);
-    assert.equal(extras[0]?.confirm, true, 'the local delete is already confirmed by the dialog');
-    assert.equal(extras[1]?.confirm, true);
-    assert.equal(extras[1]?.forceAcknowledgement, true, 'the remote delete needs the level 2 flag');
+    assert.deepEqual(extras[0], { confirm: true }, 'the local delete is already confirmed by the dialog');
+    // The remote request carries NO flags: the host answers 428 and the guard
+    // dialog runs stage 2, which is frame 62. Anything here would skip it.
+    assert.deepEqual(extras[1], {}, 'the webview must not answer the level 2 gate');
+  } finally {
+    useOperationStore.setState({ runAction: original });
+    useBranchesStore.setState({ load: originalLoad });
+  }
+});
+
+/**
+ * A branch with no tracking ref has nothing to delete on the remote. Asking would
+ * turn a plain local cleanup into a conflict toast for a branch the user never
+ * expected to exist there.
+ */
+test('deleteBranches skips the remote delete for a branch that is not on the remote', async () => {
+  const actions: string[] = [];
+  const original = useOperationStore.getState().runAction;
+  const originalLoad = useBranchesStore.getState().load;
+  useBranchesStore.setState({
+    load: async () => undefined,
+    refs: [ref({ shortName: 'feat/local-only' })],
+  });
+  useOperationStore.setState({
+    runAction: async (request) => {
+      actions.push(request.action);
+      return true;
+    },
+  });
+  try {
+    await useBranchesStore.getState().deleteBranches(['feat/local-only'], 'origin');
+    assert.deepEqual(actions, ['branch-delete'], 'no remote delete was attempted');
   } finally {
     useOperationStore.setState({ runAction: original });
     useBranchesStore.setState({ load: originalLoad });

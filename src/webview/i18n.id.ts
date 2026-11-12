@@ -681,7 +681,8 @@ const id: Catalog = {
     title: 'Bersihkan branch yang sudah digabung',
     intro:
       'Hanya branch yang sudah digabung yang ditampilkan. Git tetap bisa menolak penghapusan, dan penolakannya ditampilkan. Pekerjaan yang belum digabung tidak pernah dihapus.',
-    mergedAgo: (age: string) => `digabung ${age} lalu`,
+    /** `age` is already relative (`relativeTime`), so no suffix is appended here. */
+    mergedAgo: (age: string) => `digabung ${age}`,
     upstreamGone: 'upstream hilang',
     alsoRemote: (remote: string) => `Hapus juga branch remote di ${remote}`,
     remoteNeedsSecond: 'Penghapusan remote perlu konfirmasi kedua.',

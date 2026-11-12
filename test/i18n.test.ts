@@ -6,6 +6,7 @@ import ts from 'typescript';
 import { activeLang, setActiveLang, t, type Catalog } from '../src/webview/i18n';
 import { hostCatalogs, hostText } from '../src/hostText';
 import { useSettingsStore } from '../src/webview/store';
+import { relativeTime } from '../src/webview/format';
 
 test('i18n module provides complete catalogs for en and id without em-dash', () => {
   const enCatalog = t('en');
@@ -570,4 +571,19 @@ test('the resolve detail has a ready form for a zero-conflict operation', () => 
   // row must not claim zero files need a decision.
   assert.equal(hostText('en').quickActions.resolveDetailReady, 'This operation can continue now');
   assert.equal(hostText('id').quickActions.resolveDetailReady, 'Operasi ini sudah bisa dilanjutkan');
+});
+
+/**
+ * Frame 61 prints `merged 5h ago`. `relativeTime` already ends in the suffix, so
+ * the cleanup template must not add a second one. A static read of the catalog
+ * cannot see this: it takes the real formatter's output to reproduce the bug.
+ */
+test('cleanup age strings do not repeat the relative-time suffix', () => {
+  const iso = new Date(Date.now() - 3 * 60 * 60 * 1000).toISOString();
+  for (const lang of ['en', 'id'] as const) {
+    const age = relativeTime(iso, Date.now(), lang);
+    const line = t(lang).cleanup.mergedAgo(age);
+    assert.equal(line, lang === 'en' ? `merged ${age}` : `digabung ${age}`);
+    assert.doesNotMatch(line, /ago ago|lalu lalu/, line);
+  }
 });

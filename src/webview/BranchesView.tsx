@@ -171,12 +171,18 @@ export function BranchesView(): JSX.Element {
     () => selectCleanupCandidates(refs, currentBranch, base ?? ''),
     [refs, currentBranch, base],
   );
-  /** The remote a cleanup may also delete on, when every candidate agrees on one. */
+  /**
+   * The remote a cleanup may also delete on. Taken from the first candidate that
+   * has one rather than requiring unanimity: a single local-only branch among five
+   * must not hide the checkbox for the other four. Candidates without a remote
+   * simply have nothing to delete there, which `deleteRemoteBranch` reports as a
+   * conflict rather than a silent success.
+   */
   const cleanupRemote = useMemo(() => {
-    const remotes = new Set(cleanupCandidates.map((c) => c.remote));
-    if (remotes.size !== 1) return null;
-    const [only] = [...remotes];
-    return only ?? null;
+    for (const candidate of cleanupCandidates) {
+      if (candidate.remote !== null) return candidate.remote;
+    }
+    return null;
   }, [cleanupCandidates]);
 
   const runAndReload = async (request: Parameters<typeof runAction>[0]): Promise<void> => {

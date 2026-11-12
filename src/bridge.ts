@@ -1025,13 +1025,14 @@ export class MessageBridge {
   }
 
   /**
-   * Delete a local branch, re-checking the current branch against freshly read
-   * status first.
+   * Delete a local branch, re-checking the current branch against status first.
    *
    * The guard already refused a request naming the current branch, but it read a
-   * snapshot taken when the request arrived. A checkout in the meantime would
-   * make that snapshot stale, and git's own refusal is a message rather than a
-   * rule. This second read is cheap and closes the window.
+   * snapshot taken when the request arrived. This read is the repository cache
+   * rather than a new `git status`, so it costs nothing; it catches a checkout
+   * that already invalidated the cache, not one that lands in the microseconds
+   * after this line. `git branch -d` is the backstop for that last window and
+   * refuses a checked-out branch on its own.
    */
   private async deleteBranch(repo: RepositoryService, branch: string): Promise<void> {
     const status = await repo.status();
