@@ -47,6 +47,20 @@ test('a disconnected client is AUTH_ERROR and offers only cancel', () => {
   assert.equal(verdict.message, hostText('en').github.notConnected);
 });
 
+test('an untrusted base is reported even when the host calls it disconnected', () => {
+  // `githubAuth` reports an untrusted base as `connected: false`, because the
+  // token is withheld. Telling that user to connect would be advice that can
+  // never work, so trust is checked first.
+  const verdict = evaluateGitHubAction(
+    { action: 'create-issue' },
+    { connected: false, scopes: [], tokenAllowed: false, circuitOpen: false },
+  );
+  assert.equal(verdict.allow, false);
+  if (verdict.allow) return;
+  assert.equal(verdict.code, 'FORBIDDEN');
+  assert.equal(verdict.message, hostText('en').github.tokenNotTrusted);
+});
+
 test('an untrusted API base is FORBIDDEN before any scope or breaker check', () => {
   const verdict = evaluateGitHubAction(
     { action: 'create-issue' },

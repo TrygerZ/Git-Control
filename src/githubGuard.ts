@@ -73,13 +73,17 @@ export function evaluateGitHubAction(
 ): GitHubGuardVerdict {
   const text = hostText(lang).github;
 
-  // Order matters: connection, token trust, reachability, permission, then
+  // Order matters: token trust, connection, reachability, permission, then
   // confirmation, so the user always sees the most fundamental problem first.
-  if (!ctx.connected) {
-    return { allow: false, code: 'AUTH_ERROR', message: text.notConnected, remedies: ['cancel'] };
-  }
+  //
+  // Trust precedes connection on purpose. `githubAuth` reports an untrusted base
+  // as disconnected, so checking connection first would answer "connect GitHub"
+  // to a user who is already connected and for whom connecting can never help.
   if (!ctx.tokenAllowed) {
     return { allow: false, code: 'FORBIDDEN', message: text.tokenNotTrusted, remedies: ['cancel'] };
+  }
+  if (!ctx.connected) {
+    return { allow: false, code: 'AUTH_ERROR', message: text.notConnected, remedies: ['cancel'] };
   }
   if (ctx.circuitOpen) {
     return { allow: false, code: 'UNAVAILABLE', message: text.writeUnavailable, remedies: ['cancel'] };
