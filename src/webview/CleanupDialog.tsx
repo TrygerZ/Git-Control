@@ -195,7 +195,6 @@ export function CleanupDialog({ candidates, remote, onDelete, onCancel }: Cleanu
             ref={cancelRef}
             type="button"
             className="gc-button gc-button--primary gc-button--lg"
-            title={strings.guard.cancelButton}
             onClick={onCancel}
           >
             {strings.guard.cancelButton}
@@ -204,6 +203,9 @@ export function CleanupDialog({ candidates, remote, onDelete, onCancel }: Cleanu
             type="button"
             className="gc-button gc-button--danger"
             disabled={chosen.length === 0}
+            // The last stop before an irreversible command: name what it runs, as
+            // the guard dialog's confirm button does.
+            title={commands.length > 0 ? commands.join('\n') : undefined}
             onClick={() => onDelete(chosen, withRemote ? remote : null)}
           >
             <Icon name="trash" />
