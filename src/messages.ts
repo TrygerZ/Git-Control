@@ -263,7 +263,11 @@ export type GitActionRequest =
   | { action: 'merge-abort' }
   | { action: 'cherry-pick'; hash: string }
   | { action: 'cherry-pick-continue' }
-  | { action: 'cherry-pick-abort' };
+  | { action: 'cherry-pick-abort' }
+  /** Safe local delete (`git branch -d`); never a forced delete. */
+  | { action: 'branch-delete'; branch: string }
+  /** `git push <remote> --delete <branch>`; needs the level 2 acknowledgement. */
+  | { action: 'branch-delete-remote'; remote: string; branch: string };
 
 // ---------------------------------------------------------------- payloads
 

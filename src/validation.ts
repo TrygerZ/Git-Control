@@ -79,6 +79,20 @@ export function validateBranchName(
 }
 
 /**
+ * Defends against: deleting the branch the user is standing on, and against every
+ * ref-name shape `git branch -d` would misread.
+ *
+ * The current-branch half lives here rather than in the guard because two layers
+ * ask the same question: the guard before the request is accepted, and the bridge
+ * again against freshly read status. A disagreement between them would be a path
+ * that deletes the checked-out branch.
+ */
+export function validateDeletableBranch(value: unknown, current: string | null): boolean {
+  if (!validateBranchName(value)) return false;
+  return value !== current;
+}
+
+/**
  * Defends against: a remote name that git would read as an option or a path,
  * e.g. `--upload-pack=...` smuggled through a push/fetch target.
  */

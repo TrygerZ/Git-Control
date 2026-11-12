@@ -151,6 +151,8 @@ const id: Catalog = {
     menuCheckout: 'Checkout',
     menuMerge: 'Merge ke branch saat ini...',
     menuCopyName: 'Salin nama branch',
+    menuDelete: 'Hapus branch...',
+    menuDeleteHint: 'hanya yang sudah digabung',
     copied: 'Nama branch disalin',
     copiedPath: 'Path worktree disalin',
     newBranch: 'Branch baru',
@@ -356,6 +358,10 @@ const id: Catalog = {
       cherryPick: (hash: string) => `Terapkan perubahan dari ${hash} ke branch aktif. Konflik mungkin muncul.`,
       cherryPickContinue: 'Melanjutkan cherry-pick setelah semua konflik selesai.',
       cherryPickAbort: 'Membatalkan cherry-pick dan kembali ke keadaan sebelum cherry-pick.',
+      branchDelete: (branch: string) =>
+        `Hapus branch ${branch}. Git menolak bila branch punya commit yang belum digabung.`,
+      branchDeleteRemote: (branch: string, remote: string) =>
+        `Hapus branch ${branch} di ${remote}. Semua orang kehilangannya, dan tidak ada undo.`,
       defaultAction: 'Menjalankan perintah git.',
     },
 
@@ -382,6 +388,8 @@ const id: Catalog = {
       cherryPick: (hash: string) => `Cherry-pick ${hash}`,
       cherryPickContinue: 'Lanjutkan cherry-pick',
       cherryPickAbort: 'Batalkan cherry-pick',
+      branchDelete: (branch: string) => `Hapus branch ${branch}`,
+      branchDeleteRemote: (branch: string) => `Hapus ${branch} di remote`,
       defaultAction: 'Tindakan git',
     },
 
@@ -668,6 +676,33 @@ const id: Catalog = {
     riskyAria: (label: string, hint: string) => `${label}: berisiko. ${hint}`.trim(),
   },
 
+  // Branch cleanup (P20)
+  cleanup: {
+    title: 'Bersihkan branch yang sudah digabung',
+    intro:
+      'Hanya branch yang sudah digabung yang ditampilkan. Git tetap bisa menolak penghapusan, dan penolakannya ditampilkan. Pekerjaan yang belum digabung tidak pernah dihapus.',
+    /** `age` is already relative (`relativeTime`), so no suffix is appended here. */
+    mergedAgo: (age: string) => `digabung ${age}`,
+    upstreamGone: 'upstream hilang',
+    alsoRemote: (remote: string) => `Hapus juga branch remote di ${remote}`,
+    remoteNeedsSecond: 'Penghapusan remote perlu persetujuan di bawah ini.',
+    deleteN: (n: string) => `Hapus ${n} branch`,
+    empty: 'Tidak ada yang perlu dibersihkan.',
+    doneToast: (n: string) => `${n} branch dihapus.`,
+    partial: (ok: string, fail: string) => `Terhapus ${ok}, dilewati ${fail}. Lihat log.`,
+    openButton: 'Bersihkan',
+    openAria: (n: string) => `Bersihkan ${n} branch yang sudah digabung`,
+    banner: (n: string) => `${n} branch sudah digabung ke branch dasar`,
+    bannerHint: 'Hapus aman memakai git branch -d. Pekerjaan yang belum digabung tidak pernah dihapus.',
+    selectAll: 'Pilih semua',
+    clearAll: 'Kosongkan',
+    rowAria: (name: string, state: string) => `Hapus ${name}, ${state}`,
+    commandLabel: 'Perintah yang akan dijalankan',
+    deleteFailed: 'Tidak dihapus',
+    remoteFailed: 'Hapus di remote gagal',
+    remoteFailedToast: (n: string) => `${n} terhapus lokal, tetapi salinan di remote masih ada.`,
+  },
+
   // Merge confirmation dialog
   mergeDialog: {
     title: 'Gabungkan branch',
@@ -690,11 +725,14 @@ const id: Catalog = {
     stageCount: (current: number, total: number) => `Tahap ${current} dari ${total}`,
     stage2Warning:
       'Konfirmasi kedua diperlukan. Perubahan yang dibuang tidak dapat dikembalikan, termasuk oleh Git sendiri.',
+    stage2WarningBranch: 'Perlu konfirmasi kedua. Branch dihapus dari remote untuk semua orang, dan tidak ada undo.',
     gitCommandLabel: 'Perintah git yang akan dijalankan',
     gitCommandNote: 'Belum dijalankan. Hanya untuk dibaca.',
     repoMessageLabel: 'Pesan dari repository Anda',
     ackCheckboxLabel: 'Saya mengerti perubahan ini hilang permanen.',
     ackCheckboxHint: 'Perubahan yang belum di-commit hilang permanen; tidak ada undo.',
+    ackBranchRemoteLabel: 'Saya mengerti branch ini dihapus dari remote.',
+    ackBranchRemoteHint: 'Siapa pun yang melacaknya kehilangan upstream. Commit-nya tetap ada di mesin ini.',
     continueButton: 'Lanjutkan',
     cancelButton: 'Batal',
     stage1Title: 'Tahap konfirmasi terakhir. Belum dijalankan.',

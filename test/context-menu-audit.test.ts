@@ -69,6 +69,8 @@ const VALID_ACTIONS: Record<GitActionRequest['action'], GitActionRequest> = {
   'cherry-pick': { action: 'cherry-pick', hash: node().hash },
   'cherry-pick-continue': { action: 'cherry-pick-continue' },
   'cherry-pick-abort': { action: 'cherry-pick-abort' },
+  'branch-delete': { action: 'branch-delete', branch: 'feature' },
+  'branch-delete-remote': { action: 'branch-delete-remote', remote: 'origin', branch: 'feature' },
 };
 
 const INVALID_ACTIONS: Record<GitActionRequest['action'], GitActionRequest> = {
@@ -95,6 +97,8 @@ const INVALID_ACTIONS: Record<GitActionRequest['action'], GitActionRequest> = {
   'cherry-pick': { action: 'cherry-pick', hash: 'bad' },
   'cherry-pick-continue': { action: 'cherry-pick-continue' },
   'cherry-pick-abort': { action: 'cherry-pick-abort' },
+  'branch-delete': { action: 'branch-delete', branch: '-bad' },
+  'branch-delete-remote': { action: 'branch-delete-remote', remote: '-bad', branch: 'main' },
 };
 
 test('validateAction accepts every union member and rejects every invalid table row', async (t) => {

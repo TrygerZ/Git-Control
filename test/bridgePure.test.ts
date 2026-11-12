@@ -255,3 +255,49 @@ test('validateAction accepts the suggested branch names and rejects option-like 
     /failed:name/,
   );
 });
+
+/**
+ * Both delete actions reach an argv array, so both are validated at the bridge
+ * boundary exactly like every other action: a leading `-` is an option to git,
+ * and a qualified ref is not a branch.
+ */
+test('validateAction covers both branch delete actions', () => {
+  const fail = (detail: string): never => {
+    throw new Error(`failed:${detail}`);
+  };
+
+  assert.doesNotThrow(() =>
+    validateAction({ action: 'branch-delete', branch: 'feat/a', idempotencyKey: 'bd-1' }, fail),
+  );
+  assert.doesNotThrow(() =>
+    validateAction(
+      { action: 'branch-delete-remote', remote: 'origin', branch: 'feat/a', idempotencyKey: 'bdr-1' },
+      fail,
+    ),
+  );
+
+  assert.throws(
+    () => validateAction({ action: 'branch-delete', branch: '-D', idempotencyKey: 'bd-2' }, fail),
+    /failed:branch/,
+  );
+  assert.throws(
+    () => validateAction({ action: 'branch-delete', branch: 'refs/heads/x', idempotencyKey: 'bd-3' }, fail),
+    /failed:branch/,
+  );
+  assert.throws(
+    () =>
+      validateAction(
+        { action: 'branch-delete-remote', remote: '--upload-pack=calc', branch: 'feat/a', idempotencyKey: 'bdr-2' },
+        fail,
+      ),
+    /failed:remote/,
+  );
+  assert.throws(
+    () =>
+      validateAction(
+        { action: 'branch-delete-remote', remote: 'origin', branch: '-x', idempotencyKey: 'bdr-3' },
+        fail,
+      ),
+    /failed:branch/,
+  );
+});

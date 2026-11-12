@@ -3510,3 +3510,190 @@ test('actions/pickRepository takes no parameters and degrades without the host m
   assert.equal(missing.ok, true);
   if (missing.ok) assert.deepEqual(missing.data, { opened: false });
 });
+
+// ---------------------------------------------------- branch delete (P20)
+
+/** A repo whose two merged branches exist locally and on `origin`. */
+async function cleanupRepo(): Promise<RepositoryService> {
+  const dir = await makeFixture('branches-remote');
+  return new RepositoryService({ folderPath: dir, gitPath: 'git', store: new MemoryStore() });
+}
+
+test('branch-delete needs confirmation, then removes the branch', async (t) => {
+  const repo = await cleanupRepo();
+  t.after(() => cleanup(repo.folderPath));
+  const h = harness(repo);
+  t.after(() => h.bridge.dispose());
+  const token = (await repo.status()).statusToken;
+
+  const unconfirmed = await h.webview.send(
+    req('actions/git', { action: 'branch-delete', branch: 'feat/a', statusToken: token, idempotencyKey: 'bd-1' }),
+  );
+  assert.equal(unconfirmed.ok, false);
+  if (unconfirmed.ok) return;
+  assert.equal(unconfirmed.error.status, 428);
+  assert.equal(unconfirmed.error.code, 'CONFIRMATION_REQUIRED');
+  assert.equal(unconfirmed.error.confirmationLevel, 1);
+  assert.ok((await repo.git.refs()).some((r) => r.refName === 'refs/heads/feat/a'), 'nothing ran');
+
+  const confirmed = await h.webview.send(
+    req('actions/git', {
+      action: 'branch-delete',
+      branch: 'feat/a',
+      statusToken: token,
+      idempotencyKey: 'bd-2',
+      confirm: true,
+    }),
+  );
+  assert.equal(confirmed.ok, true, JSON.stringify(confirmed));
+  assert.ok(!(await repo.git.refs()).some((r) => r.refName === 'refs/heads/feat/a'));
+});
+
+test('branch-delete refuses the current branch even when the webview asks directly', async (t) => {
+  const repo = await cleanupRepo();
+  t.after(() => cleanup(repo.folderPath));
+  const h = harness(repo);
+  t.after(() => h.bridge.dispose());
+  const token = (await repo.status()).statusToken;
+
+  const response = await h.webview.send(
+    req('actions/git', {
+      action: 'branch-delete',
+      branch: 'main',
+      statusToken: token,
+      idempotencyKey: 'bd-current',
+      confirm: true,
+      forceAcknowledgement: true,
+    }),
+  );
+  assert.equal(response.ok, false);
+  if (response.ok) return;
+  assert.equal(response.error.code, 'VALIDATION_ERROR');
+  assert.deepEqual(response.error.remedies, ['cancel']);
+  assert.ok((await repo.git.refs()).some((r) => r.refName === 'refs/heads/main'));
+});
+
+test('branch-delete of an unmerged branch returns 409 and leaves the branch', async (t) => {
+  const repo = await cleanupRepo();
+  t.after(() => cleanup(repo.folderPath));
+  const h = harness(repo);
+  t.after(() => h.bridge.dispose());
+  const token = (await repo.status()).statusToken;
+
+  const response = await h.webview.send(
+    req('actions/git', {
+      action: 'branch-delete',
+      branch: 'spike/c',
+      statusToken: token,
+      idempotencyKey: 'bd-unmerged',
+      confirm: true,
+    }),
+  );
+  assert.equal(response.ok, false);
+  if (response.ok) return;
+  assert.equal(response.error.status, 409);
+  assert.equal(response.error.code, 'CONFLICT');
+  assert.ok((await repo.git.refs()).some((r) => r.refName === 'refs/heads/spike/c'));
+});
+
+test('branch-delete-remote needs level 2 and removes the ref only with both flags', async (t) => {
+  const repo = await cleanupRepo();
+  t.after(() => cleanup(repo.folderPath));
+  const h = harness(repo);
+  t.after(() => h.bridge.dispose());
+  const token = (await repo.status()).statusToken;
+
+  const level1 = await h.webview.send(
+    req('actions/git', {
+      action: 'branch-delete-remote',
+      remote: 'origin',
+      branch: 'feat/a',
+      statusToken: token,
+      idempotencyKey: 'bdr-1',
+      confirm: true,
+    }),
+  );
+  assert.equal(level1.ok, false);
+  if (level1.ok) return;
+  assert.equal(level1.error.status, 428, 'confirm alone is not enough at level 2');
+  assert.equal(level1.error.confirmationLevel, 2);
+  assert.equal(level1.error.risk, 'high');
+
+  const done = await h.webview.send(
+    req('actions/git', {
+      action: 'branch-delete-remote',
+      remote: 'origin',
+      branch: 'feat/a',
+      statusToken: token,
+      idempotencyKey: 'bdr-2',
+      confirm: true,
+      forceAcknowledgement: true,
+    }),
+  );
+  assert.equal(done.ok, true, JSON.stringify(done));
+
+  const remote = await repo.git.run(['ls-remote', '--heads', 'origin']);
+  assert.doesNotMatch(remote.stdout, /refs\/heads\/feat\/a$/m);
+  // The local branch survives: a remote delete removes one ref, not two.
+  assert.ok((await repo.git.refs()).some((r) => r.refName === 'refs/heads/feat/a'));
+
+  // Criterion 6: after a fetch with prune the tracking ref is gone too, which is
+  // what the Remote sub-tab reads.
+  await repo.git.fetch({ remote: 'origin', prune: true });
+  // `GitRunner.refs()` returns `ParsedRef`, which carries no `kind`; filter on the
+  // ref name, or the filter silently matches nothing and the assertion passes
+  // for the wrong reason.
+  const remoteRefs = (await repo.git.refs())
+    .map((r) => r.refName)
+    .filter((name) => name.startsWith('refs/remotes/'));
+  assert.ok(!remoteRefs.includes('refs/remotes/origin/feat/a'));
+  assert.ok(remoteRefs.includes('refs/remotes/origin/fix/b'), 'the sibling stays');
+});
+
+test('branch-delete-remote refuses a remote the repository does not have', async (t) => {
+  const repo = await cleanupRepo();
+  t.after(() => cleanup(repo.folderPath));
+  const h = harness(repo);
+  t.after(() => h.bridge.dispose());
+  const token = (await repo.status()).statusToken;
+
+  const response = await h.webview.send(
+    req('actions/git', {
+      action: 'branch-delete-remote',
+      remote: 'upstream',
+      branch: 'feat/a',
+      statusToken: token,
+      idempotencyKey: 'bdr-missing-remote',
+      confirm: true,
+      forceAcknowledgement: true,
+    }),
+  );
+  assert.equal(response.ok, false);
+  if (response.ok) return;
+  assert.equal(response.error.status, 409);
+  assert.equal(response.error.code, 'CONFLICT');
+});
+
+test('replaying a branch-delete with the same idempotency key does not run git twice', async (t) => {
+  const repo = await cleanupRepo();
+  t.after(() => cleanup(repo.folderPath));
+  const h = harness(repo);
+  t.after(() => h.bridge.dispose());
+  const token = (await repo.status()).statusToken;
+  const payload = {
+    action: 'branch-delete' as const,
+    branch: 'feat/a',
+    statusToken: token,
+    idempotencyKey: 'bd-replay',
+    confirm: true,
+  };
+
+  const first = await h.webview.send(req('actions/git', payload));
+  assert.equal(first.ok, true);
+  const second = await h.webview.send(req('actions/git', payload));
+  assert.equal(second.ok, true, 'the stored outcome is replayed, not an error');
+
+  // A second real run would fail with "branch not found"; the replay proves the
+  // second request never reached git.
+  assert.ok(!(await repo.git.refs()).some((r) => r.refName === 'refs/heads/feat/a'));
+});

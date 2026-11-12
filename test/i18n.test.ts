@@ -6,6 +6,7 @@ import ts from 'typescript';
 import { activeLang, setActiveLang, t, type Catalog } from '../src/webview/i18n';
 import { hostCatalogs, hostText } from '../src/hostText';
 import { useSettingsStore } from '../src/webview/store';
+import { relativeTime } from '../src/webview/format';
 
 test('i18n module provides complete catalogs for en and id without em-dash', () => {
   const enCatalog = t('en');
@@ -570,4 +571,45 @@ test('the resolve detail has a ready form for a zero-conflict operation', () => 
   // row must not claim zero files need a decision.
   assert.equal(hostText('en').quickActions.resolveDetailReady, 'This operation can continue now');
   assert.equal(hostText('id').quickActions.resolveDetailReady, 'Operasi ini sudah bisa dilanjutkan');
+});
+
+/**
+ * Frame 61 prints `merged 5h ago`. `relativeTime` already ends in the suffix, so
+ * the cleanup template must not add a second one. A static read of the catalog
+ * cannot see this: it takes the real formatter's output to reproduce the bug.
+ */
+test('cleanup age strings do not repeat the relative-time suffix', () => {
+  const iso = new Date(Date.now() - 3 * 60 * 60 * 1000).toISOString();
+  for (const lang of ['en', 'id'] as const) {
+    const age = relativeTime(iso, Date.now(), lang);
+    const line = t(lang).cleanup.mergedAgo(age);
+    assert.equal(line, lang === 'en' ? `merged ${age}` : `digabung ${age}`);
+    assert.doesNotMatch(line, /ago ago|lalu lalu/, line);
+  }
+});
+
+/**
+ * The guard dialog shows a warning on stage 2. It has to describe the loss that
+ * is about to happen: a remote branch delete touches nothing locally, so the
+ * discard-file sentence is false there. There is no DOM harness, so this pins the
+ * pick and the two strings, and asserts they are not the same sentence.
+ */
+test('the level 2 warning matches the action it is warning about', () => {
+  const src = fs.readFileSync(
+    path.join(__dirname, '..', '..', 'src', 'webview', 'GuardDialog.tsx'),
+    'utf8',
+  );
+  assert.match(
+    src,
+    /request\.action === 'branch-delete-remote'[\s\S]{0,120}stage2WarningBranch[\s\S]{0,60}stage2Warning/,
+    'the remote delete picks its own warning',
+  );
+  for (const lang of ['en', 'id'] as const) {
+    const guard = t(lang).guard;
+    assert.ok(guard.stage2Warning.length > 0);
+    assert.ok(guard.stage2WarningBranch.length > 0);
+    assert.notEqual(guard.stage2WarningBranch, guard.stage2Warning, lang);
+    assert.doesNotMatch(guard.stage2WarningBranch, /–|—/, lang);
+  }
+  assert.notEqual(t('en').guard.stage2WarningBranch, t('id').guard.stage2WarningBranch);
 });

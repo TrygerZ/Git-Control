@@ -685,6 +685,42 @@ export class GitRunner {
     await this.runExclusive(() => this.run(['switch', '--', sanitizeRefArg(name)]));
   }
 
+  /**
+   * Delete a local branch with the SAFE delete only.
+   *
+   * `-d` makes git run its own merge check, which is a different question from
+   * the `merged` flag the view shows (that one is computed against the base
+   * branch, D-21). When the two disagree git refuses, and the refusal is the
+   * correct outcome: the error reaches the caller with git's own sentence,
+   * naming the branch, and the ref is left where it was. `-D` is deliberately
+   * absent from this file, so no caller can turn a refusal into a deletion.
+   */
+  async deleteBranch(name: string): Promise<void> {
+    this.assertBranch(name);
+    await this.runExclusive(() => this.run(['branch', '-d', '--', sanitizeRefArg(name)]));
+  }
+
+  /**
+   * Delete a branch on a remote: `push <remote> --delete <branch>`.
+   *
+   * A separate method rather than a `push()` refspec, so `push()` keeps its `+`
+   * rejection and its `validateBranchName(source)` check unchanged. A delete
+   * refspec (`:branch`) has an empty source and fails that check by design, and
+   * relaxing it to accommodate deletion would open the exact path the force-push
+   * invariant closes.
+   */
+  async deleteRemoteBranch(remote: string, branch: string): Promise<void> {
+    if (!validateRemoteName(remote)) {
+      throw new GitError({ code: 'VALIDATION_ERROR', message: `Invalid remote name: ${remote}` });
+    }
+    this.assertBranch(branch);
+    await this.runExclusive(() =>
+      this.run(['push', '--delete', sanitizeRefArg(remote), sanitizeRefArg(branch)], {
+        timeoutMs: 120_000,
+      }),
+    );
+  }
+
   async checkoutDetached(hash: string): Promise<void> {
     this.assertHash(hash);
     await this.runExclusive(() => this.run(['checkout', '--detach', sanitizeRefArg(hash)]));

@@ -717,7 +717,12 @@ export interface OperationState_ {
   pendingGuard: PendingGuard | null;
   toasts: Toast[];
   lastError: ErrorBody | null;
-  runAction(request: GitActionRequest): Promise<boolean>;
+  /**
+   * Run one action. `extra` carries the confirmation flags: a surface that has
+   * already asked the user (the cleanup dialog) passes `confirm`, and a level 2
+   * action also needs `forceAcknowledgement`.
+   */
+  runAction(request: GitActionRequest, extra?: Partial<MutationMeta>): Promise<boolean>;
   confirmGuard(extra: Partial<MutationMeta>): Promise<void>;
   dismissGuard(): void;
   pushToast(toast: Omit<Toast, 'id'>): void;
@@ -746,7 +751,7 @@ export const useOperationStore = create<OperationState_>((set, get) => ({
    * than captured once: the user reads the dialog, thinks, and clicks Confirm, and
    * the request that lands must be judged against the tree as it is then.
    */
-  async runAction(request) {
+  async runAction(request, extra) {
     set({ state: 'loading', lastError: null });
     const handle = mutation('actions/git', request);
     const send = async (extra: Partial<MutationMeta>): Promise<boolean> => {
@@ -785,7 +790,7 @@ export const useOperationStore = create<OperationState_>((set, get) => ({
       return false;
     };
     try {
-      return await send({});
+      return await send(extra ?? {});
     } catch (err) {
       return handleFailure(err);
     }
@@ -1886,6 +1891,29 @@ export const useActionsStore = create<ActionsState>((set, get) => {
   };
 });
 
+/**
+ * Which remote to delete `branch` from, or null when nothing should be deleted.
+ *
+ * `chosen` is the remote the user ticked. `null` means they did not tick the
+ * checkbox, so the answer is null: falling back to "whichever remote has it"
+ * would delete on the remote they explicitly declined. A chosen remote that does
+ * not carry the branch also answers null, because a branch with no tracking ref
+ * has nothing to delete and asking would produce a conflict for a ref the user
+ * never expected.
+ *
+ * The ref name is compared in full, not by suffix: a local branch named `a` must
+ * not match `origin/feat/a`.
+ */
+export function remoteForBranch(
+  refs: readonly BranchRef[],
+  chosen: string | null,
+  branch: string,
+): string | null {
+  if (chosen === null) return null;
+  const wanted = `refs/remotes/${chosen}/${branch}`;
+  return refs.some((ref) => ref.refName === wanted) ? chosen : null;
+}
+
 /** Copy of `set` without `value`. Sets are compared by identity, so never mutate one. */
 function without<T>(set: ReadonlySet<T>, value: T): Set<T> {
   const next = new Set(set);
@@ -1908,6 +1936,36 @@ export interface BranchesState {
   setSort(sort: BranchSort): void;
   setFilter(text: string): void;
   toggleSection(key: BranchesSectionKey): void;
+  /**
+   * Delete each named branch in turn, then optionally the same branches on
+   * `remote`. Serial by design: each delete is its own guarded mutation with its
+   * own git refusal, and running them together would turn one failure into an
+   * unknown state for the rest.
+   *
+   * `acknowledged` is the level 2 answer the cleanup dialog already collected for
+   * the batch. Without it every remote delete would park a guard dialog, and a
+   * parked request cannot resume a batch: the dialog replays one request, so the
+   * remaining branches would be silently abandoned.
+   */
+  deleteBranches(
+    names: readonly string[],
+    remote: string | null,
+    acknowledged: boolean,
+  ): Promise<CleanupResult>;
+}
+
+/** Outcome of a cleanup run: how many were removed and which were not. */
+export interface CleanupResult {
+  /** Branches removed locally. */
+  ok: number;
+  /** Branch names git or the guard refused, in the order they were attempted. */
+  failed: string[];
+  /**
+   * Branches whose LOCAL delete succeeded but whose remote delete did not. They
+   * are gone here and still on the server, which is a different fact from a
+   * skipped branch and needs its own sentence.
+   */
+  remoteFailed: string[];
 }
 
 let inFlightBranchesLoad: Promise<void> | null = null;
@@ -1964,6 +2022,84 @@ export const useBranchesStore = create<BranchesState>((set, get) => {
       }
       set({ collapsed: next });
       saveState({ collapsedBranchSections: [...next] });
+    },
+    async deleteBranches(names, remote, acknowledged) {
+      const ops = useOperationStore.getState();
+      const result: CleanupResult = { ok: 0, failed: [], remoteFailed: [] };
+      for (const [index, name] of names.entries()) {
+        // `runAction` returns false for BOTH a guard rejection and a git failure.
+        // Either way the branch is still there, and the guard dialog or the toast
+        // already told the user why, so this only tallies.
+        // The dialog that produced this list IS the level 1 confirmation, so each
+        // request carries it. Without the flag every branch would park in the
+        // guard dialog and the tally would report a run that never happened.
+        const removed = await ops.runAction({ action: 'branch-delete', branch: name }, { confirm: true });
+        if (!removed) {
+          result.failed.push(name);
+          /*
+           * A parked verdict means the host refused and the guard dialog is
+           * showing why. The run stops there: the dialog replays one request and
+           * cannot resume a batch, so continuing would either stack a second
+           * verdict over the first or leave the rest silently undone. Everything
+           * not removed is reported.
+           */
+          if (useOperationStore.getState().pendingGuard !== null) {
+            result.failed.push(...names.slice(index + 1));
+            break;
+          }
+          continue;
+        }
+        /*
+         * `remote` is the checkbox the user ticked, and null means they did not.
+         * Resolving it against the tracking refs answers null for a branch that
+         * is not on that remote, so the delete is skipped rather than sent as one
+         * the host would refuse.
+         */
+        const targetRemote = remoteForBranch(get().refs, remote, name);
+        if (targetRemote === null && remote !== null) {
+          /*
+           * The user asked for a remote delete but this branch is not on that
+           * remote. It may still be on another one, and either way the local
+           * branch is gone while a remote copy is not, so it belongs with the
+           * remote failures rather than in the success count.
+           */
+          result.ok += 1;
+          result.remoteFailed.push(name);
+          continue;
+        }
+        if (targetRemote !== null) {
+          /*
+           * `confirm` always, and `forceAcknowledgement` only when the dialog
+           * collected it. The acknowledgement is asked once for the batch (frame
+           * 62) because a parked verdict cannot resume a run: the guard dialog
+           * replays a single request, so a per-branch prompt would abandon every
+           * branch after the first. The host still enforces both flags, so a
+           * webview that skipped the checkbox is refused.
+           */
+          const remoteRemoved = await ops.runAction(
+            { action: 'branch-delete-remote', remote: targetRemote, branch: name },
+            acknowledged ? { confirm: true, forceAcknowledgement: true } : { confirm: true },
+          );
+          if (!remoteRemoved) {
+            result.ok += 1;
+            /*
+             * A verdict parks a request the dialog cannot answer for the rest of
+             * the batch, so the run stops and reports what is left. A plain
+             * failure (protected branch, hook, dropped connection) leaves the
+             * branch on the server while the local one is gone.
+             */
+            if (useOperationStore.getState().pendingGuard !== null) {
+              result.failed.push(...names.slice(index + 1));
+              break;
+            }
+            result.remoteFailed.push(name);
+            continue;
+          }
+        }
+        result.ok += 1;
+      }
+      if (result.ok > 0) await get().load();
+      return result;
     },
   };
 });

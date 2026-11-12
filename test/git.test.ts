@@ -1025,3 +1025,109 @@ test('countCommits counts only what a publish would send, and 0 without HEAD', a
     'the fixture must keep its published history, or this test proves nothing',
   );
 });
+
+// ------------------------------------------------------ branch delete (P20)
+
+/**
+ * Local deletion goes through `-d` only, so git's own merge check decides. The
+ * branch must survive a refusal: a delete that reports failure but removes the
+ * ref anyway is the worst possible outcome.
+ */
+test('deleteBranch removes a merged branch and leaves an unmerged one alone', async (t) => {
+  const dir = await makeFixture('branches-remote');
+  t.after(() => cleanup(dir));
+  const git = new GitRunner({ gitPath: 'git', cwd: dir });
+
+  await git.deleteBranch('feat/a');
+  const afterDelete = new Set((await git.refs()).map((r) => r.refName));
+  assert.ok(!afterDelete.has('refs/heads/feat/a'), 'merged branch is gone');
+  assert.ok(afterDelete.has('refs/heads/fix/b'), 'the other merged branch is untouched');
+
+  // `spike/c` has a commit main does not have, so `-d` refuses and git's message
+  // reaches the caller. It must not be paraphrased away: the sentence names the
+  // branch, and it is the only explanation the user gets.
+  await assert.rejects(() => git.deleteBranch('spike/c'), /not fully merged/);
+  assert.ok(
+    (await git.refs()).some((r) => r.refName === 'refs/heads/spike/c'),
+    'a refused delete leaves the branch exactly where it was',
+  );
+});
+
+test('deleteBranch rejects invalid names before spawning git', async (t) => {
+  const dir = await makeFixture('branches-remote');
+  t.after(() => cleanup(dir));
+  const lines: string[] = [];
+  const git = new GitRunner({ gitPath: 'git', cwd: dir, logger: (line) => lines.push(line) });
+
+  for (const name of ['-x', 'refs/heads/feat/a', 'a..b', '']) {
+    await assert.rejects(() => git.deleteBranch(name), /Invalid branch name/, name);
+  }
+  assert.equal(lines.length, 0, 'nothing reached git');
+});
+
+/**
+ * The safe-delete rule is a property of the code, not of a caller remembering to
+ * pass a flag: `-D` appears nowhere in the runner. A grep over the source is the
+ * only way to prove the absence of a code path that does not exist.
+ *
+ * Comments are stripped first: the file header states the force-push rule in
+ * prose, and a scan that counted prose would fail for stating the invariant.
+ * `git rm --cached --force` is legitimate and is not a push, so the push check
+ * looks at the argv a `push` call actually builds.
+ */
+test('the git runner never emits a force branch delete', async () => {
+  const source = (await fs.readFile(path.join(__dirname, '..', '..', 'src', 'git.ts'), 'utf8'))
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+    .replace(/^\s*\/\/.*$/gm, '');
+  assert.doesNotMatch(source, /'-D'|"-D"/, 'no forced branch delete exists');
+  assert.doesNotMatch(source, /--force-with-lease/, 'no force push exists');
+  for (const line of source.split('\n')) {
+    if (!/\bpush\b/.test(line)) continue;
+    assert.doesNotMatch(line, /--force/, `push argv carries no force: ${line.trim()}`);
+  }
+});
+
+/**
+ * Remote deletion is a separate method, so `push()` keeps its `+` rejection and
+ * its `validateBranchName(source)` check untouched.
+ */
+test('deleteRemoteBranch removes the ref on a bare origin and prunes the tracking ref', async (t) => {
+  const dir = await makeFixture('branches-remote');
+  t.after(() => cleanup(dir));
+  const git = new GitRunner({ gitPath: 'git', cwd: dir });
+
+  await git.deleteRemoteBranch('origin', 'feat/a');
+
+  const remote = await git.run(['ls-remote', '--heads', 'origin']);
+  assert.doesNotMatch(remote.stdout, /refs\/heads\/feat\/a$/m);
+  assert.match(remote.stdout, /refs\/heads\/fix\/b$/m, 'the sibling remote branch stays');
+
+  const refs = new Set((await git.refs()).map((r) => r.refName));
+  assert.ok(!refs.has('refs/remotes/origin/feat/a'), 'the tracking ref went with it');
+  assert.ok(refs.has('refs/heads/feat/a'), 'the local branch is not touched by a remote delete');
+});
+
+test('deleteRemoteBranch validates both values before spawning git', async (t) => {
+  const dir = await makeFixture('branches-remote');
+  t.after(() => cleanup(dir));
+  const lines: string[] = [];
+  const git = new GitRunner({ gitPath: 'git', cwd: dir, logger: (line) => lines.push(line) });
+
+  await assert.rejects(() => git.deleteRemoteBranch('--upload-pack=calc', 'feat/a'), /Invalid remote name/);
+  await assert.rejects(() => git.deleteRemoteBranch('origin', '-x'), /Invalid branch name/);
+  await assert.rejects(() => git.deleteRemoteBranch('origin', 'refs/heads/feat/a'), /Invalid branch name/);
+  assert.equal(lines.length, 0, 'nothing reached git');
+});
+
+/**
+ * Criterion 7: adding a delete method must not weaken the force-push guard that
+ * already exists. These are the exact refusals `push()` had before this phase.
+ */
+test('push still rejects force and delete refspecs after branch delete lands', async (t) => {
+  const dir = await makeFixture('branches-remote');
+  t.after(() => cleanup(dir));
+  const git = new GitRunner({ gitPath: 'git', cwd: dir });
+
+  await assert.rejects(() => git.push({ remote: 'origin', refspec: '+main:main' }), /Force push is not supported/);
+  await assert.rejects(() => git.push({ remote: 'origin', refspec: ':main' }), /Invalid refspec/);
+});
