@@ -58,6 +58,19 @@ test('the remote derivation matches the sidebar rule', () => {
   assert.match(src, /firstRemoteName\(/, 'then the first remote-tracking ref');
 });
 
+test('no group renders until the first status arrives', () => {
+  // D-P18b-2: hidden while `status` is null. The graph refs fallback below must
+  // not resurrect the group during the first load, or a Fetch button would draw
+  // beside a breadcrumb bar that has not decided what repository it is showing.
+  const src = read(COMPONENT);
+  const body = src.slice(src.indexOf('export function ExplorerSyncActions'));
+  const guard = body.indexOf('status === null');
+  const derive = body.indexOf('deriveSyncActions(');
+  assert.ok(guard > 0, 'the status guard exists');
+  assert.ok(guard < derive, 'and runs before the model is derived');
+  assert.match(body.slice(guard, guard + 200), /return null/, 'and it renders nothing');
+});
+
 test('the CSS sizes the group from tokens and collapses it at narrow width', () => {
   const css = read('src/webview/styles.css');
   const group = /\.gc-explorer__sync\s*\{([^}]*)\}/.exec(css)?.[1] ?? '';

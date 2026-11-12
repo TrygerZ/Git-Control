@@ -29,6 +29,11 @@ export function ExplorerSyncActions(): JSX.Element | null {
   const changesBusy = useChangesStore((st) => st.busy);
   const busy = opBusy || changesBusy;
 
+  // D-P18b-2: the graph can arrive before the first status, and a group built
+  // from half the state would draw a Publish button for a branch it does not
+  // know yet. Nothing renders until the payload the rules read exists.
+  if (status === null) return null;
+
   // Same rule as the sidebar footer: upstream prefix first, else the first
   // remote-tracking ref, else null (and then no group renders).
   const remote =
