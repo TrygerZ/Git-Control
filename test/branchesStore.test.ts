@@ -319,3 +319,27 @@ test('deleteBranches confirms each delete and asks for the level 2 acknowledgeme
     useBranchesStore.setState({ load: originalLoad });
   }
 });
+
+/**
+ * Criterion 2: the branch disappears from the view without a manual refresh, so
+ * a run that removed at least one branch must reload the list. A run that
+ * removed nothing must not, or a refused delete would cost a refetch for nothing.
+ */
+test('deleteBranches reloads the list only when something was actually removed', async () => {
+  const original = useOperationStore.getState().runAction;
+  const originalLoad = useBranchesStore.getState().load;
+  let loads = 0;
+  useBranchesStore.setState({ load: async () => { loads += 1; } });
+  try {
+    useOperationStore.setState({ runAction: async () => true });
+    await useBranchesStore.getState().deleteBranches(['feat/a'], null);
+    assert.equal(loads, 1);
+
+    useOperationStore.setState({ runAction: async () => false });
+    await useBranchesStore.getState().deleteBranches(['fix/b'], null);
+    assert.equal(loads, 1, 'a run that removed nothing has nothing to reload');
+  } finally {
+    useOperationStore.setState({ runAction: original });
+    useBranchesStore.setState({ load: originalLoad });
+  }
+});
