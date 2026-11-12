@@ -6,11 +6,14 @@
  * construction (no vscode, no fetch, no clock), so every rule is unit-testable
  * without an editor or a network.
  *
- * The order of checks is deliberate: connection, then token trust, then
+ * The order of checks is deliberate: token trust, then connection, then
  * reachability, then permission, then confirmation. The first blocking rule wins
- * so the user sees the most fundamental problem. `unknown` scope (fine-grained
- * tokens expose none) never blocks: the attempt runs and a 403 becomes the
- * permission message, which is the only honest answer when the token cannot say.
+ * so the user sees the most fundamental problem. Trust precedes connection
+ * because `githubAuth` reports a withheld token as disconnected, so a
+ * connection-first order would tell a user on an untrusted base to connect,
+ * advice that can never work. `unknown` scope (fine-grained tokens expose none)
+ * never blocks: the attempt runs and a 403 becomes the permission message,
+ * which is the only honest answer when the token cannot say.
  */
 import type { GuardVerdict } from './guard';
 import type { Lang } from './messages';

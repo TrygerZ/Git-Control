@@ -906,6 +906,7 @@ export class GitHubClient {
     }
 
     let response: FetchResponseLike;
+    this.logger(redact(`github/write ${options.method} ${options.path}`));
     try {
       response = await this.fetchImpl(`${this.apiUrl}${options.path}`, init);
     } catch (err) {
@@ -922,10 +923,24 @@ export class GitHubClient {
 
     if (response.status >= 200 && response.status < 300) {
       this.recordSuccess();
-      const parsed = parseJson(await response.text());
-      const data = options.map(parsed, response.headers);
+      // The write landed. Drop the stale cache before touching the body: a
+      // connection that dies mid-read must not leave a pre-write list behind.
       this.invalidate(options.invalidate ?? []);
-      return { data, rateLimit: this.rateLimit(false) };
+      try {
+        const parsed = parseJson(await response.text());
+        return { data: options.map(parsed, response.headers), rateLimit: this.rateLimit(false) };
+      } catch (err) {
+        if (err instanceof GitHubError) throw err;
+        // The write already committed on GitHub's side. Reporting a raw error
+        // would map to 500 SERVER_ERROR and invite a duplicate POST, so say
+        // plainly that the outcome is unknown.
+        throw new GitHubError({
+          status: 503,
+          code: 'UNAVAILABLE',
+          message: this.text().unavailable,
+          detail: messageOf(err),
+        });
+      }
     }
 
     // 422 is the one write-only mapping: GitHub understood the request and
@@ -941,17 +956,28 @@ export class GitHubClient {
   /**
    * Drop every cached response whose key starts with one of `prefixes`.
    *
-   * Only the response cache and the matching validators: a write changes what
-   * the list endpoints return, so a surviving ETag would answer the next read
-   * with a 304 and re-serve the pre-write body.
+   * Both the response cache and the validators are swept, and the validator
+   * sweep is independent of the body sweep: the two stores are bounded
+   * separately (`ETAG_MAX_ENTRIES` vs `CACHE_MAX_ENTRIES`) and desync as soon
+   * as one 200 carries no ETag, so a key present in one says nothing about the
+   * other. A surviving validator would answer the next read with a 304 and
+   * re-serve the pre-write body.
+   *
+   * Returns the number of body-cache entries removed.
    */
   invalidate(prefixes: readonly string[]): number {
     let removed = 0;
     for (const key of [...this.cache.keys()]) {
       if (!prefixes.some((prefix) => key.startsWith(prefix))) continue;
       this.cache.delete(key);
-      this.etagStore(key).delete(`${this.tokenFingerprint}|${key}`);
       removed += 1;
+    }
+    const salt = `${this.tokenFingerprint}|`;
+    for (const store of [this.etags, this.authorEtags]) {
+      for (const key of [...store.keys()]) {
+        const cacheKey = key.startsWith(salt) ? key.slice(salt.length) : key;
+        if (prefixes.some((prefix) => cacheKey.startsWith(prefix))) store.delete(key);
+      }
     }
     return removed;
   }

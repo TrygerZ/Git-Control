@@ -1063,18 +1063,14 @@ class Controller implements vscode.Disposable {
   }
 
   /**
-   * Connection state. A stored token that the API rejects is reported as NOT
-   * connected and deleted from SecretStorage, per the PRD: a token that cannot
-   * work is worse than no token, because it makes every later call fail.
-   */
-  /**
    * Everything the GitHub write guard needs, from the values already computed
    * for reads: connection, granted scopes, token trust, and breaker state.
    *
-   * `scopes: null` when the token cannot report them (fine-grained PATs send no
-   * `x-oauth-scopes`), which the guard reads as "unknown" and never blocks on.
-   * An untrusted base reports `tokenAllowed: false` rather than a scope list, so
-   * the guard refuses before the token is anywhere near the request.
+   * `scopes` is passed through unchanged. `null` (fine-grained PATs send no
+   * `x-oauth-scopes`) means unknown and never blocks; `[]` is a known answer
+   * from a classic token that grants nothing, which the guard must refuse.
+   * An untrusted base reports `tokenAllowed: false` rather than a scope list,
+   * so the guard refuses before the token is anywhere near the request.
    */
   private async githubWriteContext(): Promise<GitHubGuardContext> {
     const state = await this.githubAuth();
@@ -1083,12 +1079,17 @@ class Controller implements vscode.Disposable {
     const { client } = await this.githubClient();
     return {
       connected: state.connected,
-      scopes: state.connected && state.scopes.length > 0 ? state.scopes : null,
+      scopes: state.scopes,
       tokenAllowed: base.tokenAllowed,
       circuitOpen: client.circuitOpen,
     };
   }
 
+  /**
+   * Connection state. A stored token that the API rejects is reported as NOT
+   * connected and deleted from SecretStorage, per the PRD: a token that cannot
+   * work is worse than no token, because it makes every later call fail.
+   */
   private async githubAuth(): Promise<GitHubAuthState> {
     const token = await this.context.secrets.get(TOKEN_SECRET_KEY);
     const { client, apiUrl } = await this.githubClient();
@@ -1101,7 +1102,7 @@ class Controller implements vscode.Disposable {
       return {
         connected: false,
         login: null,
-        scopes: [],
+        scopes: null,
         apiUrl,
         scopeWarning: `${extText().extension.githubUntrustedBase} (${apiUrl})`,
       };
@@ -1131,7 +1132,7 @@ class Controller implements vscode.Disposable {
       }
       // Network or rate-limit trouble is not an auth verdict: the token stands.
       this.logger.info('github/auth', err instanceof Error ? err.message : String(err));
-      return { connected: true, login: null, scopes: [], apiUrl };
+      return { connected: true, login: null, scopes: null, apiUrl };
     }
   }
 

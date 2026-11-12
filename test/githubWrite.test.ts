@@ -167,6 +167,61 @@ test('mutate makes exactly one attempt on a transport failure', async () => {
   assert.deepEqual(h.sleeps, []);
 });
 
+test('a body that dies mid-read is reported as UNAVAILABLE, never as a landed write', async () => {
+  // GitHub already committed the write when the 2xx arrived; a failure reading
+  // the body must not look like "nothing happened", or the user retries the POST
+  // and creates the duplicate this whole path exists to prevent.
+  const broken: FetchResponseLike = {
+    status: 201,
+    ok: true,
+    headers: headers({}),
+    text: () => Promise.reject(new Error(`socket hang up ${TOKEN}`)),
+  };
+  const h = writeClient([broken]);
+  await assert.rejects(() => createPull(h.gh), (err: unknown) => {
+    assert.ok(err instanceof GitHubError, 'a raw Error would map to 500 SERVER_ERROR');
+    assert.equal(err.code, 'UNAVAILABLE');
+    assert.ok(!JSON.stringify(err).includes(TOKEN));
+    return true;
+  });
+});
+
+test('a 2xx still invalidates the cache even when the body cannot be read', async () => {
+  // The write landed. Whatever the response body did, the cached list is stale.
+  const h = writeClient([
+    response(200, [{ number: 1, title: 'one', state: 'open', html_url: 'u' }]),
+    {
+      status: 201,
+      ok: true,
+      headers: headers({}),
+      text: () => Promise.reject(new Error('body gone')),
+    } as FetchResponseLike,
+  ]);
+  await h.gh.pullRequests('o', 'r');
+  await assert.rejects(() => createPull(h.gh));
+  assert.equal(h.gh.cacheSize, 0, 'pulls: is gone even though the reply was unreadable');
+});
+
+test('a throwing mapper is reported as UNAVAILABLE, not as a raw error', async () => {
+  const h = writeClient([response(201, { number: 7 })]);
+  await assert.rejects(
+    () =>
+      writer(h.gh).mutate({
+        method: 'POST',
+        path: '/repos/o/r/pulls',
+        body: {},
+        map: () => {
+          throw new Error('mapper blew up');
+        },
+      }),
+    (err: unknown) => {
+      assert.ok(err instanceof GitHubError);
+      assert.equal(err.code, 'UNAVAILABLE');
+      return true;
+    },
+  );
+});
+
 // ------------------------------------------------------------------ mapping
 
 test('mutate maps 401, 403, 404, and 422 like the read path', async () => {
@@ -250,6 +305,24 @@ test('invalidate returns the number of removed entries and touches nothing else'
   assert.equal(h.gh.cacheSize, before - 1);
   assert.equal(writer(h.gh).invalidate(['pulls:']), 0, 'already gone');
   assert.equal(writer(h.gh).invalidate([]), 0, 'nothing asked, nothing removed');
+});
+
+test('invalidate clears a validator whose cached body was already evicted', async () => {
+  // The two stores are bounded separately, so a body can be evicted while its
+  // ETag survives. Sweeping only the keys still in `cache` would leave that
+  // validator to answer the next read with a 304 and re-serve the pre-write body.
+  const h = writeClient([
+    response(200, [{ number: 1, title: 'pre-write', state: 'open', html_url: 'u' }], { etag: 'W/"e1"' }),
+  ]);
+  await h.gh.pullRequests('o', 'r');
+  assert.equal(h.gh.etagSize, 1);
+
+  // Simulate the eviction: the body is gone, the validator is not.
+  (h.gh as unknown as { cache: Map<string, unknown> }).cache.clear();
+  assert.equal(h.gh.cacheSize, 0);
+
+  assert.equal(writer(h.gh).invalidate(['pulls:']), 0, 'nothing left to remove from the body cache');
+  assert.equal(h.gh.etagSize, 0, 'but the validator must go too, or the next 304 revives the old body');
 });
 
 test('a failed write invalidates nothing', async () => {

@@ -486,7 +486,12 @@ export interface SettingsSnapshot {
 export interface GitHubAuthState {
   connected: boolean;
   login: string | null;
-  scopes: string[];
+  /**
+   * Granted scopes from `x-oauth-scopes`. `null` means the token type does not
+   * expose them (fine-grained PATs) or the answer could not be obtained; `[]`
+   * is a real answer from a classic token that grants nothing.
+   */
+  scopes: string[] | null;
   /**
    * `true` when a token was stored but the API rejected it. The host deletes the
    * token in that case, so this is a one-shot report, not a persistent state.

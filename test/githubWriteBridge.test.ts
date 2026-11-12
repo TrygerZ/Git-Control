@@ -157,6 +157,17 @@ test('a token without the write scope is refused with 403 naming the scope', asy
   assert.equal(body.message, hostText('en').github.missingScope('repo'));
 });
 
+test('a classic token that grants no scopes is refused with the missing-scope message', async () => {
+  // `[]` is a known answer (classic PATs send an empty `x-oauth-scopes`), not
+  // `null`. Collapsing it to `null` upstream would read as "unknown" and let the
+  // write through to a 403 that says only "access denied".
+  const body = await blocked({ githubWriteContext: () => Promise.resolve({ ...CONNECTED, scopes: [] }) }, MERGE);
+  assert.ok(body !== null);
+  assert.equal(body.status, 403);
+  assert.equal(body.code, 'FORBIDDEN');
+  assert.equal(body.message, hostText('en').github.missingScope('repo'));
+});
+
 test('a host that cannot answer the write context fails closed with 503', async () => {
   const body = await blocked({ githubWriteContext: undefined }, MERGE);
   assert.ok(body !== null);
