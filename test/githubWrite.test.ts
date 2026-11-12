@@ -263,6 +263,20 @@ test('a write 403 names the permission it needs instead of a bare denial', async
   });
 });
 
+test('the quota check parses the header instead of comparing it to one literal', async () => {
+  // `toError` reads this header with `numberOf`, so `"00"` is a quota answer
+  // there. An exact `!== '0'` comparison would route the same response to the
+  // permission message, and the two mappings would disagree about one input.
+  const h = writeClient([
+    response(403, { message: 'quota' }, { 'x-ratelimit-remaining': '00', 'x-ratelimit-reset': '1700000900' }),
+  ]);
+  await assert.rejects(() => createPull(h.gh), (err: unknown) => {
+    assert.ok(err instanceof GitHubError);
+    assert.equal(err.code, 'RATE_LIMITED');
+    return true;
+  });
+});
+
 test('a quota 403 still reads as RATE_LIMITED, not as a permission problem', async () => {
   const h = writeClient([
     response(403, { message: 'quota' }, { 'x-ratelimit-remaining': '0', 'x-ratelimit-reset': '1700000900' }),

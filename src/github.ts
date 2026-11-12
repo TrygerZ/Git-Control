@@ -957,7 +957,7 @@ export class GitHubClient {
     let error: GitHubError;
     if (response.status === 422) {
       error = new GitHubError({ status: 422, code: 'VALIDATION_ERROR', message: this.text().invalidWrite });
-    } else if (response.status === 403 && response.headers.get('x-ratelimit-remaining') !== '0') {
+    } else if (response.status === 403 && numberOf(response.headers.get('x-ratelimit-remaining')) !== 0) {
       error = new GitHubError({ status: 403, code: 'FORBIDDEN', message: this.text().missingScope('repo') });
     } else {
       // Quota 403/429 and every other status keep the read mapping.
