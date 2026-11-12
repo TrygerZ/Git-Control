@@ -8,6 +8,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { GitHubClient, GitHubError, type FetchLike, type FetchResponseLike } from '../src/github';
+import { hostText } from '../src/hostText';
 
 const TOKEN = 'ghp_writesecret0123456789abcdef';
 
@@ -245,6 +246,30 @@ test('mutate maps 401, 403, 404, and 422 like the read path', async () => {
     assert.ok(err instanceof GitHubError);
     assert.equal(err.code, 'VALIDATION_ERROR');
     assert.equal(err.status, 422);
+    return true;
+  });
+});
+
+test('a write 403 names the permission it needs instead of a bare denial', async () => {
+  // A fine-grained token cannot report its scopes, so the guard lets the attempt
+  // through and GitHub answers 403. "Access denied" leaves the user nowhere to
+  // go; naming the permission is the only actionable answer available.
+  const h = writeClient([response(403, { message: 'Resource not accessible' }, { 'x-ratelimit-remaining': '42' })]);
+  await assert.rejects(() => createPull(h.gh), (err: unknown) => {
+    assert.ok(err instanceof GitHubError);
+    assert.equal(err.code, 'FORBIDDEN');
+    assert.equal(err.message, hostText('en').github.missingScope('repo'));
+    return true;
+  });
+});
+
+test('a quota 403 still reads as RATE_LIMITED, not as a permission problem', async () => {
+  const h = writeClient([
+    response(403, { message: 'quota' }, { 'x-ratelimit-remaining': '0', 'x-ratelimit-reset': '1700000900' }),
+  ]);
+  await assert.rejects(() => createPull(h.gh), (err: unknown) => {
+    assert.ok(err instanceof GitHubError);
+    assert.equal(err.code, 'RATE_LIMITED');
     return true;
   });
 });

@@ -950,12 +950,19 @@ export class GitHubClient {
       }
     }
 
-    // 422 is the one write-only mapping: GitHub understood the request and
-    // refused the values, which is a client mistake, not an outage.
-    const error =
-      response.status === 422
-        ? new GitHubError({ status: 422, code: 'VALIDATION_ERROR', message: this.text().invalidWrite })
-        : await this.toError(response);
+    // Write-only mappings, kept together. A 422 was understood and refused: a
+    // client mistake, not an outage. A non-quota 403 means the token lacks a
+    // permission, and a write knows which one it needed, so name it. The read
+    // path keeps `text.forbidden` because a read has no scope to name.
+    let error: GitHubError;
+    if (response.status === 422) {
+      error = new GitHubError({ status: 422, code: 'VALIDATION_ERROR', message: this.text().invalidWrite });
+    } else if (response.status === 403 && response.headers.get('x-ratelimit-remaining') !== '0') {
+      error = new GitHubError({ status: 403, code: 'FORBIDDEN', message: this.text().missingScope('repo') });
+    } else {
+      // Quota 403/429 and every other status keep the read mapping.
+      error = await this.toError(response);
+    }
     this.recordFailure(response.status >= 500 || response.status === 429);
     throw error;
   }
