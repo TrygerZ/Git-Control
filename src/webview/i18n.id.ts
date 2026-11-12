@@ -1032,6 +1032,15 @@ const id: Catalog = {
     pickRepository: 'Pilih repository...',
     itemWithCount: (label: string, count: string) => `${label}, ${count}`,
   },
+  // Explorer header sync buttons (P18b). See the en catalog for why only the
+  // surface-specific strings live here.
+  explorerSync: {
+    groupAria: 'Aksi sinkronisasi',
+    fetchButton: 'Fetch',
+    fetchTitle: (remote: string) => `Ambil pembaruan dari ${remote}.`,
+    fetchDisabledBusy: 'Operasi lain sedang berjalan.',
+    pullDisabledNoUpstream: 'Publikasikan branch ini sebelum pull.',
+  },
 };
 
 

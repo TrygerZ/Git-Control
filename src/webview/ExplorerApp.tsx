@@ -9,6 +9,7 @@ import { GuardDialog } from './GuardDialog';
 import { Inspector } from './Inspector';
 import { Contributors } from './Contributors';
 import { ExplorerHeaderActions } from './ExplorerHeaderActions';
+import { ExplorerSyncActions } from './ExplorerSyncActions';
 import { MergeDialog, mergeActionPayload, mergeIntoActionPayload } from './MergeDialog';
 import { PromptDialog } from './PromptDialog';
 import { ToastRegion } from './Toast';
@@ -143,6 +144,7 @@ export function ExplorerApp(): JSX.Element {
       */}
       <div className="gc-explorer__top">
         <ContextBar status={status} subject={newestSubject} />
+        <ExplorerSyncActions />
         <ExplorerHeaderActions />
       </div>
 
