@@ -441,16 +441,55 @@ test('deleteBranches separates a failed remote delete from a local one', async (
 });
 
 /**
- * Two remotes: the ticked one wins, but a branch that lives only on the other is
- * still cleaned up rather than silently left behind.
+ * Gate finding, and a regression I introduced: `null` means the checkbox was not
+ * ticked, so nothing may be deleted on any remote. Treating it as "no preference"
+ * fell back to whichever remote had the branch, and asked the user to confirm a
+ * remote delete they had declined.
  */
-test('remoteForBranch prefers the chosen remote and falls back to whichever has the branch', () => {
+test('remoteForBranch deletes on no remote when the checkbox is unticked', () => {
   const refs = [
     ref({ shortName: 'origin/feat/a', kind: 'remote', refName: 'refs/remotes/origin/feat/a' }),
     ref({ shortName: 'upstream/feat/b', kind: 'remote', refName: 'refs/remotes/upstream/feat/b' }),
   ];
+  assert.equal(remoteForBranch(refs, null, 'feat/a'), null, 'unticked means no remote delete at all');
+  assert.equal(remoteForBranch(refs, null, 'feat/b'), null);
+});
+
+test('remoteForBranch matches the full tracking ref, never a suffix', () => {
+  const refs = [
+    ref({ shortName: 'origin/feat/a', kind: 'remote', refName: 'refs/remotes/origin/feat/a' }),
+  ];
   assert.equal(remoteForBranch(refs, 'origin', 'feat/a'), 'origin');
-  assert.equal(remoteForBranch(refs, 'origin', 'feat/b'), 'upstream', 'the branch lives elsewhere');
-  assert.equal(remoteForBranch(refs, null, 'feat/b'), 'upstream');
+  assert.equal(remoteForBranch(refs, 'origin', 'a'), null, 'a local branch named a is not origin/feat/a');
+  assert.equal(remoteForBranch(refs, 'upstream', 'feat/a'), null, 'that remote does not carry it');
   assert.equal(remoteForBranch(refs, 'origin', 'feat/none'), null, 'nothing to delete anywhere');
+});
+
+/**
+ * The end-to-end consequence: an unticked checkbox must produce exactly one
+ * request, and it must be the local delete.
+ */
+test('deleteBranches sends no remote delete when no remote was chosen', async () => {
+  const actions: string[] = [];
+  const original = useOperationStore.getState().runAction;
+  const originalLoad = useBranchesStore.getState().load;
+  useBranchesStore.setState({
+    load: async () => undefined,
+    refs: [ref({ shortName: 'origin/feat/a', kind: 'remote', refName: 'refs/remotes/origin/feat/a' })],
+  });
+  useOperationStore.setState({
+    pendingGuard: null,
+    runAction: async (request) => {
+      actions.push(request.action);
+      return true;
+    },
+  });
+  try {
+    const result = await useBranchesStore.getState().deleteBranches(['feat/a'], null);
+    assert.deepEqual(actions, ['branch-delete'], 'the local delete and nothing else');
+    assert.deepEqual(result, { ok: 1, failed: [], remoteFailed: [] });
+  } finally {
+    useOperationStore.setState({ runAction: original, pendingGuard: null });
+    useBranchesStore.setState({ load: originalLoad });
+  }
 });

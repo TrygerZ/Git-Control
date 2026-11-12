@@ -725,6 +725,7 @@ const id: Catalog = {
     stageCount: (current: number, total: number) => `Tahap ${current} dari ${total}`,
     stage2Warning:
       'Konfirmasi kedua diperlukan. Perubahan yang dibuang tidak dapat dikembalikan, termasuk oleh Git sendiri.',
+    stage2WarningBranch: 'Perlu konfirmasi kedua. Branch dihapus dari remote untuk semua orang, dan tidak ada undo.',
     gitCommandLabel: 'Perintah git yang akan dijalankan',
     gitCommandNote: 'Belum dijalankan. Hanya untuk dibaca.',
     repoMessageLabel: 'Pesan dari repository Anda',

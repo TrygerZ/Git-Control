@@ -729,6 +729,7 @@ const en = {
     confirmationLabel: 'Confirmation',
     stageCount: (current: number, total: number) => `Stage ${current} of ${total}`,
     stage2Warning: 'Second confirmation required. Discarded changes cannot be recovered, not even by Git.',
+    stage2WarningBranch: 'Second confirmation required. The branch is removed from the remote for everyone, and there is no undo.',
     gitCommandLabel: 'Git command to be executed',
     gitCommandNote: 'Not executed yet. For review only.',
     repoMessageLabel: 'Message from your repository',

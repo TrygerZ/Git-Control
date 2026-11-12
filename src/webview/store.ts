@@ -1892,25 +1892,26 @@ export const useActionsStore = create<ActionsState>((set, get) => {
 });
 
 /**
- * Which remote carries `branch`, or null when none does.
+ * Which remote to delete `branch` from, or null when nothing should be deleted.
  *
- * `preferred` wins when it has the branch, so the checkbox the user ticked names
- * the remote that gets deleted. Otherwise the first remote that has it is used:
- * with two remotes configured, leaving the other one's copy behind because it was
- * not the preferred name would be a silent half-cleanup.
+ * `chosen` is the remote the user ticked. `null` means they did not tick the
+ * checkbox, so the answer is null: falling back to "whichever remote has it"
+ * would delete on the remote they explicitly declined. A chosen remote that does
+ * not carry the branch also answers null, because a branch with no tracking ref
+ * has nothing to delete and asking would produce a conflict for a ref the user
+ * never expected.
+ *
+ * The ref name is compared in full, not by suffix: a local branch named `a` must
+ * not match `origin/feat/a`.
  */
 export function remoteForBranch(
   refs: readonly BranchRef[],
-  preferred: string | null,
+  chosen: string | null,
   branch: string,
 ): string | null {
-  const names = refs
-    .map((ref) => ref.refName)
-    .filter((name) => name.startsWith('refs/remotes/') && name.endsWith(`/${branch}`));
-  if (names.length === 0) return null;
-  const pick = preferred === null ? undefined : names.find((name) => name === `refs/remotes/${preferred}/${branch}`);
-  const chosen = pick ?? names[0];
-  return chosen === undefined ? null : (chosen.split('/')[2] ?? null);
+  if (chosen === null) return null;
+  const wanted = `refs/remotes/${chosen}/${branch}`;
+  return refs.some((ref) => ref.refName === wanted) ? chosen : null;
 }
 
 /** Copy of `set` without `value`. Sets are compared by identity, so never mutate one. */
@@ -2039,12 +2040,10 @@ export const useBranchesStore = create<BranchesState>((set, get) => {
           continue;
         }
         /*
-         * Resolve which remote actually carries this branch, from the tracking
-         * refs. A branch with none has nothing to delete and is skipped rather
-         * than asked for a delete that would 409. The caller's `remote` is a
-         * preference, not a filter: with two remotes configured, a branch that
-         * lives only on the other one still gets its delete instead of being
-         * silently left behind.
+         * `remote` is the checkbox the user ticked, and null means they did not.
+         * Resolving it against the tracking refs answers null for a branch that
+         * is not on that remote, so the delete is skipped rather than sent as one
+         * the host would refuse.
          */
         const targetRemote = remoteForBranch(get().refs, remote, name);
         if (targetRemote !== null) {

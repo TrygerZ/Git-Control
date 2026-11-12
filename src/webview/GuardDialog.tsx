@@ -248,7 +248,9 @@ function GuardDialogBody({ guard }: { guard: PendingGuard }): JSX.Element {
                 <p className="gc-modal__warning">
                   <Icon name="warning" />
                   <span>
-                    {strings.guard.stage2Warning}
+                    {request.action === 'branch-delete-remote'
+                      ? strings.guard.stage2WarningBranch
+                      : strings.guard.stage2Warning}
                   </span>
                 </p>
               )}

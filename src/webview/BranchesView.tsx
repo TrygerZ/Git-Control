@@ -210,8 +210,9 @@ export function BranchesView(): JSX.Element {
       const skipped = result.failed.map((name) => sanitizeGitText(name)).join(', ');
       ops.appendProgress(`${strings.cleanup.deleteFailed}: ${skipped}`);
       // A parked verdict owns the screen. A second modal over it would hide the
-      // first, and the user is about to answer it anyway.
-      if (ops.pendingGuard === null) {
+      // first, and the user is about to answer it anyway. Read fresh: `ops` was
+      // captured before the awaits and still holds the pre-run `pendingGuard`.
+      if (useOperationStore.getState().pendingGuard === null) {
         pushToast({
           level: 'warning',
           message: strings.cleanup.partial(String(result.ok), String(result.failed.length)),
