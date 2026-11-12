@@ -690,7 +690,7 @@ const en = {
     mergedAgo: (age: string) => `merged ${age}`,
     upstreamGone: 'upstream gone',
     alsoRemote: (remote: string) => `Also delete the remote branches on ${remote}`,
-    remoteNeedsSecond: 'Remote deletion needs a second confirmation.',
+    remoteNeedsSecond: 'Remote deletion needs the acknowledgement below.',
     deleteN: (n: string) => `Delete ${n} branch${n === '1' ? '' : 'es'}`,
     empty: 'Nothing to clean up.',
     doneToast: (n: string) => `Deleted ${n} branch${n === '1' ? '' : 'es'}.`,

@@ -685,7 +685,7 @@ const id: Catalog = {
     mergedAgo: (age: string) => `digabung ${age}`,
     upstreamGone: 'upstream hilang',
     alsoRemote: (remote: string) => `Hapus juga branch remote di ${remote}`,
-    remoteNeedsSecond: 'Penghapusan remote perlu konfirmasi kedua.',
+    remoteNeedsSecond: 'Penghapusan remote perlu persetujuan di bawah ini.',
     deleteN: (n: string) => `Hapus ${n} branch`,
     empty: 'Tidak ada yang perlu dibersihkan.',
     doneToast: (n: string) => `${n} branch dihapus.`,

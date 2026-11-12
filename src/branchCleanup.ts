@@ -45,24 +45,37 @@ export function selectCleanupCandidates(
       name: ref.shortName,
       mergedAt: ref.committedAt,
       upstreamGone: ref.gone,
-      remote: ref.gone ? null : remoteOf(ref),
+      remote: ref.gone ? null : remoteOf(ref, refs),
     });
   }
   return out;
 }
 
 /**
- * The remote whose tracking ref carries this branch.
+ * The remote that carries this branch under its OWN name, or null.
  *
- * Read from the ref list, not from `ref.upstream`: the config can name a remote
- * whose tracking ref was pruned, and offering a delete for it produces git's
- * "remote ref does not exist" instead of a result.
+ * Two conditions, and both are needed. The upstream config names a remote, but
+ * it can point at a differently named branch (`foo` tracking `origin/bar`) or at
+ * a ref that was pruned. The store deletes `refs/remotes/<remote>/<local>`, so
+ * the selector only offers a remote when exactly that ref is in the list:
+ * anything else would be offered, skipped, and leave the user wondering.
+ *
+ * `remoteNameOf` reads the config; the ref list confirms the ref exists.
  */
-function remoteOf(ref: BranchRef): string | null {
-  if (ref.upstream === null) return null;
+function remoteOf(ref: BranchRef, refs: readonly BranchRef[]): string | null {
+  const remote = remoteNameOf(ref.upstream);
+  if (remote === null) return null;
+  return refs.some((other) => other.refName === `refs/remotes/${remote}/${ref.shortName}`)
+    ? remote
+    : null;
+}
+
+/** Remote named by an upstream ref, e.g. `refs/remotes/origin/main` -> `origin`. */
+function remoteNameOf(upstream: string | null): string | null {
+  if (upstream === null) return null;
   const prefix = 'refs/remotes/';
-  if (!ref.upstream.startsWith(prefix)) return null;
-  const rest = ref.upstream.slice(prefix.length);
+  if (!upstream.startsWith(prefix)) return null;
+  const rest = upstream.slice(prefix.length);
   const slash = rest.indexOf('/');
   return slash === -1 ? null : rest.slice(0, slash);
 }

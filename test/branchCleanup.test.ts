@@ -123,3 +123,26 @@ test('a detached HEAD with no current branch still offers merged branches', () =
 test('an empty ref list yields no candidates', () => {
   assert.deepEqual(selectCleanupCandidates([], 'main', 'main'), []);
 });
+
+/**
+ * Gate finding. The upstream config can name a remote that carries a DIFFERENT
+ * branch name (`foo` tracking `origin/bar`). The store deletes
+ * `refs/remotes/<remote>/<local>`, which does not exist in that case, so the
+ * selector must not offer a remote there: it would be offered, skipped, and the
+ * run would report a cleanup that did not happen.
+ */
+test('a remote is offered only when it carries the branch under its own name', () => {
+  const refs = [
+    ref({ shortName: 'foo', merged: true, upstream: 'refs/remotes/origin/bar' }),
+    ref({ shortName: 'origin/bar', refName: 'refs/remotes/origin/bar', kind: 'remote' }),
+  ];
+  assert.equal(selectCleanupCandidates(refs, 'main', 'main')[0]?.remote, null);
+});
+
+test('a branch tracking its own name on a remote is offered that remote', () => {
+  const refs = [
+    ref({ shortName: 'feat/a', merged: true, upstream: 'refs/remotes/upstream/feat/a' }),
+    ref({ shortName: 'upstream/feat/a', refName: 'refs/remotes/upstream/feat/a', kind: 'remote' }),
+  ];
+  assert.equal(selectCleanupCandidates(refs, 'main', 'main')[0]?.remote, 'upstream');
+});

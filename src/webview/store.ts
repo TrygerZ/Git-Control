@@ -1941,8 +1941,17 @@ export interface BranchesState {
    * `remote`. Serial by design: each delete is its own guarded mutation with its
    * own git refusal, and running them together would turn one failure into an
    * unknown state for the rest.
+   *
+   * `acknowledged` is the level 2 answer the cleanup dialog already collected for
+   * the batch. Without it every remote delete would park a guard dialog, and a
+   * parked request cannot resume a batch: the dialog replays one request, so the
+   * remaining branches would be silently abandoned.
    */
-  deleteBranches(names: readonly string[], remote: string | null): Promise<CleanupResult>;
+  deleteBranches(
+    names: readonly string[],
+    remote: string | null,
+    acknowledged: boolean,
+  ): Promise<CleanupResult>;
 }
 
 /** Outcome of a cleanup run: how many were removed and which were not. */
@@ -2014,7 +2023,7 @@ export const useBranchesStore = create<BranchesState>((set, get) => {
       set({ collapsed: next });
       saveState({ collapsedBranchSections: [...next] });
     },
-    async deleteBranches(names, remote) {
+    async deleteBranches(names, remote, acknowledged) {
       const ops = useOperationStore.getState();
       const result: CleanupResult = { ok: 0, failed: [], remoteFailed: [] };
       for (const [index, name] of names.entries()) {
@@ -2029,9 +2038,10 @@ export const useBranchesStore = create<BranchesState>((set, get) => {
           result.failed.push(name);
           /*
            * A parked verdict means the host refused and the guard dialog is
-           * showing why. Continuing would run the next branch, park a SECOND
-           * verdict over the first, and leave the user with only the last
-           * message. Stop and report the branches not attempted.
+           * showing why. The run stops there: the dialog replays one request and
+           * cannot resume a batch, so continuing would either stack a second
+           * verdict over the first or leave the rest silently undone. Everything
+           * not removed is reported.
            */
           if (useOperationStore.getState().pendingGuard !== null) {
             result.failed.push(...names.slice(index + 1));
@@ -2046,37 +2056,42 @@ export const useBranchesStore = create<BranchesState>((set, get) => {
          * the host would refuse.
          */
         const targetRemote = remoteForBranch(get().refs, remote, name);
+        if (targetRemote === null && remote !== null) {
+          /*
+           * The user asked for a remote delete but this branch is not on that
+           * remote. It may still be on another one, and either way the local
+           * branch is gone while a remote copy is not, so it belongs with the
+           * remote failures rather than in the success count.
+           */
+          result.ok += 1;
+          result.remoteFailed.push(name);
+          continue;
+        }
         if (targetRemote !== null) {
           /*
-           * `confirm` only. The level 2 acknowledgement belongs to the guard
-           * dialog (frame 62), which shows the target, the risk, and the exact
-           * `git push --delete` before it asks for the checkbox. Sending
-           * `forceAcknowledgement` from here would answer that gate on the user's
-           * behalf, and the dialog would never appear.
+           * `confirm` always, and `forceAcknowledgement` only when the dialog
+           * collected it. The acknowledgement is asked once for the batch (frame
+           * 62) because a parked verdict cannot resume a run: the guard dialog
+           * replays a single request, so a per-branch prompt would abandon every
+           * branch after the first. The host still enforces both flags, so a
+           * webview that skipped the checkbox is refused.
            */
-          const remoteRemoved = await ops.runAction({
-            action: 'branch-delete-remote',
-            remote: targetRemote,
-            branch: name,
-          });
-          /*
-           * A guard verdict parks the request and opens the modal. The run stops
-           * here rather than stacking dialogs: the local delete already happened,
-           * so it counts, and every branch not yet attempted is reported as
-           * skipped rather than silently dropped.
-           */
-          if (useOperationStore.getState().pendingGuard !== null) {
-            result.ok += 1;
-            result.failed.push(...names.slice(index + 1));
-            break;
-          }
-          /*
-           * A remote delete that failed without a verdict (a protected branch, a
-           * hook, a dropped connection) leaves the branch on the server. Counting
-           * it as removed would print "Deleted N" next to the error toast.
-           */
+          const remoteRemoved = await ops.runAction(
+            { action: 'branch-delete-remote', remote: targetRemote, branch: name },
+            acknowledged ? { confirm: true, forceAcknowledgement: true } : { confirm: true },
+          );
           if (!remoteRemoved) {
             result.ok += 1;
+            /*
+             * A verdict parks a request the dialog cannot answer for the rest of
+             * the batch, so the run stops and reports what is left. A plain
+             * failure (protected branch, hook, dropped connection) leaves the
+             * branch on the server while the local one is gone.
+             */
+            if (useOperationStore.getState().pendingGuard !== null) {
+              result.failed.push(...names.slice(index + 1));
+              break;
+            }
             result.remoteFailed.push(name);
             continue;
           }

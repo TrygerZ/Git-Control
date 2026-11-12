@@ -196,8 +196,12 @@ export function BranchesView(): JSX.Element {
    * decides what the user is told, and it reports partial success as a warning
    * rather than a success, because some branches are still there.
    */
-  const runCleanup = async (names: readonly string[], remote: string | null): Promise<void> => {
-    const result = await deleteBranches(names, remote);
+  const runCleanup = async (
+    names: readonly string[],
+    remote: string | null,
+    acknowledged: boolean,
+  ): Promise<void> => {
+    const result = await deleteBranches(names, remote, acknowledged);
     const ops = useOperationStore.getState();
 
     /*
@@ -210,8 +214,7 @@ export function BranchesView(): JSX.Element {
       const skipped = result.failed.map((name) => sanitizeGitText(name)).join(', ');
       ops.appendProgress(`${strings.cleanup.deleteFailed}: ${skipped}`);
       // A parked verdict owns the screen. A second modal over it would hide the
-      // first, and the user is about to answer it anyway. Read fresh: `ops` was
-      // captured before the awaits and still holds the pre-run `pendingGuard`.
+      // first, and the user is about to answer it anyway.
       if (useOperationStore.getState().pendingGuard === null) {
         pushToast({
           level: 'warning',
@@ -431,9 +434,9 @@ export function BranchesView(): JSX.Element {
           candidates={cleanupCandidates}
           remote={cleanupRemote}
           onCancel={() => setCleanupOpen(false)}
-          onDelete={(names, remote) => {
+          onDelete={(names, remote, acknowledged) => {
             setCleanupOpen(false);
-            void runCleanup(names, remote);
+            void runCleanup(names, remote, acknowledged);
           }}
         />
       )}
@@ -448,9 +451,9 @@ export function BranchesView(): JSX.Element {
           candidates={cleanupCandidates.filter((c) => c.name === singleDelete)}
           remote={cleanupRemote}
           onCancel={() => setSingleDelete(null)}
-          onDelete={(names, remote) => {
+          onDelete={(names, remote, acknowledged) => {
             setSingleDelete(null);
-            void runCleanup(names, remote);
+            void runCleanup(names, remote, acknowledged);
           }}
         />
       )}

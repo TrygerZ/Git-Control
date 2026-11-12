@@ -28,7 +28,13 @@ export interface CleanupDialogProps {
   candidates: readonly CleanupCandidate[];
   /** Remote offered by the "also delete" checkbox, or null when none qualifies. */
   remote: string | null;
-  onDelete(names: readonly string[], remote: string | null): void;
+  /**
+   * `acknowledged` is the level 2 answer for the remote deletes in this batch.
+   * The cleanup run is one gesture over N branches, so it asks once, here, and
+   * carries the answer. A per-branch guard dialog would stop the batch at the
+   * first prompt and leave the rest undone.
+   */
+  onDelete(names: readonly string[], remote: string | null, acknowledged: boolean): void;
   onCancel(): void;
 }
 
@@ -42,6 +48,7 @@ export function CleanupDialog({ candidates, remote, onDelete, onCancel }: Cleanu
     () => new Set(candidates.map((c) => c.name)),
   );
   const [withRemote, setWithRemote] = useState(false);
+  const [acknowledged, setAcknowledged] = useState(false);
 
   const titleId = useId();
   const descId = useId();
@@ -71,6 +78,11 @@ export function CleanupDialog({ candidates, remote, onDelete, onCancel }: Cleanu
   };
 
   const commands = chosen.map((name) => gitCommandOf({ action: 'branch-delete', branch: name }));
+  /** The remote half of the run, previewed only when the checkbox is on. */
+  const remoteCommands =
+    withRemote && remote !== null
+      ? chosen.map((name) => gitCommandOf({ action: 'branch-delete-remote', remote, branch: name }))
+      : [];
 
   return (
     <div className="gc-modal-backdrop">
@@ -160,6 +172,25 @@ export function CleanupDialog({ candidates, remote, onDelete, onCancel }: Cleanu
               </label>
             )}
 
+            {/*
+              Frame 62's acknowledgement, asked once for the batch. It appears only
+              when the remote delete is on, so the local-only path never shows a
+              checkbox that does not apply.
+            */}
+            {withRemote && remote !== null && (
+              <label className="gc-checkbox gc-cleanup__ack">
+                <input
+                  type="checkbox"
+                  checked={acknowledged}
+                  onChange={(event) => setAcknowledged(event.target.checked)}
+                />
+                <span className="gc-checkbox__text">
+                  <span>{strings.guard.ackBranchRemoteLabel}</span>
+                  <span className="gc-checkbox__hint">{strings.guard.ackBranchRemoteHint}</span>
+                </span>
+              </label>
+            )}
+
             {commands.length > 0 && (
               <div className="gc-cleanup__command">
                 <span className="gc-cleanup__command-label">
@@ -167,7 +198,7 @@ export function CleanupDialog({ candidates, remote, onDelete, onCancel }: Cleanu
                   <span>{strings.cleanup.commandLabel}</span>
                 </span>
                 <code>
-                  {commands.map((line) => (
+                  {[...commands, ...remoteCommands].map((line) => (
                     <span key={line} className="gc-cleanup__command-line">
                       {line}
                     </span>
@@ -202,11 +233,11 @@ export function CleanupDialog({ candidates, remote, onDelete, onCancel }: Cleanu
           <button
             type="button"
             className="gc-button gc-button--danger"
-            disabled={chosen.length === 0}
+            disabled={chosen.length === 0 || (withRemote && remote !== null && !acknowledged)}
             // The last stop before an irreversible command: name what it runs, as
             // the guard dialog's confirm button does.
-            title={commands.length > 0 ? commands.join('\n') : undefined}
-            onClick={() => onDelete(chosen, withRemote ? remote : null)}
+            title={commands.length > 0 ? [...commands, ...remoteCommands].join('\n') : undefined}
+            onClick={() => onDelete(chosen, withRemote ? remote : null, acknowledged)}
           >
             <Icon name="trash" />
             {strings.cleanup.deleteN(String(chosen.length))}

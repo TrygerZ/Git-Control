@@ -244,7 +244,7 @@ test('deleteBranches runs one action per branch and reports the tally', async ()
     },
   });
   try {
-    const result = await useBranchesStore.getState().deleteBranches(['feat/a', 'fix/b'], null);
+    const result = await useBranchesStore.getState().deleteBranches(['feat/a', 'fix/b'], null, false);
     assert.deepEqual(calls, [
       { action: 'branch-delete', branch: 'feat/a' },
       { action: 'branch-delete', branch: 'fix/b' },
@@ -264,7 +264,7 @@ test('deleteBranches collects each skipped branch by name', async () => {
     runAction: async (request) => ('branch' in request ? request.branch !== 'fix/b' : true),
   });
   try {
-    const result = await useBranchesStore.getState().deleteBranches(['feat/a', 'fix/b'], null);
+    const result = await useBranchesStore.getState().deleteBranches(['feat/a', 'fix/b'], null, false);
     assert.deepEqual(result, { ok: 1, failed: ['fix/b'], remoteFailed: [] });
   } finally {
     useOperationStore.setState({ runAction: original });
@@ -287,7 +287,7 @@ test('deleteBranches with the remote flag follows each local delete with a remot
     },
   });
   try {
-    await useBranchesStore.getState().deleteBranches(['feat/a'], 'origin');
+    await useBranchesStore.getState().deleteBranches(['feat/a'], 'origin', false);
     assert.deepEqual(calls, ['branch-delete', 'branch-delete-remote']);
   } finally {
     useOperationStore.setState({ runAction: original });
@@ -301,7 +301,12 @@ test('deleteBranches with the remote flag follows each local delete with a remot
  * to the guard dialog, which shows the target and the command before asking for
  * the checkbox. Pre-answering it would make frame 62 unreachable.
  */
-test('deleteBranches confirms the local delete but leaves the level 2 gate to the dialog', async () => {
+/**
+ * The dialog the user pressed IS the level 1 confirmation, so every request
+ * carries `confirm: true`. The level 2 answer is whatever the dialog collected
+ * for the batch; the acknowledgement tests below pin why it is asked once.
+ */
+test('deleteBranches confirms every request it sends', async () => {
   const extras: Array<Record<string, unknown>> = [];
   const original = useOperationStore.getState().runAction;
   const originalLoad = useBranchesStore.getState().load;
@@ -310,20 +315,19 @@ test('deleteBranches confirms the local delete but leaves the level 2 gate to th
     refs: [ref({ shortName: 'feat/a' }), ref({ shortName: 'origin/feat/a', kind: 'remote', refName: 'refs/remotes/origin/feat/a' })],
   });
   useOperationStore.setState({
+    pendingGuard: null,
     runAction: async (_request, extra) => {
-      extras.push(extra ?? {});
+      extras.push((extra ?? {}) as Record<string, unknown>);
       return true;
     },
   });
   try {
-    await useBranchesStore.getState().deleteBranches(['feat/a'], 'origin');
+    await useBranchesStore.getState().deleteBranches(['feat/a'], 'origin', false);
     assert.equal(extras.length, 2);
-    assert.deepEqual(extras[0], { confirm: true }, 'the local delete is already confirmed by the dialog');
-    // The remote request carries NO flags: the host answers 428 and the guard
-    // dialog runs stage 2, which is frame 62. Anything here would skip it.
-    assert.deepEqual(extras[1], {}, 'the webview must not answer the level 2 gate');
+    assert.equal(extras[0]?.confirm, true, 'the local delete is already confirmed by the dialog');
+    assert.equal(extras[1]?.confirm, true);
   } finally {
-    useOperationStore.setState({ runAction: original });
+    useOperationStore.setState({ runAction: original, pendingGuard: null });
     useBranchesStore.setState({ load: originalLoad });
   }
 });
@@ -348,7 +352,7 @@ test('deleteBranches skips the remote delete for a branch that is not on the rem
     },
   });
   try {
-    await useBranchesStore.getState().deleteBranches(['feat/local-only'], 'origin');
+    await useBranchesStore.getState().deleteBranches(['feat/local-only'], 'origin', false);
     assert.deepEqual(actions, ['branch-delete'], 'no remote delete was attempted');
   } finally {
     useOperationStore.setState({ runAction: original });
@@ -368,11 +372,11 @@ test('deleteBranches reloads the list only when something was actually removed',
   useBranchesStore.setState({ load: async () => { loads += 1; } });
   try {
     useOperationStore.setState({ runAction: async () => true });
-    await useBranchesStore.getState().deleteBranches(['feat/a'], null);
+    await useBranchesStore.getState().deleteBranches(['feat/a'], null, false);
     assert.equal(loads, 1);
 
     useOperationStore.setState({ runAction: async () => false });
-    await useBranchesStore.getState().deleteBranches(['fix/b'], null);
+    await useBranchesStore.getState().deleteBranches(['fix/b'], null, false);
     assert.equal(loads, 1, 'a run that removed nothing has nothing to reload');
   } finally {
     useOperationStore.setState({ runAction: original });
@@ -402,7 +406,7 @@ test('deleteBranches stops at the first parked verdict and reports the rest', as
     },
   });
   try {
-    const result = await useBranchesStore.getState().deleteBranches(['feat/a', 'fix/b', 'spike/c'], null);
+    const result = await useBranchesStore.getState().deleteBranches(['feat/a', 'fix/b', 'spike/c'], null, false);
     // The count is the assertion that bites: continuing would attempt all three
     // and overwrite the first verdict with the third.
     assert.deepEqual(attempted, ['feat/a'], 'the run stopped at the first refusal');
@@ -430,7 +434,7 @@ test('deleteBranches separates a failed remote delete from a local one', async (
     runAction: async (request) => request.action !== 'branch-delete-remote',
   });
   try {
-    const result = await useBranchesStore.getState().deleteBranches(['feat/a'], 'origin');
+    const result = await useBranchesStore.getState().deleteBranches(['feat/a'], 'origin', false);
     assert.equal(result.ok, 1, 'the local branch really is gone');
     assert.deepEqual(result.failed, []);
     assert.deepEqual(result.remoteFailed, ['feat/a'], 'and the remote copy is still there');
@@ -485,9 +489,114 @@ test('deleteBranches sends no remote delete when no remote was chosen', async ()
     },
   });
   try {
-    const result = await useBranchesStore.getState().deleteBranches(['feat/a'], null);
+    const result = await useBranchesStore.getState().deleteBranches(['feat/a'], null, false);
     assert.deepEqual(actions, ['branch-delete'], 'the local delete and nothing else');
     assert.deepEqual(result, { ok: 1, failed: [], remoteFailed: [] });
+  } finally {
+    useOperationStore.setState({ runAction: original, pendingGuard: null });
+    useBranchesStore.setState({ load: originalLoad });
+  }
+});
+
+/**
+ * Gate finding. A parked verdict cannot resume a batch: the guard dialog replays
+ * one request. So the cleanup dialog collects the level 2 acknowledgement once,
+ * up front, and the run carries it. Without that, a two-branch remote cleanup
+ * removed the first branch and abandoned the second, reporting it as refused when
+ * nothing had refused it.
+ */
+test('an acknowledged run removes every branch and every remote copy', async () => {
+  const calls: Array<{ action: string; extra: Record<string, unknown> }> = [];
+  const original = useOperationStore.getState().runAction;
+  const originalLoad = useBranchesStore.getState().load;
+  useBranchesStore.setState({
+    load: async () => undefined,
+    refs: [
+      ref({ shortName: 'origin/feat/a', kind: 'remote', refName: 'refs/remotes/origin/feat/a' }),
+      ref({ shortName: 'origin/feat/b', kind: 'remote', refName: 'refs/remotes/origin/feat/b' }),
+    ],
+  });
+  useOperationStore.setState({
+    pendingGuard: null,
+    runAction: async (request, extra) => {
+      calls.push({ action: request.action, extra: (extra ?? {}) as Record<string, unknown> });
+      return true;
+    },
+  });
+  try {
+    const result = await useBranchesStore.getState().deleteBranches(['feat/a', 'feat/b'], 'origin', true);
+    assert.deepEqual(result, { ok: 2, failed: [], remoteFailed: [] });
+    assert.deepEqual(calls.map((c) => c.action), [
+      'branch-delete',
+      'branch-delete-remote',
+      'branch-delete',
+      'branch-delete-remote',
+    ]);
+    for (const call of calls.filter((c) => c.action === 'branch-delete-remote')) {
+      assert.equal(call.extra.forceAcknowledgement, true, 'the batch acknowledgement rides every remote delete');
+    }
+  } finally {
+    useOperationStore.setState({ runAction: original, pendingGuard: null });
+    useBranchesStore.setState({ load: originalLoad });
+  }
+});
+
+/**
+ * The host still enforces the gate. A run that did not collect the
+ * acknowledgement sends `confirm` only, so the host answers 428 rather than
+ * treating the request as pre-approved.
+ */
+test('an unacknowledged remote delete never carries the level 2 flag', async () => {
+  const extras: Array<Record<string, unknown>> = [];
+  const original = useOperationStore.getState().runAction;
+  const originalLoad = useBranchesStore.getState().load;
+  useBranchesStore.setState({
+    load: async () => undefined,
+    refs: [ref({ shortName: 'origin/feat/a', kind: 'remote', refName: 'refs/remotes/origin/feat/a' })],
+  });
+  useOperationStore.setState({
+    pendingGuard: null,
+    runAction: async (_request, extra) => {
+      extras.push((extra ?? {}) as Record<string, unknown>);
+      return true;
+    },
+  });
+  try {
+    await useBranchesStore.getState().deleteBranches(['feat/a'], 'origin', false);
+    assert.equal(extras[1]?.forceAcknowledgement, undefined);
+    assert.equal(extras[1]?.confirm, true);
+  } finally {
+    useOperationStore.setState({ runAction: original, pendingGuard: null });
+    useBranchesStore.setState({ load: originalLoad });
+  }
+});
+
+/**
+ * Gate finding 1b. A branch the user ticked for remote deletion but which is not
+ * on that remote used to be counted as fully removed. The local branch is gone,
+ * so `ok` counts it, but a remote copy may still exist, so it is named with the
+ * remote failures rather than reported as a clean success.
+ */
+test('a branch absent from the chosen remote is reported, not counted as clean', async () => {
+  const original = useOperationStore.getState().runAction;
+  const originalLoad = useBranchesStore.getState().load;
+  useBranchesStore.setState({
+    load: async () => undefined,
+    // `feat/b` lives on `upstream`, not on the `origin` the user ticked.
+    refs: [
+      ref({ shortName: 'origin/feat/a', kind: 'remote', refName: 'refs/remotes/origin/feat/a' }),
+      ref({ shortName: 'upstream/feat/b', kind: 'remote', refName: 'refs/remotes/upstream/feat/b' }),
+    ],
+  });
+  useOperationStore.setState({
+    pendingGuard: null,
+    runAction: async () => true,
+  });
+  try {
+    const result = await useBranchesStore.getState().deleteBranches(['feat/a', 'feat/b'], 'origin', true);
+    assert.equal(result.ok, 2, 'both local branches really were removed');
+    assert.deepEqual(result.failed, []);
+    assert.deepEqual(result.remoteFailed, ['feat/b'], 'and one remote copy is still there');
   } finally {
     useOperationStore.setState({ runAction: original, pendingGuard: null });
     useBranchesStore.setState({ load: originalLoad });
