@@ -14,8 +14,9 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
-import { GitError } from '../src/git';
+import { GitError, GitRunner } from '../src/git';
 import { makeRepo } from './fixture';
+import { cleanup, makeFixture } from './repoFixture';
 
 test('fixture builds every topology shape with stable hashes', async (t) => {
   const repo = await makeRepo({ commits: 3, label: 'fx-topo' });
@@ -134,6 +135,33 @@ test('the bare remote is wired as a tracking origin the product can read', async
   await other.chain(1, 'theirs');
   await other.git.push({ remote: 'origin', refspec: `${other.branch}:${other.branch}` });
   assert.notEqual(await repo.remoteHash(), await repo.git.headHash());
+});
+
+/**
+ * The cleanup fixture must offer what the phase needs and nothing more: two
+ * merged branches with origin copies to delete, and one unmerged branch that
+ * must never appear as a candidate.
+ */
+test('branches-remote fixture holds two merged branches on origin and one unmerged', async (t) => {
+  const dir = await makeFixture('branches-remote');
+  t.after(() => cleanup(dir));
+  const git = new GitRunner({ gitPath: 'git', cwd: dir });
+
+  const merged = await git.mergedBranches('main');
+  assert.deepEqual([...merged].sort(), ['refs/heads/feat/a', 'refs/heads/fix/b', 'refs/heads/main']);
+
+  const refs = await git.refs();
+  const names = refs.map((r) => r.refName).sort();
+  for (const name of ['refs/heads/spike/c', 'refs/remotes/origin/feat/a', 'refs/remotes/origin/fix/b']) {
+    assert.ok(names.includes(name), name);
+  }
+  assert.ok(!merged.has('refs/heads/spike/c'), 'spike/c carries a commit main does not have');
+
+  // Both deletable branches really are on the remote, so a delete has a target.
+  const { stdout } = await git.run(['ls-remote', '--heads', 'origin']);
+  for (const name of ['refs/heads/feat/a', 'refs/heads/fix/b']) {
+    assert.match(stdout, new RegExp(`\\t${name}$`, 'm'), name);
+  }
 });
 
 test('cleanup removes a repository whose git objects are read-only', async (t) => {

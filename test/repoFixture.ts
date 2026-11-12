@@ -38,7 +38,13 @@ export type FixtureKind =
   /** Commit with subject and body containing control characters (\x1f, \x1e). */
   | 'control-chars'
   /** Branch variety: ahead, gone, merged, local-only, tags, and stash. */
-  | 'branches';
+  | 'branches'
+  /**
+   * Same as `branches`, plus `origin` copies of the two deletable branches, so a
+   * remote delete has a real ref to remove. Kept separate because the `branches`
+   * ref list is asserted exactly by the flag tests.
+   */
+  | 'branches-remote';
 
 /** Built templates, one per kind per process. */
 const templates = new Map<FixtureKind, Promise<string>>();
@@ -179,6 +185,32 @@ async function buildTemplate(kind: FixtureKind): Promise<string> {
     await git.switchBranch('main');
     await fs.writeFile(path.join(dir, 'a.txt'), 'stash me\n', 'utf8');
     await git.run(['stash', 'push', '-m', 'stash']);
+    return dir;
+  }
+
+  if (kind === 'branches-remote') {
+    await fs.writeFile(path.join(dir, 'a.txt'), 'one\n', 'utf8');
+    await git.stage(['a.txt']);
+    await git.commit('initial commit');
+    const bareDir = path.join(dir, '.git', 'bare.git');
+    const bareGit = new GitRunner({ gitPath: 'git', cwd: dir });
+    await bareGit.run(['init', '--bare', '--quiet', '--initial-branch=main', bareDir]);
+    await git.run(['remote', 'add', 'origin', './.git/bare.git']);
+    await git.run(['push', '--quiet', '-u', 'origin', 'main']);
+    await git.run(['remote', 'set-head', 'origin', 'main']);
+
+    // Two merged branches, each with an origin copy, so a cleanup run has real
+    // remote refs to delete. `spike/c` is unmerged and must never be a candidate.
+    for (const name of ['feat/a', 'fix/b']) {
+      await git.createBranch(name, 'main');
+      await git.run(['push', '--quiet', '-u', 'origin', name]);
+      await git.switchBranch('main');
+    }
+    await git.createBranch('spike/c', 'main');
+    await fs.writeFile(path.join(dir, 'spike.txt'), 'spike\n', 'utf8');
+    await git.stage(['spike.txt']);
+    await git.commit('spike work');
+    await git.switchBranch('main');
     return dir;
   }
 
