@@ -699,6 +699,8 @@ const id: Catalog = {
     rowAria: (name: string, state: string) => `Hapus ${name}, ${state}`,
     commandLabel: 'Perintah yang akan dijalankan',
     deleteFailed: 'Tidak dihapus',
+    remoteFailed: 'Hapus di remote gagal',
+    remoteFailedToast: (n: string) => `${n} terhapus lokal, tetapi salinan di remote masih ada.`,
   },
 
   // Merge confirmation dialog
@@ -728,6 +730,8 @@ const id: Catalog = {
     repoMessageLabel: 'Pesan dari repository Anda',
     ackCheckboxLabel: 'Saya mengerti perubahan ini hilang permanen.',
     ackCheckboxHint: 'Perubahan yang belum di-commit hilang permanen; tidak ada undo.',
+    ackBranchRemoteLabel: 'Saya mengerti branch ini dihapus dari remote.',
+    ackBranchRemoteHint: 'Siapa pun yang melacaknya kehilangan upstream. Commit-nya tetap ada di mesin ini.',
     continueButton: 'Lanjutkan',
     cancelButton: 'Batal',
     stage1Title: 'Tahap konfirmasi terakhir. Belum dijalankan.',

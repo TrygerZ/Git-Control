@@ -704,6 +704,8 @@ const en = {
     rowAria: (name: string, state: string) => `Delete ${name}, ${state}`,
     commandLabel: 'Command that will run',
     deleteFailed: 'Not deleted',
+    remoteFailed: 'Remote delete failed',
+    remoteFailedToast: (n: string) => `Removed ${n} locally, but the remote copy is still there.`,
   },
 
   // Merge confirmation dialog
@@ -732,6 +734,8 @@ const en = {
     repoMessageLabel: 'Message from your repository',
     ackCheckboxLabel: 'I understand these changes are permanently lost.',
     ackCheckboxHint: 'Uncommitted changes are permanently lost; there is no undo.',
+    ackBranchRemoteLabel: 'I understand this branch is removed from the remote.',
+    ackBranchRemoteHint: 'Anyone tracking it will lose their upstream. The commits themselves stay on this machine.',
     continueButton: 'Continue',
     cancelButton: 'Cancel',
     stage1Title: 'Final confirmation stage. Not executed yet.',

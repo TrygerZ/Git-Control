@@ -1891,6 +1891,28 @@ export const useActionsStore = create<ActionsState>((set, get) => {
   };
 });
 
+/**
+ * Which remote carries `branch`, or null when none does.
+ *
+ * `preferred` wins when it has the branch, so the checkbox the user ticked names
+ * the remote that gets deleted. Otherwise the first remote that has it is used:
+ * with two remotes configured, leaving the other one's copy behind because it was
+ * not the preferred name would be a silent half-cleanup.
+ */
+export function remoteForBranch(
+  refs: readonly BranchRef[],
+  preferred: string | null,
+  branch: string,
+): string | null {
+  const names = refs
+    .map((ref) => ref.refName)
+    .filter((name) => name.startsWith('refs/remotes/') && name.endsWith(`/${branch}`));
+  if (names.length === 0) return null;
+  const pick = preferred === null ? undefined : names.find((name) => name === `refs/remotes/${preferred}/${branch}`);
+  const chosen = pick ?? names[0];
+  return chosen === undefined ? null : (chosen.split('/')[2] ?? null);
+}
+
 /** Copy of `set` without `value`. Sets are compared by identity, so never mutate one. */
 function without<T>(set: ReadonlySet<T>, value: T): Set<T> {
   const next = new Set(set);
@@ -1924,9 +1946,16 @@ export interface BranchesState {
 
 /** Outcome of a cleanup run: how many were removed and which were not. */
 export interface CleanupResult {
+  /** Branches removed locally. */
   ok: number;
   /** Branch names git or the guard refused, in the order they were attempted. */
   failed: string[];
+  /**
+   * Branches whose LOCAL delete succeeded but whose remote delete did not. They
+   * are gone here and still on the server, which is a different fact from a
+   * skipped branch and needs its own sentence.
+   */
+  remoteFailed: string[];
 }
 
 let inFlightBranchesLoad: Promise<void> | null = null;
@@ -1986,7 +2015,7 @@ export const useBranchesStore = create<BranchesState>((set, get) => {
     },
     async deleteBranches(names, remote) {
       const ops = useOperationStore.getState();
-      const result: CleanupResult = { ok: 0, failed: [] };
+      const result: CleanupResult = { ok: 0, failed: [], remoteFailed: [] };
       for (const [index, name] of names.entries()) {
         // `runAction` returns false for BOTH a guard rejection and a git failure.
         // Either way the branch is still there, and the guard dialog or the toast
@@ -1997,17 +2026,28 @@ export const useBranchesStore = create<BranchesState>((set, get) => {
         const removed = await ops.runAction({ action: 'branch-delete', branch: name }, { confirm: true });
         if (!removed) {
           result.failed.push(name);
+          /*
+           * A parked verdict means the host refused and the guard dialog is
+           * showing why. Continuing would run the next branch, park a SECOND
+           * verdict over the first, and leave the user with only the last
+           * message. Stop and report the branches not attempted.
+           */
+          if (useOperationStore.getState().pendingGuard !== null) {
+            result.failed.push(...names.slice(index + 1));
+            break;
+          }
           continue;
         }
         /*
-         * A branch with no tracking ref has nothing to delete on the remote, and
-         * asking would produce a conflict toast for a branch the user never
-         * expected to exist there. The checkbox is offered per run, not per row.
+         * Resolve which remote actually carries this branch, from the tracking
+         * refs. A branch with none has nothing to delete and is skipped rather
+         * than asked for a delete that would 409. The caller's `remote` is a
+         * preference, not a filter: with two remotes configured, a branch that
+         * lives only on the other one still gets its delete instead of being
+         * silently left behind.
          */
-        const onRemote =
-          remote !== null &&
-          get().refs.some((ref) => ref.refName === `refs/remotes/${remote}/${name}`);
-        if (onRemote) {
+        const targetRemote = remoteForBranch(get().refs, remote, name);
+        if (targetRemote !== null) {
           /*
            * `confirm` only. The level 2 acknowledgement belongs to the guard
            * dialog (frame 62), which shows the target, the risk, and the exact
@@ -2015,7 +2055,11 @@ export const useBranchesStore = create<BranchesState>((set, get) => {
            * `forceAcknowledgement` from here would answer that gate on the user's
            * behalf, and the dialog would never appear.
            */
-          await ops.runAction({ action: 'branch-delete-remote', remote, branch: name });
+          const remoteRemoved = await ops.runAction({
+            action: 'branch-delete-remote',
+            remote: targetRemote,
+            branch: name,
+          });
           /*
            * A guard verdict parks the request and opens the modal. The run stops
            * here rather than stacking dialogs: the local delete already happened,
@@ -2026,6 +2070,16 @@ export const useBranchesStore = create<BranchesState>((set, get) => {
             result.ok += 1;
             result.failed.push(...names.slice(index + 1));
             break;
+          }
+          /*
+           * A remote delete that failed without a verdict (a protected branch, a
+           * hook, a dropped connection) leaves the branch on the server. Counting
+           * it as removed would print "Deleted N" next to the error toast.
+           */
+          if (!remoteRemoved) {
+            result.ok += 1;
+            result.remoteFailed.push(name);
+            continue;
           }
         }
         result.ok += 1;

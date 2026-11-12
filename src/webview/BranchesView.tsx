@@ -174,9 +174,8 @@ export function BranchesView(): JSX.Element {
   /**
    * The remote a cleanup may also delete on. Taken from the first candidate that
    * has one rather than requiring unanimity: a single local-only branch among five
-   * must not hide the checkbox for the other four. Candidates without a remote
-   * simply have nothing to delete there, which `deleteRemoteBranch` reports as a
-   * conflict rather than a silent success.
+   * must not hide the checkbox for the other four. Candidates without a tracking
+   * ref are skipped by the store, never sent as a delete the host would refuse.
    */
   const cleanupRemote = useMemo(() => {
     for (const candidate of cleanupCandidates) {
@@ -199,24 +198,46 @@ export function BranchesView(): JSX.Element {
    */
   const runCleanup = async (names: readonly string[], remote: string | null): Promise<void> => {
     const result = await deleteBranches(names, remote);
-    if (result.ok === 0) return;
-    if (result.failed.length === 0) {
-      pushToast({ level: 'info', message: strings.cleanup.doneToast(String(result.ok)) });
-      return;
-    }
+    const ops = useOperationStore.getState();
+
     /*
-     * Criterion 9: every skipped branch is named. The toast carries the list, and
-     * the same line goes into the operation log so the record survives the toast
-     * timing out. `showLogs` gives the user the button that reaches it.
+     * Criterion 9: every branch that was not removed is named, including on a run
+     * where nothing was. A total failure returns silently here only if the guard
+     * dialog is already showing the reason; otherwise the run would look like it
+     * did nothing at all.
      */
-    const skipped = result.failed.map((name) => sanitizeGitText(name)).join(', ');
-    useOperationStore.getState().appendProgress(`${strings.cleanup.deleteFailed}: ${skipped}`);
-    pushToast({
-      level: 'warning',
-      message: strings.cleanup.partial(String(result.ok), String(result.failed.length)),
-      detail: skipped,
-      showLogs: true,
-    });
+    if (result.failed.length > 0) {
+      const skipped = result.failed.map((name) => sanitizeGitText(name)).join(', ');
+      ops.appendProgress(`${strings.cleanup.deleteFailed}: ${skipped}`);
+      // A parked verdict owns the screen. A second modal over it would hide the
+      // first, and the user is about to answer it anyway.
+      if (ops.pendingGuard === null) {
+        pushToast({
+          level: 'warning',
+          message: strings.cleanup.partial(String(result.ok), String(result.failed.length)),
+          detail: skipped,
+          showLogs: true,
+        });
+      }
+    } else if (result.ok > 0) {
+      pushToast({ level: 'info', message: strings.cleanup.doneToast(String(result.ok)) });
+    }
+
+    /*
+     * Local delete done, remote delete not: the branch is gone here and still on
+     * the server. Saying "Deleted N" alone would be a half-truth, so the count
+     * and the names are stated separately.
+     */
+    if (result.remoteFailed.length > 0) {
+      const stuck = result.remoteFailed.map((name) => sanitizeGitText(name)).join(', ');
+      ops.appendProgress(`${strings.cleanup.remoteFailed}: ${stuck}`);
+      pushToast({
+        level: 'warning',
+        message: strings.cleanup.remoteFailedToast(String(result.remoteFailed.length)),
+        detail: stuck,
+        showLogs: true,
+      });
+    }
   };
 
   /**

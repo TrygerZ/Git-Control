@@ -8,7 +8,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { bridge, loadState, saveState } from '../src/webview/bridge';
-import { useBranchesStore, useOperationStore, useRouteStore, wireHostEvents } from '../src/webview/store';
+import { remoteForBranch, useBranchesStore, useOperationStore, useRouteStore, wireHostEvents } from '../src/webview/store';
 import type { BranchRef, RefsResult, WorktreeInfo } from '../src/messages';
 
 function ref(over: Partial<BranchRef> & { shortName: string }): BranchRef {
@@ -249,7 +249,7 @@ test('deleteBranches runs one action per branch and reports the tally', async ()
       { action: 'branch-delete', branch: 'feat/a' },
       { action: 'branch-delete', branch: 'fix/b' },
     ]);
-    assert.deepEqual(result, { ok: 2, failed: [] });
+    assert.deepEqual(result, { ok: 2, failed: [], remoteFailed: [] });
   } finally {
     useOperationStore.setState({ runAction: original });
     useBranchesStore.setState({ load: originalLoad });
@@ -265,7 +265,7 @@ test('deleteBranches collects each skipped branch by name', async () => {
   });
   try {
     const result = await useBranchesStore.getState().deleteBranches(['feat/a', 'fix/b'], null);
-    assert.deepEqual(result, { ok: 1, failed: ['fix/b'] });
+    assert.deepEqual(result, { ok: 1, failed: ['fix/b'], remoteFailed: [] });
   } finally {
     useOperationStore.setState({ runAction: original });
     useBranchesStore.setState({ load: originalLoad });
@@ -378,4 +378,79 @@ test('deleteBranches reloads the list only when something was actually removed',
     useOperationStore.setState({ runAction: original });
     useBranchesStore.setState({ load: originalLoad });
   }
+});
+
+/**
+ * Gate finding. Two refusals in one run used to overwrite each other's dialog and
+ * leave the user with only the last message, and a run where nothing succeeded
+ * reported nothing at all. The run must stop at the first parked verdict and
+ * report the branches it never attempted.
+ */
+test('deleteBranches stops at the first parked verdict and reports the rest', async () => {
+  const attempted: string[] = [];
+  const original = useOperationStore.getState().runAction;
+  const originalLoad = useBranchesStore.getState().load;
+  useBranchesStore.setState({ load: async () => undefined });
+  useOperationStore.setState({
+    pendingGuard: null,
+    runAction: async (request) => {
+      if (!('branch' in request) || request.branch === undefined) return true;
+      attempted.push(request.branch);
+      // The first refusal parks a verdict; the user has not answered it yet.
+      useOperationStore.setState({ pendingGuard: { request, error: {} as never, retry: async () => undefined } });
+      return false;
+    },
+  });
+  try {
+    const result = await useBranchesStore.getState().deleteBranches(['feat/a', 'fix/b', 'spike/c'], null);
+    // The count is the assertion that bites: continuing would attempt all three
+    // and overwrite the first verdict with the third.
+    assert.deepEqual(attempted, ['feat/a'], 'the run stopped at the first refusal');
+    assert.deepEqual(result.failed, ['feat/a', 'fix/b', 'spike/c'], 'and every branch not removed is reported');
+    assert.equal(result.ok, 0);
+  } finally {
+    useOperationStore.setState({ runAction: original, pendingGuard: null });
+    useBranchesStore.setState({ load: originalLoad });
+  }
+});
+
+/**
+ * A remote delete that failed without a verdict (a protected branch, a hook) used
+ * to be counted as removed, so the run printed "Deleted N" beside the error.
+ */
+test('deleteBranches separates a failed remote delete from a local one', async () => {
+  const original = useOperationStore.getState().runAction;
+  const originalLoad = useBranchesStore.getState().load;
+  useBranchesStore.setState({
+    load: async () => undefined,
+    refs: [ref({ shortName: 'feat/a' }), ref({ shortName: 'origin/feat/a', kind: 'remote', refName: 'refs/remotes/origin/feat/a' })],
+  });
+  useOperationStore.setState({
+    pendingGuard: null,
+    runAction: async (request) => request.action !== 'branch-delete-remote',
+  });
+  try {
+    const result = await useBranchesStore.getState().deleteBranches(['feat/a'], 'origin');
+    assert.equal(result.ok, 1, 'the local branch really is gone');
+    assert.deepEqual(result.failed, []);
+    assert.deepEqual(result.remoteFailed, ['feat/a'], 'and the remote copy is still there');
+  } finally {
+    useOperationStore.setState({ runAction: original, pendingGuard: null });
+    useBranchesStore.setState({ load: originalLoad });
+  }
+});
+
+/**
+ * Two remotes: the ticked one wins, but a branch that lives only on the other is
+ * still cleaned up rather than silently left behind.
+ */
+test('remoteForBranch prefers the chosen remote and falls back to whichever has the branch', () => {
+  const refs = [
+    ref({ shortName: 'origin/feat/a', kind: 'remote', refName: 'refs/remotes/origin/feat/a' }),
+    ref({ shortName: 'upstream/feat/b', kind: 'remote', refName: 'refs/remotes/upstream/feat/b' }),
+  ];
+  assert.equal(remoteForBranch(refs, 'origin', 'feat/a'), 'origin');
+  assert.equal(remoteForBranch(refs, 'origin', 'feat/b'), 'upstream', 'the branch lives elsewhere');
+  assert.equal(remoteForBranch(refs, null, 'feat/b'), 'upstream');
+  assert.equal(remoteForBranch(refs, 'origin', 'feat/none'), null, 'nothing to delete anywhere');
 });

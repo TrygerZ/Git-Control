@@ -305,9 +305,21 @@ function GuardDialogBody({ guard }: { guard: PendingGuard }): JSX.Element {
               have.
             */}
             <span className="gc-checkbox__text">
-              <span>{strings.guard.ackCheckboxLabel}</span>
+              {/*
+                The statement has to name the loss that is actually about to happen.
+                "Uncommitted changes are lost" is true for a reset or a discard and
+                false for a remote branch delete, where nothing local is touched and
+                the loss is everyone else's upstream.
+              */}
+              <span>
+                {request.action === 'branch-delete-remote'
+                  ? strings.guard.ackBranchRemoteLabel
+                  : strings.guard.ackCheckboxLabel}
+              </span>
               <span className="gc-checkbox__hint">
-                {strings.guard.ackCheckboxHint}
+                {request.action === 'branch-delete-remote'
+                  ? strings.guard.ackBranchRemoteHint
+                  : strings.guard.ackCheckboxHint}
               </span>
             </span>
           </label>
