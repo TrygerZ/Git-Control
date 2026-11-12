@@ -5,6 +5,12 @@ All notable changes to the "Git Control" extension will be documented in this fi
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.15.0] - 2026-11-12
+
+### Added
+- Explorer header gains Fetch, Pull, and Publish or Push buttons beside the breadcrumbs, with ahead and behind counts. They run the same actions and the same guard flow as the sidebar footer, and the group is hidden when the repository has no remote.
+- The third button reads Publish while the branch has no upstream and Push once it has one. Pull is disabled without an upstream and on a detached HEAD, and Push is disabled while the branch is in sync.
+
 ## [3.14.0] - 2026-11-11
 
 ### Added
