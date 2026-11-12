@@ -1008,7 +1008,7 @@ function BranchRowMenu(props: {
           <button
             type="button"
             role="menuitem"
-            className="gc-menu__item gc-menu__item--risky"
+            className="gc-menu__item gc-menu__item--danger"
             onClick={() => props.onDelete(ref_.shortName)}
           >
             <span className="gc-menu__icon" aria-hidden="true">

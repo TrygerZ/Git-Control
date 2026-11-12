@@ -32,9 +32,6 @@ export interface CleanupDialogProps {
   onCancel(): void;
 }
 
-/** Frame 61 lists three rows before the fold; the list scrolls past that. */
-const ROW_LIMIT = 3;
-
 export function CleanupDialog({ candidates, remote, onDelete, onCancel }: CleanupDialogProps): JSX.Element {
   const strings = useT();
   const language = useSettingsStore((s) => s.language);
@@ -112,11 +109,7 @@ export function CleanupDialog({ candidates, remote, onDelete, onCancel }: Cleanu
           <p className="gc-cleanup__empty">{strings.cleanup.empty}</p>
         ) : (
           <>
-            <ul
-              className="gc-cleanup__list"
-              role="list"
-              style={{ maxHeight: `calc(${ROW_LIMIT} * var(--gc-hit-lg) + 2 * var(--gc-space-1))` }}
-            >
+            <ul className="gc-cleanup__list" role="list">
               {candidates.map((candidate) => {
                 const checked = selected.has(candidate.name);
                 const age =

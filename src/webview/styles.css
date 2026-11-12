@@ -2947,6 +2947,16 @@ h3 {
   font-weight: var(--gc-weight-strong);
 }
 
+/*
+ * Frame 63 draws Delete branch as a red label with no leading rule, unlike the
+ * node menu's risky rows. The colour alone would be one channel, so the row also
+ * carries the word `merged only` beside the label.
+ */
+.gc-menu__item--danger .gc-menu__icon,
+.gc-menu__item--danger .gc-menu__label > span:first-child {
+  color: var(--gc-danger);
+}
+
 .gc-menu__hint {
   color: var(--gc-muted);
   font-size: var(--gc-fs-xs);
@@ -6670,6 +6680,8 @@ h3 {
 .gc-cleanup__list {
   display: flex;
   flex-direction: column;
+  /* Frame 61 draws three rows before the fold; a longer list scrolls. */
+  max-height: calc(3 * var(--gc-hit-lg));
   margin: 0;
   padding: 0;
   overflow-y: auto;
