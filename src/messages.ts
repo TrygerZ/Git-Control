@@ -289,6 +289,19 @@ export interface MutationMeta {
   statusToken?: string;
 }
 
+/**
+ * Fields every GitHub write carries, so the endpoint phases (P22 to P28) do not
+ * each invent their own. Deliberately narrower than {@link MutationMeta}: a
+ * GitHub write has no repository status to fingerprint, and `statusToken` would
+ * be a lie there. `confirm` and `forceAcknowledgement` are checked host-side
+ * exactly like the git path.
+ */
+export interface GitHubMutationMeta {
+  idempotencyKey: string;
+  confirm?: boolean;
+  forceAcknowledgement?: boolean;
+}
+
 export interface StatusPayload {
   includeIgnored?: boolean;
 }

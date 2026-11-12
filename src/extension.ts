@@ -16,6 +16,7 @@ import {
   hasPrivateScope,
 } from './github';
 import { hostText, type HostCatalog } from './hostText';
+import type { GitHubGuardContext } from './githubGuard';
 import { buildIconThemeSnapshot, iconThemeRootUri } from './iconTheme';
 import { Logger } from './logger';
 import { parseRemoteUrl, resolveGitHubApiBase, webUrlOf, type GitHubApiBase, type ParsedRemoteUrl } from './remoteUrl';
@@ -868,6 +869,7 @@ class Controller implements vscode.Disposable {
       githubAuth: () => this.githubAuth(),
       connectGitHub: () => this.connectGitHub(),
       disconnectGitHub: () => this.disconnectGitHub(),
+      githubWriteContext: () => this.githubWriteContext(),
       openDiff: (payload) => this.openDiff(payload),
       openStashDiff: (payload) => this.openStashDiff(payload),
       showLogs: () => this.channel.show(true),
@@ -1065,6 +1067,28 @@ class Controller implements vscode.Disposable {
    * connected and deleted from SecretStorage, per the PRD: a token that cannot
    * work is worse than no token, because it makes every later call fail.
    */
+  /**
+   * Everything the GitHub write guard needs, from the values already computed
+   * for reads: connection, granted scopes, token trust, and breaker state.
+   *
+   * `scopes: null` when the token cannot report them (fine-grained PATs send no
+   * `x-oauth-scopes`), which the guard reads as "unknown" and never blocks on.
+   * An untrusted base reports `tokenAllowed: false` rather than a scope list, so
+   * the guard refuses before the token is anywhere near the request.
+   */
+  private async githubWriteContext(): Promise<GitHubGuardContext> {
+    const state = await this.githubAuth();
+    const remote = await this.detectRemote();
+    const base = this.resolveApiBase(remote);
+    const { client } = await this.githubClient();
+    return {
+      connected: state.connected,
+      scopes: state.connected && state.scopes.length > 0 ? state.scopes : null,
+      tokenAllowed: base.tokenAllowed,
+      circuitOpen: client.circuitOpen,
+    };
+  }
+
   private async githubAuth(): Promise<GitHubAuthState> {
     const token = await this.context.secrets.get(TOKEN_SECRET_KEY);
     const { client, apiUrl } = await this.githubClient();
