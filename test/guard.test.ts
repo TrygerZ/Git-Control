@@ -20,6 +20,7 @@ function snapshot(overrides: Partial<GuardSnapshot> = {}): GuardSnapshot {
     now: NOW,
     stalenessMs: DEFAULT_STALENESS_MS,
     headPublished: null,
+    branch: 'main',
     ...overrides,
   };
 }
@@ -514,4 +515,67 @@ test('create-branch is allowed on a dirty tree and blocked only by an in-progres
     assert.equal(res.code, 'CONFLICT', operation);
     assert.deepEqual(res.remedies, ['resolve-conflicts', 'cancel'], operation);
   }
+});
+
+/**
+ * P20. The current branch is the one branch a delete may never name, so the
+ * refusal is a hard block rather than a confirmation: confirming a request that
+ * git will always refuse teaches the user the dialog is decorative.
+ */
+test('branch-delete refuses the current branch and asks once for any other', () => {
+  const refused = verdict({ action: 'branch-delete', branch: 'main' }, { branch: 'main' }, 'en');
+  assert.equal(refused.allow, false);
+  if (refused.allow) return;
+  assert.equal(refused.code, 'VALIDATION_ERROR');
+  assert.deepEqual(refused.remedies, ['cancel']);
+  assert.equal(refused.requiresConfirmation, undefined, 'no confirm button on an impossible action');
+  assert.match(refused.message, /branch you are on/i);
+
+  const id = verdict({ action: 'branch-delete', branch: 'main' }, { branch: 'main' }, 'id');
+  assert.equal(id.allow, false);
+  if (id.allow) return;
+  assert.match(id.message, /branch yang sedang aktif/i);
+
+  const allowed = verdict({ action: 'branch-delete', branch: 'feat/a' }, { branch: 'main' });
+  assert.equal(allowed.allow, false, 'level 1 still blocks until confirmed');
+  if (allowed.allow) return;
+  assert.equal(allowed.code, 'CONFIRMATION_REQUIRED');
+  assert.equal(allowed.confirmationLevel, 1);
+  assert.equal(allowed.risk, 'medium');
+  assert.deepEqual(allowed.remedies, ['confirm', 'cancel']);
+});
+
+test('branch-delete-remote is level 2, high risk, and never dirty-blocked', () => {
+  const res = verdict({ action: 'branch-delete-remote', remote: 'origin', branch: 'feat/a' }, { dirty: true }, 'en');
+  assert.equal(res.allow, false);
+  if (res.allow) return;
+  assert.equal(res.code, 'CONFIRMATION_REQUIRED');
+  assert.equal(res.confirmationLevel, 2);
+  assert.equal(res.risk, 'high');
+  assert.deepEqual(res.remedies, ['confirm', 'cancel']);
+
+  // The remote delete is the same shape as stash-drop: level 2, high, permanent.
+  const drop = verdict({ action: 'stash-drop', index: 0 });
+  assert.equal(drop.allow, false);
+  if (drop.allow) return;
+  assert.equal(drop.confirmationLevel, res.confirmationLevel);
+  assert.equal(drop.risk, res.risk);
+});
+
+test('a dirty tree does not block either delete, and the snapshot branch is honoured', () => {
+  for (const action of [
+    { action: 'branch-delete', branch: 'feat/a' },
+    { action: 'branch-delete-remote', remote: 'origin', branch: 'feat/a' },
+  ] satisfies GuardAction[]) {
+    const res = verdict(action, { dirty: true, staged: true });
+    assert.equal(res.allow, false, action.action);
+    if (res.allow) return;
+    assert.notEqual(res.code, 'DIRTY_TREE', `${action.action} is not blocked by a dirty tree`);
+  }
+
+  // Detached HEAD has no current branch, so nothing is refused on that ground.
+  const detached = verdict({ action: 'branch-delete', branch: 'main' }, { branch: null });
+  assert.equal(detached.allow, false);
+  if (detached.allow) return;
+  assert.equal(detached.confirmationLevel, 1, 'a confirmation, not a refusal');
 });

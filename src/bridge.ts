@@ -40,6 +40,7 @@ import type { RepositoryService } from './repository';
 import { parseRoute } from './webview/route';
 import {
   validateBranchName,
+  validateDeletableBranch,
   validateEmail,
   validateHash,
   validateRemoteName,
@@ -1023,6 +1024,41 @@ export class MessageBridge {
     return this.run(repo, operationId, payload.action, () => this.execute(repo, payload, operationId));
   }
 
+  /**
+   * Delete a local branch, re-checking the current branch against freshly read
+   * status first.
+   *
+   * The guard already refused a request naming the current branch, but it read a
+   * snapshot taken when the request arrived. A checkout in the meantime would
+   * make that snapshot stale, and git's own refusal is a message rather than a
+   * rule. This second read is cheap and closes the window.
+   */
+  private async deleteBranch(repo: RepositoryService, branch: string): Promise<void> {
+    const status = await repo.status();
+    if (!validateDeletableBranch(branch, status.branch)) {
+      fail(409, 'VALIDATION_ERROR', this.text().invalid, { detail: 'branch' });
+    }
+    await repo.git.deleteBranch(branch);
+  }
+
+  /**
+   * Delete a branch on a remote. The remote ref is confirmed to exist first, so a
+   * typo or an already-deleted branch reports a conflict instead of git's
+   * "remote ref does not exist" buried in a generic failure.
+   */
+  private async deleteRemoteBranch(repo: RepositoryService, remote: string, branch: string): Promise<void> {
+    const remotes = await repo.git.remotes();
+    if (!remotes.some((r) => r.name === remote)) {
+      fail(409, 'CONFLICT', this.text().notFound, { detail: 'remote' });
+    }
+    const refs = await repo.git.refs();
+    const trackingRef = `refs/remotes/${remote}/${branch}`;
+    if (!refs.some((r) => r.refName === trackingRef)) {
+      fail(409, 'CONFLICT', this.text().notFound, { detail: 'remote-ref' });
+    }
+    await repo.git.deleteRemoteBranch(remote, branch);
+  }
+
   private async handleSettingsSet(payload: SettingsSetPayload): Promise<SettingsSnapshot> {
     if (typeof payload.key !== 'string' || payload.key.length === 0) {
       fail(400, 'VALIDATION_ERROR', this.text().invalid, { detail: 'key' });
@@ -1119,6 +1155,10 @@ export class MessageBridge {
         return git.cherryPickContinue();
       case 'cherry-pick-abort':
         return git.cherryPickAbort();
+      case 'branch-delete':
+        return this.deleteBranch(repo, action.branch);
+      case 'branch-delete-remote':
+        return this.deleteRemoteBranch(repo, action.remote, action.branch);
       default:
         return fail(400, 'VALIDATION_ERROR', this.text().invalid);
     }
@@ -1293,6 +1333,7 @@ export class MessageBridge {
       now: Date.now(),
       stalenessMs: this.host.settings().fetchStalenessMs || DEFAULT_STALENESS_MS,
       headPublished,
+      branch: status.branch,
     };
   }
 
@@ -1482,6 +1523,14 @@ const DIRTY_TREE_MARKERS = [
   /Please commit your changes or stash them/i,
 ];
 const NON_FF_MARKERS = [/non-fast-forward/i, /fetch first/i, /\[rejected\]/i, /behind its remote/i];
+/**
+ * `git branch -d` refusing a branch with unmerged commits. Matched on git's own
+ * sentence rather than pre-checked, because `-d` compares against the upstream or
+ * HEAD, not against the base branch the view computed `merged` from (D-21). The
+ * refusal is the correct outcome and its text is the only explanation the user
+ * gets, so it is forwarded verbatim in `detail`.
+ */
+const UNMERGED_MARKERS = [/is not fully merged/i];
 
 /**
  * Classify a generic git failure from stderr. Hook output is surfaced verbatim
@@ -1520,6 +1569,15 @@ function fromGitFailure(err: GitError, lang: Lang = 'en'): ErrorBody {
       message: host.guard.dirty,
       detail: stderr.trim(),
       remedies: ['commit', 'stash', 'cancel'],
+    };
+  }
+  if (UNMERGED_MARKERS.some((m) => m.test(stderr))) {
+    return {
+      status: 409,
+      code: 'CONFLICT',
+      message: text.branchNotMerged,
+      detail: stderr.trim(),
+      remedies: ['cancel'],
     };
   }
   if (NON_FF_MARKERS.some((m) => m.test(stderr))) {

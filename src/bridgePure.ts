@@ -71,6 +71,11 @@ export function validateAction(action: GitActionPayload, fail: (detail: string) 
     case 'stash-apply':
     case 'stash-drop':
       if (!validateStashIndex(action.index)) fail('index'); return;
+    case 'branch-delete':
+      if (!validateBranchName(action.branch)) fail('branch'); return;
+    case 'branch-delete-remote':
+      if (!validateRemoteName(action.remote)) fail('remote');
+      if (!validateBranchName(action.branch)) fail('branch'); return;
     default: fail('action');
   }
 }

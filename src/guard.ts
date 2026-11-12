@@ -39,6 +39,11 @@ export interface GuardSnapshot {
    * `null` means the caller did not compute it, which blocks an amend.
    */
   headPublished: boolean | null;
+  /**
+   * Branch HEAD is on, or `null` when detached. Only the delete rules read it:
+   * the branch a user is standing on can never be deleted.
+   */
+  branch: string | null;
 }
 
 export type GuardVerdict =
@@ -94,6 +99,7 @@ const CONFIRM_LEVEL_1 = new Set<GuardAction['action']>([
   'pull',
   'stash-apply',
   'cherry-pick',
+  'branch-delete',
 ]);
 
 /**
@@ -190,6 +196,37 @@ export function evaluate(action: GuardAction, snapshot: GuardSnapshot, lang: Lan
       allow: false,
       code: 'CONFIRMATION_REQUIRED',
       message: action.action === 'reset-hard' ? text.resetHard : text.discardFile,
+      remedies: ['confirm', 'cancel'],
+      requiresConfirmation: true,
+      confirmationLevel: 2,
+      risk: 'high',
+    };
+  }
+
+  /*
+   * Deleting the branch you are on is not a confirmation, it is an impossibility:
+   * git refuses it every time, so offering `Confirm` would teach the user that
+   * the dialog is decorative. Detached HEAD has no branch to protect.
+   */
+  if (action.action === 'branch-delete' && snapshot.branch !== null && action.branch === snapshot.branch) {
+    return {
+      allow: false,
+      code: 'VALIDATION_ERROR',
+      message: text.branchDeleteCurrent,
+      remedies: ['cancel'],
+    };
+  }
+
+  /*
+   * Remote deletion is the one action in this feature that removes something for
+   * everyone and cannot be undone, so it gets the level 2 shape `stash-drop`
+   * already uses: permanent, high risk, acknowledgement required.
+   */
+  if (action.action === 'branch-delete-remote') {
+    return {
+      allow: false,
+      code: 'CONFIRMATION_REQUIRED',
+      message: text.branchDeleteRemote,
       remedies: ['confirm', 'cancel'],
       requiresConfirmation: true,
       confirmationLevel: 2,
