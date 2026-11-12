@@ -93,6 +93,8 @@ export type FetchLike = (url: string, init: FetchInit) => Promise<FetchResponseL
 export interface FetchInit {
   method: string;
   headers: Record<string, string>;
+  /** Serialized JSON body. Only the write path sets this; reads never send one. */
+  body?: string;
   signal?: AbortSignal;
   /**
    * Manual redirects are required by the log path: hop 1 must see the 302 and
@@ -141,6 +143,21 @@ export interface Fetched<T> {
   rateLimit: GitHubRateLimit;
   /** True when the server confirmed the stored copy with a 304. */
   revalidated?: boolean;
+}
+
+/** Verbs that change server state. `GET` never reaches {@link GitHubClient.mutate}. */
+export type WriteMethod = 'POST' | 'PUT' | 'PATCH' | 'DELETE';
+
+/**
+ * One write request. `invalidate` lists cache-key prefixes the write makes
+ * stale; `map` turns the response body into the endpoint's DTO.
+ */
+export interface MutateOptions<T> {
+  method: WriteMethod;
+  path: string;
+  body?: unknown;
+  invalidate?: readonly string[];
+  map(body: unknown, headers: { get(name: string): string | null }): T;
 }
 
 const RETRY_DELAYS_MS = [500, 1000, 2000];
@@ -857,6 +874,86 @@ export class GitHubClient {
     if (response.status >= 200 && response.status < 300) this.recordSuccess();
     if (response.status >= 500) this.recordFailure(true);
     return response;
+  }
+
+  // ----------------------------------------------------------------- writes
+
+  /**
+   * One write request. Exactly one attempt, always.
+   *
+   * A write is not idempotent: a retried `POST` can open a second pull request
+   * or post a second comment, so the retry ladder of {@link send} is wrong here
+   * even for 429/502/503/504 and transport failures. The user repeats the
+   * action explicitly. For the same reason there is no stale-cache fallback:
+   * serving a cached read while offline is safe, pretending a write landed is
+   * not. GitHub REST has no `Idempotency-Key`, so no such header is sent.
+   */
+  private async mutate<T>(options: MutateOptions<T>): Promise<{ data: T; rateLimit: GitHubRateLimit }> {
+    if (this.breakerOpen) {
+      throw new GitHubError({
+        status: 503,
+        code: 'UNAVAILABLE',
+        message: this.text().unavailable,
+        detail: 'circuit open',
+      });
+    }
+
+    const headers = this.headers();
+    const init: FetchInit = { method: options.method, headers };
+    if (options.body !== undefined) {
+      headers['Content-Type'] = 'application/json';
+      init.body = JSON.stringify(options.body);
+    }
+
+    let response: FetchResponseLike;
+    try {
+      response = await this.fetchImpl(`${this.apiUrl}${options.path}`, init);
+    } catch (err) {
+      this.recordFailure(true);
+      throw new GitHubError({
+        status: 503,
+        code: 'UNAVAILABLE',
+        message: this.text().unavailable,
+        detail: messageOf(err),
+      });
+    }
+
+    this.readRateLimit(response.headers);
+
+    if (response.status >= 200 && response.status < 300) {
+      this.recordSuccess();
+      const parsed = parseJson(await response.text());
+      const data = options.map(parsed, response.headers);
+      this.invalidate(options.invalidate ?? []);
+      return { data, rateLimit: this.rateLimit(false) };
+    }
+
+    // 422 is the one write-only mapping: GitHub understood the request and
+    // refused the values, which is a client mistake, not an outage.
+    const error =
+      response.status === 422
+        ? new GitHubError({ status: 422, code: 'VALIDATION_ERROR', message: this.text().invalidWrite })
+        : await this.toError(response);
+    this.recordFailure(response.status >= 500 || response.status === 429);
+    throw error;
+  }
+
+  /**
+   * Drop every cached response whose key starts with one of `prefixes`.
+   *
+   * Only the response cache and the matching validators: a write changes what
+   * the list endpoints return, so a surviving ETag would answer the next read
+   * with a 304 and re-serve the pre-write body.
+   */
+  invalidate(prefixes: readonly string[]): number {
+    let removed = 0;
+    for (const key of [...this.cache.keys()]) {
+      if (!prefixes.some((prefix) => key.startsWith(prefix))) continue;
+      this.cache.delete(key);
+      this.etagStore(key).delete(`${this.tokenFingerprint}|${key}`);
+      removed += 1;
+    }
+    return removed;
   }
 
   /**
