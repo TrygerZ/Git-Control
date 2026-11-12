@@ -296,12 +296,6 @@ test('deleteBranches with the remote flag follows each local delete with a remot
 });
 
 /**
- * The dialog the user pressed IS the level 1 confirmation, so the local delete
- * carries `confirm: true`. The level 2 acknowledgement is NOT carried: it belongs
- * to the guard dialog, which shows the target and the command before asking for
- * the checkbox. Pre-answering it would make frame 62 unreachable.
- */
-/**
  * The dialog the user pressed IS the level 1 confirmation, so every request
  * carries `confirm: true`. The level 2 answer is whatever the dialog collected
  * for the batch; the acknowledgement tests below pin why it is asked once.

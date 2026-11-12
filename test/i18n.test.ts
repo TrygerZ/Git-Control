@@ -587,3 +587,29 @@ test('cleanup age strings do not repeat the relative-time suffix', () => {
     assert.doesNotMatch(line, /ago ago|lalu lalu/, line);
   }
 });
+
+/**
+ * The guard dialog shows a warning on stage 2. It has to describe the loss that
+ * is about to happen: a remote branch delete touches nothing locally, so the
+ * discard-file sentence is false there. There is no DOM harness, so this pins the
+ * pick and the two strings, and asserts they are not the same sentence.
+ */
+test('the level 2 warning matches the action it is warning about', () => {
+  const src = fs.readFileSync(
+    path.join(__dirname, '..', '..', 'src', 'webview', 'GuardDialog.tsx'),
+    'utf8',
+  );
+  assert.match(
+    src,
+    /request\.action === 'branch-delete-remote'[\s\S]{0,120}stage2WarningBranch[\s\S]{0,60}stage2Warning/,
+    'the remote delete picks its own warning',
+  );
+  for (const lang of ['en', 'id'] as const) {
+    const guard = t(lang).guard;
+    assert.ok(guard.stage2Warning.length > 0);
+    assert.ok(guard.stage2WarningBranch.length > 0);
+    assert.notEqual(guard.stage2WarningBranch, guard.stage2Warning, lang);
+    assert.doesNotMatch(guard.stage2WarningBranch, /–|—/, lang);
+  }
+  assert.notEqual(t('en').guard.stage2WarningBranch, t('id').guard.stage2WarningBranch);
+});
