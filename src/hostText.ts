@@ -45,6 +45,13 @@ const en = {
     scopeMissing: 'Token lacks repo:status scope for private repository.',
     invalidHash: 'Invalid commit hash.',
     maskedKey: '[masked key material]',
+    notConnected: 'Connect GitHub to continue.',
+    tokenNotTrusted: 'The token is not sent to this host.',
+    missingScope: (scope: string) =>
+      `The token needs the "${scope}" permission. Reconnect with a token that has it.`,
+    writeUnavailable: 'GitHub is unreachable. The change was not sent.',
+    confirmWrite: 'This changes data on GitHub. Confirm to continue.',
+    invalidWrite: 'GitHub refused the change. Check the values and try again.',
   },
   quickActions: {
     placeholder: 'Type what you want to do',
@@ -148,6 +155,13 @@ const id: HostCatalog = {
     scopeMissing: 'Token tidak punya scope repo:status untuk repository privat.',
     invalidHash: 'Hash commit tidak valid.',
     maskedKey: '[materi kunci disamarkan]',
+    notConnected: 'Hubungkan GitHub untuk melanjutkan.',
+    tokenNotTrusted: 'Token tidak dikirim ke host ini.',
+    missingScope: (scope: string) =>
+      `Token memerlukan izin "${scope}". Hubungkan ulang dengan token yang memilikinya.`,
+    writeUnavailable: 'GitHub tidak terjangkau. Perubahan tidak dikirim.',
+    confirmWrite: 'Ini mengubah data di GitHub. Konfirmasi untuk melanjutkan.',
+    invalidWrite: 'GitHub menolak perubahan. Periksa nilainya lalu coba lagi.',
   },
   quickActions: {
     placeholder: 'Ketik tindakan yang diinginkan',
