@@ -155,6 +155,11 @@ test('the card reloads when the auth state changes, so connect is not a dead end
   const deps = tail.slice(depsStart, tail.indexOf(']', depsStart) + 1);
   assert.match(deps, /auth/, 'the PR load effect depends on the auth state');
   assert.match(deps, /detailHash/, 'and still on the selected commit');
+
+  // The dependency alone is not enough: without the body guard the effect would
+  // call the loader while signed out, and the store would refuse it silently.
+  const body = src.slice(start - 260, start);
+  assert.match(body, /auth\?\.connected !== true/, 'the effect returns early when signed out');
 });
 
 test('the signed-out card does not claim to be busy loading nothing', () => {

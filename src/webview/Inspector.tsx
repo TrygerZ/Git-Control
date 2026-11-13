@@ -394,7 +394,9 @@ export function Inspector({ hash }: Props): JSX.Element {
             // Signed out there is nothing to ask, and "not part of a pull
             // request" would be a lie: the answer is unknown, not empty.
             <>
-              <p className="gc-inspector__pr-none">{strings.prs.signedOutTitle}</p>
+              {/* The button below says the same words, so the line above it
+                  explains why instead of repeating them. */}
+              <p className="gc-inspector__pr-none-hint">{strings.prs.signedOutBody}</p>
               <button
                 type="button"
                 className="gc-button gc-button--quiet"
