@@ -3697,3 +3697,95 @@ test('replaying a branch-delete with the same idempotency key does not run git t
   // second request never reached git.
   assert.ok(!(await repo.git.refs()).some((r) => r.refName === 'refs/heads/feat/a'));
 });
+
+// ------------------------------------------------------ P21: checks over bridge
+
+test('P21: commit pull requests and check runs reach the host with validated payloads', async (t) => {
+  const prCalls: Array<{ owner: string; repo: string; hash: string }> = [];
+  const checkCalls: Array<{ owner: string; repo: string; sha: string }> = [];
+  const rateLimit = { limit: 5000, remaining: 4999, resetAt: null, cached: false, offline: false };
+  const withHost = harness(null, {
+    githubCommitPullRequests: (payload) => {
+      prCalls.push(payload);
+      return Promise.resolve({ pullRequests: [], rateLimit });
+    },
+    githubCheckRuns: (payload) => {
+      checkCalls.push(payload);
+      return Promise.resolve({
+        checks: [],
+        summary: { state: 'none', total: 0, passed: 0, failing: 0, pending: 0, failingNames: [] },
+        rateLimit,
+      });
+    },
+  });
+  t.after(() => withHost.bridge.dispose());
+  const HASH = 'a'.repeat(40);
+
+  const prs = await withHost.webview.send(
+    req('github/commitPullRequests', { owner: 'o', repo: 'r', hash: HASH }),
+  );
+  assert.equal(prs.ok, true);
+  assert.deepEqual(prCalls, [{ owner: 'o', repo: 'r', hash: HASH }]);
+
+  const checks = await withHost.webview.send(req('github/checkRuns', { owner: 'o', repo: 'r', sha: HASH }));
+  assert.equal(checks.ok, true);
+  if (checks.ok) {
+    assert.deepEqual((checks.data as { summary: { state: string } }).summary.state, 'none');
+  }
+  assert.deepEqual(checkCalls, [{ owner: 'o', repo: 'r', sha: HASH }]);
+});
+
+test('P21: bad owners, repos, and hashes are refused before the host sees them', async (t) => {
+  let reached = 0;
+  const withHost = harness(null, {
+    githubCommitPullRequests: () => {
+      reached += 1;
+      return Promise.resolve({
+        pullRequests: [],
+        rateLimit: { limit: null, remaining: null, resetAt: null, cached: false, offline: false },
+      });
+    },
+    githubCheckRuns: () => {
+      reached += 1;
+      return Promise.resolve({
+        checks: [],
+        summary: { state: 'none', total: 0, passed: 0, failing: 0, pending: 0, failingNames: [] },
+        rateLimit: { limit: null, remaining: null, resetAt: null, cached: false, offline: false },
+      });
+    },
+  });
+  t.after(() => withHost.bridge.dispose());
+  const HASH = 'a'.repeat(40);
+
+  for (const payload of [
+    { owner: '../../etc/passwd', repo: 'r', hash: HASH },
+    { owner: 'o', repo: 'x'.repeat(1_000_000), hash: HASH },
+    { owner: 'o', repo: 'r', hash: '--force' },
+    { owner: 'o', repo: 'r', hash: 'abc' },
+    { owner: 'o', repo: 'r', hash: 'g'.repeat(40) },
+  ]) {
+    const prs = await withHost.webview.send(req('github/commitPullRequests', payload));
+    assert.equal(prs.ok, false, JSON.stringify(payload));
+    if (!prs.ok) assert.equal(prs.error.code, 'VALIDATION_ERROR');
+    const checks = await withHost.webview.send(req('github/checkRuns', payload));
+    assert.equal(checks.ok, false, JSON.stringify(payload));
+    if (!checks.ok) assert.equal(checks.error.code, 'VALIDATION_ERROR');
+  }
+  assert.equal(reached, 0, 'nothing invalid reached the host');
+});
+
+test('P21: both kinds answer UNAVAILABLE when the host has no callback', async (t) => {
+  const withHost = harness(null);
+  t.after(() => withHost.bridge.dispose());
+  const HASH = 'a'.repeat(40);
+  for (const [kind, payload] of [
+    ['github/commitPullRequests', { owner: 'o', repo: 'r', hash: HASH }],
+    ['github/checkRuns', { owner: 'o', repo: 'r', sha: HASH }],
+  ] as const) {
+    const response = await withHost.webview.send(req(kind, payload));
+    assert.equal(response.ok, false, kind);
+    if (response.ok) return;
+    assert.equal(response.error.code, 'UNAVAILABLE', kind);
+    assert.equal(response.error.status, 503, kind);
+  }
+});

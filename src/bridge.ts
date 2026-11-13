@@ -34,6 +34,8 @@ import {
   validateActionsJobsPayload,
   validateActionsLogPayload,
   validateActionsRunsPayload,
+  validateCheckRunsPayload,
+  validateCommitPullRequestsPayload,
   validateEmptyPayload as validateEmptyPayloadPure,
 } from './bridgePure';
 import type { RepositoryService } from './repository';
@@ -55,12 +57,16 @@ import type {
   ActionsLogResult,
   ActionsRunsPayload,
   ActionsRunsResult,
+  CheckRunsPayload,
+  CheckRunsResult,
   CommitAuthorInfo,
   CommitAuthorsPayload,
   CommitAuthorsResult,
   CommitDetail,
   CommitDetailPayload,
   CommitPayload,
+  CommitPullRequestsPayload,
+  CommitPullRequestsResult,
   CommitResult,
   ContributorIdentity,
   ContributorIdentityPayload,
@@ -160,6 +166,8 @@ export interface BridgeHost {
   openExternal?(url: string): Promise<boolean>;
   githubRepo?(payload: GitHubRepoPayload): Promise<GitHubRepoInfo>;
   githubPullRequests?(payload: PullRequestsPayload): Promise<PullRequestsResult>;
+  githubCommitPullRequests?(payload: CommitPullRequestsPayload): Promise<CommitPullRequestsResult>;
+  githubCheckRuns?(payload: CheckRunsPayload): Promise<CheckRunsResult>;
   githubIssues?(payload: IssuesPayload): Promise<IssuesResult>;
   /** Workflow runs. Sign-in required, so the host also needs a token to answer. */
   githubActionsRuns?(payload: ActionsRunsPayload): Promise<ActionsRunsResult>;
@@ -415,6 +423,10 @@ export class MessageBridge {
         return this.handleGitHubRepo(request.payload as GitHubRepoPayload);
       case 'github/pullRequests':
         return this.handleGitHubPullRequests(request.payload as PullRequestsPayload);
+      case 'github/commitPullRequests':
+        return this.handleGitHubCommitPullRequests(request.payload as CommitPullRequestsPayload);
+      case 'github/checkRuns':
+        return this.handleGitHubCheckRuns(request.payload as CheckRunsPayload);
       case 'github/issues':
         return this.handleGitHubIssues(request.payload as IssuesPayload);
       case 'github/actionsRuns':
@@ -801,6 +813,26 @@ export class MessageBridge {
     const list = this.host.githubIssues;
     if (list === undefined) fail(503, 'UNAVAILABLE', this.text().githubPending);
     return list(payload);
+  }
+
+  private async handleGitHubCommitPullRequests(
+    payload: CommitPullRequestsPayload,
+  ): Promise<CommitPullRequestsResult> {
+    const invalid = (detail: string): never =>
+      fail(400, 'VALIDATION_ERROR', this.text().invalid, { detail });
+    validateCommitPullRequestsPayload(payload, invalid);
+    const list = this.host.githubCommitPullRequests;
+    if (list === undefined) fail(503, 'UNAVAILABLE', this.text().githubPending);
+    return list(payload);
+  }
+
+  private async handleGitHubCheckRuns(payload: CheckRunsPayload): Promise<CheckRunsResult> {
+    const invalid = (detail: string): never =>
+      fail(400, 'VALIDATION_ERROR', this.text().invalid, { detail });
+    validateCheckRunsPayload(payload, invalid);
+    const runs = this.host.githubCheckRuns;
+    if (runs === undefined) fail(503, 'UNAVAILABLE', this.text().githubPending);
+    return runs(payload);
   }
 
   private async handleGitHubActionsRuns(payload: ActionsRunsPayload): Promise<ActionsRunsResult> {

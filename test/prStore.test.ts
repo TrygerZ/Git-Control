@@ -280,3 +280,196 @@ test('switching to another repository drops the previous pull request lists', as
     'the new repository list replaces the old one',
   );
 });
+
+// ------------------------------------------------------------- checks (P21)
+
+function sha(n: number): string {
+  return `${n}`.padStart(40, 'a');
+}
+
+function summary(state: 'none' | 'passing' | 'failing' | 'pending', total = 1) {
+  return {
+    state,
+    total,
+    passed: state === 'passing' ? total : 0,
+    failing: state === 'failing' ? total : 0,
+    pending: state === 'pending' ? total : 0,
+    failingNames: state === 'failing' ? ['Lint'] : [],
+  };
+}
+
+function resetChecks(): void {
+  useGitHubStore.setState({
+    auth: { connected: true, login: 'me', scopes: ['repo'] },
+    linkage: LINKED,
+    checks: {},
+    commitPullRequests: {},
+  });
+}
+
+test('P21: loadChecks stores one summary per sha and asks once for the batch', async () => {
+  resetChecks();
+  const asked: string[][] = [];
+  const s = stub((kind, payload) => {
+    if (kind !== 'github/checkRuns') return { connected: true, login: 'me', scopes: [] };
+    const shas = [(payload as { sha: string }).sha];
+    asked.push(shas);
+    return { checks: [], summary: summary('passing'), rateLimit: RATE };
+  });
+  try {
+    await useGitHubStore.getState().loadChecks([sha(1), sha(2)]);
+  } finally {
+    s.restore();
+  }
+  assert.deepEqual(asked.flat().sort(), [sha(1), sha(2)].sort(), 'one request per sha');
+  const checks = useGitHubStore.getState().checks;
+  assert.equal(checks[sha(1)]?.state, 'passing');
+  assert.equal(checks[sha(2)]?.state, 'passing');
+});
+
+test('P21: a second call inside 30 s sends nothing for a sha already asked about', async () => {
+  resetChecks();
+  let calls = 0;
+  const s = stub((kind) => {
+    if (kind !== 'github/checkRuns') return { connected: true, login: 'me', scopes: [] };
+    calls += 1;
+    return { checks: [], summary: summary('passing'), rateLimit: RATE };
+  });
+  try {
+    await useGitHubStore.getState().loadChecks([sha(3)]);
+    await useGitHubStore.getState().loadChecks([sha(3)]);
+  } finally {
+    s.restore();
+  }
+  assert.equal(calls, 1, 'the ledger answers the repeat, not the network');
+});
+
+test('P21: the ledger forgets a sha after 30 s so a scrolled row can refresh', async () => {
+  resetChecks();
+  let calls = 0;
+  const realNow = Date.now;
+  let clock = 1_700_000_000_000;
+  Date.now = () => clock;
+  const s = stub((kind) => {
+    if (kind !== 'github/checkRuns') return { connected: true, login: 'me', scopes: [] };
+    calls += 1;
+    return { checks: [], summary: summary('passing'), rateLimit: RATE };
+  });
+  try {
+    await useGitHubStore.getState().loadChecks([sha(4)]);
+    clock += 29_000;
+    await useGitHubStore.getState().loadChecks([sha(4)]);
+    assert.equal(calls, 1, 'still inside the window');
+    clock += 2_000;
+    await useGitHubStore.getState().loadChecks([sha(4)]);
+  } finally {
+    Date.now = realNow;
+    s.restore();
+  }
+  assert.equal(calls, 2, 'past the window the next scroll may ask again');
+});
+
+test('P21: loadChecks asks for at most ten shas per call', async () => {
+  resetChecks();
+  let calls = 0;
+  const s = stub((kind) => {
+    if (kind !== 'github/checkRuns') return { connected: true, login: 'me', scopes: [] };
+    calls += 1;
+    return { checks: [], summary: summary('passing'), rateLimit: RATE };
+  });
+  const shas = Array.from({ length: 12 }, (_, i) => sha(100 + i));
+  try {
+    // Twelve rows enter the viewport at once; the budget is ten, so the last two
+    // wait for the next scroll instead of spending twelve requests in one frame.
+    await useGitHubStore.getState().loadChecks(shas);
+  } finally {
+    s.restore();
+  }
+  assert.equal(calls, 10, 'the per-call budget holds');
+  assert.equal(Object.keys(useGitHubStore.getState().checks).length, 10);
+  assert.equal(
+    useGitHubStore.getState().checks[shas[10] as string],
+    undefined,
+    'the shas past the budget are not claimed as asked',
+  );
+});
+
+test('P21: loadChecks sends nothing without a GitHub remote', async () => {
+  resetChecks();
+  useGitHubStore.setState({ linkage: { ...LINKED, available: false, owner: null, repo: null } });
+  const s = stub(() => ({}));
+  try {
+    await useGitHubStore.getState().loadChecks([sha(5)]);
+  } finally {
+    s.restore();
+  }
+  assert.deepEqual(s.calls, []);
+});
+
+test('P21: a failed check read is remembered as unavailable, not retried on every scroll', async () => {
+  resetChecks();
+  let calls = 0;
+  const s = stub((kind) => {
+    if (kind !== 'github/checkRuns') return { connected: true, login: 'me', scopes: [] };
+    calls += 1;
+    throw new Error('boom');
+  });
+  try {
+    await useGitHubStore.getState().loadChecks([sha(6)]);
+    await useGitHubStore.getState().loadChecks([sha(6)]);
+  } finally {
+    s.restore();
+  }
+  assert.equal(calls, 1, 'a failure must not become a request per scroll frame');
+});
+
+test('P21: loadCommitPullRequests stores the list under the commit hash', async () => {
+  resetChecks();
+  const s = stub((kind) => {
+    if (kind !== 'github/commitPullRequests') return { connected: true, login: 'me', scopes: [] };
+    return { pullRequests: [pr(142, 'merged')], rateLimit: RATE };
+  });
+  try {
+    await useGitHubStore.getState().loadCommitPullRequests(sha(7));
+  } finally {
+    s.restore();
+  }
+  const stored = useGitHubStore.getState().commitPullRequests[sha(7)];
+  assert.equal(stored?.length, 1);
+  assert.equal(stored?.[0]?.number, 142);
+});
+
+test('P21: an empty commit pull request answer is remembered as "none", not retried', async () => {
+  resetChecks();
+  let calls = 0;
+  const s = stub((kind) => {
+    if (kind !== 'github/commitPullRequests') return { connected: true, login: 'me', scopes: [] };
+    calls += 1;
+    return { pullRequests: [], rateLimit: RATE };
+  });
+  try {
+    await useGitHubStore.getState().loadCommitPullRequests(sha(8));
+    await useGitHubStore.getState().loadCommitPullRequests(sha(8));
+  } finally {
+    s.restore();
+  }
+  assert.equal(calls, 1);
+  assert.deepEqual(useGitHubStore.getState().commitPullRequests[sha(8)], []);
+});
+
+test('P21: disconnect drops the check and commit pull request slices', async () => {
+  resetChecks();
+  useGitHubStore.setState({
+    checks: { [sha(9)]: summary('passing') },
+    commitPullRequests: { [sha(9)]: [pr(1)] },
+  });
+  const s = stub(() => ({ connected: false, login: null, scopes: [] }));
+  try {
+    await useGitHubStore.getState().disconnect();
+  } finally {
+    s.restore();
+  }
+  const state = useGitHubStore.getState();
+  assert.deepEqual(state.checks, {});
+  assert.deepEqual(state.commitPullRequests, {});
+});

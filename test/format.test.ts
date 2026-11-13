@@ -9,6 +9,9 @@ import {
   actionTitle,
   apiQuotaLabel,
   baseName,
+  checkLabel,
+  checkNamesLabel,
+  checkTone,
   conflictLabel,
   compareUrl,
   consequenceOf,
@@ -1140,4 +1143,58 @@ test('gitCommandOf renders the start work command exactly', () => {
     gitCommandOf({ action: 'create-branch', name: 'feat/97-lane-gutter-push-state', startPoint: HASH }),
     'git switch --create feat/97-lane-gutter-push-state abc1234',
   );
+});
+
+// ------------------------------------------------- P21: check badge helpers
+
+test('P21: checkLabel names the state in words for both languages', () => {
+  const none = { state: 'none' as const, total: 0, passed: 0, failing: 0, pending: 0, failingNames: [] };
+  const passing = { state: 'passing' as const, total: 12, passed: 12, failing: 0, pending: 0, failingNames: [] };
+  const pending = { state: 'pending' as const, total: 14, passed: 3, failing: 0, pending: 11, failingNames: [] };
+  const failing = {
+    state: 'failing' as const,
+    total: 14,
+    passed: 12,
+    failing: 2,
+    pending: 0,
+    failingNames: ['Lint', 'Test'],
+  };
+
+  assert.equal(checkLabel(none, 'en'), 'No checks');
+  assert.equal(checkLabel(none, 'id'), 'Tidak ada pemeriksaan');
+  assert.equal(checkLabel(passing, 'en'), '12/12 checks passed');
+  assert.equal(checkLabel(passing, 'id'), '12/12 pemeriksaan lulus');
+  assert.equal(checkLabel(pending, 'en'), '3/14 checks done');
+  assert.equal(checkLabel(pending, 'id'), '3/14 pemeriksaan selesai');
+  assert.equal(checkLabel(failing, 'en'), '2 failing');
+  assert.equal(checkLabel(failing, 'id'), '2 gagal');
+
+  // A four-digit count goes through the locale formatter, not a raw number.
+  assert.equal(
+    checkLabel({ ...passing, total: 1234, passed: 1234 }, 'en'),
+    '1,234/1,234 checks passed',
+  );
+});
+
+test('P21: checkLabel never throws on a partial summary', () => {
+  // The webview renders whatever the host sent. A missing or negative count must
+  // not produce `NaN` in a badge.
+  const broken = { state: 'pending' as const, total: 0, passed: 0, failing: 0, pending: 0, failingNames: [] };
+  assert.equal(checkLabel(broken, 'en'), '0/0 checks done');
+});
+
+test('P21: checkTone maps the four states onto the existing tone ladder', () => {
+  assert.equal(checkTone('none'), 'neutral');
+  assert.equal(checkTone('pending'), 'pending');
+  assert.equal(checkTone('passing'), 'added');
+  assert.equal(checkTone('failing'), 'removed');
+});
+
+test('P21: checkNamesLabel joins up to three failing names and adds the overflow', () => {
+  assert.equal(checkNamesLabel([], 'en'), '');
+  assert.equal(checkNamesLabel(['Lint'], 'en'), 'Lint');
+  assert.equal(checkNamesLabel(['Lint', 'Test'], 'en'), 'Lint, Test');
+  assert.equal(checkNamesLabel(['Lint', 'Test', 'Build'], 'en'), 'Lint, Test, Build');
+  assert.equal(checkNamesLabel(['Lint', 'Test', 'Build', 'Deploy'], 'en'), 'Lint, Test, Build +1 more');
+  assert.equal(checkNamesLabel(['Lint', 'Test', 'Build', 'Deploy', 'Docs'], 'id'), 'Lint, Test, Build +2 lainnya');
 });

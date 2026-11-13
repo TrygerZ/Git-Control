@@ -9,6 +9,7 @@
 import * as path from 'node:path';
 import * as vscode from 'vscode';
 import { MessageBridge, type BridgeHost, type WebviewLike } from './bridge';
+import { summarizeChecks } from './checkSummary';
 import { GitRunner, resolveGitExecutable } from './git';
 import {
   GitHubClient,
@@ -40,8 +41,12 @@ import type {
   ActionsLogResult,
   ActionsRunsPayload,
   ActionsRunsResult,
+  CheckRunsPayload,
+  CheckRunsResult,
   CommitAuthorsPayload,
   CommitAuthorsResult,
+  CommitPullRequestsPayload,
+  CommitPullRequestsResult,
   ContributorIdentity,
   ContributorIdentityPayload,
   FocusTarget,
@@ -886,6 +891,8 @@ class Controller implements vscode.Disposable {
       openExternal: (url) => this.openExternal(url),
       githubRepo: (payload) => this.githubRepo(payload),
       githubPullRequests: (payload) => this.githubPullRequests(payload),
+      githubCommitPullRequests: (payload) => this.githubCommitPullRequests(payload),
+      githubCheckRuns: (payload) => this.githubCheckRuns(payload),
       githubIssues: (payload) => this.githubIssues(payload),
       githubActionsRuns: (payload) => this.githubActionsRuns(payload),
       githubActionsJobs: (payload) => this.githubActionsJobs(payload),
@@ -1215,6 +1222,24 @@ class Controller implements vscode.Disposable {
       refresh: payload.refresh === true,
     });
     return { pullRequests: result.data, rateLimit: client.rateLimit(result.cached) };
+  }
+
+  private async githubCommitPullRequests(
+    payload: CommitPullRequestsPayload,
+  ): Promise<CommitPullRequestsResult> {
+    const { client } = await this.githubClient();
+    const result = await client.pullRequestsForCommit(payload.owner, payload.repo, payload.hash);
+    return { pullRequests: result.data, rateLimit: client.rateLimit(result.cached) };
+  }
+
+  private async githubCheckRuns(payload: CheckRunsPayload): Promise<CheckRunsResult> {
+    const { client } = await this.githubClient();
+    const result = await client.checkRuns(payload.owner, payload.repo, payload.sha);
+    return {
+      checks: result.data,
+      summary: summarizeChecks(result.data),
+      rateLimit: client.rateLimit(result.cached),
+    };
   }
 
   private async githubIssues(payload: IssuesPayload): Promise<IssuesResult> {
