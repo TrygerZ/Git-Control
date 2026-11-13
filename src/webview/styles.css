@@ -5157,6 +5157,29 @@ h3 {
   overflow-wrap: anywhere;
 }
 
+/*
+ * The check count sits at the row's right edge (frame 05), outside the text
+ * column so a long title is not squeezed by it. The names line is the second
+ * channel: the count alone never says which check broke.
+ */
+.gc-prs__check {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  flex: 0 0 auto;
+  gap: var(--gc-space-1);
+  margin-left: auto;
+  max-width: 45%;
+}
+
+.gc-check__names {
+  overflow: hidden;
+  color: var(--gc-text-muted);
+  font-size: var(--gc-fs-2xs);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 /* Decoration for the pointer: the row itself opens the same URL and is the tab stop. */
 .gc-prs__link {
   display: inline-flex;
