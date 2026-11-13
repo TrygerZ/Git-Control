@@ -59,3 +59,36 @@ test('the row badge is text plus icon, never colour alone', () => {
   assert.match(badge, /<Icon\s+name=/, 'an icon accompanies the count');
   assert.match(badge, /aria-label=/, 'the badge has an accessible name');
 });
+
+test('the card states the empty case instead of drawing an empty frame', () => {
+  const src = read('src/webview/Inspector.tsx');
+  assert.match(src, /pullRequestNone/, 'a commit in no pull request says so');
+  assert.match(src, /pullRequestNoneHint/, 'and says what to do about it');
+  // The card must not render for a user with no GitHub linkage at all: the
+  // inspector already hides the GitHub button in that case.
+  assert.match(src, /linkage\?\.available/, 'the card is gated on linkage like the GitHub button');
+});
+
+test('the card reserves its height and marks itself busy while loading', () => {
+  const css = read('src/webview/styles.css');
+  assert.match(css, /\.gc-inspector__pr-card\s*\{[^}]*min-height/, 'no layout shift when checks land');
+  const src = read('src/webview/Inspector.tsx');
+  assert.match(src, /aria-busy/, 'loading is announced');
+});
+
+test('the row asks for checks only for rows that reach the viewport', () => {
+  const src = read('src/webview/PullRequestsView.tsx');
+  // The badge is per row, but the request is per viewport: one observer, one batch.
+  assert.match(src, /IntersectionObserver/, 'rows are observed, not all requested at once');
+  assert.match(src, /loadChecks\(/, 'the batch goes through the store action');
+  assert.match(src, /gc-prs__check|gc-check/, 'the row renders the badge');
+  assert.doesNotMatch(src, /setInterval/, 'no polling in this view');
+});
+
+test('the row badge never renders without a summary or a reason', () => {
+  const src = read('src/webview/PullRequestsView.tsx');
+  // A row whose pull request carries no head sha cannot have checks; it must not
+  // render an empty badge that looks like "no checks".
+  assert.match(src, /headSha/, 'the badge is gated on the head sha');
+  assert.match(src, /checks\[/, 'the badge reads the stored summary by sha');
+});

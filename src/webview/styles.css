@@ -4764,6 +4764,66 @@ h3 {
   list-style: none;
 }
 
+/*
+ * Pull request card. The min-height reserves the row while the PR answer and
+ * then the checks land, so nothing below shifts twice on a slow connection.
+ */
+.gc-inspector__pr-card {
+  min-height: 56px;
+  border: 1px solid var(--gc-border-subtle);
+  border-radius: var(--gc-radius);
+  padding: var(--gc-space-2) var(--gc-space-3);
+}
+
+.gc-inspector__pr-open {
+  display: flex;
+  align-items: center;
+  gap: var(--gc-space-2);
+  width: 100%;
+  min-height: var(--gc-hit);
+  border: none;
+  background: none;
+  color: inherit;
+  text-align: left;
+  padding: 0;
+}
+
+.gc-inspector__pr-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gc-space-1);
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+/* Same truncation pattern as `.gc-prs__title`: one line, ellipsis, full text in the button label. */
+.gc-inspector__pr-title {
+  overflow: hidden;
+  color: var(--gc-text-primary);
+  font-size: var(--gc-fs-sm);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.gc-inspector__pr-meta {
+  color: var(--gc-text-muted);
+  font-size: var(--gc-fs-2xs);
+}
+
+.gc-inspector__pr-none,
+.gc-inspector__pr-none-hint {
+  margin: 0;
+  font-size: var(--gc-fs-xs);
+}
+
+.gc-inspector__pr-none-hint {
+  color: var(--gc-text-muted);
+}
+
+.gc-check__more {
+  color: var(--gc-text-muted);
+}
+
 .gc-inspector__body {
   max-height: 14em;
   overflow: auto;

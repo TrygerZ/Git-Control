@@ -15,8 +15,12 @@ import {
   absoluteTime,
   authorInitials,
   baseName,
+  checkLabel,
+  checkNamesLabel,
+  checkTone,
   formatCount,
   isSafeImageSrc,
+  pullRequestState,
   relativeTime,
   sanitizeGitText,
   shortHash,
@@ -46,10 +50,34 @@ export function Inspector({ hash }: Props): JSX.Element {
   const openCommit = useGitHubStore((st) => st.openCommit);
   const avatars = useGitHubStore((st) => st.avatars);
   const loadCommitAuthors = useGitHubStore((st) => st.loadCommitAuthors);
+  const commitPullRequests = useGitHubStore((st) => st.commitPullRequests);
+  const checks = useGitHubStore((st) => st.checks);
+  const loadCommitPullRequests = useGitHubStore((st) => st.loadCommitPullRequests);
+  const loadChecks = useGitHubStore((st) => st.loadChecks);
+  const openUrl = useGitHubStore((st) => st.openUrl);
   const [imgFailed, setImgFailed] = useState(false);
 
   const hashRef = useRef(hash);
   hashRef.current = hash;
+
+  // Keyed on the detail hash, not the prop: `hash` turns non-null before the
+  // detail lands, and a request for a commit the inspector cannot describe yet
+  // would race the detail load.
+  const detailHash = detail?.hash ?? null;
+
+  useEffect(() => {
+    if (detailHash === null || linkage?.available !== true) return;
+    void loadCommitPullRequests(detailHash);
+  }, [detailHash, linkage?.available, loadCommitPullRequests]);
+
+  // Checks hang off the pull request head, so a commit in no pull request sends
+  // no check request at all. The list is newest-first from the API.
+  const firstPrHeadSha =
+    detailHash === null ? undefined : commitPullRequests[detailHash]?.[0]?.headSha;
+  useEffect(() => {
+    if (firstPrHeadSha === undefined || firstPrHeadSha.length === 0) return;
+    void loadChecks([firstPrHeadSha]);
+  }, [firstPrHeadSha, loadChecks]);
 
   useEffect(() => {
     if (hash === null) {
@@ -188,6 +216,15 @@ export function Inspector({ hash }: Props): JSX.Element {
   const author = sanitizeGitText(detail.authorName);
   const avatarUrl = avatars[detail.hash] ?? null;
   const showAvatar = avatarUrl !== null && isSafeImageSrc(avatarUrl) && !imgFailed;
+  // `undefined` means the request is still in flight; `[]` is a real answer.
+  const prs = commitPullRequests[detail.hash];
+  const pr = prs?.[0];
+  const summary = pr?.headSha === undefined ? undefined : checks[pr.headSha];
+  const checkText = summary === undefined ? '' : checkLabel(summary, language);
+  const checkNames = summary === undefined ? '' : checkNamesLabel(summary.failingNames, language);
+  // `failingNames` is capped at three by `summarizeChecks`, so the overflow is
+  // the full failing count minus the names that fit.
+  const hiddenFailing = summary === undefined ? 0 : summary.failing - summary.failingNames.length;
 
   return (
     <section className="gc-inspector" aria-label={strings.inspector.panelAria}>
@@ -317,6 +354,84 @@ export function Inspector({ hash }: Props): JSX.Element {
               </li>
             ))}
           </ul>
+        </section>
+      )}
+
+      {/*
+        The pull request card answers "is this commit shipped, and did CI pass"
+        without leaving the inspector. Gated on linkage: with no GitHub remote
+        there is nothing to ask and the row would be a permanent placeholder.
+        `aria-busy` announces the first load; the reserved height keeps the rows
+        below from jumping when the answer lands.
+      */}
+      {linkage?.available === true && (
+        <section
+          className="gc-inspector__block gc-inspector__pr-card"
+          aria-label={strings.inspector.checksCardAria}
+          aria-busy={prs === undefined}
+        >
+          {prs === undefined ? (
+            <p className="gc-inspector__pr-none">{strings.checks.loading}</p>
+          ) : pr === undefined ? (
+            <>
+              <p className="gc-inspector__pr-none">{strings.inspector.pullRequestNone}</p>
+              <p className="gc-inspector__pr-none-hint">{strings.inspector.pullRequestNoneHint}</p>
+            </>
+          ) : (
+            <button
+              type="button"
+              className="gc-inspector__pr-open"
+              aria-label={strings.inspector.openPullRequestAria(String(pr.number))}
+              onClick={() => void openUrl(pr.url)}
+            >
+              <Icon name="pr" />
+              <span className="gc-inspector__pr-body">
+                <span className="gc-inspector__pr-title">
+                  #{pr.number} {sanitizeGitText(pr.title)}
+                </span>
+                <span className="gc-inspector__pr-meta">
+                  {pullRequestState(pr.state, language)} ·{' '}
+                  {strings.inspector.intoBase(
+                    sanitizeGitText(pr.baseRef),
+                    relativeTime(pr.updatedAt, Date.now(), language),
+                  )}
+                </span>
+              </span>
+              {summary === undefined ? (
+                // Same shell as the badge so the row keeps its height; the visible
+                // text is the name, so no aria-label override is needed.
+                <span className="gc-check">{strings.checks.loading}</span>
+              ) : (
+                <span
+                  className={`gc-check gc-check--${checkTone(summary.state)}`}
+                  // No names means no second clause: `badgeAria` joins with a
+                  // comma, so passing an empty list would trail one into the
+                  // accessible name.
+                  aria-label={
+                    checkNames.length > 0 ? strings.checks.badgeAria(checkText, checkNames) : checkText
+                  }
+                >
+                  <Icon
+                    name={
+                      summary.state === 'failing'
+                        ? 'error'
+                        : summary.state === 'pending'
+                          ? 'status-running'
+                          : summary.state === 'passing'
+                            ? 'check'
+                            : 'info'
+                    }
+                  />
+                  <span aria-hidden="true">{checkText}</span>
+                  {hiddenFailing > 0 && (
+                    <span className="gc-check__more">
+                      {strings.checks.failingMore(String(hiddenFailing))}
+                    </span>
+                  )}
+                </span>
+              )}
+            </button>
+          )}
         </section>
       )}
 
