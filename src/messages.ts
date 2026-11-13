@@ -550,6 +550,12 @@ export interface PullRequestInfo {
    * review request cannot match a viewer.
    */
   requestedReviewers: string[];
+  /**
+   * Head commit of the pull request, when GitHub sent one. Optional because
+   * older cached payloads and a partial response do not carry it; check runs
+   * are requested from it, so a missing value means "no checks to ask for".
+   */
+  headSha?: string;
 }
 
 export interface PullRequestsPayload {
@@ -563,6 +569,77 @@ export interface PullRequestsPayload {
 
 export interface PullRequestsResult {
   pullRequests: PullRequestInfo[];
+  rateLimit: GitHubRateLimit;
+}
+
+// ------------------------------------------------------------- checks (P21)
+
+/**
+ * `status` of a check run, narrowed to the three GitHub documents. The API also
+ * sends `requested` and `waiting`; the mapper folds those into `queued` so the
+ * summary never has to know about states that carry no user-visible difference.
+ */
+export type CheckStatus = 'queued' | 'in_progress' | 'completed';
+
+/**
+ * `conclusion`, which only exists once a run is completed. `null` is the honest
+ * value for an unfinished run, and unknown strings map here rather than throw.
+ */
+export type CheckConclusion =
+  | 'success'
+  | 'failure'
+  | 'neutral'
+  | 'cancelled'
+  | 'skipped'
+  | 'timed_out'
+  | 'action_required'
+  | 'stale'
+  | null;
+
+export interface CheckRunInfo {
+  id: number;
+  name: string;
+  status: CheckStatus;
+  conclusion: CheckConclusion;
+  /** `html_url`. Opened through `actions/openExternal` only, never an `href`. */
+  url: string;
+  startedAt: string | null;
+  completedAt: string | null;
+}
+
+/** One badge's worth of truth about a commit's checks. */
+export type CheckState = 'none' | 'pending' | 'passing' | 'failing';
+
+export interface CheckSummary {
+  state: CheckState;
+  total: number;
+  passed: number;
+  failing: number;
+  pending: number;
+  /** First three failing names, in run order. The UI adds `+N more`. */
+  failingNames: string[];
+}
+
+export interface CommitPullRequestsPayload {
+  owner: string;
+  repo: string;
+  hash: string;
+}
+
+export interface CommitPullRequestsResult {
+  pullRequests: PullRequestInfo[];
+  rateLimit: GitHubRateLimit;
+}
+
+export interface CheckRunsPayload {
+  owner: string;
+  repo: string;
+  sha: string;
+}
+
+export interface CheckRunsResult {
+  checks: CheckRunInfo[];
+  summary: CheckSummary;
   rateLimit: GitHubRateLimit;
 }
 
@@ -876,6 +953,13 @@ export interface RequestMap {
   'github/disconnect': { payload: Record<string, never>; response: GitHubAuthState };
   'github/repo': { payload: GitHubRepoPayload; response: GitHubRepoInfo };
   'github/pullRequests': { payload: PullRequestsPayload; response: PullRequestsResult };
+  /** Pull requests that contain one commit. Read-only, one cheap request. */
+  'github/commitPullRequests': {
+    payload: CommitPullRequestsPayload;
+    response: CommitPullRequestsResult;
+  };
+  /** Check runs for one commit SHA, with the collapsed summary the badges read. */
+  'github/checkRuns': { payload: CheckRunsPayload; response: CheckRunsResult };
   /** Issues assigned to, created by, or mentioning the viewer. Sign-in required. */
   'github/issues': { payload: IssuesPayload; response: IssuesResult };
   /**
