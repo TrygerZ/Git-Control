@@ -76,6 +76,8 @@ Right-click any commit node or branch ref to perform standard Git actions:
 ### 8. GitHub Integration
 * **Token Storage**: Connects directly to GitHub via VS Code SecretStorage without exposing credentials.
 * **Pull Request Visibility**: Displays pull request statuses and numbers associated with branch heads.
+* **Checks at a Glance**: Each pull request row carries a check badge, loaded only for the rows scrolled into view. A failing row names the checks that broke.
+* **Commit to Pull Request**: The commit inspector shows the pull request that contains the selected commit, with its state, base branch, and check summary, or says the commit is not part of one.
 * **External Navigation**: Direct links to view commits and pull requests in the browser.
 * **Rate Limit Monitoring**: Real-time indicator for GitHub REST API quotas and cache status.
 * **Contributor Identity Resolution**: Resolves author email addresses to GitHub profiles and avatars with cached API queries.

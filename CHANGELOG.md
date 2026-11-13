@@ -5,6 +5,21 @@ All notable changes to the "Git Control" extension will be documented in this fi
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.17.0] - 2026-11-13
+
+### Added
+- Commit inspector shows the pull request that contains the selected commit, with its state, base branch, and a summary of its checks.
+- Pull request rows show how many checks passed, or which ones are failing, loaded only for the rows scrolled into view.
+- A commit that is in no pull request says so and asks GitHub for nothing further.
+
+### Changed
+- Pull request data now carries the head commit, so a row can read its checks without a second lookup.
+- The check summary folds a commit's check runs into one badge: a completed failure outranks a run still in progress, and skipped or neutral checks count as passed.
+
+### Security
+- Both new GitHub reads are validated before they reach the API, and neither sends a request without a connected token.
+- A check read that fails is remembered as unavailable for 30 seconds instead of being retried on every scroll.
+
 ## [3.16.0] - 2026-11-12
 
 ### Added
