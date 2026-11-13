@@ -588,3 +588,69 @@ test('P21: disconnect also forgets the check and commit pull request ledgers', a
   assert.equal(prCalls, 2, 'a reconnect is a fresh identity');
   assert.equal(checkCalls, 2);
 });
+
+test('P21: a cancelled connect keeps the data it had, because no token changed', async () => {
+  resetChecks();
+  // Signed in, data already on screen, user opens Connect and cancels: the host
+  // answers with the same auth it had, so nothing about identity changed.
+  useGitHubStore.setState({
+    auth: { connected: true, login: 'me', scopes: ['repo'] },
+    checks: { [sha(15)]: summary('passing') },
+    commitPullRequests: { [sha(15)]: [pr(3)] },
+  });
+  const s = stub((kind) => {
+    if (kind === 'github/connect') return { connected: true, login: 'me', scopes: ['repo'] };
+    if (kind === 'github/pullRequests') return { pullRequests: [], rateLimit: RATE };
+    if (kind === 'github/auth') return { connected: true, login: 'me', scopes: ['repo'] };
+    return LINKED;
+  });
+  try {
+    await useGitHubStore.getState().connect();
+  } finally {
+    s.restore();
+  }
+  const state = useGitHubStore.getState();
+  assert.equal(state.checks[sha(15)]?.state, 'passing', 'a cancelled prompt must not wipe the card');
+  assert.equal(state.commitPullRequests[sha(15)]?.length, 1);
+});
+
+test('P21: a connect that lands a new token clears the slices so they reload', async () => {
+  resetChecks();
+  useGitHubStore.setState({
+    auth: { connected: false, login: null, scopes: [] },
+    checks: { [sha(16)]: null },
+    commitPullRequests: { [sha(16)]: [] },
+  });
+  const s = stub((kind) => {
+    if (kind === 'github/connect') return { connected: true, login: 'me', scopes: ['repo'] };
+    if (kind === 'github/pullRequests') return { pullRequests: [], rateLimit: RATE };
+    if (kind === 'github/auth') return { connected: true, login: 'me', scopes: ['repo'] };
+    return LINKED;
+  });
+  try {
+    await useGitHubStore.getState().connect();
+  } finally {
+    s.restore();
+  }
+  const state = useGitHubStore.getState();
+  assert.deepEqual(state.checks, {}, 'a real sign-in is a new identity');
+  assert.deepEqual(state.commitPullRequests, {});
+});
+
+test('P21: a failed commit pull request read is recorded, not left pending forever', async () => {
+  resetChecks();
+  const s = stub((kind) => {
+    if (kind === 'github/commitPullRequests') throw new Error('transient');
+    return { connected: true, login: 'me', scopes: ['repo'] };
+  });
+  try {
+    await useGitHubStore.getState().loadCommitPullRequests(sha(17));
+  } finally {
+    s.restore();
+  }
+  assert.equal(
+    useGitHubStore.getState().commitPullRequests[sha(17)],
+    null,
+    'the card can say the answer is unavailable instead of loading forever',
+  );
+});

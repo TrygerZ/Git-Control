@@ -432,7 +432,9 @@ export function PullRequestsView(): JSX.Element {
                           // The button's `aria-label` replaces every descendant's
                           // name, so the check state has to travel in it or a
                           // screen reader user never hears it.
-                          const rowName = checkText.length === 0 ? name : `${name}, ${checkText}`;
+                          const rowName = [name, checkText, checkNames]
+                            .filter((part) => part.length > 0)
+                            .join(', ');
                           return (
                             <li key={pr.number} className="gc-prs__row">
                               <button

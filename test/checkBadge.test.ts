@@ -122,3 +122,47 @@ test('a signed-out user is offered a connect action, not a dead end', () => {
   assert.match(src, /auth/, 'the card reads the auth state');
   assert.match(src, /connect/, 'and offers the connect action');
 });
+
+test('the failing names reach the accessible name of both rows, not just the screen', () => {
+  // An aria-label on the button replaces every descendant name, so a names line
+  // drawn inside it is decoration unless the label carries the names too.
+  const card = read('src/webview/Inspector.tsx');
+  assert.match(card, /checkNames/, 'the card computes the names');
+  const cardLabelLine = card.slice(card.indexOf('const rowName'));
+  assert.match(
+    cardLabelLine.slice(0, 400),
+    /checkNames/,
+    'the card button label appends the failing names',
+  );
+
+  const row = read('src/webview/PullRequestsView.tsx');
+  const rowLabelLine = row.slice(row.indexOf('const rowName'));
+  assert.match(
+    rowLabelLine.slice(0, 400),
+    /checkNames/,
+    'the row button label appends the failing names',
+  );
+});
+
+test('the card reloads when the auth state changes, so connect is not a dead end', () => {
+  const src = read('src/webview/Inspector.tsx');
+  // Anchor on the call site, then read to the end of the effect, which is the
+  // last `);` before the next `useEffect` or the check-sha block.
+  const start = src.indexOf('void loadCommitPullRequests(');
+  assert.ok(start > 0, 'the card loads commit pull requests');
+  const tail = src.slice(start);
+  const depsStart = tail.indexOf('[');
+  const deps = tail.slice(depsStart, tail.indexOf(']', depsStart) + 1);
+  assert.match(deps, /auth/, 'the PR load effect depends on the auth state');
+  assert.match(deps, /detailHash/, 'and still on the selected commit');
+});
+
+test('the signed-out card does not claim to be busy loading nothing', () => {
+  const src = read('src/webview/Inspector.tsx');
+  const card = src.slice(src.indexOf('gc-inspector__pr-card'));
+  assert.doesNotMatch(
+    card.slice(0, 600),
+    /aria-busy=\{prs === undefined\}/,
+    'a signed-out card is not busy; nothing is loading',
+  );
+});

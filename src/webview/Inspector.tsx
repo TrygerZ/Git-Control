@@ -67,10 +67,14 @@ export function Inspector({ hash }: Props): JSX.Element {
   // would race the detail load.
   const detailHash = detail?.hash ?? null;
 
+  // A successful connect has to re-run this, or a card that failed while signed
+  // out stays a dead end. The guard keeps a signed-out user from asking at all,
+  // and the store refuses the read anyway.
   useEffect(() => {
+    if (auth?.connected !== true) return;
     if (detailHash === null || linkage?.available !== true) return;
     void loadCommitPullRequests(detailHash);
-  }, [detailHash, linkage?.available, loadCommitPullRequests]);
+  }, [auth?.connected, detailHash, linkage?.available, loadCommitPullRequests]);
 
   // Checks hang off the pull request head, so a commit in no pull request sends
   // no check request at all. The list is newest-first from the API.
@@ -218,8 +222,10 @@ export function Inspector({ hash }: Props): JSX.Element {
   const author = sanitizeGitText(detail.authorName);
   const avatarUrl = avatars[detail.hash] ?? null;
   const showAvatar = avatarUrl !== null && isSafeImageSrc(avatarUrl) && !imgFailed;
-  // `undefined` means the request is still in flight; `[]` is a real answer.
+  // `undefined` means the request is still in flight, `null` that it failed,
+  // and `[]` is a real answer: this commit is in no pull request.
   const prs = commitPullRequests[detail.hash];
+  const prsFailed = prs === null;
   const pr = prs?.[0];
   // Three states share this slot: `undefined` (not asked yet), `null` (asked and
   // failed), and a summary. Only the last one has a count to show.
@@ -237,8 +243,8 @@ export function Inspector({ hash }: Props): JSX.Element {
   const hiddenFailing = summary === undefined ? 0 : summary.failing - summary.failingNames.length;
   const cardLabel = strings.inspector.openPullRequestAria(String(pr?.number ?? ''));
   // The button's `aria-label` replaces every descendant name, so the badge text
-  // has to travel in it or a screen reader user never hears the check state.
-  const rowName = checkText.length === 0 ? cardLabel : `${cardLabel}, ${checkText}`;
+  // and the failing names both have to travel in it.
+  const rowName = [cardLabel, checkText, checkNames].filter((part) => part.length > 0).join(', ');
 
   return (
     <section className="gc-inspector" aria-label={strings.inspector.panelAria}>
@@ -382,7 +388,7 @@ export function Inspector({ hash }: Props): JSX.Element {
         <section
           className="gc-inspector__block gc-inspector__pr-card"
           aria-label={strings.inspector.checksCardAria}
-          aria-busy={prs === undefined}
+          aria-busy={auth?.connected === true && prs === undefined}
         >
           {auth?.connected !== true ? (
             // Signed out there is nothing to ask, and "not part of a pull
@@ -397,6 +403,9 @@ export function Inspector({ hash }: Props): JSX.Element {
                 {strings.prs.signInBannerAction}
               </button>
             </>
+          ) : prsFailed ? (
+            // Asked and failed: say so instead of loading forever.
+            <p className="gc-inspector__pr-none">{strings.checks.unavailable}</p>
           ) : prs === undefined ? (
             <p className="gc-inspector__pr-none">{strings.checks.loading}</p>
           ) : pr === undefined ? (

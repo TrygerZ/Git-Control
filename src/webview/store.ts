@@ -1147,8 +1147,8 @@ export interface GitHubState {
   /** Set once the closed list was fetched; a failed fetch leaves it false so a later expand retries. */
   closedLoaded: boolean;
   avatars: Record<string, string | null>;
-  /** Pull requests containing one commit, keyed by commit hash. */
-  commitPullRequests: Record<string, PullRequestInfo[]>;
+  /** Pull requests containing one commit, keyed by commit hash. `null` means asked and failed. */
+  commitPullRequests: Record<string, PullRequestInfo[] | null>;
   /** Collapsed check summary, keyed by head sha. `null` means asked and failed. */
   checks: Record<string, CheckSummary | null>;
   rateLimit: GitHubRateLimit | null;
@@ -1441,9 +1441,14 @@ export const useGitHubStore = create<GitHubState>((set, get) => ({
         error: null,
       }));
     } catch (err) {
-      // Keep the ledger entry: a failing endpoint must not be re-asked on every render.
+      // Keep the ledger entry: a failing endpoint must not be re-asked on every
+      // render. `null` records the failure so the card can say the answer is
+      // unavailable instead of loading forever.
       const body = toErrorBody(err);
-      set({ error: body });
+      set((state) => ({
+        commitPullRequests: { ...state.commitPullRequests, [hash]: null },
+        error: body,
+      }));
     }
   },
 
@@ -1494,10 +1499,20 @@ export const useGitHubStore = create<GitHubState>((set, get) => ({
   },
 
   async connect() {
-    // A new token is a new identity: the previous failures must not be final.
-    resetChecks(set);
     try {
+      const previous = get().auth;
       const auth = await bridge.request('github/connect', {});
+      // The ledgers always reset: an explicit connect is the user asking again,
+      // so a failure recorded under the previous attempt must not be final.
+      requestedCheckShas.clear();
+      requestedCommitPrHashes.clear();
+      // A cancelled prompt answers with the same auth, so identity did not
+      // change and the data on screen must survive. Only a real sign-in or a
+      // different account invalidates the slices themselves.
+      const changed =
+        (auth.connected === true && previous?.connected !== true) ||
+        previous?.login !== auth.login;
+      if (changed) set({ checks: {}, commitPullRequests: {} });
       set({ auth, error: null });
       if (auth.invalidToken === true) {
         useOperationStore.getState().pushToast({
