@@ -133,6 +133,8 @@
   --gc-tone-changed: var(--vscode-charts-blue, var(--vscode-foreground));
   --gc-tone-pending: var(--vscode-charts-orange, var(--vscode-foreground));
   --gc-tone-special: var(--vscode-charts-purple, var(--vscode-foreground));
+  /* No hue means "nothing to report", so neutral is the muted foreground. */
+  --gc-tone-neutral: var(--vscode-descriptionForeground, var(--vscode-foreground));
 
   /*
    * Surface elevation. Three steps, all derived from theme tokens so light, dark,
@@ -2530,6 +2532,35 @@ h3 {
 /* Tags are permanent markers, so they get the square shape branches do not have. */
 .gc-chip--tag {
   border-radius: var(--gc-radius);
+}
+
+/*
+ * Pull request check badge. The words carry the state ("2 failing", "3/14 checks
+ * done") and the tone is decoration, so the badge still reads in forced colours
+ * and to a user who cannot separate the hues.
+ */
+.gc-check {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--gc-space-1);
+  font-size: var(--gc-fs-2xs);
+  color: var(--gc-text-muted);
+}
+
+.gc-check--added {
+  color: var(--gc-tone-added);
+}
+
+.gc-check--removed {
+  color: var(--gc-tone-removed);
+}
+
+.gc-check--pending {
+  color: var(--gc-tone-pending);
+}
+
+.gc-check--neutral {
+  color: var(--gc-tone-neutral);
 }
 
 /* ------------------------------------------------------------------- minimap */
@@ -5884,7 +5915,9 @@ h3 {
   .gc-conflicts__badge,
   .gc-inspector__hash-value,
   .gc-avatar,
-  .gc-contributors__avatar {
+  .gc-contributors__avatar,
+  /* The check badge's state is a colour, so a border keeps it from vanishing. */
+  .gc-check {
     border: 1px solid ButtonBorder;
   }
 

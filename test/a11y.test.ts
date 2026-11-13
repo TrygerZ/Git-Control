@@ -1402,7 +1402,9 @@ test('P21: the check badge names its state in words and tones from a token', () 
   for (const tone of ['added', 'removed', 'pending', 'neutral']) {
     assert.match(
       css,
-      new RegExp(`\.gc-check--${tone}\s*\{[^}]*var\(--gc-tone-${tone}\)`),
+      // Backslashes are doubled on purpose: inside a template literal `\s` is
+      // just `s`, so a single-escaped pattern silently loses every escape.
+      new RegExp(`\\.gc-check--${tone}\\s*\\{[^}]*var\\(--gc-tone-${tone}\\)`),
       `.gc-check--${tone} uses the tone ladder`,
     );
   }

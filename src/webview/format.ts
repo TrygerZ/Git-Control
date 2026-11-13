@@ -7,6 +7,8 @@
 import { parseCommitTimestamp } from '../validation';
 import type {
   ChangeEntry,
+  CheckState,
+  CheckSummary,
   ConflictEntry,
   ContributorIdentity,
   ErrorBody,
@@ -1184,4 +1186,42 @@ export function linkageChangedRepo(
   if (before === null && after === null) return false;
   if (before === null || after === null) return true;
   return before.owner !== after.owner || before.repo !== after.repo;
+}
+
+// ------------------------------------------------------------------- checks
+
+/**
+ * The badge's words. Every state names itself in text, so the tone below is
+ * decoration and a colour-blind or forced-colours user loses nothing.
+ */
+export function checkLabel(summary: CheckSummary, lang: Lang = 'en'): string {
+  const text = t(lang).checks;
+  switch (summary.state) {
+    case 'none': return text.none;
+    case 'passing': return text.passing(formatCount(summary.passed, lang), formatCount(summary.total, lang));
+    case 'pending':
+      return text.pending(
+        formatCount(summary.passed + summary.failing, lang),
+        formatCount(summary.total, lang),
+      );
+    case 'failing': return text.failing(formatCount(summary.failing, lang));
+  }
+}
+
+/** The tone ladder the badge shares with file statuses, so one hue means one thing. */
+export function checkTone(state: CheckState): StatusTone {
+  switch (state) {
+    case 'none': return 'neutral';
+    case 'pending': return 'pending';
+    case 'passing': return 'added';
+    case 'failing': return 'removed';
+  }
+}
+
+/** First three failing names, plus the overflow count. Names are untrusted text. */
+export function checkNamesLabel(names: readonly string[], lang: Lang = 'en'): string {
+  if (names.length === 0) return '';
+  const shown = names.slice(0, 3).map(sanitizeGitText).join(', ');
+  const rest = names.length - 3;
+  return rest > 0 ? `${shown} ${t(lang).checks.failingMore(String(rest))}` : shown;
 }
