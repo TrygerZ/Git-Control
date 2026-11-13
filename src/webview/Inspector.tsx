@@ -47,6 +47,8 @@ export function Inspector({ hash }: Props): JSX.Element {
   const pushToast = useOperationStore((st) => st.pushToast);
   const showLogs = useOperationStore((st) => st.showLogs);
   const linkage = useGitHubStore((st) => st.linkage);
+  const auth = useGitHubStore((st) => st.auth);
+  const connect = useGitHubStore((st) => st.connect);
   const openCommit = useGitHubStore((st) => st.openCommit);
   const avatars = useGitHubStore((st) => st.avatars);
   const loadCommitAuthors = useGitHubStore((st) => st.loadCommitAuthors);
@@ -219,12 +221,24 @@ export function Inspector({ hash }: Props): JSX.Element {
   // `undefined` means the request is still in flight; `[]` is a real answer.
   const prs = commitPullRequests[detail.hash];
   const pr = prs?.[0];
-  const summary = pr?.headSha === undefined ? undefined : checks[pr.headSha];
-  const checkText = summary === undefined ? '' : checkLabel(summary, language);
+  // Three states share this slot: `undefined` (not asked yet), `null` (asked and
+  // failed), and a summary. Only the last one has a count to show.
+  const stored = pr?.headSha === undefined ? undefined : checks[pr.headSha];
+  const summary = stored ?? undefined;
+  const checksFailed = stored === null;
+  const checkText = checksFailed
+    ? strings.checks.unavailable
+    : summary === undefined
+      ? ''
+      : checkLabel(summary, language);
   const checkNames = summary === undefined ? '' : checkNamesLabel(summary.failingNames, language);
   // `failingNames` is capped at three by `summarizeChecks`, so the overflow is
   // the full failing count minus the names that fit.
   const hiddenFailing = summary === undefined ? 0 : summary.failing - summary.failingNames.length;
+  const cardLabel = strings.inspector.openPullRequestAria(String(pr?.number ?? ''));
+  // The button's `aria-label` replaces every descendant name, so the badge text
+  // has to travel in it or a screen reader user never hears the check state.
+  const rowName = checkText.length === 0 ? cardLabel : `${cardLabel}, ${checkText}`;
 
   return (
     <section className="gc-inspector" aria-label={strings.inspector.panelAria}>
@@ -370,7 +384,20 @@ export function Inspector({ hash }: Props): JSX.Element {
           aria-label={strings.inspector.checksCardAria}
           aria-busy={prs === undefined}
         >
-          {prs === undefined ? (
+          {auth?.connected !== true ? (
+            // Signed out there is nothing to ask, and "not part of a pull
+            // request" would be a lie: the answer is unknown, not empty.
+            <>
+              <p className="gc-inspector__pr-none">{strings.prs.signedOutTitle}</p>
+              <button
+                type="button"
+                className="gc-button gc-button--quiet"
+                onClick={() => void connect()}
+              >
+                {strings.prs.signInBannerAction}
+              </button>
+            </>
+          ) : prs === undefined ? (
             <p className="gc-inspector__pr-none">{strings.checks.loading}</p>
           ) : pr === undefined ? (
             <>
@@ -381,7 +408,7 @@ export function Inspector({ hash }: Props): JSX.Element {
             <button
               type="button"
               className="gc-inspector__pr-open"
-              aria-label={strings.inspector.openPullRequestAria(String(pr.number))}
+              aria-label={rowName}
               onClick={() => void openUrl(pr.url)}
             >
               <Icon name="pr" />
@@ -397,39 +424,51 @@ export function Inspector({ hash }: Props): JSX.Element {
                   )}
                 </span>
               </span>
-              {summary === undefined ? (
-                // Same shell as the badge so the row keeps its height; the visible
-                // text is the name, so no aria-label override is needed.
-                <span className="gc-check">{strings.checks.loading}</span>
-              ) : (
-                <span
-                  className={`gc-check gc-check--${checkTone(summary.state)}`}
-                  // No names means no second clause: `badgeAria` joins with a
-                  // comma, so passing an empty list would trail one into the
-                  // accessible name.
-                  aria-label={
-                    checkNames.length > 0 ? strings.checks.badgeAria(checkText, checkNames) : checkText
-                  }
-                >
-                  <Icon
-                    name={
-                      summary.state === 'failing'
-                        ? 'error'
-                        : summary.state === 'pending'
-                          ? 'status-running'
-                          : summary.state === 'passing'
-                            ? 'check'
-                            : 'info'
-                    }
-                  />
-                  <span aria-hidden="true">{checkText}</span>
-                  {hiddenFailing > 0 && (
-                    <span className="gc-check__more">
-                      {strings.checks.failingMore(String(hiddenFailing))}
+              <span className="gc-inspector__pr-checks">
+                {checksFailed ? (
+                  // Asked and failed: say so instead of spinning forever.
+                  <span className="gc-check">{strings.checks.unavailable}</span>
+                ) : summary === undefined ? (
+                  // Same shell as the badge so the row keeps its height; the visible
+                  // text is the name, so no aria-label override is needed.
+                  <span className="gc-check">{strings.checks.loading}</span>
+                ) : (
+                  <>
+                    <span
+                      className={`gc-check gc-check--${checkTone(summary.state)}`}
+                      // No names means no second clause: `badgeAria` joins with a
+                      // comma, so passing an empty list would trail one into the
+                      // accessible name.
+                      aria-label={
+                        checkNames.length > 0
+                          ? strings.checks.badgeAria(checkText, checkNames)
+                          : checkText
+                      }
+                    >
+                      <Icon
+                        name={
+                          summary.state === 'failing'
+                            ? 'error'
+                            : summary.state === 'pending'
+                              ? 'status-running'
+                              : summary.state === 'passing'
+                                ? 'check'
+                                : 'info'
+                        }
+                      />
+                      <span aria-hidden="true">{checkText}</span>
+                      {hiddenFailing > 0 && (
+                        <span className="gc-check__more">
+                          {strings.checks.failingMore(String(hiddenFailing))}
+                        </span>
+                      )}
                     </span>
-                  )}
-                </span>
-              )}
+                    {summary.state === 'failing' && checkNames.length > 0 && (
+                      <span className="gc-check__names">{checkNames}</span>
+                    )}
+                  </>
+                )}
+              </span>
             </button>
           )}
         </section>

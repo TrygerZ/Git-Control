@@ -4796,6 +4796,16 @@ h3 {
   flex: 1 1 auto;
 }
 
+/* The badge plus its failing-names line, stacked at the card's right edge. */
+.gc-inspector__pr-checks {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  flex: 0 0 auto;
+  gap: var(--gc-space-1);
+  max-width: 45%;
+}
+
 /* Same truncation pattern as `.gc-prs__title`: one line, ellipsis, full text in the button label. */
 .gc-inspector__pr-title {
   overflow: hidden;

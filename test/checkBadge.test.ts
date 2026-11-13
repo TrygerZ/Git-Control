@@ -92,3 +92,33 @@ test('the row badge never renders without a summary or a reason', () => {
   assert.match(src, /headSha/, 'the badge is gated on the head sha');
   assert.match(src, /checks\[/, 'the badge reads the stored summary by sha');
 });
+
+// ------------------------------------------ P21 gate findings: the card's gaps
+
+test('the card lists the failing check names, not only the count', () => {
+  const src = read('src/webview/Inspector.tsx');
+  assert.match(src, /gc-check__names/, 'the card renders the names line');
+  assert.match(src, /checkNamesLabel\(/, 'and it comes from the pure helper');
+});
+
+test('the card announces its own badge instead of hiding it behind a button label', () => {
+  const src = read('src/webview/Inspector.tsx');
+  // The row fix proved the rule: an aria-label on the button replaces every
+  // descendant's name. The card must fold the badge into that label the same way.
+  const card = src.slice(src.indexOf('gc-inspector__pr-open'));
+  assert.match(card, /checkText/, 'the badge text is folded into the button label');
+  assert.match(card, /rowName|aria-label=\{.*checkText/, 'the label includes the count');
+});
+
+test('a failed check read says so instead of loading forever', () => {
+  const src = read('src/webview/Inspector.tsx');
+  assert.match(src, /checks\.unavailable/, 'the card names the unavailable state');
+  const row = read('src/webview/PullRequestsView.tsx');
+  assert.match(row, /checks\.unavailable/, 'and so does the row badge');
+});
+
+test('a signed-out user is offered a connect action, not a dead end', () => {
+  const src = read('src/webview/Inspector.tsx');
+  assert.match(src, /auth/, 'the card reads the auth state');
+  assert.match(src, /connect/, 'and offers the connect action');
+});

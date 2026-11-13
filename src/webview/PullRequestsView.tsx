@@ -408,12 +408,18 @@ export function PullRequestsView(): JSX.Element {
                           const author = sanitizeGitText(pr.author);
                           const head = sanitizeGitText(pr.headRef);
                           const base = sanitizeGitText(pr.baseRef);
-                          // No summary means the request is in flight or failed:
-                          // render nothing rather than a placeholder that flashes
-                          // on every scroll.
-                          const summary = pr.headSha === undefined ? undefined : checks[pr.headSha];
-                          const checkText =
-                            summary === undefined ? '' : checkLabel(summary, language);
+                          // Three states share this slot: `undefined` (never
+                          // asked, so render nothing rather than a placeholder
+                          // that flashes on every scroll), `null` (asked and
+                          // failed), and a summary.
+                          const stored = pr.headSha === undefined ? undefined : checks[pr.headSha];
+                          const checksFailed = stored === null;
+                          const summary = stored ?? undefined;
+                          const checkText = checksFailed
+                            ? strings.checks.unavailable
+                            : summary === undefined
+                              ? ''
+                              : checkLabel(summary, language);
                           const checkNames =
                             summary === undefined
                               ? ''
@@ -463,38 +469,46 @@ export function PullRequestsView(): JSX.Element {
                                   outside the text column so it never squeezes the
                                   title.
                                 */}
-                                {summary !== undefined && (
+                                {(summary !== undefined || checksFailed) && (
                                   <span className="gc-prs__check">
-                                    <span
-                                      className={`gc-check gc-check--${checkTone(summary.state)}`}
-                                      // Same rule as the inspector: no names, no
-                                      // second clause, so no trailing comma.
-                                      aria-label={
-                                        checkNames.length > 0
-                                          ? strings.checks.badgeAria(checkText, checkNames)
-                                          : checkText
-                                      }
-                                    >
-                                      <Icon
-                                        name={
-                                          summary.state === 'failing'
-                                            ? 'error'
-                                            : summary.state === 'pending'
-                                              ? 'status-running'
-                                              : summary.state === 'passing'
-                                                ? 'check'
-                                                : 'info'
-                                        }
-                                      />
-                                      <span aria-hidden="true">{checkText}</span>
-                                      {hiddenFailing > 0 && (
-                                        <span className="gc-check__more">
-                                          {strings.checks.failingMore(String(hiddenFailing))}
+                                    {summary === undefined ? (
+                                      // Asked and failed: the same shell, so the
+                                      // row keeps its height and says why.
+                                      <span className="gc-check">{checkText}</span>
+                                    ) : (
+                                      <>
+                                        <span
+                                          className={`gc-check gc-check--${checkTone(summary.state)}`}
+                                          // Same rule as the inspector: no names, no
+                                          // second clause, so no trailing comma.
+                                          aria-label={
+                                            checkNames.length > 0
+                                              ? strings.checks.badgeAria(checkText, checkNames)
+                                              : checkText
+                                          }
+                                        >
+                                          <Icon
+                                            name={
+                                              summary.state === 'failing'
+                                                ? 'error'
+                                                : summary.state === 'pending'
+                                                  ? 'status-running'
+                                                  : summary.state === 'passing'
+                                                    ? 'check'
+                                                    : 'info'
+                                            }
+                                          />
+                                          <span aria-hidden="true">{checkText}</span>
+                                          {hiddenFailing > 0 && (
+                                            <span className="gc-check__more">
+                                              {strings.checks.failingMore(String(hiddenFailing))}
+                                            </span>
+                                          )}
                                         </span>
-                                      )}
-                                    </span>
-                                    {summary.state === 'failing' && checkNames.length > 0 && (
-                                      <span className="gc-check__names">{checkNames}</span>
+                                        {summary.state === 'failing' && checkNames.length > 0 && (
+                                          <span className="gc-check__names">{checkNames}</span>
+                                        )}
+                                      </>
                                     )}
                                   </span>
                                 )}

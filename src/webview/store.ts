@@ -1149,8 +1149,8 @@ export interface GitHubState {
   avatars: Record<string, string | null>;
   /** Pull requests containing one commit, keyed by commit hash. */
   commitPullRequests: Record<string, PullRequestInfo[]>;
-  /** Collapsed check summary, keyed by head sha. */
-  checks: Record<string, CheckSummary>;
+  /** Collapsed check summary, keyed by head sha. `null` means asked and failed. */
+  checks: Record<string, CheckSummary | null>;
   rateLimit: GitHubRateLimit | null;
   loading: boolean;
   /** Set when GitHub itself failed; git keeps working regardless. */
@@ -1422,6 +1422,9 @@ export const useGitHubStore = create<GitHubState>((set, get) => ({
   },
 
   async loadCommitPullRequests(hash: string) {
+    // A signed-out read would reach the API anonymously. The guard precedes the
+    // ledger write so a signed-out attempt does not burn the hash.
+    if (get().auth?.connected !== true) return;
     const linkage = get().linkage;
     if (linkage === null || !linkage.available || linkage.owner === null || linkage.repo === null) return;
     if (requestedCommitPrHashes.has(hash)) return;
@@ -1445,43 +1448,54 @@ export const useGitHubStore = create<GitHubState>((set, get) => ({
   },
 
   async loadChecks(shas: string[]) {
+    // Same guard as the commit pull request load, and in the same order: no
+    // token, no request, and no ledger entry that would block a later retry.
+    if (get().auth?.connected !== true) return;
     const linkage = get().linkage;
     if (linkage === null || !linkage.available || linkage.owner === null || linkage.repo === null) return;
 
     const now = Date.now();
-    const batch: string[] = [];
+    const pending: string[] = [];
     for (const sha of new Set(shas)) {
       const askedAt = requestedCheckShas.get(sha);
       if (askedAt !== undefined && now - askedAt < CHECKS_TTL_MS) continue;
-      if (batch.length >= CHECKS_BATCH_MAX) break;
-      batch.push(sha);
+      pending.push(sha);
     }
-    if (batch.length === 0) return;
+    if (pending.length === 0) return;
 
-    // Recorded before the first await: two overlapping scroll settles must not double-ask.
-    // Shas past the budget stay unrecorded so the next settle can pick them up.
-    for (const sha of batch) requestedCheckShas.set(sha, now);
+    // Every sha is recorded before the first await, so two overlapping settles
+    // cannot double-ask the same one.
+    for (const sha of pending) requestedCheckShas.set(sha, now);
 
+    // Ten in flight at most, but a settle that brings twelve rows still answers
+    // all twelve: the loop drains the input in successive batches.
     const { owner, repo } = linkage;
-    await Promise.all(
-      batch.map(async (sha) => {
-        try {
-          const result = await bridge.request('github/checkRuns', { owner, repo, sha });
-          set((state) => ({
-            checks: { ...state.checks, [sha]: result.summary },
-            rateLimit: result.rateLimit,
-            error: null,
-          }));
-        } catch (err) {
-          // Keep the ledger entry so a failing endpoint is not re-asked on every scroll frame.
-          const body = toErrorBody(err);
-          set({ error: body });
-        }
-      }),
-    );
+    while (pending.length > 0) {
+      const batch = pending.splice(0, CHECKS_BATCH_MAX);
+      await Promise.all(
+        batch.map(async (sha) => {
+          try {
+            const result = await bridge.request('github/checkRuns', { owner, repo, sha });
+            set((state) => ({
+              checks: { ...state.checks, [sha]: result.summary },
+              rateLimit: result.rateLimit,
+              error: null,
+            }));
+          } catch (err) {
+            // Keep the ledger entry so a failing endpoint is not re-asked on
+            // every scroll frame, and record `null` so the badge can say
+            // "unavailable" instead of loading forever.
+            const body = toErrorBody(err);
+            set((state) => ({ checks: { ...state.checks, [sha]: null }, error: body }));
+          }
+        }),
+      );
+    }
   },
 
   async connect() {
+    // A new token is a new identity: the previous failures must not be final.
+    resetChecks(set);
     try {
       const auth = await bridge.request('github/connect', {});
       set({ auth, error: null });
