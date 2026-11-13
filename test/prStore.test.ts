@@ -280,3 +280,377 @@ test('switching to another repository drops the previous pull request lists', as
     'the new repository list replaces the old one',
   );
 });
+
+// ------------------------------------------------------------- checks (P21)
+
+function sha(n: number): string {
+  return `${n}`.padStart(40, 'a');
+}
+
+function summary(state: 'none' | 'passing' | 'failing' | 'pending', total = 1) {
+  return {
+    state,
+    total,
+    passed: state === 'passing' ? total : 0,
+    failing: state === 'failing' ? total : 0,
+    pending: state === 'pending' ? total : 0,
+    failingNames: state === 'failing' ? ['Lint'] : [],
+  };
+}
+
+function resetChecks(): void {
+  useGitHubStore.setState({
+    auth: { connected: true, login: 'me', scopes: ['repo'] },
+    linkage: LINKED,
+    checks: {},
+    commitPullRequests: {},
+  });
+}
+
+test('P21: loadChecks stores one summary per sha and asks once for the batch', async () => {
+  resetChecks();
+  const asked: string[][] = [];
+  const s = stub((kind, payload) => {
+    if (kind !== 'github/checkRuns') return { connected: true, login: 'me', scopes: [] };
+    const shas = [(payload as { sha: string }).sha];
+    asked.push(shas);
+    return { checks: [], summary: summary('passing'), rateLimit: RATE };
+  });
+  try {
+    await useGitHubStore.getState().loadChecks([sha(1), sha(2)]);
+  } finally {
+    s.restore();
+  }
+  assert.deepEqual(asked.flat().sort(), [sha(1), sha(2)].sort(), 'one request per sha');
+  const checks = useGitHubStore.getState().checks;
+  assert.equal(checks[sha(1)]?.state, 'passing');
+  assert.equal(checks[sha(2)]?.state, 'passing');
+});
+
+test('P21: a second call inside 30 s sends nothing for a sha already asked about', async () => {
+  resetChecks();
+  let calls = 0;
+  const s = stub((kind) => {
+    if (kind !== 'github/checkRuns') return { connected: true, login: 'me', scopes: [] };
+    calls += 1;
+    return { checks: [], summary: summary('passing'), rateLimit: RATE };
+  });
+  try {
+    await useGitHubStore.getState().loadChecks([sha(3)]);
+    await useGitHubStore.getState().loadChecks([sha(3)]);
+  } finally {
+    s.restore();
+  }
+  assert.equal(calls, 1, 'the ledger answers the repeat, not the network');
+});
+
+test('P21: the ledger forgets a sha after 30 s so a scrolled row can refresh', async () => {
+  resetChecks();
+  let calls = 0;
+  const realNow = Date.now;
+  let clock = 1_700_000_000_000;
+  Date.now = () => clock;
+  const s = stub((kind) => {
+    if (kind !== 'github/checkRuns') return { connected: true, login: 'me', scopes: [] };
+    calls += 1;
+    return { checks: [], summary: summary('passing'), rateLimit: RATE };
+  });
+  try {
+    await useGitHubStore.getState().loadChecks([sha(4)]);
+    clock += 29_000;
+    await useGitHubStore.getState().loadChecks([sha(4)]);
+    assert.equal(calls, 1, 'still inside the window');
+    clock += 2_000;
+    await useGitHubStore.getState().loadChecks([sha(4)]);
+  } finally {
+    Date.now = realNow;
+    s.restore();
+  }
+  assert.equal(calls, 2, 'past the window the next scroll may ask again');
+});
+
+test('P21: loadChecks keeps ten requests in flight and still answers every row', async () => {
+  resetChecks();
+  let inFlight = 0;
+  let maxInFlight = 0;
+  const asked: string[] = [];
+  const pending: Array<() => void> = [];
+  const s = stub((kind, payload) => {
+    if (kind !== 'github/checkRuns') return { connected: true, login: 'me', scopes: [] };
+    asked.push((payload as { sha: string }).sha);
+    inFlight += 1;
+    maxInFlight = Math.max(maxInFlight, inFlight);
+    // Hold the reply so the concurrency ceiling is observable, not a timing guess.
+    return new Promise((resolve) => {
+      pending.push(() => {
+        inFlight -= 1;
+        resolve({ checks: [], summary: summary('passing'), rateLimit: RATE });
+      });
+      if (pending.length >= 10) {
+        for (const release of pending.splice(0)) release();
+      }
+    });
+  });
+  const shas = Array.from({ length: 12 }, (_, i) => sha(100 + i));
+  const run = useGitHubStore.getState().loadChecks(shas);
+  // Let the first batch reach the stub, then release everything.
+  await new Promise((r) => setTimeout(r, 20));
+  for (const release of pending.splice(0)) release();
+  await run;
+  // The second batch is only requested once the first settles.
+  for (const release of pending.splice(0)) release();
+  await new Promise((r) => setTimeout(r, 20));
+  for (const release of pending.splice(0)) release();
+  s.restore();
+
+  assert.ok(maxInFlight <= 10, `ten in flight at most, saw ${maxInFlight}`);
+  assert.equal(new Set(asked).size, asked.length, 'no sha is asked twice');
+  assert.equal(
+    Object.keys(useGitHubStore.getState().checks).length,
+    12,
+    'a settle that brings twelve rows still answers all twelve, not just the first ten',
+  );
+});
+
+test('P21: loadChecks sends nothing without a GitHub remote', async () => {
+  resetChecks();
+  useGitHubStore.setState({ linkage: { ...LINKED, available: false, owner: null, repo: null } });
+  const s = stub(() => ({}));
+  try {
+    await useGitHubStore.getState().loadChecks([sha(5)]);
+  } finally {
+    s.restore();
+  }
+  assert.deepEqual(s.calls, []);
+});
+
+test('P21: a failed check read is remembered as unavailable, not retried on every scroll', async () => {
+  resetChecks();
+  let calls = 0;
+  const s = stub((kind) => {
+    if (kind !== 'github/checkRuns') return { connected: true, login: 'me', scopes: [] };
+    calls += 1;
+    throw new Error('boom');
+  });
+  try {
+    await useGitHubStore.getState().loadChecks([sha(6)]);
+    await useGitHubStore.getState().loadChecks([sha(6)]);
+  } finally {
+    s.restore();
+  }
+  assert.equal(calls, 1, 'a failure must not become a request per scroll frame');
+  assert.equal(
+    useGitHubStore.getState().checks[sha(6)],
+    null,
+    'a failed read is recorded as unavailable, so the badge can say so instead of loading forever',
+  );
+});
+
+test('P21: loadCommitPullRequests stores the list under the commit hash', async () => {
+  resetChecks();
+  const s = stub((kind) => {
+    if (kind !== 'github/commitPullRequests') return { connected: true, login: 'me', scopes: [] };
+    return { pullRequests: [pr(142, 'merged')], rateLimit: RATE };
+  });
+  try {
+    await useGitHubStore.getState().loadCommitPullRequests(sha(7));
+  } finally {
+    s.restore();
+  }
+  const stored = useGitHubStore.getState().commitPullRequests[sha(7)];
+  assert.equal(stored?.length, 1);
+  assert.equal(stored?.[0]?.number, 142);
+});
+
+test('P21: an empty commit pull request answer is remembered as "none", not retried', async () => {
+  resetChecks();
+  let calls = 0;
+  const s = stub((kind) => {
+    if (kind !== 'github/commitPullRequests') return { connected: true, login: 'me', scopes: [] };
+    calls += 1;
+    return { pullRequests: [], rateLimit: RATE };
+  });
+  try {
+    await useGitHubStore.getState().loadCommitPullRequests(sha(8));
+    await useGitHubStore.getState().loadCommitPullRequests(sha(8));
+  } finally {
+    s.restore();
+  }
+  assert.equal(calls, 1);
+  assert.deepEqual(useGitHubStore.getState().commitPullRequests[sha(8)], []);
+});
+
+test('P21: disconnect drops the check and commit pull request slices', async () => {
+  resetChecks();
+  useGitHubStore.setState({
+    checks: { [sha(9)]: summary('passing') },
+    commitPullRequests: { [sha(9)]: [pr(1)] },
+  });
+  const s = stub(() => ({ connected: false, login: null, scopes: [] }));
+  try {
+    await useGitHubStore.getState().disconnect();
+  } finally {
+    s.restore();
+  }
+  const state = useGitHubStore.getState();
+  assert.deepEqual(state.checks, {});
+  assert.deepEqual(state.commitPullRequests, {});
+});
+
+// ------------------------------------------- P21 gate findings: auth and retry
+
+test('P21: no check or commit pull request request without a connected token', async () => {
+  resetChecks();
+  useGitHubStore.setState({ auth: { connected: false, login: null, scopes: [] } });
+  const s = stub(() => ({}));
+  try {
+    await useGitHubStore.getState().loadChecks([sha(11)]);
+    await useGitHubStore.getState().loadCommitPullRequests(sha(11));
+  } finally {
+    s.restore();
+  }
+  assert.deepEqual(s.calls, [], 'a signed-out user must not reach the API at all');
+});
+
+test('P21: a signed-out attempt does not burn the ledger, so connecting retries', async () => {
+  resetChecks();
+  useGitHubStore.setState({ auth: { connected: false, login: null, scopes: [] } });
+  let calls = 0;
+  const s = stub((kind) => {
+    if (kind === 'github/commitPullRequests') {
+      calls += 1;
+      return { pullRequests: [pr(7)], rateLimit: RATE };
+    }
+    return { connected: true, login: 'me', scopes: [] };
+  });
+  try {
+    await useGitHubStore.getState().loadCommitPullRequests(sha(12));
+    assert.equal(calls, 0);
+    useGitHubStore.setState({ auth: { connected: true, login: 'me', scopes: ['repo'] } });
+    await useGitHubStore.getState().loadCommitPullRequests(sha(12));
+  } finally {
+    s.restore();
+  }
+  assert.equal(calls, 1, 'the ledger was never written while signed out');
+  assert.equal(useGitHubStore.getState().commitPullRequests[sha(12)]?.[0]?.number, 7);
+});
+
+test('P21: connect clears the ledgers so a failed card can retry', async () => {
+  resetChecks();
+  let calls = 0;
+  const s = stub((kind) => {
+    if (kind === 'github/commitPullRequests') {
+      calls += 1;
+      throw new Error('transient');
+    }
+    if (kind === 'github/connect') return { connected: true, login: 'me', scopes: ['repo'] };
+    if (kind === 'github/pullRequests') return { pullRequests: [], rateLimit: RATE };
+    if (kind === 'github/auth') return { connected: true, login: 'me', scopes: ['repo'] };
+    return LINKED;
+  });
+  try {
+    await useGitHubStore.getState().loadCommitPullRequests(sha(13));
+    assert.equal(calls, 1);
+    await useGitHubStore.getState().connect();
+    await useGitHubStore.getState().loadCommitPullRequests(sha(13));
+  } finally {
+    s.restore();
+  }
+  assert.equal(calls, 2, 'connecting is a new auth state, so the previous failure is not final');
+});
+
+test('P21: disconnect also forgets the check and commit pull request ledgers', async () => {
+  resetChecks();
+  let prCalls = 0;
+  let checkCalls = 0;
+  const s = stub((kind) => {
+    if (kind === 'github/commitPullRequests') {
+      prCalls += 1;
+      return { pullRequests: [], rateLimit: RATE };
+    }
+    if (kind === 'github/checkRuns') {
+      checkCalls += 1;
+      return { checks: [], summary: summary('passing'), rateLimit: RATE };
+    }
+    if (kind === 'github/disconnect') return { connected: false, login: null, scopes: [] };
+    return { connected: true, login: 'me', scopes: ['repo'] };
+  });
+  try {
+    await useGitHubStore.getState().loadCommitPullRequests(sha(14));
+    await useGitHubStore.getState().loadChecks([sha(14)]);
+    await useGitHubStore.getState().disconnect();
+    useGitHubStore.setState({ auth: { connected: true, login: 'me', scopes: ['repo'] } });
+    await useGitHubStore.getState().loadCommitPullRequests(sha(14));
+    await useGitHubStore.getState().loadChecks([sha(14)]);
+  } finally {
+    s.restore();
+  }
+  assert.equal(prCalls, 2, 'a reconnect is a fresh identity');
+  assert.equal(checkCalls, 2);
+});
+
+test('P21: a cancelled connect keeps the data it had, because no token changed', async () => {
+  resetChecks();
+  // Signed in, data already on screen, user opens Connect and cancels: the host
+  // answers with the same auth it had, so nothing about identity changed.
+  useGitHubStore.setState({
+    auth: { connected: true, login: 'me', scopes: ['repo'] },
+    checks: { [sha(15)]: summary('passing') },
+    commitPullRequests: { [sha(15)]: [pr(3)] },
+  });
+  const s = stub((kind) => {
+    if (kind === 'github/connect') return { connected: true, login: 'me', scopes: ['repo'] };
+    if (kind === 'github/pullRequests') return { pullRequests: [], rateLimit: RATE };
+    if (kind === 'github/auth') return { connected: true, login: 'me', scopes: ['repo'] };
+    return LINKED;
+  });
+  try {
+    await useGitHubStore.getState().connect();
+  } finally {
+    s.restore();
+  }
+  const state = useGitHubStore.getState();
+  assert.equal(state.checks[sha(15)]?.state, 'passing', 'a cancelled prompt must not wipe the card');
+  assert.equal(state.commitPullRequests[sha(15)]?.length, 1);
+});
+
+test('P21: a connect that lands a new token clears the slices so they reload', async () => {
+  resetChecks();
+  useGitHubStore.setState({
+    auth: { connected: false, login: null, scopes: [] },
+    checks: { [sha(16)]: null },
+    commitPullRequests: { [sha(16)]: [] },
+  });
+  const s = stub((kind) => {
+    if (kind === 'github/connect') return { connected: true, login: 'me', scopes: ['repo'] };
+    if (kind === 'github/pullRequests') return { pullRequests: [], rateLimit: RATE };
+    if (kind === 'github/auth') return { connected: true, login: 'me', scopes: ['repo'] };
+    return LINKED;
+  });
+  try {
+    await useGitHubStore.getState().connect();
+  } finally {
+    s.restore();
+  }
+  const state = useGitHubStore.getState();
+  assert.deepEqual(state.checks, {}, 'a real sign-in is a new identity');
+  assert.deepEqual(state.commitPullRequests, {});
+});
+
+test('P21: a failed commit pull request read is recorded, not left pending forever', async () => {
+  resetChecks();
+  const s = stub((kind) => {
+    if (kind === 'github/commitPullRequests') throw new Error('transient');
+    return { connected: true, login: 'me', scopes: ['repo'] };
+  });
+  try {
+    await useGitHubStore.getState().loadCommitPullRequests(sha(17));
+  } finally {
+    s.restore();
+  }
+  assert.equal(
+    useGitHubStore.getState().commitPullRequests[sha(17)],
+    null,
+    'the card can say the answer is unavailable instead of loading forever',
+  );
+});

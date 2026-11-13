@@ -18,6 +18,9 @@ import { loadState, saveState } from './bridge';
 import { restoreTarget } from './focusTrap';
 import {
   apiQuotaLabel,
+  checkLabel,
+  checkNamesLabel,
+  checkTone,
   compareUrl,
   countdown,
   formatCount,
@@ -68,6 +71,8 @@ export function PullRequestsView(): JSX.Element {
   const loadClosedPullRequests = useGitHubStore((s) => s.loadClosedPullRequests);
   const connect = useGitHubStore((s) => s.connect);
   const openUrl = useGitHubStore((s) => s.openUrl);
+  const checks = useGitHubStore((s) => s.checks);
+  const loadChecks = useGitHubStore((s) => s.loadChecks);
   const status = useRepoStore((s) => s.status);
   const route = useRouteStore((s) => s.route);
 
@@ -82,6 +87,7 @@ export function PullRequestsView(): JSX.Element {
   const searchRef = useRef<HTMLInputElement>(null);
   const connectRef = useRef<HTMLButtonElement>(null);
   const rowRefs = useRef<Array<HTMLButtonElement | null>>([]);
+  const listRef = useRef<HTMLDivElement>(null);
 
   // A countdown is the only thing here that moves, so the tick exists only while
   // one is on screen. A `setTimeout` re-armed per second, never an interval.
@@ -134,6 +140,40 @@ export function PullRequestsView(): JSX.Element {
   const rowIndex = new Map<number, number>();
   flatRows.forEach((pr, index) => rowIndex.set(pr.number, index));
   const active = Math.min(activeRow, Math.max(0, flatRows.length - 1));
+
+  /**
+   * Checks are per row but requested per viewport: one observer, one batch per
+   * callback. The store caps the batch at ten and remembers what it already
+   * asked, so this file does not slice or dedupe. Rebuilt whenever the visible
+   * set changes, because the row buttons are remounted with it.
+   */
+  // Identity of the visible set. `flatRows` is rebuilt on every render, so it
+  // cannot be a dependency without re-creating the observer each time.
+  const rowKey = flatRows.map((pr) => `${pr.number}:${pr.headSha ?? ''}`).join(',');
+  useEffect(() => {
+    // No token means no request: a signed-out user must not reach the API.
+    if (auth?.connected !== true) return undefined;
+    const rows = rowRefs.current
+      .slice(0, flatRows.length)
+      .filter((el): el is HTMLButtonElement => el !== null);
+    if (rows.length === 0) return undefined;
+    // `.gc-prs__groups` is the scroll container; without one the page is the root.
+    const root = listRef.current;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        const shas: string[] = [];
+        for (const entry of entries) {
+          if (!entry.isIntersecting) continue;
+          const sha = (entry.target as HTMLElement).dataset.sha;
+          if (sha !== undefined && sha.length > 0) shas.push(sha);
+        }
+        if (shas.length > 0) void loadChecks(shas);
+      },
+      { root },
+    );
+    for (const row of rows) observer.observe(row);
+    return () => observer.disconnect();
+  }, [auth?.connected, rowKey, flatRows.length, loadChecks]);
 
   const branch = status?.branch ?? null;
   const webUrl = linkage?.webUrl ?? null;
@@ -330,7 +370,7 @@ export function PullRequestsView(): JSX.Element {
               }
             />
           ) : (
-            <div className="gc-prs__groups">
+            <div className="gc-prs__groups" ref={listRef}>
               {GROUP_ORDER.map((group) => {
                 const rows = rowsByGroup[group];
                 if (rows.length === 0) return null;
@@ -368,7 +408,33 @@ export function PullRequestsView(): JSX.Element {
                           const author = sanitizeGitText(pr.author);
                           const head = sanitizeGitText(pr.headRef);
                           const base = sanitizeGitText(pr.baseRef);
+                          // Three states share this slot: `undefined` (never
+                          // asked, so render nothing rather than a placeholder
+                          // that flashes on every scroll), `null` (asked and
+                          // failed), and a summary.
+                          const stored = pr.headSha === undefined ? undefined : checks[pr.headSha];
+                          const checksFailed = stored === null;
+                          const summary = stored ?? undefined;
+                          const checkText = checksFailed
+                            ? strings.checks.unavailable
+                            : summary === undefined
+                              ? ''
+                              : checkLabel(summary, language);
+                          const checkNames =
+                            summary === undefined
+                              ? ''
+                              : checkNamesLabel(summary.failingNames, language);
+                          const hiddenFailing =
+                            summary === undefined
+                              ? 0
+                              : summary.failing - summary.failingNames.length;
                           const name = strings.prs.rowAria(label, title, author);
+                          // The button's `aria-label` replaces every descendant's
+                          // name, so the check state has to travel in it or a
+                          // screen reader user never hears it.
+                          const rowName = [name, checkText, checkNames]
+                            .filter((part) => part.length > 0)
+                            .join(', ');
                           return (
                             <li key={pr.number} className="gc-prs__row">
                               <button
@@ -378,7 +444,8 @@ export function PullRequestsView(): JSX.Element {
                                   rowRefs.current[index] = element;
                                 }}
                                 tabIndex={index === active ? 0 : -1}
-                                aria-label={name}
+                                aria-label={rowName}
+                                data-sha={pr.headSha ?? ''}
                                 onClick={() => void openUrl(pr.url)}
                                 onKeyDown={(event) => onRowKey(event, index)}
                               >
@@ -399,6 +466,54 @@ export function PullRequestsView(): JSX.Element {
                                     {head} → {base}
                                   </span>
                                 </span>
+                                {/*
+                                  Frame 05 puts the count at the row's right edge,
+                                  outside the text column so it never squeezes the
+                                  title.
+                                */}
+                                {(summary !== undefined || checksFailed) && (
+                                  <span className="gc-prs__check">
+                                    {summary === undefined ? (
+                                      // Asked and failed: the same shell, so the
+                                      // row keeps its height and says why.
+                                      <span className="gc-check">{checkText}</span>
+                                    ) : (
+                                      <>
+                                        <span
+                                          className={`gc-check gc-check--${checkTone(summary.state)}`}
+                                          // Same rule as the inspector: no names, no
+                                          // second clause, so no trailing comma.
+                                          aria-label={
+                                            checkNames.length > 0
+                                              ? strings.checks.badgeAria(checkText, checkNames)
+                                              : checkText
+                                          }
+                                        >
+                                          <Icon
+                                            name={
+                                              summary.state === 'failing'
+                                                ? 'error'
+                                                : summary.state === 'pending'
+                                                  ? 'status-running'
+                                                  : summary.state === 'passing'
+                                                    ? 'check'
+                                                    : 'info'
+                                            }
+                                          />
+                                          <span aria-hidden="true">{checkText}</span>
+                                          {hiddenFailing > 0 && (
+                                            <span className="gc-check__more">
+                                              {strings.checks.failingMore(String(hiddenFailing))}
+                                            </span>
+                                          )}
+                                        </span>
+                                        {summary.state === 'failing' && checkNames.length > 0 && (
+                                          <span className="gc-check__names">{checkNames}</span>
+                                        )}
+                                      </>
+                                    )}
+                                  </span>
+                                )}
                               </button>
                               {/*
                                 The row opens the same URL, so this is the frame's hover

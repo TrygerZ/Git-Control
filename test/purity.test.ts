@@ -42,6 +42,7 @@ const PURE_MODULES = [
   'src/webview/explorerMenu.ts',
   'src/webview/syncActions.ts',
   'src/branchCleanup.ts',
+  'src/checkSummary.ts',
 ];
 
 test('pure modules contain no vscode imports', () => {
@@ -113,4 +114,8 @@ test('the P19 pure module is listed', () => {
 
 test('the P20 pure module is listed', () => {
   assert.ok(PURE_MODULES.includes('src/branchCleanup.ts'));
+});
+
+test('the P21 pure module is listed', () => {
+  assert.ok(PURE_MODULES.includes('src/checkSummary.ts'));
 });

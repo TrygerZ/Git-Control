@@ -20,6 +20,7 @@ import { activeLang, setActiveLang, t } from './i18n';
 import type {
   BranchRef,
   ChangeEntry,
+  CheckSummary,
   CommitDetail,
   CommitResult,
   ConflictEntry,
@@ -1146,6 +1147,10 @@ export interface GitHubState {
   /** Set once the closed list was fetched; a failed fetch leaves it false so a later expand retries. */
   closedLoaded: boolean;
   avatars: Record<string, string | null>;
+  /** Pull requests containing one commit, keyed by commit hash. `null` means asked and failed. */
+  commitPullRequests: Record<string, PullRequestInfo[] | null>;
+  /** Collapsed check summary, keyed by head sha. `null` means asked and failed. */
+  checks: Record<string, CheckSummary | null>;
   rateLimit: GitHubRateLimit | null;
   loading: boolean;
   /** Set when GitHub itself failed; git keeps working regardless. */
@@ -1162,6 +1167,8 @@ export interface GitHubState {
   loadPullRequests(opts?: { refresh?: boolean }): Promise<void>;
   loadClosedPullRequests(): Promise<void>;
   loadCommitAuthors(hashes: string[]): Promise<void>;
+  loadCommitPullRequests(hash: string): Promise<void>;
+  loadChecks(shas: string[]): Promise<void>;
   connect(): Promise<void>;
   disconnect(): Promise<void>;
   openCommit(hash: string): Promise<void>;
@@ -1191,6 +1198,24 @@ function resetCommitAuthors(set: (partial: Partial<GitHubState>) => void): void 
   set({ avatars: {} });
 }
 
+/** Check shas already asked about, with the epoch ms of the ask; the entry expires. */
+const requestedCheckShas = new Map<string, number>();
+const CHECKS_BATCH_MAX = 10;
+const CHECKS_TTL_MS = 30_000;
+
+/** Commit hashes already asked about, including the ones that answered with no pull request. */
+const requestedCommitPrHashes = new Set<string>();
+
+/**
+ * Drop the check and commit pull request slices. Both are keyed by commit identity,
+ * which is only meaningful inside one repository and one auth state.
+ */
+function resetChecks(set: (partial: Partial<GitHubState>) => void): void {
+  requestedCheckShas.clear();
+  requestedCommitPrHashes.clear();
+  set({ checks: {}, commitPullRequests: {} });
+}
+
 /**
  * GitHub metadata slice.
  *
@@ -1206,6 +1231,8 @@ export const useGitHubStore = create<GitHubState>((set, get) => ({
   closedPullRequests: [],
   closedLoaded: false,
   avatars: {},
+  commitPullRequests: {},
+  checks: {},
   rateLimit: null,
   loading: false,
   error: null,
@@ -1223,6 +1250,7 @@ export const useGitHubStore = create<GitHubState>((set, get) => ({
         const repoChanged = linkageChangedRepo(prevLinkage, linkage);
         if (repoChanged) {
           resetCommitAuthors(set);
+          resetChecks(set);
           useIssuesStore.getState().reset();
           // Runs belong to one repository and one branch set; the next read fills them.
           useActionsStore.getState().reset();
@@ -1239,6 +1267,8 @@ export const useGitHubStore = create<GitHubState>((set, get) => ({
                 pullRequestsLoadedAt: null,
                 closedPullRequests: [],
                 closedLoaded: false,
+                commitPullRequests: {},
+                checks: {},
               }
             : {}),
         });
@@ -1271,6 +1301,7 @@ export const useGitHubStore = create<GitHubState>((set, get) => ({
       const repoChanged = linkageChangedRepo(get().linkage, linkage);
       if (repoChanged) {
         resetCommitAuthors(set);
+        resetChecks(set);
         useIssuesStore.getState().reset();
         useActionsStore.getState().reset();
       }
@@ -1283,6 +1314,8 @@ export const useGitHubStore = create<GitHubState>((set, get) => ({
               pullRequestsLoadedAt: null,
               closedPullRequests: [],
               closedLoaded: false,
+              commitPullRequests: {},
+              checks: {},
             }
           : {}),
       });
@@ -1388,9 +1421,98 @@ export const useGitHubStore = create<GitHubState>((set, get) => ({
     );
   },
 
+  async loadCommitPullRequests(hash: string) {
+    // A signed-out read would reach the API anonymously. The guard precedes the
+    // ledger write so a signed-out attempt does not burn the hash.
+    if (get().auth?.connected !== true) return;
+    const linkage = get().linkage;
+    if (linkage === null || !linkage.available || linkage.owner === null || linkage.repo === null) return;
+    if (requestedCommitPrHashes.has(hash)) return;
+
+    // Recorded before the await: an empty answer is an answer, and two overlapping
+    // selects of the same commit must not both ask.
+    requestedCommitPrHashes.add(hash);
+    const { owner, repo } = linkage;
+    try {
+      const result = await bridge.request('github/commitPullRequests', { owner, repo, hash });
+      set((state) => ({
+        commitPullRequests: { ...state.commitPullRequests, [hash]: result.pullRequests },
+        rateLimit: result.rateLimit,
+        error: null,
+      }));
+    } catch (err) {
+      // Keep the ledger entry: a failing endpoint must not be re-asked on every
+      // render. `null` records the failure so the card can say the answer is
+      // unavailable instead of loading forever.
+      const body = toErrorBody(err);
+      set((state) => ({
+        commitPullRequests: { ...state.commitPullRequests, [hash]: null },
+        error: body,
+      }));
+    }
+  },
+
+  async loadChecks(shas: string[]) {
+    // Same guard as the commit pull request load, and in the same order: no
+    // token, no request, and no ledger entry that would block a later retry.
+    if (get().auth?.connected !== true) return;
+    const linkage = get().linkage;
+    if (linkage === null || !linkage.available || linkage.owner === null || linkage.repo === null) return;
+
+    const now = Date.now();
+    const pending: string[] = [];
+    for (const sha of new Set(shas)) {
+      const askedAt = requestedCheckShas.get(sha);
+      if (askedAt !== undefined && now - askedAt < CHECKS_TTL_MS) continue;
+      pending.push(sha);
+    }
+    if (pending.length === 0) return;
+
+    // Every sha is recorded before the first await, so two overlapping settles
+    // cannot double-ask the same one.
+    for (const sha of pending) requestedCheckShas.set(sha, now);
+
+    // Ten in flight at most, but a settle that brings twelve rows still answers
+    // all twelve: the loop drains the input in successive batches.
+    const { owner, repo } = linkage;
+    while (pending.length > 0) {
+      const batch = pending.splice(0, CHECKS_BATCH_MAX);
+      await Promise.all(
+        batch.map(async (sha) => {
+          try {
+            const result = await bridge.request('github/checkRuns', { owner, repo, sha });
+            set((state) => ({
+              checks: { ...state.checks, [sha]: result.summary },
+              rateLimit: result.rateLimit,
+              error: null,
+            }));
+          } catch (err) {
+            // Keep the ledger entry so a failing endpoint is not re-asked on
+            // every scroll frame, and record `null` so the badge can say
+            // "unavailable" instead of loading forever.
+            const body = toErrorBody(err);
+            set((state) => ({ checks: { ...state.checks, [sha]: null }, error: body }));
+          }
+        }),
+      );
+    }
+  },
+
   async connect() {
     try {
+      const previous = get().auth;
       const auth = await bridge.request('github/connect', {});
+      // The ledgers always reset: an explicit connect is the user asking again,
+      // so a failure recorded under the previous attempt must not be final.
+      requestedCheckShas.clear();
+      requestedCommitPrHashes.clear();
+      // A cancelled prompt answers with the same auth, so identity did not
+      // change and the data on screen must survive. Only a real sign-in or a
+      // different account invalidates the slices themselves.
+      const changed =
+        (auth.connected === true && previous?.connected !== true) ||
+        previous?.login !== auth.login;
+      if (changed) set({ checks: {}, commitPullRequests: {} });
       set({ auth, error: null });
       if (auth.invalidToken === true) {
         useOperationStore.getState().pushToast({
@@ -1409,6 +1531,7 @@ export const useGitHubStore = create<GitHubState>((set, get) => ({
     try {
       const auth = await bridge.request('github/disconnect', {});
       resetCommitAuthors(set);
+      resetChecks(set);
       useIssuesStore.getState().reset();
       set({
         auth,

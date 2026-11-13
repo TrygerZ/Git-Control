@@ -11,6 +11,8 @@ import {
   parseRequest,
   shouldRemember,
   validateAction,
+  validateCheckRunsPayload,
+  validateCommitPullRequestsPayload,
   validateEmptyPayload,
   type Outcome,
 } from '../src/bridgePure';
@@ -204,6 +206,10 @@ test('primitive guards and helpers', () => {
   assert.equal(isSlug('bad slug with spaces'), false);
   assert.equal(isSlug('a'.repeat(101)), false);
   assert.equal(isSlug(123), false);
+  // A leading dash is an option in every argv and a path traversal seed in a URL.
+  // GitHub owners and repositories cannot begin with one, so the rule is shared.
+  assert.equal(isSlug('-force'), false);
+  assert.equal(isSlug('--upload-pack=calc'), false);
 
   // isIssueFilter
   assert.equal(isIssueFilter('assigned'), true);
@@ -300,4 +306,32 @@ test('validateAction covers both branch delete actions', () => {
       ),
     /failed:branch/,
   );
+});
+
+// ------------------------------------------------- P21: check run payloads
+
+test('P21: commit pull request and check run payloads are validated before the client', () => {
+  const details: string[] = [];
+  const fail = (detail: string): never => {
+    details.push(detail);
+    throw new Error(detail);
+  };
+  const HASH = 'a'.repeat(40);
+
+  validateCommitPullRequestsPayload({ owner: 'o', repo: 'r', hash: HASH }, fail);
+  validateCheckRunsPayload({ owner: 'o', repo: 'r', sha: HASH }, fail);
+  assert.deepEqual(details, [], 'valid payloads pass');
+
+  for (const owner of ['', '../../etc/passwd', 'a'.repeat(101), 'a b', 'a/b', 42, null, undefined]) {
+    assert.throws(() => validateCommitPullRequestsPayload({ owner, repo: 'r', hash: HASH }, fail));
+    assert.throws(() => validateCheckRunsPayload({ owner, repo: 'r', sha: HASH }, fail));
+  }
+  for (const repo of ['', 'x'.repeat(1_000_000), '--force', 'a/b', 0]) {
+    assert.throws(() => validateCommitPullRequestsPayload({ owner: 'o', repo, hash: HASH }, fail));
+    assert.throws(() => validateCheckRunsPayload({ owner: 'o', repo, sha: HASH }, fail));
+  }
+  for (const hash of ['', 'abc', '--force', 'g'.repeat(40), 'a'.repeat(41), 7, null]) {
+    assert.throws(() => validateCommitPullRequestsPayload({ owner: 'o', repo: 'r', hash }, fail));
+    assert.throws(() => validateCheckRunsPayload({ owner: 'o', repo: 'r', sha: hash }, fail));
+  }
 });

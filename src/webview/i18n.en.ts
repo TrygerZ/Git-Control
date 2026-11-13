@@ -484,6 +484,13 @@ const en = {
     loadMoreTitle: 'Load next page of files.',
     loadMore: 'Load more',
     loadingMore: 'Loading next files...',
+    // P21 pull request card
+    pullRequestCard: (number: string) => `Pull request #${number}`,
+    pullRequestNone: 'Not part of a pull request',
+    pullRequestNoneHint: 'Push the branch and open a pull request to see checks here.',
+    openPullRequestAria: (number: string) => `Open pull request #${number} on GitHub`,
+    checksCardAria: 'Pull request and checks',
+    intoBase: (base: string, time: string) => `into ${base} · ${time}`,
   },
 
   // Change tree component
@@ -822,6 +829,19 @@ const en = {
     footerNotConnected: 'Not connected',
   },
 
+  // Check badges (P21). A count carries the state, so the strings read as
+  // sentences on their own for a screen reader.
+  checks: {
+    none: 'No checks',
+    passing: (passed: string, total: string) => `${passed}/${total} checks passed`,
+    pending: (done: string, total: string) => `${done}/${total} checks done`,
+    failing: (count: string) => `${count} failing`,
+    failingMore: (count: string) => `+${count} more`,
+    loading: 'Loading checks',
+    unavailable: 'Checks are unavailable',
+    badgeAria: (label: string, names: string) => `${label}, ${names}`,
+  },
+
   // Issues panel
   issues: {
     panelAria: 'Issues',
@@ -1024,7 +1044,7 @@ const en = {
     fPublish: 'Publish and push',
     fPublishDesc: 'Publish sends a new branch to the remote. Push sends later commits.',
     fPrs: 'Pull requests',
-    fPrsDesc: 'See pull requests for this repository and open them on GitHub.',
+    fPrsDesc: 'See pull requests for this repository, their check results, and open them on GitHub.',
     fIssues: 'Issues',
     fIssuesDesc: 'Bugs and tasks from GitHub, with the ones assigned to you first.',
     fActions: 'Actions',

@@ -133,6 +133,8 @@
   --gc-tone-changed: var(--vscode-charts-blue, var(--vscode-foreground));
   --gc-tone-pending: var(--vscode-charts-orange, var(--vscode-foreground));
   --gc-tone-special: var(--vscode-charts-purple, var(--vscode-foreground));
+  /* No hue means "nothing to report", so neutral is the muted foreground. */
+  --gc-tone-neutral: var(--vscode-descriptionForeground, var(--vscode-foreground));
 
   /*
    * Surface elevation. Three steps, all derived from theme tokens so light, dark,
@@ -2532,6 +2534,35 @@ h3 {
   border-radius: var(--gc-radius);
 }
 
+/*
+ * Pull request check badge. The words carry the state ("2 failing", "3/14 checks
+ * done") and the tone is decoration, so the badge still reads in forced colours
+ * and to a user who cannot separate the hues.
+ */
+.gc-check {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--gc-space-1);
+  font-size: var(--gc-fs-2xs);
+  color: var(--gc-text-muted);
+}
+
+.gc-check--added {
+  color: var(--gc-tone-added);
+}
+
+.gc-check--removed {
+  color: var(--gc-tone-removed);
+}
+
+.gc-check--pending {
+  color: var(--gc-tone-pending);
+}
+
+.gc-check--neutral {
+  color: var(--gc-tone-neutral);
+}
+
 /* ------------------------------------------------------------------- minimap */
 
 /*
@@ -4733,6 +4764,76 @@ h3 {
   list-style: none;
 }
 
+/*
+ * Pull request card. The min-height reserves the row while the PR answer and
+ * then the checks land, so nothing below shifts twice on a slow connection.
+ */
+.gc-inspector__pr-card {
+  min-height: 56px;
+  border: 1px solid var(--gc-border-subtle);
+  border-radius: var(--gc-radius);
+  padding: var(--gc-space-2) var(--gc-space-3);
+}
+
+.gc-inspector__pr-open {
+  display: flex;
+  align-items: center;
+  gap: var(--gc-space-2);
+  width: 100%;
+  min-height: var(--gc-hit);
+  border: none;
+  background: none;
+  color: inherit;
+  text-align: left;
+  padding: 0;
+}
+
+.gc-inspector__pr-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gc-space-1);
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+/* The badge plus its failing-names line, stacked at the card's right edge. */
+.gc-inspector__pr-checks {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  flex: 0 0 auto;
+  gap: var(--gc-space-1);
+  max-width: 45%;
+}
+
+/* Same truncation pattern as `.gc-prs__title`: one line, ellipsis, full text in the button label. */
+.gc-inspector__pr-title {
+  overflow: hidden;
+  color: var(--gc-text-primary);
+  font-size: var(--gc-fs-sm);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.gc-inspector__pr-meta {
+  color: var(--gc-text-muted);
+  font-size: var(--gc-fs-2xs);
+}
+
+.gc-inspector__pr-none,
+.gc-inspector__pr-none-hint {
+  margin: 0;
+  font-size: var(--gc-fs-xs);
+}
+
+.gc-inspector__pr-none-hint {
+  color: var(--gc-text-muted);
+}
+
+.gc-check__more {
+  color: var(--gc-text-muted);
+}
+
 .gc-inspector__body {
   max-height: 14em;
   overflow: auto;
@@ -5064,6 +5165,29 @@ h3 {
 
 .gc-prs__refs {
   overflow-wrap: anywhere;
+}
+
+/*
+ * The check count sits at the row's right edge (frame 05), outside the text
+ * column so a long title is not squeezed by it. The names line is the second
+ * channel: the count alone never says which check broke.
+ */
+.gc-prs__check {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  flex: 0 0 auto;
+  gap: var(--gc-space-1);
+  margin-left: auto;
+  max-width: 45%;
+}
+
+.gc-check__names {
+  overflow: hidden;
+  color: var(--gc-text-muted);
+  font-size: var(--gc-fs-2xs);
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* Decoration for the pointer: the row itself opens the same URL and is the tab stop. */
@@ -5884,7 +6008,9 @@ h3 {
   .gc-conflicts__badge,
   .gc-inspector__hash-value,
   .gc-avatar,
-  .gc-contributors__avatar {
+  .gc-contributors__avatar,
+  /* The check badge's state is a colour, so a border keeps it from vanishing. */
+  .gc-check {
     border: 1px solid ButtonBorder;
   }
 

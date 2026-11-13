@@ -84,7 +84,8 @@ export function messageOf(err: unknown): string { return err instanceof Error ? 
 export function isPositiveInt(value: unknown): boolean { return typeof value === 'number' && Number.isInteger(value) && value > 0; }
 export function isNonNegativeInt(value: unknown): boolean { return typeof value === 'number' && Number.isInteger(value) && value >= 0; }
 export function isSlug(value: unknown): boolean {
-  return typeof value === 'string' && value.length > 0 && value.length <= 100 && /^[A-Za-z0-9._-]+$/.test(value);
+  return typeof value === 'string' && value.length > 0 && value.length <= 100
+    && !value.startsWith('-') && /^[A-Za-z0-9._-]+$/.test(value);
 }
 /** A GitHub Actions run or workflow id. Same rule as any other positive integer. */
 export function isRunId(value: unknown): boolean {
@@ -131,4 +132,22 @@ export function isIssueFilter(value: unknown): value is IssueListFilter {
 }
 export function isIssueState(value: unknown): value is IssueStateFilter {
   return value === 'open' || value === 'closed';
+}
+
+/** `github/commitPullRequests`. `hash` reaches a path segment of the commit. */
+export function validateCommitPullRequestsPayload(
+  payload: { owner: unknown; repo: unknown; hash: unknown },
+  fail: (detail: string) => never,
+): void {
+  if (!isSlug(payload.owner) || !isSlug(payload.repo)) fail('owner/repo');
+  if (!validateHash(payload.hash)) fail('hash');
+}
+
+/** `github/checkRuns`. `sha` reaches a path segment of the commit. */
+export function validateCheckRunsPayload(
+  payload: { owner: unknown; repo: unknown; sha: unknown },
+  fail: (detail: string) => never,
+): void {
+  if (!isSlug(payload.owner) || !isSlug(payload.repo)) fail('owner/repo');
+  if (!validateHash(payload.sha)) fail('sha');
 }

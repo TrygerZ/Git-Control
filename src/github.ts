@@ -18,6 +18,9 @@
 import { randomBytes } from 'node:crypto';
 import { redact } from './logger';
 import type {
+  CheckConclusion,
+  CheckRunInfo,
+  CheckStatus,
   CommitAuthorInfo,
   ContributorIdentity,
   ErrorCode,
@@ -183,6 +186,8 @@ export const RUNS_TTL_MS = 60_000;
 const WORKFLOWS_TTL_MS = 300_000;
 export const JOBS_ACTIVE_TTL_MS = 15_000;
 export const JOBS_TTL_MS = 300_000;
+/** Check runs move while a push is building, so a commit's checks live 30 s. */
+export const CHECK_TTL_MS = 30_000;
 const VIEWER_TTL_MS = 300_000;
 const AUTHOR_TTL_MS = 300_000;
 const REQUEST_TIMEOUT_MS = 15_000;
@@ -412,6 +417,19 @@ export class GitHubClient {
       `/commits/${encodeURIComponent(hash)}/pulls`;
     return this.get<PullRequestInfo[]>(path, `commitPulls:${owner}/${repo}:${hash}`, PR_TTL_MS, (body) =>
       toPullRequests(body),
+    );
+  }
+
+  /**
+   * Check runs for a commit, one full page. A commit's checks are only read by
+   * the PR list, so the cache key carries the sha and shares the default store.
+   */
+  async checkRuns(owner: string, repo: string, sha: string): Promise<Fetched<CheckRunInfo[]>> {
+    const path =
+      `/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}` +
+      `/commits/${encodeURIComponent(sha)}/check-runs?per_page=100`;
+    return this.get<CheckRunInfo[]>(path, `checks:${owner}/${repo}:${sha}`, CHECK_TTL_MS, (body) =>
+      toCheckRuns(body),
     );
   }
 
@@ -1391,6 +1409,51 @@ function toRunConclusion(value: unknown): RunConclusion {
   return typeof value === 'string' && RUN_CONCLUSIONS.has(value) ? (value as RunConclusion) : null;
 }
 
+const CHECK_CONCLUSIONS: ReadonlySet<string> = new Set([
+  'success',
+  'failure',
+  'neutral',
+  'cancelled',
+  'skipped',
+  'timed_out',
+  'action_required',
+  'stale',
+]);
+
+/** Only the two terminal-ish states survive; `requested`, `waiting`, junk are queued. */
+function toCheckStatus(value: unknown): CheckStatus {
+  return value === 'completed' || value === 'in_progress' ? value : 'queued';
+}
+
+function toCheckConclusion(value: unknown): CheckConclusion {
+  return typeof value === 'string' && CHECK_CONCLUSIONS.has(value) ? (value as CheckConclusion) : null;
+}
+
+export function toCheckRuns(body: unknown): CheckRunInfo[] {
+  const list = (body as { check_runs?: unknown } | null)?.check_runs;
+  if (!Array.isArray(list)) return [];
+  return list.map((raw) => {
+    const run = raw as {
+      id?: unknown;
+      name?: unknown;
+      status?: unknown;
+      conclusion?: unknown;
+      html_url?: unknown;
+      started_at?: unknown;
+      completed_at?: unknown;
+    };
+    return {
+      id: typeof run.id === 'number' ? run.id : 0,
+      name: typeof run.name === 'string' ? run.name : '',
+      status: toCheckStatus(run.status),
+      conclusion: toCheckConclusion(run.conclusion),
+      url: typeof run.html_url === 'string' ? run.html_url : '',
+      startedAt: isoOrNull(run.started_at),
+      completedAt: isoOrNull(run.completed_at),
+    };
+  });
+}
+
 /**
  * Only `https:` links survive. Everything else becomes an empty string, which the
  * view reads as "no link", so a crafted `javascript:` URL cannot reach a click.
@@ -1526,7 +1589,7 @@ function toPullRequests(body: unknown): PullRequestInfo[] {
       title?: unknown;
       state?: unknown;
       html_url?: unknown;
-      head?: { ref?: unknown };
+      head?: { ref?: unknown; sha?: unknown };
       base?: { ref?: unknown };
       draft?: unknown;
       user?: { login?: unknown };
@@ -1534,6 +1597,7 @@ function toPullRequests(body: unknown): PullRequestInfo[] {
       merged_at?: unknown;
       requested_reviewers?: unknown;
     };
+    const headSha = typeof pr.head?.sha === 'string' && pr.head.sha.length > 0 ? pr.head.sha : null;
     const merged = typeof pr.merged_at === 'string' && pr.merged_at.length > 0;
     return {
       number: typeof pr.number === 'number' ? pr.number : 0,
@@ -1550,6 +1614,7 @@ function toPullRequests(body: unknown): PullRequestInfo[] {
             .map((r) => (r as { login?: unknown } | null)?.login)
             .filter((login): login is string => typeof login === 'string')
         : [],
+      ...(headSha === null ? {} : { headSha }),
     };
   });
 }
