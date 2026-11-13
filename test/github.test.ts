@@ -1313,3 +1313,132 @@ test('jobLogTail never puts the signed url in an error detail or a log line', as
     return true;
   });
 });
+
+// ------------------------------------------------- P21: check runs and head sha
+
+test('P21: checkRuns hits the commit check-runs route with a full page', async () => {
+  const h = client([response(200, { total_count: 0, check_runs: [] })]);
+  await h.gh.checkRuns('o', 'r', 'a'.repeat(40));
+  assert.equal(
+    h.calls[0]?.url,
+    `https://api.github.com/repos/o/r/commits/${'a'.repeat(40)}/check-runs?per_page=100`,
+  );
+});
+
+test('P21: checkRuns maps the fields the badge reads and tolerates junk', async () => {
+  const h = client([
+    response(200, {
+      total_count: 3,
+      check_runs: [
+        {
+          id: 11,
+          name: 'Lint',
+          status: 'completed',
+          conclusion: 'success',
+          html_url: 'https://github.com/o/r/runs/11',
+          started_at: '2026-11-13T00:00:00Z',
+          completed_at: '2026-11-13T00:01:00Z',
+        },
+        // Unknown status and conclusion: queued and null, never a throw.
+        { id: 12, name: 'Mystery', status: 'waiting', conclusion: 'invented' },
+        // Almost nothing present.
+        {},
+      ],
+    }),
+  ]);
+  const result = await h.gh.checkRuns('o', 'r', 'a'.repeat(40));
+  assert.deepEqual(result.data[0], {
+    id: 11,
+    name: 'Lint',
+    status: 'completed',
+    conclusion: 'success',
+    url: 'https://github.com/o/r/runs/11',
+    startedAt: '2026-11-13T00:00:00Z',
+    completedAt: '2026-11-13T00:01:00Z',
+  });
+  assert.equal(result.data[1]?.status, 'queued', 'an unknown status is queued, not a crash');
+  assert.equal(result.data[1]?.conclusion, null, 'an unknown conclusion is null');
+  assert.equal(result.data[2]?.name, '');
+  assert.equal(result.data[2]?.status, 'queued');
+  assert.equal(result.data[2]?.url, '');
+});
+
+test('P21: checkRuns maps requested and waiting onto queued', async () => {
+  const h = client([
+    response(200, {
+      check_runs: [
+        { id: 1, name: 'a', status: 'requested' },
+        { id: 2, name: 'b', status: 'waiting' },
+        { id: 3, name: 'c', status: 'in_progress' },
+      ],
+    }),
+  ]);
+  const result = await h.gh.checkRuns('o', 'r', 'a'.repeat(40));
+  assert.deepEqual(
+    result.data.map((run) => run.status),
+    ['queued', 'queued', 'in_progress'],
+  );
+});
+
+test('P21: a malformed check-runs body degrades to an empty list', async () => {
+  const h = client([response(200, 'not json')]);
+  assert.deepEqual((await h.gh.checkRuns('o', 'r', 'a'.repeat(40))).data, []);
+  const h2 = client([response(200, { check_runs: 'nope' })]);
+  assert.deepEqual((await h2.gh.checkRuns('o', 'r', 'a'.repeat(40))).data, []);
+});
+
+test('P21: checkRuns 404 maps to NOT_FOUND without retrying', async () => {
+  const h = client([response(404, { message: 'Not Found' })]);
+  await assert.rejects(
+    () => h.gh.checkRuns('o', 'r', 'a'.repeat(40)),
+    (err: unknown) => {
+      assert.ok(err instanceof GitHubError);
+      assert.equal(err.code, 'NOT_FOUND');
+      return true;
+    },
+  );
+  assert.equal(h.calls.length, 1, 'a 404 is not retried');
+});
+
+test('P21: checks are cached under a per-sha key for 30 s', async () => {
+  const h = client([response(200, { check_runs: [{ id: 1, name: 'Lint', status: 'completed', conclusion: 'success' }] })]);
+  const sha = 'b'.repeat(40);
+  const first = await h.gh.checkRuns('o', 'r', sha);
+  assert.equal(first.cached, false);
+
+  h.advance(29_999);
+  const cached = await h.gh.checkRuns('o', 'r', sha);
+  assert.equal(cached.cached, true, 'inside 30 s the copy answers');
+  assert.equal(h.calls.length, 1);
+
+  h.advance(2);
+  const refreshed = await h.gh.checkRuns('o', 'r', sha);
+  assert.equal(refreshed.cached, false, 'past 30 s the next read goes to the network');
+  assert.equal(h.calls.length, 2);
+
+  // A different commit is a different key.
+  await h.gh.checkRuns('o', 'r', 'c'.repeat(40));
+  assert.equal(h.calls.length, 3);
+});
+
+test('P21: a write can invalidate the checks cache by prefix', async () => {
+  const h = client([response(200, { check_runs: [] })]);
+  await h.gh.checkRuns('o', 'r', 'd'.repeat(40));
+  assert.equal(h.gh.cacheSize, 1);
+  assert.equal(h.gh.invalidate(['checks:']), 1);
+  assert.equal(h.gh.cacheSize, 0);
+});
+
+test('P21: pull requests carry the head sha so a row can request checks', async () => {
+  const h = client([
+    response(200, [
+      { number: 1, head: { ref: 'feat/a', sha: 'e'.repeat(40) }, base: { ref: 'main' } },
+      { number: 2, head: { ref: 'feat/b' }, base: { ref: 'main' } },
+      { number: 3 },
+    ]),
+  ]);
+  const result = await h.gh.pullRequests('o', 'r');
+  assert.equal(result.data[0]?.headSha, 'e'.repeat(40));
+  assert.equal(result.data[1]?.headSha, undefined, 'a missing sha stays absent, not empty');
+  assert.equal(result.data[2]?.headSha, undefined);
+});
