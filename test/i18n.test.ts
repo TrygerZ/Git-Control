@@ -613,3 +613,43 @@ test('the level 2 warning matches the action it is warning about', () => {
   }
   assert.notEqual(t('en').guard.stage2WarningBranch, t('id').guard.stage2WarningBranch);
 });
+
+test('the checks namespace exists in both catalogs with the same shape', () => {
+  const en = (t('en') as Record<string, unknown>).checks as Record<string, unknown>;
+  const id = (t('id') as Record<string, unknown>).checks as Record<string, unknown>;
+  assert.ok(en !== undefined, 'en.checks must exist');
+  assert.ok(id !== undefined, 'id.checks must exist');
+  assert.deepEqual(Object.keys(en).sort(), Object.keys(id).sort());
+
+  const enTyped = t('en').checks;
+  const idTyped = t('id').checks;
+  assert.equal(enTyped.none, 'No checks');
+  assert.equal(idTyped.none, 'Tidak ada pemeriksaan');
+  assert.equal(enTyped.unavailable, 'Checks are unavailable');
+  assert.equal(idTyped.unavailable, 'Pemeriksaan tidak tersedia');
+
+  // Function entries must survive numeric-looking arguments, which is how the
+  // count formatters call them.
+  assert.equal(enTyped.passing('12', '12'), '12/12 checks passed');
+  assert.equal(idTyped.passing('12', '12'), '12/12 pemeriksaan lulus');
+  assert.equal(enTyped.pending('3', '14'), '3/14 checks done');
+  assert.equal(idTyped.pending('3', '14'), '3/14 pemeriksaan selesai');
+  assert.equal(enTyped.failing('2'), '2 failing');
+  assert.equal(idTyped.failing('2'), '2 gagal');
+  assert.equal(enTyped.failingMore('4'), '+4 more');
+  assert.equal(idTyped.failingMore('4'), '+4 lainnya');
+  assert.equal(enTyped.badgeAria('2 failing', 'Lint'), '2 failing, Lint');
+  assert.equal(idTyped.badgeAria('2 gagal', 'Lint'), '2 gagal, Lint');
+
+  // The inspector card strings land in the same namespace as the rest of the panel.
+  const enInspector = t('en').inspector;
+  const idInspector = t('id').inspector;
+  assert.equal(enInspector.pullRequestCard('142'), 'Pull request #142');
+  assert.equal(idInspector.pullRequestCard('142'), 'Pull request #142');
+  assert.equal(enInspector.pullRequestNone, 'Not part of a pull request');
+  assert.equal(idInspector.pullRequestNone, 'Bukan bagian dari pull request');
+  assert.equal(enInspector.intoBase('main', '5h ago'), 'into main · 5h ago');
+  assert.equal(idInspector.intoBase('main', '5h lalu'), 'ke main · 5h lalu');
+  assert.equal(enInspector.openPullRequestAria('7'), 'Open pull request #7 on GitHub');
+  assert.equal(idInspector.openPullRequestAria('7'), 'Buka pull request #7 di GitHub');
+});

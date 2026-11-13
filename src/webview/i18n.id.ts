@@ -479,6 +479,13 @@ const id: Catalog = {
     loadMoreTitle: 'Ambil halaman file berikutnya.',
     loadMore: 'Muat lebih banyak',
     loadingMore: 'Memuat file berikutnya…',
+    // P21 pull request card
+    pullRequestCard: (number: string) => `Pull request #${number}`,
+    pullRequestNone: 'Bukan bagian dari pull request',
+    pullRequestNoneHint: 'Push branch lalu buka pull request untuk melihat pemeriksaan di sini.',
+    openPullRequestAria: (number: string) => `Buka pull request #${number} di GitHub`,
+    checksCardAria: 'Pull request dan pemeriksaan',
+    intoBase: (base: string, time: string) => `ke ${base} · ${time}`,
   },
 
   // Change tree component
@@ -816,6 +823,18 @@ const id: Catalog = {
     filterState: 'Status',
     footerConnected: (login: string) => `Terhubung sebagai ${login}`,
     footerNotConnected: 'Tidak terhubung',
+  },
+
+  // Check badges (P21)
+  checks: {
+    none: 'Tidak ada pemeriksaan',
+    passing: (passed: string, total: string) => `${passed}/${total} pemeriksaan lulus`,
+    pending: (done: string, total: string) => `${done}/${total} pemeriksaan selesai`,
+    failing: (count: string) => `${count} gagal`,
+    failingMore: (count: string) => `+${count} lainnya`,
+    loading: 'Memuat pemeriksaan',
+    unavailable: 'Pemeriksaan tidak tersedia',
+    badgeAria: (label: string, names: string) => `${label}, ${names}`,
   },
 
   // Issues panel
