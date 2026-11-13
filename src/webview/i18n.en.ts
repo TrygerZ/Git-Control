@@ -1044,7 +1044,7 @@ const en = {
     fPublish: 'Publish and push',
     fPublishDesc: 'Publish sends a new branch to the remote. Push sends later commits.',
     fPrs: 'Pull requests',
-    fPrsDesc: 'See pull requests for this repository and open them on GitHub.',
+    fPrsDesc: 'See pull requests for this repository, their check results, and open them on GitHub.',
     fIssues: 'Issues',
     fIssuesDesc: 'Bugs and tasks from GitHub, with the ones assigned to you first.',
     fActions: 'Actions',

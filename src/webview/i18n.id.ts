@@ -1039,7 +1039,7 @@ const id: Catalog = {
     fPublish: 'Publikasikan dan kirim',
     fPublishDesc: 'Publikasi mengirim branch baru ke remote. Kirim mengirim commit berikutnya.',
     fPrs: 'Pull request',
-    fPrsDesc: 'Lihat pull request repository ini dan buka di GitHub.',
+    fPrsDesc: 'Lihat pull request repository ini, hasil pemeriksaannya, dan buka di GitHub.',
     fIssues: 'Issues',
     fIssuesDesc: 'Bug dan tugas dari GitHub, yang ditugaskan kepada Anda di atas.',
     fActions: 'Actions',
