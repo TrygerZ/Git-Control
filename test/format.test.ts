@@ -7,6 +7,7 @@ import {
   actionTarget,
   amendBlockedReason,
   actionTitle,
+  apiCommandOf,
   apiQuotaLabel,
   baseName,
   checkLabel,
@@ -1197,4 +1198,28 @@ test('P21: checkNamesLabel joins up to three failing names and adds the overflow
   assert.equal(checkNamesLabel(['Lint', 'Test', 'Build'], 'en'), 'Lint, Test, Build');
   assert.equal(checkNamesLabel(['Lint', 'Test', 'Build', 'Deploy'], 'en'), 'Lint, Test, Build +1 more');
   assert.equal(checkNamesLabel(['Lint', 'Test', 'Build', 'Deploy', 'Docs'], 'id'), 'Lint, Test, Build +2 lainnya');
+});
+
+// ------------------------------------------- pull request command preview (P22)
+
+test('apiCommandOf renders the create pull request call for the dialog preview', () => {
+  assert.equal(
+    apiCommandOf('create-pull-request', 'TrygerZ', 'git-control'),
+    'POST /repos/TrygerZ/git-control/pulls',
+  );
+  // A path segment is encoded, so a name that needed it cannot smuggle a second
+  // segment into the preview.
+  assert.equal(apiCommandOf('create-pull-request', 'o', 'r'), 'POST /repos/o/r/pulls');
+});
+
+test('the push preview for the publish line keeps the same shape as every other push', () => {
+  assert.equal(
+    gitCommandOf({ action: 'push', remote: 'origin', branch: 'feat/a', setUpstream: true }),
+    'git push -u origin feat/a:feat/a',
+  );
+});
+
+test('apiCommandOf neutralizes bidi and control characters in the owner and repo', () => {
+  const out = apiCommandOf('create-pull-request', 'o\u202Eevil', 'r\u0007');
+  assert.doesNotMatch(out, /[\u202E\u0007]/);
 });

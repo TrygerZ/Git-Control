@@ -17,10 +17,11 @@ import {
   hasPrivateScope,
 } from './github';
 import { hostText, type HostCatalog } from './hostText';
-import type { GitHubGuardContext } from './githubGuard';
+import { hasWriteScope, type GitHubGuardContext } from './githubGuard';
 import { buildIconThemeSnapshot, iconThemeRootUri } from './iconTheme';
 import { Logger } from './logger';
 import { parseRemoteUrl, resolveGitHubApiBase, webUrlOf, type GitHubApiBase, type ParsedRemoteUrl } from './remoteUrl';
+import { buildDraft } from './pullRequestDraft';
 import { isFresh, parseRoute, PENDING_ROUTE_TTL_MS } from './webview/route';
 import { clampZoom } from './webview/viewport';
 import { MAX_COMMIT_LIMIT, RepositoryService } from './repository';
@@ -49,6 +50,8 @@ import type {
   CommitPullRequestsResult,
   ContributorIdentity,
   ContributorIdentityPayload,
+  CreatePullRequestPayload,
+  CreatePullRequestResult,
   FocusTarget,
   GitHubAuthState,
   GitHubLinkage,
@@ -61,6 +64,10 @@ import type {
   OpenDiffPayload,
   OpenDiffResult,
   OpenStashDiffHostPayload,
+  PrPreparePayload,
+  PrPrepareResult,
+  PrReviewersPayload,
+  PrReviewersResult,
   PullRequestsPayload,
   PullRequestsResult,
   Route,
@@ -88,6 +95,13 @@ const DIFF_SCHEME = 'git-control';
 /** Above this size a historical blob is replaced by the PRD's summary message. */
 const MAX_DIFF_BYTES = 5 * 1024 * 1024;
 const DEFAULT_API_URL = 'https://api.github.com';
+/** The only two template locations GitHub reads. Fixed, never webview-supplied. */
+const TEMPLATE_PATHS: ReadonlyArray<readonly string[]> = [
+  ['.github', 'pull_request_template.md'],
+  ['docs', 'pull_request_template.md'],
+];
+/** Above this size a template is skipped: it is a prompt, not a document. */
+const TEMPLATE_MAX_BYTES = 64 * 1024;
 
 let controller: Controller | undefined;
 
@@ -899,6 +913,9 @@ class Controller implements vscode.Disposable {
       githubActionsLog: (payload) => this.githubActionsLog(payload),
       githubCommitAuthors: (payload) => this.githubCommitAuthors(payload),
       githubContributorIdentity: (payload) => this.githubContributorIdentity(payload),
+      githubPrPrepare: (payload) => this.githubPrPrepare(payload),
+      githubCreatePullRequest: (payload) => this.githubCreatePullRequest(payload),
+      githubPrReviewers: (payload) => this.githubPrReviewers(payload),
       githubLinkage: () => this.githubLinkage(),
       takePendingRoute: () => this.takePendingRoute(),
     };
@@ -1326,6 +1343,191 @@ class Controller implements vscode.Disposable {
     const { client } = await this.githubClient();
     const result = await client.contributorIdentity(remote.owner, remote.repo, payload.email);
     return result.data;
+  }
+
+  /**
+   * Everything the create dialog asks before it draws (P22).
+   *
+   * Git reads are local and must succeed: without the branch, the range, and the
+   * template there is no dialog. GitHub reads are best effort, because the dialog
+   * still has to open on a disconnected or rate-limited client so the user can
+   * read the publish banner and decide. Every GitHub failure therefore degrades
+   * one field instead of failing the prepare.
+   *
+   * The template path is two fixed constants. No webview input reaches the path,
+   * the size is capped before the read, and the contents are only ever rendered
+   * as text.
+   */
+  private async githubPrPrepare(payload: PrPreparePayload): Promise<PrPrepareResult> {
+    const repo = await this.resolveRepository();
+    if (repo === null) {
+      throw new GitHubError({ status: 404, code: 'NOT_FOUND', message: extText().bridge.noRepository });
+    }
+    const status = await repo.status();
+    const head = status.branch;
+    if (head === null) {
+      throw new GitHubError({
+        status: 400,
+        code: 'VALIDATION_ERROR',
+        message: extText().bridge.invalid,
+        detail: 'head',
+      });
+    }
+
+    const { client } = await this.githubClient();
+    const settled = async <T>(fn: () => Promise<T>, fallback: T): Promise<T> => {
+      try {
+        return await fn();
+      } catch {
+        return fallback;
+      }
+    };
+
+    const [refs, apiDefault, authState, writeCtx, template] = await Promise.all([
+      repo.git.refs(),
+      settled(async () => (await client.repo(payload.owner, payload.repo)).data.defaultBranch, ''),
+      settled(() => this.githubAuth(), null),
+      settled(() => this.githubWriteContext(), null),
+      settled(() => this.readPullRequestTemplate(repo), null),
+    ]);
+
+    // The upstream short name is the fallback the API cannot supply: a branch
+    // that tracks `origin/main` tells us the base even while offline.
+    const upstreamShort =
+      status.upstream === null ? null : status.upstream.slice(status.upstream.indexOf('/') + 1);
+    // ponytail: `main` is the last resort for a repository that is offline AND has
+    // no upstream. Replace with a config value if a project ever needs another.
+    const base = payload.base ?? (apiDefault.length > 0 ? apiDefault : (upstreamShort ?? 'main'));
+
+    const bases: string[] = [base];
+    for (const ref of refs) {
+      // `refs/remotes/<remote>/<branch>` -> `<branch>`; the symbolic HEAD is not
+      // a base anyone can pick.
+      if (!ref.refName.startsWith('refs/remotes/')) continue;
+      const parts = ref.refName.split('/');
+      const name = parts.length > 3 ? parts.slice(3).join('/') : '';
+      if (name.length === 0 || name === 'HEAD' || bases.includes(name)) continue;
+      bases.push(name);
+    }
+
+    // One `for-each-ref` instead of one `git log` per branch: a spawn costs
+    // hundreds of ms on Windows, so a per-branch probe made the dialog crawl.
+    const notMerged = await settled(() => repo.git.branchesNotMergedInto(base), new Set<string>());
+    const heads: string[] = [head];
+    for (const ref of refs) {
+      if (heads.length >= 100) break;
+      if (!notMerged.has(ref.refName)) continue;
+      const name = ref.refName.slice('refs/heads/'.length);
+      if (name === head) continue;
+      heads.push(name);
+    }
+
+    const [commits, ahead, files, onRemote] = await Promise.all([
+      repo.git.rangeLog(base, head, 50),
+      repo.git.rangeCount(base, head),
+      repo.git.diffFileCount(base, head),
+      repo.git.remoteTrackingExists('origin', head),
+    ]);
+    const draft = buildDraft(commits, template, head);
+
+    const existing = await settled(async () => {
+      const found = await client.findOpenPullRequest(payload.owner, payload.repo, payload.owner, head, base);
+      return found === null ? null : { number: found.number, url: found.url, title: found.title };
+    }, null);
+    const collaborators = await settled(
+      async () => (await client.collaborators(payload.owner, payload.repo)).data.available,
+      false,
+    );
+
+    return {
+      head,
+      base,
+      bases,
+      heads,
+      onRemote,
+      ahead,
+      files,
+      commits: commits.map((commit) => ({ hash: commit.hash, subject: commit.subject })),
+      template,
+      draft,
+      existing,
+      connected: authState?.connected === true,
+      canWrite:
+        writeCtx === null
+          ? 'unknown'
+          : hasWriteScope(writeCtx.scopes, { action: 'create-pull-request', draft: false }),
+      collaboratorsAvailable: collaborators,
+    };
+  }
+
+  /** Reviewer logins for the picker. A failed read is reported, never thrown. */
+  private async githubPrReviewers(payload: PrReviewersPayload): Promise<PrReviewersResult> {
+    const { client } = await this.githubClient();
+    return (await client.collaborators(payload.owner, payload.repo)).data;
+  }
+
+  /**
+   * Create the pull request, then ask the reviewers.
+   *
+   * The bridge has already published the branch and applied the GitHub guard, so
+   * this method only talks to the API. A reviewer failure never undoes the
+   * creation: GitHub drops logins it cannot add, and the difference travels in
+   * `reviewersFailed` so the toast can name them.
+   */
+  private async githubCreatePullRequest(
+    payload: CreatePullRequestPayload,
+  ): Promise<CreatePullRequestResult> {
+    const { client } = await this.githubClient();
+    const created = await client.createPullRequest(payload.owner, payload.repo, {
+      title: payload.title,
+      body: payload.body,
+      base: payload.base,
+      head: payload.head,
+      draft: payload.draft,
+    });
+
+    let reviewersFailed: string[] = [];
+    if (payload.reviewers.length > 0) {
+      try {
+        const requested = await client.requestReviewers(
+          payload.owner,
+          payload.repo,
+          created.data.number,
+          payload.reviewers,
+        );
+        reviewersFailed = payload.reviewers.filter((login) => !requested.requested.includes(login));
+      } catch {
+        reviewersFailed = [...payload.reviewers];
+      }
+    }
+
+    return {
+      number: created.data.number,
+      url: created.data.url,
+      // The bridge overwrites this with what it actually pushed.
+      published: payload.publish,
+      reviewersFailed,
+      rateLimit: client.rateLimit(false),
+    };
+  }
+
+  /**
+   * The pull request template, from the two fixed locations GitHub documents.
+   * Returns `null` when neither exists or the first one found is oversized.
+   */
+  private async readPullRequestTemplate(repo: RepositoryService): Promise<string | null> {
+    const root = vscode.Uri.file(await repo.repoRoot());
+    for (const segments of TEMPLATE_PATHS) {
+      const uri = vscode.Uri.joinPath(root, ...segments);
+      try {
+        const stat = await vscode.workspace.fs.stat(uri);
+        if (stat.size > TEMPLATE_MAX_BYTES) continue;
+        return new TextDecoder().decode(await vscode.workspace.fs.readFile(uri));
+      } catch {
+        // Missing or unreadable: the next fixed path may still exist.
+      }
+    }
+    return null;
   }
 
   /** GitHub linkage for the detected remote, used for "Buka di GitHub". */

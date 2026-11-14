@@ -36,7 +36,10 @@ import {
   validateActionsRunsPayload,
   validateCheckRunsPayload,
   validateCommitPullRequestsPayload,
+  validateCreatePullRequestPayload,
   validateEmptyPayload as validateEmptyPayloadPure,
+  validatePrPreparePayload,
+  validatePrReviewersPayload,
 } from './bridgePure';
 import type { RepositoryService } from './repository';
 import { parseRoute } from './webview/route';
@@ -71,6 +74,8 @@ import type {
   ContributorIdentity,
   ContributorIdentityPayload,
   ContributorsResponse,
+  CreatePullRequestPayload,
+  CreatePullRequestResult,
   ErrorBody,
   ErrorCode,
   EventKind,
@@ -96,6 +101,10 @@ import type {
   OpenExternalPayload,
   OpenStashDiffHostPayload,
   OpenStashDiffPayload,
+  PrPreparePayload,
+  PrPrepareResult,
+  PrReviewersPayload,
+  PrReviewersResult,
   PullRequestsPayload,
   PullRequestsResult,
   RefsResult,
@@ -176,6 +185,14 @@ export interface BridgeHost {
   githubActionsLog?(payload: ActionsLogPayload): Promise<ActionsLogResult>;
   githubCommitAuthors?(payload: CommitAuthorsPayload): Promise<CommitAuthorsResult>;
   githubContributorIdentity?(payload: ContributorIdentityPayload): Promise<ContributorIdentity>;
+  /** Create-dialog reads. Read-only: no guard, no idempotency key. */
+  githubPrPrepare?(payload: PrPreparePayload): Promise<PrPrepareResult>;
+  githubPrReviewers?(payload: PrReviewersPayload): Promise<PrReviewersResult>;
+  /**
+   * The one GitHub write in P22. The bridge gates, publishes, and only then
+   * calls this, so the host callback never has to know about the push.
+   */
+  githubCreatePullRequest?(payload: CreatePullRequestPayload): Promise<CreatePullRequestResult>;
   githubLinkage?(): Promise<GitHubLinkage>;
   /**
    * Snapshot of the active file icon theme for the webview this bridge serves,
@@ -439,6 +456,12 @@ export class MessageBridge {
         return this.handleGitHubCommitAuthors(request.payload as CommitAuthorsPayload);
       case 'github/contributorIdentity':
         return this.handleGitHubContributorIdentity(request.payload as ContributorIdentityPayload);
+      case 'github/prPrepare':
+        return this.handlePrPrepare(request.payload as PrPreparePayload);
+      case 'github/createPullRequest':
+        return this.handleCreatePullRequest(request.payload as CreatePullRequestPayload, operationId);
+      case 'github/prReviewers':
+        return this.handlePrReviewers(request.payload as PrReviewersPayload);
       case 'github/linkage':
         validateEmptyPayload(request.payload, this.text().invalid);
         return this.handleGitHubLinkage();
@@ -895,6 +918,78 @@ export class MessageBridge {
     const linkage = this.host.githubLinkage;
     if (linkage === undefined) fail(503, 'UNAVAILABLE', this.text().githubPending);
     return linkage();
+  }
+
+  /**
+   * Everything the create dialog asks before it draws. Read-only, so no guard
+   * and no idempotency key: a repeated prepare is just another read.
+   */
+  private async handlePrPrepare(payload: PrPreparePayload): Promise<PrPrepareResult> {
+    const invalid = (detail: string): never =>
+      fail(400, 'VALIDATION_ERROR', this.text().invalid, { detail });
+    validatePrPreparePayload(payload, invalid);
+    const prepare = this.host.githubPrPrepare;
+    if (prepare === undefined) fail(503, 'UNAVAILABLE', this.text().githubPending);
+    return prepare(payload);
+  }
+
+  private async handlePrReviewers(payload: PrReviewersPayload): Promise<PrReviewersResult> {
+    const invalid = (detail: string): never =>
+      fail(400, 'VALIDATION_ERROR', this.text().invalid, { detail });
+    validatePrReviewersPayload(payload, invalid);
+    const reviewers = this.host.githubPrReviewers;
+    if (reviewers === undefined) fail(503, 'UNAVAILABLE', this.text().githubPending);
+    return reviewers(payload);
+  }
+
+  /**
+   * Create a pull request, publishing the branch first when asked.
+   *
+   * Order is the whole feature: the GitHub guard (which turns `publish` into one
+   * confirmation), then the publish push, then the POST. A push that fails throws
+   * before any API call, so a refused publish can never leave a pull request
+   * pointing at a branch that never arrived. The publish is skipped when the
+   * tracking ref already exists, so a retry after a transport error does not push
+   * twice. The refspec is `head:head` and `setUpstream` is the only flag: a `+`
+   * refspec or a force flag is never constructed here.
+   */
+  private async handleCreatePullRequest(
+    payload: CreatePullRequestPayload,
+    operationId: string,
+  ): Promise<CreatePullRequestResult> {
+    const invalid = (detail: string): never =>
+      fail(400, 'VALIDATION_ERROR', this.text().invalid, { detail });
+    validateCreatePullRequestPayload(payload, invalid);
+
+    await this.gateGitHub(
+      { action: 'create-pull-request', draft: payload.draft, publish: payload.publish },
+      payload,
+    );
+
+    const repo = await this.repository();
+    const remote = payload.remote ?? 'origin';
+
+    let pushed = false;
+    if (payload.publish === true && !(await repo.git.remoteTrackingExists(remote, payload.head))) {
+      // ponytail: the push guard's stale/behind rules read the CURRENT branch's
+      // remote state, which says nothing about a branch that is not on the remote
+      // at all. Pushing a new branch cannot overwrite anything, and git still
+      // rejects a non-fast-forward. Gate the publish once a tracking ref exists.
+      await this.run(repo, operationId, 'push', () =>
+        repo.git.push({
+          remote,
+          refspec: `${payload.head}:${payload.head}`,
+          setUpstream: true,
+          onProgress: this.progressSink(operationId, 'push'),
+        }),
+      );
+      pushed = true;
+    }
+
+    const create = this.host.githubCreatePullRequest;
+    if (create === undefined) fail(503, 'UNAVAILABLE', this.text().githubPending);
+    const result = await create(payload);
+    return { ...result, published: pushed };
   }
 
   private async handleStage(payload: StagePayload, operationId: string): Promise<ActionResult> {

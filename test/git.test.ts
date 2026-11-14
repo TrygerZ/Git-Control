@@ -1188,6 +1188,28 @@ test('remoteTrackingExists answers for the local ref list, before and after a pu
   assert.equal(await git.remoteTrackingExists('origin', 'feat/three'), true);
 });
 
+test('rangeCount counts the whole range even when the list is capped', async (t) => {
+  const dir = await makeFixture('feature-branch');
+  t.after(() => cleanup(dir));
+  const git = new GitRunner({ gitPath: 'git', cwd: dir });
+
+  assert.equal(await git.rangeCount('main', 'feat/three'), 3);
+  assert.equal(await git.rangeCount('feat/three', 'feat/three'), 0);
+
+  // The list honours its limit; the count must not follow it.
+  const capped = await git.rangeLog('main', 'feat/three', 1);
+  assert.equal(capped.length, 1);
+  assert.equal(await git.rangeCount('main', 'feat/three'), 3);
+});
+
+test('branchesNotMergedInto is the inverse of mergedBranches', async (t) => {
+  const dir = await makeFixture('feature-branch');
+  t.after(() => cleanup(dir));
+  const git = new GitRunner({ gitPath: 'git', cwd: dir });
+
+  assert.deepEqual(await git.branchesNotMergedInto('main'), new Set(['refs/heads/feat/three']));
+});
+
 test('the range runners validate both names before spawning git', async (t) => {
   const dir = await makeFixture('feature-branch');
   t.after(() => cleanup(dir));
