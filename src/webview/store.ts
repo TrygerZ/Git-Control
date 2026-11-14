@@ -55,6 +55,7 @@ import type {
   WorktreeInfo,
 } from '../messages';
 import { failingDot, firstFailedJob } from './actionsModel';
+import { normalizeReviewers } from '../pullRequestDraft';
 import type { BranchesSectionKey, BranchSort } from './branchesModel';
 import { clampZoom, COLUMN_WIDTH, LANE_HEIGHT, partitionUnrequestedHashes } from './viewport';
 
@@ -2226,6 +2227,214 @@ export const useBranchesStore = create<BranchesState>((set, get) => {
     },
   };
 });
+
+// ------------------------------------------------------------- prDraftStore
+
+/**
+ * Create pull request dialog (P22).
+ *
+ * The dialog is one form over one request, so the slice owns the loaded prepare
+ * result, the edited fields, and the idempotency key. The key is minted once per
+ * `open` and never touched by `submit`, so a retry after a transport error
+ * replays the first attempt instead of opening a second pull request.
+ */
+export type PrDraftStatus =
+  | 'closed'
+  | 'loading'
+  | 'ready'
+  | 'exists'
+  | 'publishing'
+  | 'creating'
+  | 'done'
+  | 'error';
+
+export interface PrDraftState {
+  status: PrDraftStatus;
+  head: string;
+  base: string;
+  bases: string[];
+  heads: string[];
+  title: string;
+  body: string;
+  draft: boolean;
+  reviewers: string[];
+  onRemote: boolean;
+  ahead: number;
+  files: number;
+  template: string | null;
+  existing: { number: number; url: string; title: string } | null;
+  connected: boolean;
+  canWrite: 'yes' | 'no' | 'unknown';
+  collaboratorsAvailable: boolean;
+  /** The key one dialog open reuses; `null` while closed. */
+  key: string | null;
+  created: { number: number; url: string; published: boolean; reviewersFailed: string[] } | null;
+  error: ErrorBody | null;
+
+  open(owner: string, repo: string): Promise<void>;
+  close(): void;
+  setField(field: 'title' | 'body' | 'base' | 'head', value: string): void;
+  setDraft(value: boolean): void;
+  addReviewer(login: string): void;
+  removeReviewer(login: string): void;
+  submit(): Promise<void>;
+}
+
+/**
+ * Owner/repo of the open dialog. Kept out of the state because no component
+ * reads it: `open` writes it and `submit` is the only reader.
+ */
+let prDraftTarget: { owner: string; repo: string } | null = null;
+/**
+ * True once `submit` has sent a create. It separates an error the dialog can
+ * retry (transport, server) from one it cannot (a failed prepare), which the
+ * two statuses would otherwise spell identically.
+ */
+let prDraftSubmitted = false;
+
+function closedPrDraft(): Omit<
+  PrDraftState,
+  'open' | 'close' | 'setField' | 'setDraft' | 'addReviewer' | 'removeReviewer' | 'submit'
+> {
+  return {
+    status: 'closed',
+    head: '',
+    base: '',
+    bases: [],
+    heads: [],
+    title: '',
+    body: '',
+    draft: false,
+    reviewers: [],
+    onRemote: false,
+    ahead: 0,
+    files: 0,
+    template: null,
+    existing: null,
+    connected: false,
+    canWrite: 'unknown',
+    collaboratorsAvailable: false,
+    key: null,
+    created: null,
+    error: null,
+  };
+}
+
+export const usePrDraftStore = create<PrDraftState>((set, get) => ({
+  ...closedPrDraft(),
+
+  async open(owner, repo) {
+    prDraftTarget = { owner, repo };
+    prDraftSubmitted = false;
+    // A fresh key per open: the next pull request must not be a replay of the
+    // previous one. Same mint as `useOperationStore.pushToast`.
+    const key = crypto.randomUUID();
+    // Everything the previous open left behind goes, so the dialog cannot draw
+    // one repository's title over another's branch.
+    set({ ...closedPrDraft(), status: 'loading', key });
+    try {
+      const result = await bridge.request('github/prPrepare', { owner, repo });
+      set({
+        status: result.existing === null ? 'ready' : 'exists',
+        head: result.head,
+        base: result.base,
+        bases: result.bases,
+        heads: result.heads,
+        title: result.draft.title,
+        body: result.draft.body,
+        onRemote: result.onRemote,
+        ahead: result.ahead,
+        files: result.files,
+        template: result.template,
+        existing: result.existing,
+        connected: result.connected,
+        canWrite: result.canWrite,
+        collaboratorsAvailable: result.collaboratorsAvailable,
+        error: null,
+      });
+    } catch (err) {
+      set({ status: 'error', error: toErrorBody(err) });
+    }
+  },
+
+  close() {
+    prDraftTarget = null;
+    prDraftSubmitted = false;
+    set(closedPrDraft());
+  },
+
+  setField(field, value) {
+    set({ [field]: value } as Partial<PrDraftState>);
+  },
+
+  setDraft(value) {
+    set({ draft: value });
+  },
+
+  addReviewer(login) {
+    // One rule set for the API: `normalizeReviewers` dedupes, drops a login the
+    // API would reject, and caps the list at the same limit the validator holds.
+    set({ reviewers: normalizeReviewers([...get().reviewers, login]) });
+  },
+
+  removeReviewer(login) {
+    set({ reviewers: get().reviewers.filter((entry) => entry !== login) });
+  },
+
+  async submit() {
+    const state = get();
+    // `error` is only retryable when it came from a submit; a failed prepare has
+    // no branch data to send and the dialog offers reload instead.
+    if (state.status !== 'ready' && !(state.status === 'error' && prDraftSubmitted)) return;
+    if (state.key === null || prDraftTarget === null) return;
+    prDraftSubmitted = true;
+    const { owner, repo } = prDraftTarget;
+    const { key, head, base, title, body, draft, reviewers, onRemote } = state;
+    // Both transitions land before the await so a subscriber sees the push phase
+    // and the create phase separately.
+    if (!onRemote) set({ status: 'publishing' });
+    set({ status: 'creating', error: null });
+    try {
+      const result = await bridge.request('github/createPullRequest', {
+        owner,
+        repo,
+        base,
+        head,
+        title,
+        body,
+        draft,
+        reviewers,
+        publish: !onRemote,
+        idempotencyKey: key,
+        // Unconditional: the dialog's submit button IS the level 1 confirmation
+        // the host guard asks for, and the phase file forbids stacking a second
+        // modal over the dialog. The host still enforces the flag, so a webview
+        // that skipped the dialog is refused.
+        confirm: true,
+      });
+      set({
+        status: 'done',
+        created: {
+          number: result.number,
+          url: result.url,
+          published: result.published,
+          reviewersFailed: result.reviewersFailed,
+        },
+      });
+    } catch (err) {
+      // The host sends the existing pull request's number in `detail` on a 409.
+      const body = (err as { body?: ErrorBody } | null)?.body ?? toErrorBody(err);
+      if (body.code === 'CONFLICT') {
+        set({
+          status: 'exists',
+          existing: { number: Number(body.detail), url: '', title: '' },
+        });
+      } else {
+        set({ status: 'error', error: body });
+      }
+    }
+  },
+}));
 
 // ----------------------------------------------------------- event plumbing
 
