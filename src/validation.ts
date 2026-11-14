@@ -93,6 +93,26 @@ export function validateDeletableBranch(value: unknown, current: string | null):
 }
 
 /**
+ * A pull request number, as the only variable part of a refspec.
+ *
+ * Threat model: the number is composed into `pull/<n>/head` and `pr/<n>` before
+ * git sees either, so it must be an integer git itself can hold in a ref. The
+ * upper bound is git's own signed 32-bit limit, which keeps the composed name
+ * inside what `git check-ref-format` accepts. A string `'1'` is refused: the
+ * caller that sends one is a caller whose type is wrong, and the number is never
+ * taken from webview text.
+ */
+export function validatePullRequestNumber(value: unknown): value is number {
+  return typeof value === 'number' && Number.isInteger(value) && value >= 1 && value <= 2_147_483_647;
+}
+
+/** The local branch a pull request is checked out to. Derived from the number only. */
+export function prBranchName(number: number): string {
+  if (!validatePullRequestNumber(number)) throw new Error(`invalid pull request number: ${String(number)}`);
+  return `pr/${number}`;
+}
+
+/**
  * Defends against: a remote name that git would read as an option or a path,
  * e.g. `--upload-pack=...` smuggled through a push/fetch target.
  */
