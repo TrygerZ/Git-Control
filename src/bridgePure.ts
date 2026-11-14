@@ -1,14 +1,14 @@
+import { validatePullRequestInput } from './pullRequestDraft';
 import type { ErrorCode, GitActionPayload, IssueListFilter, IssueStateFilter, Request, RequestKind } from './messages';
 import { validateBranchName, validateHash, validateRemoteName, validateRepoRelativePath, validateStashIndex } from './validation';
 
 export type Outcome = { ok: true; data: unknown } | { ok: false; error: { code: ErrorCode } };
 export const MUTATION_KINDS = new Set<string>(['actions/stage', 'actions/commit', 'actions/git']);
 /**
- * GitHub mutations. Empty until the endpoint phases (P22 to P28) register one;
- * the set exists now so `idempotencyKeyOf` has a single place to consult and a
- * later phase cannot add a kind to only one of the two sets.
+ * GitHub mutations. P22 registers the first one; later phases add theirs here so
+ * `idempotencyKeyOf` keeps a single place to consult.
  */
-export const GITHUB_MUTATION_KINDS = new Set<string>();
+export const GITHUB_MUTATION_KINDS = new Set<string>(['github/createPullRequest']);
 const RETRYABLE_CODES = new Set<ErrorCode>([
   'CONFIRMATION_REQUIRED',
   'DIRTY_TREE',
@@ -83,8 +83,14 @@ export function validateAction(action: GitActionPayload, fail: (detail: string) 
 export function messageOf(err: unknown): string { return err instanceof Error ? err.message : String(err); }
 export function isPositiveInt(value: unknown): boolean { return typeof value === 'number' && Number.isInteger(value) && value > 0; }
 export function isNonNegativeInt(value: unknown): boolean { return typeof value === 'number' && Number.isInteger(value) && value >= 0; }
+/**
+ * A GitHub owner or repository name. The value is one path segment in every URL
+ * built from it, so `.` and `..` are refused: they are the only two names that
+ * leave the segment they were placed in.
+ */
 export function isSlug(value: unknown): boolean {
   return typeof value === 'string' && value.length > 0 && value.length <= 100
+    && value !== '.' && value !== '..'
     && !value.startsWith('-') && /^[A-Za-z0-9._-]+$/.test(value);
 }
 /** A GitHub Actions run or workflow id. Same rule as any other positive integer. */
@@ -150,4 +156,66 @@ export function validateCheckRunsPayload(
 ): void {
   if (!isSlug(payload.owner) || !isSlug(payload.repo)) fail('owner/repo');
   if (!validateHash(payload.sha)) fail('sha');
+}
+
+/**
+ * `github/prPrepare`. `base` is optional: the host falls back to the repository
+ * default branch, which the webview cannot know before the first response.
+ */
+export function validatePrPreparePayload(
+  payload: { owner: unknown; repo: unknown; base?: unknown },
+  fail: (detail: string) => never,
+): void {
+  if (!isSlug(payload.owner) || !isSlug(payload.repo)) fail('owner/repo');
+  if (payload.base !== undefined && !validateBranchName(payload.base)) fail('base');
+}
+
+/** `github/prReviewers`. Only the slug pair; the host derives everything else. */
+export function validatePrReviewersPayload(
+  payload: { owner: unknown; repo: unknown },
+  fail: (detail: string) => never,
+): void {
+  if (!isSlug(payload.owner) || !isSlug(payload.repo)) fail('owner/repo');
+}
+
+/**
+ * `github/createPullRequest`. The one payload in this phase that reaches an
+ * argv-adjacent surface: `head` becomes the refspec of the publish push, so it is
+ * held to the same branch rule the git layer applies.
+ */
+export function validateCreatePullRequestPayload(
+  payload: {
+    owner: unknown;
+    repo: unknown;
+    base: unknown;
+    head: unknown;
+    title: unknown;
+    body: unknown;
+    draft: unknown;
+    reviewers: unknown;
+    publish: unknown;
+    remote?: unknown;
+  },
+  fail: (detail: string) => never,
+): void {
+  if (!isSlug(payload.owner) || !isSlug(payload.repo)) fail('owner/repo');
+  if (!validateBranchName(payload.base)) fail('base');
+  if (!validateBranchName(payload.head)) fail('head');
+  if (payload.head === payload.base) fail('head');
+  // Title, body, and reviewer rules live in one place. The casts are honest:
+  // `validatePullRequestInput` re-checks every type itself and never coerces.
+  const verdict = validatePullRequestInput({
+    title: payload.title as string,
+    body: payload.body as string,
+    base: payload.base as string,
+    head: payload.head as string,
+    reviewers: payload.reviewers as readonly string[],
+  });
+  // Reviewers are reported last, after the three fields this payload adds, so
+  // the dialog focuses them in the order it draws them.
+  if (!verdict.ok && verdict.field !== 'reviewers') fail(verdict.field);
+  if (typeof payload.draft !== 'boolean') fail('draft');
+  if (typeof payload.publish !== 'boolean') fail('publish');
+  if (payload.remote !== undefined && !validateRemoteName(payload.remote)) fail('remote');
+  if (!verdict.ok) fail(verdict.field);
 }

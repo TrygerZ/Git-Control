@@ -55,6 +55,8 @@ const en = {
     writeUnavailable: 'GitHub is unreachable. The change was not sent.',
     confirmWrite: 'This changes data on GitHub. Confirm to continue.',
     invalidWrite: 'GitHub refused the change. Check the values and try again.',
+    prExists: 'A pull request already exists for this branch.',
+    prCreateFailed: 'GitHub refused to create the pull request.',
   },
   quickActions: {
     placeholder: 'Type what you want to do',
@@ -168,6 +170,8 @@ const id: HostCatalog = {
     writeUnavailable: 'GitHub tidak terjangkau. Perubahan tidak dikirim.',
     confirmWrite: 'Ini mengubah data di GitHub. Konfirmasi untuk melanjutkan.',
     invalidWrite: 'GitHub menolak perubahan. Periksa nilainya lalu coba lagi.',
+    prExists: 'Pull request untuk branch ini sudah ada.',
+    prCreateFailed: 'GitHub menolak membuat pull request.',
   },
   quickActions: {
     placeholder: 'Ketik tindakan yang diinginkan',

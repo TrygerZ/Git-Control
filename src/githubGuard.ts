@@ -20,7 +20,7 @@ import type { Lang } from './messages';
 import { hostText } from './hostText';
 
 export type GitHubWriteAction =
-  | { action: 'create-pull-request'; draft: boolean }
+  | { action: 'create-pull-request'; draft: boolean; publish?: boolean }
   | { action: 'merge-pull-request'; method: 'merge' | 'squash' }
   | { action: 'submit-review'; event: 'APPROVE' | 'REQUEST_CHANGES' | 'COMMENT' }
   | { action: 'comment' }
@@ -96,9 +96,12 @@ export function evaluateGitHubAction(
   }
 
   const reviewVerdict = action.action === 'submit-review' && action.event !== 'COMMENT';
-  if (CONFIRM_ACTIONS.has(action.action) || reviewVerdict) {
-    // Merging, releasing, dispatching, closing, and a review verdict change
-    // shared state; an additive comment does not.
+  // A publish pushes a new branch, which changes the remote for everyone. A
+  // draft PR with publish is the same push, so draft is irrelevant here.
+  const publishVerdict = action.action === 'create-pull-request' && action.publish === true;
+  if (CONFIRM_ACTIONS.has(action.action) || reviewVerdict || publishVerdict) {
+    // Merging, releasing, dispatching, closing, publishing, and a review verdict
+    // change shared state; an additive comment does not.
     return {
       allow: false,
       code: 'CONFIRMATION_REQUIRED',

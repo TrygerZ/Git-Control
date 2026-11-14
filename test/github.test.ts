@@ -1442,3 +1442,176 @@ test('P21: pull requests carry the head sha so a row can request checks', async 
   assert.equal(result.data[1]?.headSha, undefined, 'a missing sha stays absent, not empty');
   assert.equal(result.data[2]?.headSha, undefined);
 });
+
+// ------------------------------------------- pull request create (P22)
+
+const PR_BODY = {
+  number: 154,
+  title: 'feat(graph): add ribbon layout',
+  html_url: 'https://github.com/o/r/pull/154',
+  head: { ref: 'feat/graph-ribbons', sha: 'a'.repeat(40) },
+  base: { ref: 'main' },
+  state: 'open',
+  draft: false,
+  user: { login: 'me' },
+  updated_at: '2026-11-14T00:00:00Z',
+  requested_reviewers: [],
+};
+
+test('createPullRequest posts the documented body and invalidates the pull lists', async () => {
+  const calls: Array<{ url: string; method: string; body: string | undefined }> = [];
+  const gh = new GitHubClient({
+    apiUrl: 'https://api.github.com',
+    token: 'ghp_x',
+    fetchImpl: async (url, init) => {
+      calls.push({ url, method: init.method, body: init.body });
+      return response(201, PR_BODY);
+    },
+  });
+  // Warm both caches the write has to drop.
+  await gh.pullRequests('o', 'r').catch(() => undefined);
+
+  const result = await gh.createPullRequest('o', 'r', {
+    title: 'feat(graph): add ribbon layout',
+    body: '## Summary',
+    base: 'main',
+    head: 'feat/graph-ribbons',
+    draft: true,
+  });
+
+  const write = calls[calls.length - 1];
+  assert.ok(write !== undefined);
+  assert.equal(write.method, 'POST');
+  assert.equal(write.url, 'https://api.github.com/repos/o/r/pulls');
+  assert.deepEqual(JSON.parse(write.body as string), {
+    title: 'feat(graph): add ribbon layout',
+    body: '## Summary',
+    base: 'main',
+    head: 'feat/graph-ribbons',
+    draft: true,
+  });
+  assert.equal(result.data.number, 154);
+  assert.equal(result.data.url, 'https://github.com/o/r/pull/154');
+});
+
+test('createPullRequest maps an already-exists 422 to CONFLICT carrying the number', async () => {
+  const gh = new GitHubClient({
+    apiUrl: 'https://api.github.com',
+    token: 'ghp_x',
+    fetchImpl: async () =>
+      response(422, {
+        message: 'Validation Failed',
+        errors: [{ resource: 'PullRequest', code: 'custom', message: 'A pull request already exists for o:feat/a.' }],
+      }),
+  });
+
+  const err = await gh
+    .createPullRequest('o', 'r', { title: 'T', body: '', base: 'main', head: 'feat/a', draft: false })
+    .catch((e: unknown) => e);
+  assert.ok(err instanceof GitHubError);
+  assert.equal(err.code, 'CONFLICT');
+  assert.match(err.detail ?? '', /already exists/);
+});
+
+test('createPullRequest makes exactly one attempt on a 502, because a retry could duplicate', async () => {
+  let calls = 0;
+  const gh = new GitHubClient({
+    apiUrl: 'https://api.github.com',
+    token: 'ghp_x',
+    sleep: async () => undefined,
+    fetchImpl: async () => {
+      calls += 1;
+      return response(502, {});
+    },
+  });
+
+  await assert.rejects(() =>
+    gh.createPullRequest('o', 'r', { title: 'T', body: '', base: 'main', head: 'feat/a', draft: false }),
+  );
+  assert.equal(calls, 1);
+});
+
+test('createPullRequest drops the cached pull lists so the new row appears', async () => {
+  const queue: FetchResponseLike[] = [response(200, []), response(201, PR_BODY)];
+  let index = 0;
+  const gh = new GitHubClient({
+    apiUrl: 'https://api.github.com',
+    token: 'ghp_x',
+    fetchImpl: async () => queue[Math.min(index++, queue.length - 1)] as FetchResponseLike,
+  });
+
+  await gh.pullRequests('o', 'r');
+  assert.equal(gh.cacheSize, 1);
+  await gh.createPullRequest('o', 'r', {
+    title: 'T',
+    body: '',
+    base: 'main',
+    head: 'feat/a',
+    draft: false,
+  });
+  assert.equal(gh.cacheSize, 0, 'pulls: was invalidated by the write');
+});
+
+test('findOpenPullRequest asks the documented head filter and returns the first match', async () => {
+  let seen = '';
+  const gh = new GitHubClient({
+    apiUrl: 'https://api.github.com',
+    token: 'ghp_x',
+    fetchImpl: async (url) => {
+      seen = url;
+      return response(200, [PR_BODY]);
+    },
+  });
+
+  const found = await gh.findOpenPullRequest('o', 'r', 'o', 'feat/graph-ribbons', 'main');
+  assert.match(seen, /\/repos\/o\/r\/pulls\?/);
+  assert.match(seen, /head=o%3Afeat%2Fgraph-ribbons/);
+  assert.match(seen, /base=main/);
+  assert.match(seen, /state=open/);
+  assert.equal(found?.number, 154);
+});
+
+test('findOpenPullRequest returns null when the branch pair has no open pull request', async () => {
+  const gh = new GitHubClient({
+    apiUrl: 'https://api.github.com',
+    token: 'ghp_x',
+    fetchImpl: async () => response(200, []),
+  });
+  assert.equal(await gh.findOpenPullRequest('o', 'r', 'o', 'feat/a', 'main'), null);
+});
+
+test('requestReviewers posts the login list and returns it unchanged on success', async () => {
+  let body = '';
+  const gh = new GitHubClient({
+    apiUrl: 'https://api.github.com',
+    token: 'ghp_x',
+    fetchImpl: async (_url, init) => {
+      body = init.body ?? '';
+      return response(201, { requested_reviewers: [{ login: 'ann' }] });
+    },
+  });
+
+  const result = await gh.requestReviewers('o', 'r', 154, ['ann', 'bob']);
+  assert.deepEqual(JSON.parse(body), { reviewers: ['ann', 'bob'] });
+  assert.deepEqual(result.requested, ['ann']);
+});
+
+test('collaborators maps a 403 to an empty list with the unavailable flag', async () => {
+  const gh = new GitHubClient({
+    apiUrl: 'https://api.github.com',
+    token: 'ghp_x',
+    fetchImpl: async () => response(403, { message: 'Must have push access' }),
+  });
+  const result = await gh.collaborators('o', 'r');
+  assert.deepEqual(result.data, { logins: [], available: false });
+});
+
+test('collaborators returns logins when the token can read them', async () => {
+  const gh = new GitHubClient({
+    apiUrl: 'https://api.github.com',
+    token: 'ghp_x',
+    fetchImpl: async () => response(200, [{ login: 'ann' }, { login: 'bob' }]),
+  });
+  const result = await gh.collaborators('o', 'r');
+  assert.deepEqual(result.data, { logins: ['ann', 'bob'], available: true });
+});

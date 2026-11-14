@@ -44,7 +44,14 @@ export type FixtureKind =
    * remote delete has a real ref to remove. Kept separate because the `branches`
    * ref list is asserted exactly by the flag tests.
    */
-  | 'branches-remote';
+  | 'branches-remote'
+  /**
+   * `remote` plus `feat/three` (three commits ahead of `main`, unpublished) and
+   * `.github/pull_request_template.md` on `main`. The shape the create-pull-request
+   * dialog reads: a range with commits in it, a template, and a branch that is
+   * not on the remote yet.
+   */
+  | 'feature-branch';
 
 /** Built templates, one per kind per process. */
 const templates = new Map<FixtureKind, Promise<string>>();
@@ -141,6 +148,32 @@ async function buildTemplate(kind: FixtureKind): Promise<string> {
     await bareGit.run(['init', '--bare', '--quiet', '--initial-branch=main', bareDir]);
     await git.run(['remote', 'add', 'origin', './.git/bare.git']);
     await git.run(['push', '--quiet', '-u', 'origin', 'main']);
+    return dir;
+  }
+
+  if (kind === 'feature-branch') {
+    await fs.mkdir(path.join(dir, '.github'), { recursive: true });
+    await fs.writeFile(
+      path.join(dir, '.github', 'pull_request_template.md'),
+      '## Summary\r\n\r\n- what changed\r\n\r\n## Testing\r\n\r\n- [ ] npm test\r\n',
+      'utf8',
+    );
+    await fs.writeFile(path.join(dir, 'a.txt'), 'one\n', 'utf8');
+    await git.stage(['.github/pull_request_template.md', 'a.txt']);
+    await git.commit('initial commit');
+    const bareDir = path.join(dir, '.git', 'bare.git');
+    const bareGit = new GitRunner({ gitPath: 'git', cwd: dir });
+    await bareGit.run(['init', '--bare', '--quiet', '--initial-branch=main', bareDir]);
+    await git.run(['remote', 'add', 'origin', './.git/bare.git']);
+    await git.run(['push', '--quiet', '-u', 'origin', 'main']);
+
+    // Unpublished on purpose: the dialog has to offer the publish-then-create path.
+    await git.createBranch('feat/three', 'main');
+    for (const n of ['one', 'two', 'three']) {
+      await fs.writeFile(path.join(dir, `feat-${n}.txt`), `${n}\n`, 'utf8');
+      await git.stage([`feat-${n}.txt`]);
+      await git.commit(`add feat ${n}`);
+    }
     return dir;
   }
 

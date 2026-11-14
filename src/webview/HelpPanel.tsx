@@ -154,6 +154,12 @@ export function HelpPanel(): JSX.Element {
         useRouteStore.getState().navigate({ id: 'branches', sub: 'local' });
         return;
       case 'prs':
+        if (target.focus === 'create-pr') {
+          useRouteStore.getState().navigateWithFocus({ id: 'prs' }, 'create-pr');
+        } else {
+          useRouteStore.getState().navigate({ id: 'prs' });
+        }
+        return;
       case 'issues':
       case 'actions':
         useRouteStore.getState().navigate({ id: target.route });

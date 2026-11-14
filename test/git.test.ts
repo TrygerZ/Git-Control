@@ -1131,3 +1131,112 @@ test('push still rejects force and delete refspecs after branch delete lands', a
   await assert.rejects(() => git.push({ remote: 'origin', refspec: '+main:main' }), /Force push is not supported/);
   await assert.rejects(() => git.push({ remote: 'origin', refspec: ':main' }), /Invalid refspec/);
 });
+
+// ------------------------------------------------------- range runners (P22)
+
+test('commitsBetween returns the range oldest first and nothing outside it', async (t) => {
+  const dir = await makeFixture('feature-branch');
+  t.after(() => cleanup(dir));
+  const git = new GitRunner({ gitPath: 'git', cwd: dir });
+
+  const commits = await git.rangeLog('main', 'feat/three', 50);
+  assert.deepEqual(
+    commits.map((commit) => commit.subject),
+    ['add feat one', 'add feat two', 'add feat three'],
+  );
+  // Oldest first, so the dialog's bullet list reads in the order the work happened.
+  assert.ok(commits.every((commit) => commit.hash.length === 40));
+
+  // The base itself is excluded: `main..feat/three` is the publish set, not the branch.
+  const empty = await git.rangeLog('feat/three', 'feat/three', 50);
+  assert.deepEqual(empty, []);
+});
+
+test('commitsBetween honours its limit without changing the order', async (t) => {
+  const dir = await makeFixture('feature-branch');
+  t.after(() => cleanup(dir));
+  const git = new GitRunner({ gitPath: 'git', cwd: dir });
+
+  const commits = await git.rangeLog('main', 'feat/three', 2);
+  assert.deepEqual(
+    commits.map((commit) => commit.subject),
+    ['add feat two', 'add feat three'],
+    'a capped range keeps the newest commits, which is what the dialog lists',
+  );
+});
+
+test('diffFileCount counts files across the range, not per commit', async (t) => {
+  const dir = await makeFixture('feature-branch');
+  t.after(() => cleanup(dir));
+  const git = new GitRunner({ gitPath: 'git', cwd: dir });
+
+  // Three commits, three distinct files, so a per-commit sum and a range diff agree
+  // only if the implementation really asks for the range.
+  assert.equal(await git.diffFileCount('main', 'feat/three'), 3);
+  assert.equal(await git.diffFileCount('feat/three', 'feat/three'), 0);
+});
+
+test('remoteTrackingExists answers for the local ref list, before and after a push', async (t) => {
+  const dir = await makeFixture('feature-branch');
+  t.after(() => cleanup(dir));
+  const git = new GitRunner({ gitPath: 'git', cwd: dir });
+
+  assert.equal(await git.remoteTrackingExists('origin', 'feat/three'), false);
+  assert.equal(await git.remoteTrackingExists('origin', 'main'), true);
+
+  await git.push({ remote: 'origin', refspec: 'feat/three:feat/three', setUpstream: true });
+  assert.equal(await git.remoteTrackingExists('origin', 'feat/three'), true);
+});
+
+test('rangeCount counts the whole range even when the list is capped', async (t) => {
+  const dir = await makeFixture('feature-branch');
+  t.after(() => cleanup(dir));
+  const git = new GitRunner({ gitPath: 'git', cwd: dir });
+
+  assert.equal(await git.rangeCount('main', 'feat/three'), 3);
+  assert.equal(await git.rangeCount('feat/three', 'feat/three'), 0);
+
+  // The list honours its limit; the count must not follow it.
+  const capped = await git.rangeLog('main', 'feat/three', 1);
+  assert.equal(capped.length, 1);
+  assert.equal(await git.rangeCount('main', 'feat/three'), 3);
+});
+
+test('branchesNotMergedInto is the inverse of mergedBranches', async (t) => {
+  const dir = await makeFixture('feature-branch');
+  t.after(() => cleanup(dir));
+  const git = new GitRunner({ gitPath: 'git', cwd: dir });
+
+  assert.deepEqual(await git.branchesNotMergedInto('main'), new Set(['refs/heads/feat/three']));
+});
+
+test('the range runners validate both names before spawning git', async (t) => {
+  const dir = await makeFixture('feature-branch');
+  t.after(() => cleanup(dir));
+  const lines: string[] = [];
+  const git = new GitRunner({ gitPath: 'git', cwd: dir, logger: (line) => lines.push(line) });
+
+  await assert.rejects(() => git.rangeLog('-x', 'main'), /Invalid base branch/);
+  await assert.rejects(() => git.rangeLog('main', '--output=/tmp/x'), /Invalid head branch/);
+  await assert.rejects(() => git.diffFileCount('main', 'feat/..'), /Invalid head branch/);
+  await assert.rejects(() => git.remoteTrackingExists('--upload-pack=calc', 'main'), /Invalid remote name/);
+  await assert.rejects(() => git.remoteTrackingExists('origin', '-x'), /Invalid branch name/);
+  assert.equal(lines.length, 0, 'nothing reached git');
+});
+
+test('no range runner can emit a force push or a plus refspec', async (t) => {
+  const dir = await makeFixture('feature-branch');
+  t.after(() => cleanup(dir));
+  const lines: string[] = [];
+  const git = new GitRunner({ gitPath: 'git', cwd: dir, logger: (line) => lines.push(line) });
+
+  await git.rangeLog('main', 'feat/three', 10);
+  await git.diffFileCount('main', 'feat/three');
+  await git.remoteTrackingExists('origin', 'feat/three');
+
+  assert.ok(lines.length > 0);
+  for (const line of lines) {
+    assert.doesNotMatch(line, /--force|--force-with-lease/, line);
+    assert.doesNotMatch(line, /\s\+[^\s]/, line);
+  }
+});

@@ -331,6 +331,8 @@ export function PendingChangesApp(): JSX.Element {
         decides what fills the rest. Pull requests is a whole destination, so it
         takes the body in place of the Changes toolbar, list, and commit footer.
         The sub-tab row above collapses on its own because it has no tabs there.
+        CreatePullRequest mounts inside PullRequestsView as a modal over the list,
+        so the shell needs no second mount and no extra route.
       */}
       {route.id === 'prs' ? (
         <PullRequestsView />

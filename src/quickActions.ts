@@ -12,8 +12,8 @@ import type { FocusTarget, OperationState, Route, RouteId } from './messages';
 export type Feature = 'create-pr' | 'checklist';
 export type Capability = RouteId | Feature;
 
-/** Compile-time constant, never a runtime flag. Empty until P22 and P16 ship. */
-export const FEATURES: ReadonlySet<Feature> = new Set<Feature>(['checklist']);
+/** Compile-time constant, never a runtime flag. Both features ship with their rows. */
+export const FEATURES: ReadonlySet<Feature> = new Set<Feature>(['create-pr', 'checklist']);
 
 /** Routes this build registers. Mirrors `navRegistry`; a test keeps the two in step. */
 export const SHIPPED_ROUTES: ReadonlySet<RouteId> = new Set<RouteId>([
@@ -70,8 +70,6 @@ export interface QuickContext {
   /** Local commits on an unpublished branch, used by the publish suggestion. */
   unpublishedCount: number;
   operation: OperationState;
-  // `github` and `branchHasPr` return with P22, in the commit that adds the
-  // create-pr row and the dialog that consumes its focus target.
   failingRuns: number | null;
   counts: { changes: number; stashes: number; prs: number | null; issues: number | null };
   available: ReadonlySet<Capability>;
@@ -145,9 +143,27 @@ export function buildQuickRows(ctx: QuickContext): QuickRow[] {
         failing: null,
       });
     }
-  }
 
-  // suggest.create-pr ships with P22, together with the dialog that consumes its focus target
+    // A branch ahead of its upstream is the only state a pull request can be
+    // opened from: no branch means detached HEAD, and no upstream means the
+    // publish row already owns the next step.
+    if (
+      ctx.branch !== null &&
+      ctx.hasRemote &&
+      ctx.hasUpstream &&
+      ctx.ahead > 0 &&
+      ctx.available.has('create-pr')
+    ) {
+      suggested.push({
+        id: 'suggest.create-pr',
+        group: 'suggested',
+        icon: 'git-pull-request',
+        target: { kind: 'navigate', route: { id: 'prs' }, focus: 'create-pr' },
+        count: null,
+        failing: null,
+      });
+    }
+  }
 
   if (ctx.failingRuns !== null && ctx.failingRuns > 0 && ctx.available.has('actions')) {
     suggested.push({

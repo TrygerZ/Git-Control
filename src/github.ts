@@ -166,6 +166,13 @@ export interface MutateOptions<T> {
   path: string;
   body?: unknown;
   invalidate?: readonly string[];
+  /**
+   * Error to raise instead of the shared 422 `VALIDATION_ERROR`. A create
+   * endpoint knows what the refusal means (a pull request already exists) while
+   * `mutate` cannot, and GitHub's own `errors[].message` is the only detail that
+   * tells the user what to do next.
+   */
+  invalid?(body: unknown): GitHubError;
   map(body: unknown, headers: { get(name: string): string | null }): T;
 }
 
@@ -175,6 +182,17 @@ const BREAKER_THRESHOLD = 5;
 const BREAKER_WINDOW_MS = 60_000;
 const REPO_TTL_MS = 300_000;
 const PR_TTL_MS = 60_000;
+/**
+ * The create dialog asks "does this branch pair already have an open pull
+ * request?" before it posts. That answer changes the moment anyone opens or
+ * closes one, so it lives 15 s: a stale "none" here costs a duplicate attempt.
+ */
+const OPEN_PR_TTL_MS = 15_000;
+/**
+ * The reviewer picker's collaborator list changes only when repository access
+ * changes, so 300 s matches the other repository metadata reads.
+ */
+const COLLABS_TTL_MS = 300_000;
 export const ISSUES_TTL_MS = 60_000;
 /**
  * Workflow runs and jobs answer two questions with one request: what happened,
@@ -418,6 +436,132 @@ export class GitHubClient {
     return this.get<PullRequestInfo[]>(path, `commitPulls:${owner}/${repo}:${hash}`, PR_TTL_MS, (body) =>
       toPullRequests(body),
     );
+  }
+
+  /**
+   * Open the pull request the create dialog composed.
+   *
+   * `mutate` gives exactly one attempt, which is the whole point here: a retried
+   * `POST /pulls` opens a duplicate. A 422 is translated to `CONFLICT` because
+   * the only common cause is "a pull request already exists for this head", and
+   * GitHub's `errors[].message` says so in words the dialog can show verbatim.
+   */
+  async createPullRequest(
+    owner: string,
+    repo: string,
+    input: { title: string; body: string; base: string; head: string; draft: boolean },
+  ): Promise<{ data: { number: number; url: string }; rateLimit: GitHubRateLimit }> {
+    return this.mutate<{ number: number; url: string }>({
+      method: 'POST',
+      path: `/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/pulls`,
+      body: { title: input.title, body: input.body, head: input.head, base: input.base, draft: input.draft },
+      invalidate: ['pulls:', 'commitPulls:'],
+      invalid: (body) => {
+        const detail = errorMessages(body).join('; ');
+        return new GitHubError({
+          status: 422,
+          code: 'CONFLICT',
+          message: this.text().invalidWrite,
+          ...(detail.length === 0 ? {} : { detail }),
+        });
+      },
+      map: (body) => {
+        const json = body as { number?: unknown; html_url?: unknown };
+        return {
+          number: typeof json.number === 'number' ? json.number : 0,
+          url: typeof json.html_url === 'string' ? json.html_url : '',
+        };
+      },
+    });
+  }
+
+  /**
+   * The open pull request for one head/base pair, or `null`.
+   *
+   * Short TTL: the create dialog calls this right before it posts, and a cached
+   * "none" from a minute ago is exactly the stale answer that produces a 422.
+   */
+  async findOpenPullRequest(
+    owner: string,
+    repo: string,
+    headOwner: string,
+    branch: string,
+    base: string,
+  ): Promise<PullRequestInfo | null> {
+    const head = `${headOwner}:${branch}`;
+    const path =
+      `/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/pulls` +
+      `?state=open&head=${encodeURIComponent(head)}&base=${encodeURIComponent(base)}`;
+    const result = await this.get<PullRequestInfo[]>(
+      path,
+      `pullsOpen:${owner}/${repo}:${headOwner}:${branch}:${base}`,
+      OPEN_PR_TTL_MS,
+      (body) => toPullRequests(body),
+    );
+    return result.data[0] ?? null;
+  }
+
+  /**
+   * Ask logins for a review. The response is the source of truth: GitHub drops
+   * a login that is already a reviewer or cannot be one, so echo what it
+   * reports and fall back to the request only when the body carries nothing.
+   */
+  async requestReviewers(
+    owner: string,
+    repo: string,
+    number: number,
+    logins: readonly string[],
+  ): Promise<{ requested: string[]; rateLimit: GitHubRateLimit }> {
+    const result = await this.mutate<string[]>({
+      method: 'POST',
+      path: `/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/pulls/${number}/requested_reviewers`,
+      body: { reviewers: logins },
+      invalidate: ['pulls:'],
+      map: (body) => {
+        const list = (body as { requested_reviewers?: unknown } | null)?.requested_reviewers;
+        if (!Array.isArray(list)) return [...logins];
+        const loginsOut = list
+          .map((r) => (r as { login?: unknown } | null)?.login)
+          .filter((login): login is string => typeof login === 'string');
+        return loginsOut.length === 0 ? [...logins] : loginsOut;
+      },
+    });
+    return { requested: result.data, rateLimit: result.rateLimit };
+  }
+
+  /**
+   * Collaborator logins for the reviewer picker.
+   *
+   * A token without push access gets 403 and one without admin gets 404; both
+   * mean "cannot suggest reviewers", which the dialog handles by falling back to
+   * a free-text login. Neither is an error worth failing the dialog over.
+   */
+  async collaborators(
+    owner: string,
+    repo: string,
+  ): Promise<Fetched<{ logins: string[]; available: boolean }>> {
+    const path =
+      `/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/collaborators?per_page=100`;
+    try {
+      return await this.get<{ logins: string[]; available: boolean }>(
+        path,
+        `collabs:${owner}/${repo}`,
+        COLLABS_TTL_MS,
+        (body) => {
+          const logins = Array.isArray(body)
+            ? body
+                .map((c) => (c as { login?: unknown } | null)?.login)
+                .filter((login): login is string => typeof login === 'string')
+            : [];
+          return { logins, available: true };
+        },
+      );
+    } catch (err) {
+      if (err instanceof GitHubError && (err.status === 403 || err.status === 404)) {
+        return { data: { logins: [], available: false }, cached: false, rateLimit: this.rateLimit(false) };
+      }
+      throw err;
+    }
   }
 
   /**
@@ -974,7 +1118,10 @@ export class GitHubClient {
     // path keeps `text.forbidden` because a read has no scope to name.
     let error: GitHubError;
     if (response.status === 422) {
-      error = new GitHubError({ status: 422, code: 'VALIDATION_ERROR', message: this.text().invalidWrite });
+      error =
+        options.invalid === undefined
+          ? new GitHubError({ status: 422, code: 'VALIDATION_ERROR', message: this.text().invalidWrite })
+          : options.invalid(parseJson(await response.text()));
     } else if (response.status === 403 && numberOf(response.headers.get('x-ratelimit-remaining')) !== 0) {
       error = new GitHubError({ status: 403, code: 'FORBIDDEN', message: this.text().missingScope('repo') });
     } else {
@@ -1760,6 +1907,18 @@ function parseJson(body: string): unknown {
   } catch {
     return null;
   }
+}
+
+/**
+ * `errors[].message` from a 422 body. GitHub puts the human sentence there and
+ * a machine code next to it; only the sentence is worth showing.
+ */
+function errorMessages(body: unknown): string[] {
+  const errors = (body as { errors?: unknown } | null)?.errors;
+  if (!Array.isArray(errors)) return [];
+  return errors
+    .map((e) => (e as { message?: unknown } | null)?.message)
+    .filter((m): m is string => typeof m === 'string' && m.length > 0);
 }
 
 function numberOf(value: string | null): number | null {

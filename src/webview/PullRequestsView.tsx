@@ -13,8 +13,9 @@
  * - reload happens on mount and on activation of `prs` only while the data is
  *   stale. No polling: this phase has no timer.
  */
-import { useEffect, useMemo, useRef, useState, type JSX, type KeyboardEvent } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type JSX, type KeyboardEvent } from 'react';
 import { loadState, saveState } from './bridge';
+import { CreatePullRequest } from './CreatePullRequest';
 import { restoreTarget } from './focusTrap';
 import {
   apiQuotaLabel,
@@ -41,7 +42,7 @@ import {
   type PrContext,
   type PrFilterId,
 } from './prFilters';
-import { useGitHubStore, useRepoStore, useRouteStore, useSettingsStore } from './store';
+import { useGitHubStore, useOperationStore, usePrDraftStore, useRepoStore, useRouteStore, useSettingsStore } from './store';
 import { useT } from './useT';
 import { EmptyState, FileListSkeleton, Icon, InfoBanner } from './ui';
 import type { Lang, PullRequestInfo } from '../messages';
@@ -183,6 +184,47 @@ export function PullRequestsView(): JSX.Element {
     branch !== null && pullRequests.some((pr) => pr.state === 'open' && pr.headRef === branch);
   const showCard = gate.view === 'ready' && branch !== null && webUrl !== null && !branchHasPr;
 
+  /**
+   * The create dialog. It opens over this view rather than as a route: the list
+   * stays behind the scrim, so a cancelled dialog lands back where the user was.
+   * The draft store's `status` is the open flag, so nothing is duplicated here.
+   */
+  const draftStatus = usePrDraftStore((s) => s.status);
+  const openDraft = usePrDraftStore((s) => s.open);
+  const pushToast = useOperationStore((s) => s.pushToast);
+  const dialogOpen = draftStatus !== 'closed';
+  const canOfferCreate = branch !== null && !branchHasPr && linkage?.owner != null && linkage.repo != null;
+
+  const startCreate = (): void => {
+    if (linkage?.owner == null || linkage.repo == null) return;
+    void openDraft(linkage.owner, linkage.repo);
+  };
+
+  // A quick action or the Help row opens this dialog through a focus target.
+  // The target is taken either way: one left pending would be claimed by an
+  // unrelated view later.
+  const pendingFocus = useRouteStore((s) => s.pendingFocus);
+  useEffect(() => {
+    if (pendingFocus !== 'create-pr') return;
+    useRouteStore.getState().takeFocus();
+    if (linkage?.owner == null || linkage.repo == null) return;
+    void openDraft(linkage.owner, linkage.repo);
+  }, [pendingFocus, linkage, openDraft]);
+
+  const closeCreate = (): void => {
+    // The store's `close` is also called by the dialog; calling it again is a no-op
+    // state reset, so the Escape path needs no second flag.
+    usePrDraftStore.getState().close();
+  };
+
+  const createdCreate = useCallback(
+    (number: number): void => {
+      pushToast({ level: 'info', message: strings.createPr.createdToast(String(number)) });
+      void loadPullRequests({ refresh: true });
+    },
+    [pushToast, loadPullRequests, strings],
+  );
+
   const quota = apiQuotaLabel(rateLimit, language);
 
   /**
@@ -308,6 +350,23 @@ export function PullRequestsView(): JSX.Element {
                   onChange={(event) => setQueryAndPersist(event.target.value)}
                 />
               </div>
+              {canOfferCreate && (
+                <>
+                  <button type="button" className="gc-button gc-button--action" onClick={startCreate}>
+                    <Icon name="add" />
+                    {strings.createPr.title}
+                  </button>
+                  <button
+                    type="button"
+                    className="gc-icon-button"
+                    aria-label={strings.createPr.title}
+                    title={strings.createPr.title}
+                    onClick={startCreate}
+                  >
+                    <Icon name="add" />
+                  </button>
+                </>
+              )}
             </div>
           </div>
 
@@ -550,6 +609,10 @@ export function PullRequestsView(): JSX.Element {
         </span>
         {quota !== null && <span className="gc-prs__quota">{quota}</span>}
       </footer>
+
+      {dialogOpen && (
+        <CreatePullRequest variant="modal" onCancel={closeCreate} onCreated={createdCreate} />
+      )}
     </section>
   );
 }

@@ -933,6 +933,28 @@ export function gitCommandOf(
   }
 }
 
+/**
+ * The HTTP call the create dialog is about to make, for its "What will run" list.
+ *
+ * Frame 07 draws the git push line and this API line together, and the API line is
+ * the only place the user sees which repository the pull request lands in. Owner
+ * and repo are sanitized like any other git-sourced text: a bidi override inside a
+ * name would make the preview say a different repository than the request targets.
+ * Nothing here is executed; it is a sentence, not a command.
+ */
+export function apiCommandOf(
+  call: 'create-pull-request',
+  owner: string,
+  repo: string,
+): string {
+  switch (call) {
+    case 'create-pull-request':
+      return `POST /repos/${sanitizeGitText(owner)}/${sanitizeGitText(repo)}/pulls`;
+    default:
+      return '';
+  }
+}
+
 /** Consequence of an action, shown above the command. */
 export function consequenceOf(action: GitActionRequest, lang: Lang = 'en'): string {
   const s = sanitizeGitText;

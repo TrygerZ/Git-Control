@@ -175,15 +175,17 @@ test('the webview palette catalog names the button in both languages', () => {
   assert.match(id, /openTitle: 'Aksi cepat'/);
 });
 
-test('the host advertises the checklist capability and the help route', () => {
-  // `buildQuickRows` needs BOTH `FEATURES.has('checklist')` (compile time) and
-  // `ctx.available.has('checklist')` (host). P16 shipped the card, so the host
-  // must advertise the capability or the Help row can never appear in the pick.
-  // P17 adds the `help` route beside it, for the same reason.
+test('the host advertises the checklist and create-pr capabilities and the help route', () => {
+  // `buildQuickRows` needs BOTH the compile-time set and `ctx.available`. P16
+  // shipped the card, P17 the Help route, and P22 the create dialog, so the host
+  // must advertise all three or the row can never appear in the pick.
   const src = read('src/extension.ts');
-  assert.match(
-    src,
-    /available: new Set<Capability>\(\[\.\.\.SHIPPED_ROUTES, 'checklist', 'help'\]\)/,
-    'the host adds the capability and the route to the set',
-  );
+  for (const capability of ["'checklist'", "'help'", "'create-pr'"]) {
+    assert.ok(
+      src.includes(`available: new Set<Capability>([...SHIPPED_ROUTES, ${capability}`) ||
+        src.includes(`, ${capability},`) ||
+        src.includes(`, ${capability}]`),
+      `the host advertises ${capability}`,
+    );
+  }
 });

@@ -101,3 +101,20 @@ test('shortcutGroups returns the groups in reading order with their entries', ()
     'every shortcut lands in exactly one group',
   );
 });
+
+// ------------------------------------------ create pull request row (P22)
+
+test('the create pull request row appears once the capability is registered', () => {
+  const withCreate: ReadonlySet<Capability> = new Set<Capability>([...SHIPPED_ROUTES, 'checklist', 'create-pr']);
+  const row = helpFeatureRows(withCreate).find((entry) => entry.id === 'createPr');
+  assert.ok(row !== undefined, 'the panel advertises the new dialog');
+  assert.equal(row.group, 'github');
+  assert.deepEqual(row.target, { kind: 'navigate', route: 'prs', focus: 'create-pr' });
+
+  // Without the capability the row is absent, so a build that lacks the dialog
+  // never advertises it.
+  assert.equal(
+    helpFeatureRows(new Set<Capability>([...SHIPPED_ROUTES, 'checklist'])).find((e) => e.id === 'createPr'),
+    undefined,
+  );
+});

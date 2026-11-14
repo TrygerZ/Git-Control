@@ -318,17 +318,17 @@ test('event/navigate keeps a known focus target and strips an unknown one', () =
     payload: { route: { id: 'changes', sub: 'changes' }, focus: 'publish' },
   });
 
-  // Every id a view can actually focus. `create-pr` joins this list with P22,
-  // in the same commit that adds the dialog able to consume it; an id no view
+  // Every id a view can actually focus. `create-pr` joined this list with P22,
+  // in the same commit that added the dialog able to consume it; an id no view
   // honors would sit in `pendingFocus` until an unrelated view claimed it.
-  for (const focus of ['push', 'commit', 'resolve']) {
+  for (const focus of ['push', 'commit', 'resolve', 'create-pr']) {
     const event = validateHostEvent({ kind: 'event/navigate', payload: { route: { id: 'prs' }, focus } });
     assert.deepEqual(event, { kind: 'event/navigate', payload: { route: { id: 'prs' }, focus } });
   }
 
   const unshipped = validateHostEvent({
     kind: 'event/navigate',
-    payload: { route: { id: 'prs' }, focus: 'create-pr' },
+    payload: { route: { id: 'prs' }, focus: 'merge-request' },
   });
   assert.deepEqual(unshipped, { kind: 'event/navigate', payload: { route: { id: 'prs' } } });
 

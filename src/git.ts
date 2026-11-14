@@ -332,6 +332,20 @@ export class GitRunner {
     return new Set(parseRefNameList(stdout));
   }
 
+  /** Full ref names under `refs/heads` NOT reachable from `base`. The exact inverse of {@link mergedBranches}. */
+  async branchesNotMergedInto(base: string): Promise<Set<string>> {
+    if (!validateBranchName(base)) {
+      throw new GitError({ code: 'VALIDATION_ERROR', message: `Invalid base branch: ${base}` });
+    }
+    const { stdout } = await this.run([
+      'for-each-ref',
+      `--no-merged=refs/heads/${base}`,
+      '--format=%(refname)',
+      'refs/heads',
+    ]);
+    return new Set(parseRefNameList(stdout));
+  }
+
   /** Short name of the remote's default branch, e.g. `origin/main`, or `null` when unset. */
   async originHead(remote = 'origin'): Promise<string | null> {
     if (!validateRemoteName(remote)) {
@@ -455,6 +469,90 @@ export class GitRunner {
     );
     if (code !== 0) return { behind: 0, ahead: 0 };
     return parseRevListCounts(stdout);
+  }
+
+  /**
+   * Commits a pull request would publish: `<base>..<head>`, oldest first.
+   *
+   * Both sides are branch names validated before any argv exists, so an option
+   * smuggled through either one never reaches git. `--reverse` after `--max-count`
+   * is deliberate: git caps the traversal first and reverses the capped set, so a
+   * limit keeps the newest commits, which is what a publish dialog lists.
+   */
+  async rangeLog(base: string, head: string, limit = 500): Promise<ParsedCommit[]> {
+    if (!validateBranchName(base)) {
+      throw new GitError({ code: 'VALIDATION_ERROR', message: `Invalid base branch: ${base}` });
+    }
+    if (!validateBranchName(head)) {
+      throw new GitError({ code: 'VALIDATION_ERROR', message: `Invalid head branch: ${head}` });
+    }
+    if (!validateLimit(limit)) {
+      throw new GitError({ code: 'VALIDATION_ERROR', message: `Invalid commit limit: ${String(limit)}` });
+    }
+    const range = sanitizeRefArg(`${base}..${head}`);
+    const { stdout } = await this.run([
+      'log',
+      '-z',
+      LOG_FORMAT,
+      `--max-count=${limit}`,
+      '--topo-order',
+      '--reverse',
+      range,
+    ]);
+    return parseLog(stdout);
+  }
+
+  /**
+   * Total commits in `<base>..<head>`, independent of any list cap.
+   *
+   * `rangeLog` truncates, so its length is not a count; the dialog prints
+   * "{c} commits" and must not say 50 for a 200-commit branch.
+   */
+  async rangeCount(base: string, head: string): Promise<number> {
+    if (!validateBranchName(base)) {
+      throw new GitError({ code: 'VALIDATION_ERROR', message: `Invalid base branch: ${base}` });
+    }
+    if (!validateBranchName(head)) {
+      throw new GitError({ code: 'VALIDATION_ERROR', message: `Invalid head branch: ${head}` });
+    }
+    const range = sanitizeRefArg(`${base}..${head}`);
+    const { stdout, code } = await this.run(['rev-list', '--count', range], {
+      allowedExitCodes: [0, 128],
+    });
+    if (code !== 0) return 0;
+    const n = Number(stdout.trim());
+    return Number.isFinite(n) && n > 0 ? n : 0;
+  }
+
+  /** Distinct files changed across `<base>..<head>`, i.e. the range diff, not a per-commit sum. */
+  async diffFileCount(base: string, head: string): Promise<number> {
+    if (!validateBranchName(base)) {
+      throw new GitError({ code: 'VALIDATION_ERROR', message: `Invalid base branch: ${base}` });
+    }
+    if (!validateBranchName(head)) {
+      throw new GitError({ code: 'VALIDATION_ERROR', message: `Invalid head branch: ${head}` });
+    }
+    const range = sanitizeRefArg(`${base}..${head}`);
+    const { stdout } = await this.run(['diff', '--name-only', '--no-color', range]);
+    return parseRefNameList(stdout).length;
+  }
+
+  /**
+   * Whether the local ref list already holds `refs/remotes/<remote>/<branch>`.
+   *
+   * Reads `refs()` rather than asking the remote: a publish flow must answer
+   * offline, and a tracking ref is the only local evidence that a push landed.
+   */
+  async remoteTrackingExists(remote: string, branch: string): Promise<boolean> {
+    if (!validateRemoteName(remote)) {
+      throw new GitError({ code: 'VALIDATION_ERROR', message: `Invalid remote name: ${remote}` });
+    }
+    if (!validateBranchName(branch)) {
+      throw new GitError({ code: 'VALIDATION_ERROR', message: `Invalid branch name: ${branch}` });
+    }
+    const target = `refs/remotes/${remote}/${branch}`;
+    const refs = await this.refs();
+    return refs.some((ref) => ref.refName === target);
   }
 
   async show(hash: string): Promise<string> {
