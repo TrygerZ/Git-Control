@@ -554,6 +554,13 @@ h3 {
   font-size: var(--gc-fs-xs);
 }
 
+/* The neutral sibling of `__error`: a reason a control is unavailable, not a fault. */
+.gc-field__hint {
+  margin: var(--gc-space-1) 0 0;
+  color: var(--gc-text-muted);
+  font-size: var(--gc-fs-xs);
+}
+
 .gc-checkbox {
   display: flex;
   align-items: flex-start;
@@ -6903,4 +6910,323 @@ h3 {
 .gc-cleanup__all {
   align-self: flex-start;
   padding: 0;
+}
+
+/* --------------------------------------------------- create pull request */
+
+/*
+ * Frame 07. One form, two hosts: `--modal` is the 560 px dialog over the list,
+ * `--sidebar` fills the panel column. Only the frame differs; every inner rule is
+ * shared, so the two cannot drift apart.
+ */
+.gc-create-pr {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  border: 1px solid var(--gc-border);
+  border-radius: var(--gc-radius-lg);
+  background: var(--gc-bg-surface);
+  box-shadow: var(--gc-shadow-lg);
+}
+
+.gc-create-pr--modal {
+  width: min(35em, 100%);
+  max-height: 90vh;
+  overflow: auto;
+  animation: gc-modal-in var(--gc-dur-med) var(--gc-ease-spring);
+}
+
+.gc-create-pr--sidebar {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  box-shadow: none;
+}
+
+.gc-create-pr__head {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--gc-space-3);
+  padding: var(--gc-space-5);
+  border-bottom: 1px solid var(--gc-border-subtle);
+}
+
+/* The only filled surface in the dialog: it marks the subject, not decoration. */
+.gc-create-pr__badge {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: var(--gc-radius-lg);
+  background: var(--gc-accent-subtle);
+  color: var(--gc-accent-primary);
+  font-size: var(--gc-fs-xl);
+}
+
+.gc-create-pr__titles {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: var(--gc-space-1);
+  min-width: 0;
+}
+
+.gc-create-pr__title {
+  margin: 0;
+  font-size: var(--gc-fs-xl);
+  font-weight: var(--gc-weight-strong);
+}
+
+/* One line, truncated: the summary is orientation, not content. */
+.gc-create-pr__summary {
+  margin: 0;
+  overflow: hidden;
+  color: var(--gc-text-secondary);
+  font-size: var(--gc-fs-xs);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.gc-create-pr__body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gc-space-4);
+  min-width: 0;
+  padding: var(--gc-space-5);
+}
+
+.gc-create-pr__branches {
+  display: flex;
+  align-items: flex-end;
+  gap: var(--gc-space-3);
+  min-width: 0;
+}
+
+.gc-create-pr__branches .gc-field {
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+.gc-create-pr__arrow {
+  flex: 0 0 auto;
+  padding-bottom: var(--gc-space-2);
+  color: var(--gc-text-muted);
+  font-size: var(--gc-fs-lg);
+}
+
+.gc-create-pr .gc-field__label {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--gc-space-3);
+  color: var(--gc-text-secondary);
+  font-size: var(--gc-fs-2xs);
+  font-weight: var(--gc-weight-strong);
+}
+
+.gc-create-pr__counter,
+.gc-create-pr__template {
+  overflow: hidden;
+  color: var(--gc-text-muted);
+  font-size: var(--gc-fs-2xs);
+  font-weight: normal;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.gc-create-pr__counter {
+  font-variant-numeric: tabular-nums;
+}
+
+.gc-create-pr .gc-field input,
+.gc-create-pr .gc-field select {
+  min-height: 30px;
+}
+
+/* The two branch pickers read as one value row, so the branch name is mono. */
+.gc-create-pr .gc-field select,
+.gc-create-pr .gc-field textarea {
+  font-family: var(--vscode-editor-font-family, monospace);
+  font-size: var(--gc-fs-2xs);
+}
+
+.gc-create-pr .gc-field select {
+  border: 1px solid var(--gc-border);
+  border-radius: 6px;
+  background: var(--gc-bg-surface);
+}
+
+/* Banners sit full width inside the form, whatever the shared block sets. */
+.gc-create-pr .gc-banner {
+  padding: var(--gc-space-4) var(--gc-space-3);
+  border-radius: var(--gc-radius-lg);
+}
+
+.gc-create-pr .gc-banner__glyph {
+  font-size: var(--gc-fs-sm);
+}
+
+.gc-create-pr .gc-banner__body {
+  font-size: var(--gc-fs-2xs);
+}
+
+/* -------------------------------------------------------------- reviewers */
+
+.gc-create-pr__chips {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: var(--gc-space-2);
+  min-width: 0;
+}
+
+/* The remove glyph stays quiet, but keeps the `--gc-hit` floor `gc-icon-button` sets. */
+.gc-create-pr__chip-remove {
+  color: var(--gc-text-muted);
+  font-size: var(--gc-fs-2xs);
+}
+
+.gc-create-pr__add {
+  flex: 1 1 8em;
+  min-width: 0;
+}
+
+.gc-create-pr__add .gc-field__label {
+  justify-content: flex-start;
+}
+
+/* ------------------------------------------------------------ draft switch */
+
+.gc-create-pr__switch {
+  display: flex;
+  align-items: center;
+  gap: var(--gc-space-3);
+  color: var(--gc-text-secondary);
+  font-size: var(--gc-fs-2xs);
+  cursor: pointer;
+}
+
+/*
+ * A real checkbox under the switch role, so Space, the label, and a screen reader
+ * all work without a key handler. The knob is the pseudo-element.
+ */
+.gc-create-pr__switch input[role='switch'] {
+  position: relative;
+  flex: 0 0 auto;
+  width: 28px;
+  height: 16px;
+  margin: 0;
+  border: 1px solid var(--gc-border-strong);
+  border-radius: var(--gc-radius-pill);
+  background: var(--gc-bg-editor);
+  appearance: none;
+  cursor: pointer;
+  transition: background var(--gc-dur-fast) var(--gc-ease);
+}
+
+.gc-create-pr__switch input[role='switch']::before {
+  content: '';
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 10px;
+  height: 10px;
+  border-radius: var(--gc-radius-pill);
+  background: var(--gc-text-secondary);
+  transition: transform var(--gc-dur-fast) var(--gc-ease);
+}
+
+.gc-create-pr__switch input[role='switch']:checked {
+  border-color: var(--gc-accent-solid);
+  background: var(--gc-accent-solid);
+}
+
+.gc-create-pr__switch input[role='switch']:checked::before {
+  transform: translateX(12px);
+  background: var(--gc-text-on-accent);
+}
+
+/* ---------------------------------------------------------- progress and run */
+
+.gc-create-pr__progress {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gc-space-1);
+  padding: var(--gc-space-3);
+  border: 1px solid var(--gc-border-subtle);
+  border-radius: var(--gc-radius);
+  color: var(--gc-text-secondary);
+  font-size: var(--gc-fs-2xs);
+}
+
+.gc-create-pr__willrun {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gc-space-2);
+  min-width: 0;
+}
+
+.gc-create-pr__willrun-label {
+  display: flex;
+  align-items: center;
+  gap: var(--gc-space-2);
+  color: var(--gc-text-muted);
+  font-size: var(--gc-fs-2xs);
+}
+
+.gc-create-pr__commands {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gc-space-1);
+  padding: var(--gc-space-2) var(--gc-space-3);
+  border: 1px solid var(--gc-border-subtle);
+  border-radius: var(--gc-radius);
+  background: var(--vscode-textCodeBlock-background, var(--gc-bg-editor));
+  font-family: var(--vscode-editor-font-family, monospace);
+  font-size: var(--gc-fs-2xs);
+  overflow-wrap: anywhere;
+}
+
+.gc-create-pr__command--push {
+  color: var(--gc-text-secondary);
+}
+
+.gc-create-pr__command--api {
+  color: var(--gc-accent-primary);
+}
+
+/* ------------------------------------------------------------------ footer */
+
+.gc-create-pr__footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--gc-space-3);
+  padding-top: var(--gc-space-4);
+  border-top: 1px solid var(--gc-border-subtle);
+}
+
+.gc-create-pr__footer-end {
+  display: flex;
+  align-items: center;
+  gap: var(--gc-space-2);
+}
+
+/* A 340 px sidebar has no room for two 30 px selects side by side. */
+@media (max-width: 420px) {
+  .gc-create-pr__branches {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .gc-create-pr__arrow {
+    display: none;
+  }
+
+  .gc-create-pr__footer {
+    flex-direction: column-reverse;
+    align-items: stretch;
+  }
 }
