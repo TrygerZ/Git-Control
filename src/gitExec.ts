@@ -9,7 +9,9 @@ export type GitErrorCode =
   | 'GIT_SPAWN_FAILED'
   | 'GIT_OUTPUT_TOO_LARGE'
   | 'REPOSITORY_LOCKED'
-  | 'VALIDATION_ERROR';
+  | 'VALIDATION_ERROR'
+  | 'NOT_FOUND'
+  | 'CONFLICT';
 
 export interface GitResult {
   stdout: string;
