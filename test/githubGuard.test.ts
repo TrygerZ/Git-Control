@@ -197,3 +197,47 @@ test('Indonesian copy resolves for every blocking message', () => {
   if (offlineEn.allow) return;
   assert.notEqual(offlineEn.message, offline.message, 'the language argument is honoured');
 });
+
+// ------------------------------------------------------- create pull request (P22)
+
+test('creating a pull request is allowed once connected with a write scope', () => {
+  assert.deepEqual(evaluateGitHubAction({ action: 'create-pull-request', draft: false }, CONNECTED), {
+    allow: true,
+  });
+});
+
+test('a publish-then-create request needs one confirmation, because it pushes', () => {
+  const verdict = evaluateGitHubAction({ action: 'create-pull-request', draft: false, publish: true }, CONNECTED);
+  assert.equal(verdict.allow, false);
+  if (verdict.allow) return;
+  assert.equal(verdict.code, 'CONFIRMATION_REQUIRED');
+  assert.equal(verdict.confirmationLevel, 1);
+  assert.equal(verdict.requiresConfirmation, true);
+});
+
+test('creating a pull request without a token is refused, and the refusal names the connection', () => {
+  const verdict = evaluateGitHubAction(
+    { action: 'create-pull-request', draft: false },
+    { ...CONNECTED, connected: false },
+  );
+  assert.equal(verdict.allow, false);
+  if (verdict.allow) return;
+  assert.equal(verdict.code, 'AUTH_ERROR');
+});
+
+test('creating a pull request with a read-only token is refused with the scope message', () => {
+  const verdict = evaluateGitHubAction(
+    { action: 'create-pull-request', draft: false },
+    { ...CONNECTED, scopes: ['public_repo'] },
+  );
+  // public_repo is a write scope for public repositories, so this one is allowed.
+  assert.equal(verdict.allow, true);
+
+  const readOnly = evaluateGitHubAction(
+    { action: 'create-pull-request', draft: false },
+    { ...CONNECTED, scopes: ['read:user'] },
+  );
+  assert.equal(readOnly.allow, false);
+  if (readOnly.allow) return;
+  assert.equal(readOnly.code, 'FORBIDDEN');
+});
