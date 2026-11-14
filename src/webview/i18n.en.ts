@@ -899,6 +899,48 @@ const en = {
     doneToast: (name: string) => `Created ${name} and switched to it`,
   },
 
+  // Pull request create (P22)
+  createPr: {
+    title: 'Create pull request',
+    summary: (c: string, f: string) =>
+      `${c} commits, ${f} files. Title and body are prefilled from your commits and the repo template.`,
+    base: 'base',
+    compare: 'compare',
+    titleLabel: 'Title',
+    titleCount: (n: string, max: string) => `${n} / ${max}`,
+    body: 'Description',
+    fromTemplate: (path: string) => `from ${path}`,
+    reviewers: 'Reviewers',
+    labels: 'Labels',
+    linkedIssue: 'Linked issue',
+    add: 'Add',
+    notOnOrigin: (branch: string) =>
+      `${branch} is not on origin yet. It will be pushed with upstream tracking first. Never force-pushed.`,
+    onOrigin: (branch: string) => `${branch} is on origin`,
+    onlyPr: 'Only the pull request will be created. Nothing else is pushed.',
+    draft: 'Open as draft',
+    willRun: 'What will run',
+    cancel: 'Cancel',
+    submitPush: 'Push & create pull request',
+    submit: 'Create pull request',
+    submitDraft: 'Create draft',
+    creating: 'Creating...',
+    creatingOnGitHub: 'Creating pull request on GitHub...',
+    existsTitle: 'A pull request already exists for this branch',
+    existsBody: (n: string, h: string, b: string) =>
+      `#${n} ${h} into ${b} is open. GitHub allows one open pull request per branch pair.`,
+    openN: (n: string) => `Open #${n}`,
+    connectTitle: 'Connect GitHub to create a pull request',
+    connectBody:
+      'Pull requests are created through the GitHub API. You can still publish the branch without a token.',
+    publishOnly: 'Publish only',
+    noTemplate: 'No template found. Using your commit messages.',
+    reviewersFailed: (names: string) => `Created, but could not request: ${names}`,
+    createdToast: (n: string) => `Pull request #${n} created`,
+    openOnGitHub: 'Open on GitHub',
+    reviewersUnavailable: 'Reviewer search needs push access to this repository.',
+  },
+
   // Explorer root app
   explorer: {
     toastCopyFailed: 'Could not copy to clipboard.',

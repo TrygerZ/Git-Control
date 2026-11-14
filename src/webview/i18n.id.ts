@@ -894,6 +894,48 @@ const id: Catalog = {
     doneToast: (name: string) => `Membuat ${name} dan berpindah ke branch itu`,
   },
 
+  // Pull request create (P22)
+  createPr: {
+    title: 'Buat pull request',
+    summary: (c: string, f: string) =>
+      `${c} commit, ${f} file. Judul dan isi diisi dari commit Anda dan template repo.`,
+    base: 'base',
+    compare: 'compare',
+    titleLabel: 'Judul',
+    titleCount: (n: string, max: string) => `${n} / ${max}`,
+    body: 'Deskripsi',
+    fromTemplate: (path: string) => `dari ${path}`,
+    reviewers: 'Reviewer',
+    labels: 'Label',
+    linkedIssue: 'Issue terkait',
+    add: 'Tambah',
+    notOnOrigin: (branch: string) =>
+      `${branch} belum ada di origin. Branch akan di-push dengan upstream lebih dulu. Tidak pernah di-push paksa.`,
+    onOrigin: (branch: string) => `${branch} sudah ada di origin`,
+    onlyPr: 'Hanya pull request yang dibuat. Tidak ada yang di-push.',
+    draft: 'Buka sebagai draft',
+    willRun: 'Yang akan dijalankan',
+    cancel: 'Batal',
+    submitPush: 'Push & buat pull request',
+    submit: 'Buat pull request',
+    submitDraft: 'Buat draft',
+    creating: 'Membuat...',
+    creatingOnGitHub: 'Membuat pull request di GitHub...',
+    existsTitle: 'Pull request untuk branch ini sudah ada',
+    existsBody: (n: string, h: string, b: string) =>
+      `#${n} ${h} ke ${b} masih terbuka. GitHub hanya mengizinkan satu pull request terbuka per pasangan branch.`,
+    openN: (n: string) => `Buka #${n}`,
+    connectTitle: 'Hubungkan GitHub untuk membuat pull request',
+    connectBody:
+      'Pull request dibuat lewat API GitHub. Anda tetap dapat mempublikasikan branch tanpa token.',
+    publishOnly: 'Publikasikan saja',
+    noTemplate: 'Template tidak ditemukan. Memakai pesan commit Anda.',
+    reviewersFailed: (names: string) => `Dibuat, tetapi tidak dapat meminta: ${names}`,
+    createdToast: (n: string) => `Pull request #${n} dibuat`,
+    openOnGitHub: 'Buka di GitHub',
+    reviewersUnavailable: 'Pencarian reviewer memerlukan akses push ke repositori ini.',
+  },
+
   // Explorer root app
   explorer: {
     toastCopyFailed: 'Tidak bisa menyalin ke clipboard.',
