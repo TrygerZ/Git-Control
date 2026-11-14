@@ -176,6 +176,23 @@ test('a row whose branch is checked out says so, and the row still opens the pul
 });
 
 /**
+ * The same malformed row must not offer a checkout button either. A non-integer
+ * number passes the render guard as "not checked out", and the click would then
+ * send a request the host rejects with 400. The button renders only when the row
+ * carries a number the host would accept.
+ */
+test('a malformed row offers no checkout button', () => {
+  const view = read('src/webview/PullRequestsView.tsx');
+  // The button renders only when the row produced a branch name, which
+  // `checkedOutBranch` computes with the same validator the payload uses.
+  assert.match(
+    view,
+    /checkoutBranch !== null &&\s*\([\s\S]{0,400}?className="gc-prs__checkout"/,
+    'the checkout button renders only for a valid number',
+  );
+});
+
+/**
  * A row whose number is not a positive integer must not reach `prBranchName`,
  * which throws. `toPullRequests` defaults a missing number to 0, and the view
  * mounts inside the app-level error boundary, so one malformed API row would

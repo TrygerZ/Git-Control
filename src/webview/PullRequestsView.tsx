@@ -628,16 +628,22 @@ export function PullRequestsView(): JSX.Element {
                                 appearing only on hover like the link below. Already
                                 checked out, the same click refreshes pr/<n>, so the
                                 name says the state rather than promise a no-op.
+                                A row whose number the host would reject gets no button,
+                                because the click could only produce a 400. Not a
+                                disabled state: this is malformed data, not a
+                                permission the user could ever be granted.
                               */}
-                              <button
-                                type="button"
-                                className="gc-prs__checkout"
-                                aria-label={checkoutName}
-                                title={checkoutName}
-                                onClick={checkout}
-                              >
-                                <Icon name="git-branch" />
-                              </button>
+                              {checkoutBranch !== null && (
+                                <button
+                                  type="button"
+                                  className="gc-prs__checkout"
+                                  aria-label={checkoutName}
+                                  title={checkoutName}
+                                  onClick={checkout}
+                                >
+                                  <Icon name="git-branch" />
+                                </button>
+                              )}
                               {/*
                                 The row opens the same URL, so this is the frame's hover
                                 affordance: decoration, never a second tab stop.

@@ -147,7 +147,7 @@ test('P23: a refused fast-forward maps to 409 CONFLICT, not a server error', () 
   // advice sentence, and the user must still get the commit/stash escape. Treating
   // this as a divergence would tell them a false story about their pull request.
   const mergeNoAdvice =
-    'error: Your local changes to the following files would be overwritten by merge:" + BS + "n" + BS + "ta.txt" + BS + "nAborting';
+    'error: Your local changes to the following files would be overwritten by merge:\n\ta.txt\nAborting';
   const mergeBody = toErrorBody(
     new GitError({ code: 'GIT_FAILED', message: 'failed', exitCode: 128, stderr: mergeNoAdvice }),
     'en',
