@@ -142,6 +142,19 @@ test('P23: a refused fast-forward maps to 409 CONFLICT, not a server error', () 
   assert.equal(dirtyBody.code, 'DIRTY_TREE');
   assert.deepEqual(dirtyBody.remedies, ['commit', 'stash', 'cancel']);
 
+  // A real merge with staged-only changes: the guard does not block it (a staged
+  // file is not "dirty"), git's ort path refuses with the bare merge line and no
+  // advice sentence, and the user must still get the commit/stash escape. Treating
+  // this as a divergence would tell them a false story about their pull request.
+  const mergeNoAdvice =
+    'error: Your local changes to the following files would be overwritten by merge:" + BS + "n" + BS + "ta.txt" + BS + "nAborting';
+  const mergeBody = toErrorBody(
+    new GitError({ code: 'GIT_FAILED', message: 'failed', exitCode: 128, stderr: mergeNoAdvice }),
+    'en',
+  );
+  assert.equal(mergeBody.code, 'DIRTY_TREE', 'a bare merge refusal is a dirty tree, not a divergence');
+  assert.deepEqual(mergeBody.remedies, ['commit', 'stash', 'cancel']);
+
   // The same overwrite line without git's advice sentence must not be mistaken
   // for a divergence either: the checkout spelling is still a dirty tree.
   const dirtyNoAdvice =

@@ -188,5 +188,7 @@ test('a malformed row number cannot throw during render', () => {
     .split('\n')
     .find((l) => l.includes('prBranchName(pr.number)'));
   assert.ok(line !== undefined, 'the checked-out test still derives the name');
-  assert.match(line, /pr\.number > 0|Number\.isInteger/, 'the call is guarded by a number check');
+  // The guard must be the same predicate `prBranchName` enforces, not a looser
+  // `> 0`: a non-integer row number passes `> 0` and still throws.
+  assert.match(line, /validatePullRequestNumber/, 'the call is guarded by the shared validator');
 });

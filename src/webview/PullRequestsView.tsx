@@ -46,7 +46,7 @@ import { useGitHubStore, useOperationStore, usePrDraftStore, useRepoStore, useRo
 import { useT } from './useT';
 import { EmptyState, FileListSkeleton, Icon, InfoBanner } from './ui';
 import type { Lang, PullRequestInfo } from '../messages';
-import { prBranchName } from '../validation';
+import { prBranchName, validatePullRequestNumber } from '../validation';
 
 const CHIP_ORDER: readonly PrFilterId[] = ['open', 'review-requested', 'mine', 'draft'];
 
@@ -59,12 +59,14 @@ const TICK_MS = 1000;
 
 /**
  * A row's branch name, or null when the row carries no usable number. The
- * GitHub mapper defaults a malformed number to 0, and `prBranchName` throws on
- * that; this view renders inside the app error boundary, so one bad row must
- * degrade to "not checked out" rather than replace the sidebar.
+ * GitHub mapper defaults a malformed number to 0, but any non-integer can still
+ * arrive, and `prBranchName` throws on it; this view renders inside the app
+ * error boundary, so one bad row must degrade to "not checked out" rather than
+ * replace the sidebar. The guard is the same predicate `prBranchName` enforces,
+ * so no number that would throw reaches it.
  */
 function checkedOutBranch(pr: PullRequestInfo): string | null {
-  return pr.number > 0 ? prBranchName(pr.number) : null;
+  return validatePullRequestNumber(pr.number) ? prBranchName(pr.number) : null;
 }
 
 export function PullRequestsView(): JSX.Element {

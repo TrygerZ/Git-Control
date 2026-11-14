@@ -970,10 +970,12 @@ export class MessageBridge {
     const repo = await this.repository();
     const remote = payload.remote ?? 'origin';
 
-    // A branch checked out from a fork pull request may never be pushed. The
-    // record lives in the repository, so a webview that omits `readOnly` cannot
-    // bypass it, and this runs before the publish check so it refuses whether or
-    // not the branch is already on the remote.
+    // A branch checked out from a fork pull request may never be published. This
+    // path has no git guard, so the refusal is made here from the repository's own
+    // record: a caller that omits `readOnly` on the checkout cannot make the branch
+    // publishable through this request. The record itself is written from the
+    // webview's checkout flag, which is defence in depth rather than a boundary: a
+    // webview that can forge that flag can already issue any git action.
     if (payload.publish === true && repo.readOnlyBranches().has(payload.head)) {
       const lang = this.host.settings().language ?? 'en';
       fail(403, 'FORBIDDEN', hostText(lang).guard.forkReadOnly, { remedies: ['cancel'] });
@@ -1682,14 +1684,15 @@ function fromGitError(err: GitError, lang: Lang = 'en'): ErrorBody {
 }
 
 const HOOK_MARKERS = [/\bhook\b/i, /hooks\//i, /declined/i];
-// git pairs its "would be overwritten" line with an advice sentence on a
-// dirty-tree refusal. The advice is the reliable marker; the bare overwrite line
-// is not, because the `--ff-only` merge refusal uses the same wording for a
-// different problem and must reach the fast-forward arm below. The checkout
-// spelling stays here so a suppressed advice line still maps to DIRTY_TREE.
+// Both overwrite spellings belong here: a merge or a checkout that git refuses
+// because local changes are in the way is a dirty tree, and the advice sentence
+// is only sometimes present. The `--ff-only` refusal is a different sentence
+// (`FF_ONLY_MARKERS`), so it cannot be confused with either spelling, and this
+// arm is evaluated first so a dirty merge wins over any later match.
 const DIRTY_TREE_MARKERS = [
   /Please commit your changes or stash them/i,
   /would be overwritten by checkout/i,
+  /would be overwritten by merge/i,
 ];
 const NON_FF_MARKERS = [/non-fast-forward/i, /fetch first/i, /\[rejected\]/i, /behind its remote/i];
 /**
@@ -1701,18 +1704,15 @@ const NON_FF_MARKERS = [/non-fast-forward/i, /fetch first/i, /\[rejected\]/i, /b
  */
 const UNMERGED_MARKERS = [/is not fully merged/i];
 /**
- * `git merge --ff-only` refusing to move the checked-out branch. Two spellings:
- * a diverged branch, and a dirty tree that the same merge would overwrite (git
- * emits no advice sentence in that spelling, so the dirty arm above cannot own
- * it). The pull request checkout reaches both when the checked-out `pr/<n>`
- * carries local commits the pull request does not have; the refusal is the
- * designed outcome, not a crash.
+ * `git merge --ff-only` refusing to move the checked-out branch because it has
+ * diverged from the pull request. Two spellings for the same divergence, which
+ * is what the checked-out refresh actually emits. The pull request checkout
+ * reaches it when the checked-out `pr/<n>` carries local commits the pull
+ * request does not have; the refusal is the designed outcome, not a crash.
  */
 const FF_ONLY_MARKERS = [
   /Not possible to fast-forward/i,
   /Diverging branches can't be fast-forwarded/i,
-  // Merge-specific: the checkout spelling belongs to the dirty arm.
-  /local changes to the following files would be overwritten by merge/i,
 ];
 
 /**
