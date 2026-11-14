@@ -346,3 +346,84 @@ test('prReviewers reaches the host and reports UNAVAILABLE without one', async (
   if (missing.ok) return;
   assert.equal(missing.error.code, 'UNAVAILABLE');
 });
+
+// ------------------------------------- P23: the read-only branch must hold here
+
+/**
+ * The publish push is a push from the current branch, and a branch checked out
+ * from a fork pull request is read only. The guard for that lives in the git
+ * guard, which this path never ran, so the promise the README makes was only
+ * kept on the ordinary push button.
+ *
+ * The refusal is host-side and derived from the repository's own record, not
+ * from a flag the webview sends: a caller that omits `readOnly` must not be able
+ * to publish a branch the host already knows is read only.
+ */
+test('a publish from a read-only branch is refused before any push', async (t) => {
+  const repo = await repoWithUnpublishedBranch(t);
+  let created = 0;
+  const h = repo.harness({
+    host: {
+      githubWriteContext: async () => WRITE_CTX,
+      githubCreatePullRequest: async () => {
+        created += 1;
+        return { number: 1, url: 'u', published: true, reviewersFailed: [], rateLimit: RATE };
+      },
+    },
+  });
+  t.after(() => h.dispose());
+  // Marked through the harness's own service, which is the one the bridge reads.
+  await h.repo.markReadOnlyBranch('feat/three');
+
+  const response = await h.send('github/createPullRequest', {
+    owner: 'o',
+    repo: 'r',
+    base: 'main',
+    head: 'feat/three',
+    title: 'Three',
+    body: '',
+    draft: false,
+    reviewers: [],
+    publish: true,
+    confirm: true,
+    idempotencyKey: 'k-read-only',
+  });
+  assert.equal(response.ok, false);
+  if (response.ok) return;
+  assert.equal(response.error.code, 'FORBIDDEN');
+  assert.deepEqual(response.error.remedies, ['cancel']);
+  assert.equal(created, 0, 'no request left the host');
+  assert.equal(h.log.count('push'), 0, 'nothing was pushed');
+});
+
+test('a publish from an ordinary branch is still allowed', async (t) => {
+  const repo = await repoWithUnpublishedBranch(t);
+  let created = 0;
+  const h = repo.harness({
+    host: {
+      githubWriteContext: async () => WRITE_CTX,
+      githubCreatePullRequest: async () => {
+        created += 1;
+        return { number: 1, url: 'u', published: true, reviewersFailed: [], rateLimit: RATE };
+      },
+    },
+  });
+  t.after(() => h.dispose());
+
+  const response = await h.send('github/createPullRequest', {
+    owner: 'o',
+    repo: 'r',
+    base: 'main',
+    head: 'feat/three',
+    title: 'Three',
+    body: '',
+    draft: false,
+    reviewers: [],
+    publish: true,
+    confirm: true,
+    idempotencyKey: 'k-normal',
+  });
+  assert.equal(response.ok, true, JSON.stringify(response));
+  assert.equal(created, 1);
+  assert.equal(h.log.count('push'), 1, 'the branch was published');
+});

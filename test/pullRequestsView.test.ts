@@ -170,3 +170,19 @@ test('a row whose branch is checked out says so, and the row still opens the pul
   assert.match(view, /checkoutAria/);
   assert.match(view, /aria-label=\{strings\.prs\.checkoutAria\(String\(pr\.number\)\)\}/);
 });
+
+/**
+ * A row whose number is not a positive integer must not reach `prBranchName`,
+ * which throws. `toPullRequests` defaults a missing number to 0, and the view
+ * mounts inside the app-level error boundary, so one malformed API row would
+ * replace the whole sidebar with the crash screen. The guard is the row's own
+ * `isCheckedOut`, which must be false rather than a throw.
+ */
+test('a malformed row number cannot throw during render', () => {
+  const view = read('src/webview/PullRequestsView.tsx');
+  const line = view
+    .split('\n')
+    .find((l) => l.includes('prBranchName(pr.number)'));
+  assert.ok(line !== undefined, 'the checked-out test still derives the name');
+  assert.match(line, /pr\.number > 0|Number\.isInteger/, 'the call is guarded by a number check');
+});

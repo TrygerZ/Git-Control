@@ -95,6 +95,43 @@ test('non-fast-forward push maps to 409 NON_FAST_FORWARD with a fetch remedy onl
   assert.equal(bodyEn.message, hostText('en').bridge.nonFastForward);
 });
 
+/**
+ * A diverged `pr/<n>` is a refusal the user is meant to read, not a crash. The
+ * git layer raises it with its own `CONFLICT` code, and the transport must map
+ * that code rather than fall through to the generic 500 arm: the whole point of
+ * the refusal is that its message names the branch.
+ */
+test('P23: a diverged pull request branch maps to 409 CONFLICT with a cancel remedy', () => {
+  const message = 'Local pr/2 has commits that are not on the pull request.';
+  const bodyId = toErrorBody(new GitError({ code: 'CONFLICT', message }), 'id');
+  assert.equal(bodyId.status, 409);
+  assert.equal(bodyId.code, 'CONFLICT');
+  assert.equal(bodyId.message, message, 'the branch name reaches the user');
+  assert.deepEqual(bodyId.remedies, ['cancel'], 'fetch does not help a diverged local branch');
+
+  const bodyEn = toErrorBody(new GitError({ code: 'CONFLICT', message }), 'en');
+  assert.equal(bodyEn.status, 409);
+  assert.equal(bodyEn.code, 'CONFLICT');
+});
+
+/**
+ * The checked-out refresh path cannot move a diverged branch either, and git says
+ * so with its own sentence rather than a code we raised. Both spellings have to
+ * land on the same refusal, or the user sees a crash screen for the case the
+ * changelog describes.
+ */
+test('P23: a refused fast-forward maps to 409 CONFLICT, not a server error', () => {
+  for (const stderr of [
+    'hint: Diverging branches can be fast-forwarded, you need to either:\nfatal: Not possible to fast-forward, aborting.',
+    'error: Your local changes to the following files would be overwritten by merge:\n\ta.txt',
+  ]) {
+    const body = toErrorBody(new GitError({ code: 'GIT_FAILED', message: 'failed', exitCode: 128, stderr }), 'en');
+    assert.equal(body.status, 409, stderr);
+    assert.equal(body.code, 'CONFLICT', stderr);
+    assert.ok((body.remedies ?? []).length > 0, 'the refusal offers a way out');
+  }
+});
+
 test('validation failures from git map to 400', () => {
   const body = toErrorBody(new GitError({ code: 'VALIDATION_ERROR', message: 'Invalid branch name: -x' }));
   assert.equal(body.status, 400);
@@ -3908,6 +3945,45 @@ test('P23: a push from a fork pull request branch is refused by the host', async
  * trip through the request. A payload without it marks nothing, which keeps a
  * same-repository pull request pushable like any other branch.
  */
+/**
+ * A mark that only ever grows would leave a user's own `pr/<n>` branch refused
+ * forever once a same-numbered fork pull request was checked out. The record is
+ * therefore the result of the LAST checkout of that number, not an accumulation:
+ * a same-repository pull request clears the mark its fork sibling left behind.
+ */
+test('P23: a same-repository checkout clears an earlier fork mark', async (t) => {
+  const dir = await makeFixture('remote-pulls');
+  t.after(() => cleanup(dir));
+  const repo = new RepositoryService({ folderPath: dir, gitPath: 'git', store: new MemoryStore() });
+  const h = harness(repo);
+  t.after(() => h.bridge.dispose());
+
+  const fork = await h.webview.send(
+    req('actions/git', {
+      action: 'checkout-pr',
+      number: 2,
+      remote: 'origin',
+      readOnly: true,
+      idempotencyKey: 'cp-mark',
+    }),
+  );
+  assert.equal(fork.ok, true, JSON.stringify(fork));
+  assert.equal(repo.readOnlyBranches().has('pr/2'), true);
+
+  const own = await h.webview.send(
+    req('actions/git', { action: 'checkout-pr', number: 2, remote: 'origin', idempotencyKey: 'cp-unmark' }),
+  );
+  assert.equal(own.ok, true, JSON.stringify(own));
+  assert.equal(repo.readOnlyBranches().has('pr/2'), false, 'the fork mark is gone');
+
+  const push = await h.webview.send(
+    req('actions/git', { action: 'push', remote: 'origin', branch: 'pr/2', idempotencyKey: 'cp-own-push' }),
+  );
+  // The push may still fail for an ordinary reason (no upstream, non-fast-forward);
+  // what must not happen is the read-only refusal.
+  if (!push.ok) assert.notEqual(push.error.code, 'FORBIDDEN', 'the push is no longer refused as read only');
+});
+
 test('P23: checking out a fork pull request marks its branch read only', async (t) => {
   const dir = await makeFixture('remote-pulls');
   t.after(() => cleanup(dir));

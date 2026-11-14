@@ -1217,7 +1217,14 @@ export class MessageBridge {
         await git.fetchPullRequest(action.remote ?? 'origin', action.number, {
           onProgress: this.progressSink(operationId, 'checkout-pr'),
         });
-        if (action.readOnly === true) await repo.markReadOnlyBranch(prBranchName(action.number));
+        // The mark answers "was the LAST checkout of this branch a fork", so a
+        // same-repository checkout of the same number clears it. An append-only record
+        // would leave a user's own pr/<n> branch refused forever.
+        if (action.readOnly === true) {
+          await repo.markReadOnlyBranch(prBranchName(action.number));
+        } else {
+          await repo.clearReadOnlyBranch(prBranchName(action.number));
+        }
         return git.switchBranch(prBranchName(action.number));
       }
       case 'create-branch':
