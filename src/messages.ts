@@ -267,7 +267,19 @@ export type GitActionRequest =
   /** Safe local delete (`git branch -d`); never a forced delete. */
   | { action: 'branch-delete'; branch: string }
   /** `git push <remote> --delete <branch>`; needs the level 2 acknowledgement. */
-  | { action: 'branch-delete-remote'; remote: string; branch: string };
+  | { action: 'branch-delete-remote'; remote: string; branch: string }
+  /**
+   * Fetch and check out a pull request head. The branch name is not part of the
+   * payload because it is derived from the number host-side, and the number is
+   * the only variable part of the refspec.
+   */
+  | {
+      action: 'checkout-pr';
+      number: number;
+      remote?: string;
+      /** Set when the pull request comes from a fork, so the host refuses a later push from that branch. */
+      readOnly?: boolean;
+    };
 
 // ---------------------------------------------------------------- payloads
 
@@ -541,6 +553,23 @@ export interface PullRequestInfo {
   url: string;
   headRef: string;
   baseRef: string;
+  /**
+   * `owner/name` of the head repository, or `null` when GitHub sent no
+   * `head.repo`. A missing head repository means the fork was deleted, so the
+   * row stays checkable but has nowhere to push.
+   */
+  headRepo: string | null;
+  /**
+   * The head repository is a fork, or is unknown. An unknown head repository is
+   * treated as a fork because a fork is read only, and failing open would allow
+   * a push to a branch this client cannot write.
+   */
+  isFork: boolean;
+  /**
+   * GitHub's `maintainer_can_modify`. Stored for display only; it does not
+   * enable a push in this phase.
+   */
+  maintainerCanModify: boolean;
   draft: boolean;
   author: string;
   updatedAt: string;

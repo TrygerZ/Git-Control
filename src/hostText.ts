@@ -15,6 +15,7 @@ const en = {
       'Last commit may already be on the upstream branch, and amending it would need a force push, which Git Control never does.',
     branchDeleteCurrent: 'You cannot delete the branch you are on.',
     branchDeleteRemote: 'Removes the branch from the remote for everyone.',
+    forkReadOnly: 'This is a fork pull request. It is read-only here.',
     confirm: 'This action requires confirmation.',
   },
   bridge: {
@@ -24,6 +25,8 @@ const en = {
     locked: 'Repository is locked by another git process.',
     hookRejected: 'Commit rejected by git hook.',
     branchNotMerged: 'Git refused: this branch has commits that are not merged.',
+    prBranchDiverged:
+      'The local pull request branch has commits the pull request does not have. Its tip was left alone.',
     nonFastForward: 'Push is not fast-forward.',
     confirmationRequired: 'This action requires confirmation.',
     staleToken: 'Status changed, reload before continuing.',
@@ -130,6 +133,7 @@ const id: HostCatalog = {
       'Commit terakhir mungkin sudah ada di branch upstream, dan amend butuh force push, yang tidak pernah dilakukan Git Control.',
     branchDeleteCurrent: 'Anda tidak dapat menghapus branch yang sedang aktif.',
     branchDeleteRemote: 'Menghapus branch dari remote untuk semua orang.',
+    forkReadOnly: 'Ini pull request dari fork. Hanya baca di sini.',
     confirm: 'Tindakan ini perlu konfirmasi.',
   },
   bridge: {
@@ -139,6 +143,8 @@ const id: HostCatalog = {
     locked: 'Repository sedang dipakai proses git lain.',
     hookRejected: 'Commit ditolak oleh git hook.',
     branchNotMerged: 'Git menolak: branch ini punya commit yang belum digabung.',
+    prBranchDiverged:
+      'Branch pull request lokal punya commit yang tidak ada di pull request. Ujung branch tidak diubah.',
     nonFastForward: 'Push bukan fast-forward.',
     confirmationRequired: 'Tindakan ini perlu konfirmasi.',
     staleToken: 'Status berubah, muat ulang sebelum melanjutkan.',

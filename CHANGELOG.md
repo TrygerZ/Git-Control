@@ -5,6 +5,17 @@ All notable changes to the "Git Control" extension will be documented in this fi
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.19.0] - 2026-11-14
+
+### Added
+- Check out any pull request from the Pull requests view with the branch button on its row. The pull request head is fetched into a local branch named `pr/<number>` and you are switched to it.
+- Unsaved changes are handled with the usual commit or stash options before the checkout.
+- Checking out again fast-forwards `pr/<number>` to the latest pull request commits. A branch with local commits the pull request does not have is refused with an explanation, and its tip is left alone.
+- Pull requests from forks are marked read only, and a push from their `pr/<number>` branch is refused.
+
+### Changed
+- Pull request rows now carry the head repository and whether maintainers can modify the pull request.
+
 ## [3.18.0] - 2026-11-14
 
 ### Added

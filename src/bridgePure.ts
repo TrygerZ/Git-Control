@@ -1,6 +1,6 @@
 import { validatePullRequestInput } from './pullRequestDraft';
 import type { ErrorCode, GitActionPayload, IssueListFilter, IssueStateFilter, Request, RequestKind } from './messages';
-import { validateBranchName, validateHash, validateRemoteName, validateRepoRelativePath, validateStashIndex } from './validation';
+import { validateBranchName, validateHash, validatePullRequestNumber, validateRemoteName, validateRepoRelativePath, validateStashIndex } from './validation';
 
 export type Outcome = { ok: true; data: unknown } | { ok: false; error: { code: ErrorCode } };
 export const MUTATION_KINDS = new Set<string>(['actions/stage', 'actions/commit', 'actions/git']);
@@ -76,6 +76,11 @@ export function validateAction(action: GitActionPayload, fail: (detail: string) 
     case 'branch-delete-remote':
       if (!validateRemoteName(action.remote)) fail('remote');
       if (!validateBranchName(action.branch)) fail('branch'); return;
+    case 'checkout-pr':
+      if (!validatePullRequestNumber(action.number)) fail('number');
+      if (action.remote !== undefined && !validateRemoteName(action.remote)) fail('remote');
+      if (action.readOnly !== undefined && typeof action.readOnly !== 'boolean') fail('readOnly');
+      return;
     default: fail('action');
   }
 }

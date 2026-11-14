@@ -362,6 +362,8 @@ const id: Catalog = {
         `Hapus branch ${branch}. Git menolak bila branch punya commit yang belum digabung.`,
       branchDeleteRemote: (branch: string, remote: string) =>
         `Hapus branch ${branch} di ${remote}. Semua orang kehilangannya, dan tidak ada undo.`,
+      checkoutPr: (number: number) =>
+        `Mengambil head pull request ke pr/${number} lalu pindah ke sana. Branch Anda sebelumnya tetap di tempatnya, commit-nya utuh.`,
       defaultAction: 'Menjalankan perintah git.',
     },
 
@@ -390,6 +392,7 @@ const id: Catalog = {
       cherryPickAbort: 'Batalkan cherry-pick',
       branchDelete: (branch: string) => `Hapus branch ${branch}`,
       branchDeleteRemote: (branch: string) => `Hapus ${branch} di remote`,
+      checkoutPr: (number: number) => `Checkout #${number}`,
       defaultAction: 'Tindakan git',
     },
 
@@ -805,6 +808,10 @@ const id: Catalog = {
     branchCardNone: 'Belum ada pull request untuk branch ini. Publish dulu, lalu buka satu di GitHub.',
     createOnGitHub: 'Buat di GitHub',
     openOnGitHub: 'Buka di GitHub',
+    checkoutAria: (n: string) => `Checkout #${n}`,
+    checkedOut: 'Sudah di-checkout',
+    readOnlyChip: 'Hanya baca',
+    readOnlyHint: 'Pull request ini berasal dari fork. Anda dapat membaca dan mengujinya, tetapi perubahan tidak dapat di-push dari sini.',
     rowAria: (label: string, title: string, author: string) => `${label}, ${title}, oleh ${author}`,
     emptyTitle: 'Tidak ada pull request yang cocok',
     emptyBody: 'Tidak ada yang terbuka dengan filter ini. Coba kata kunci lebih luas atau hapus filter.',

@@ -367,6 +367,8 @@ const en = {
         `Delete branch ${branch}. Git refuses when the branch has commits that are not merged.`,
       branchDeleteRemote: (branch: string, remote: string) =>
         `Delete branch ${branch} on ${remote}. Everyone loses it, and there is no undo.`,
+      checkoutPr: (number: number) =>
+        `Fetches the pull request head into pr/${number} and switches to it. Your previous branch stays where it is, with its commits intact.`,
       defaultAction: 'Run git command.',
     },
 
@@ -395,6 +397,7 @@ const en = {
       cherryPickAbort: 'Abort cherry-pick',
       branchDelete: (branch: string) => `Delete branch ${branch}`,
       branchDeleteRemote: (branch: string) => `Delete ${branch} on the remote`,
+      checkoutPr: (number: number) => `Checkout #${number}`,
       defaultAction: 'Git action',
     },
 
@@ -809,6 +812,10 @@ const en = {
     branchCardNone: 'No pull request for this branch yet. Publish it first, then open one on GitHub.',
     createOnGitHub: 'Create on GitHub',
     openOnGitHub: 'Open on GitHub',
+    checkoutAria: (n: string) => `Checkout #${n}`,
+    checkedOut: 'Checked out',
+    readOnlyChip: 'Read only',
+    readOnlyHint: 'This pull request comes from a fork. You can read and test it, but changes cannot be pushed back from here.',
     rowAria: (label: string, title: string, author: string) => `${label}, ${title}, by ${author}`,
     emptyTitle: 'No pull requests match',
     emptyBody: 'Nothing is open with this filter. Try a broader query or clear the filters.',

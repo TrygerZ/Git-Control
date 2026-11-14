@@ -89,7 +89,7 @@ When implementing a new Git action, modify layers in this exact sequence:
 
 - **Quality gates:** `npm test`, `npm run typecheck`, and `npm run test:integration` must pass cleanly. Treat any test count drop or new failure as a regression. Never record absolute test counts in this document. The integration suite is the only harness that renders the webview in a real VS Code host, so it is part of the gate, not an optional extra.
 - **Harness:** Node built-in test runner (`node:test`) + strict assertions (`node:assert/strict`).
-- **Fixtures:** Integration and git tests MUST use `test/repoFixture.ts` (`makeFixture(kind)`, `cleanup(dir)`) with `FixtureKind = 'empty' | 'single' | 'triple' | 'remote' | 'control-chars' | 'branches' | 'branches-remote'`. Real repo templates are created with git once per test process, then copied per test via `fs.cp` (avoids 350-650 ms Windows git spawn overhead). To test a new repo shape, **add a new `FixtureKind` case; never hand-roll a repo inside a test**.
+- **Fixtures:** Integration and git tests MUST use `test/repoFixture.ts` (`makeFixture(kind)`, `cleanup(dir)`) with `FixtureKind = 'empty' | 'single' | 'triple' | 'remote' | 'control-chars' | 'branches' | 'branches-remote' | 'feature-branch' | 'remote-pulls'`. `remote-pulls` is a bare origin carrying `refs/pull/1/head` and `refs/pull/2/head`, the refs GitHub publishes on the base repository for every pull request; move one with `setPullRequestHead(dir, n)` and add a commit to the remote with `advancePullRequest(dir, file, content)`. Real repo templates are created with git once per test process, then copied per test via `fs.cp` (avoids 350-650 ms Windows git spawn overhead). To test a new repo shape, **add a new `FixtureKind` case; never hand-roll a repo inside a test**.
 - **Rules:**
   - Every new feature or bugfix must include tests.
   - Never relax, disable, or delete existing security assertion checks to force a test pass.
@@ -147,7 +147,7 @@ Encodes module purity boundaries (pure logic vs I/O) and execution trust boundar
 | Path | Responsibility |
 |---|---|
 | `src/extension.ts` | Extension lifecycle, command registrations, secret management, webview provider |
-| `src/git.ts` | Git execution engine, process spawning (`shell: false`), mutex locks, output parsing |
+| `src/git.ts` | Git execution engine, process spawning (`shell: false`), mutex locks, output parsing, pull request head fetch (`fetchPullRequest`, which lands in `FETCH_HEAD` and moves `pr/<n>` only after proving a fast-forward) |
 | `src/gitExec.ts` | Process execution layer for GitRunner: spawn (`shell: false`), executable resolution, output caps, timeout, stderr streaming, and per-runner mutex |
 | `src/gitParse.ts` | Parsers for git log, numstat, status, refs, and diff outputs |
 | `src/validation.ts` | Pure input sanitizers for hashes, branch names, paths, and remote names |
@@ -156,7 +156,7 @@ Encodes module purity boundaries (pure logic vs I/O) and execution trust boundar
 | `src/bridgePure.ts` | Pure request parsing and validation helpers for bridge (`parseRequest`, `idempotencyKeyOf`, `shouldRemember`, `validateAction`, primitive type guards) |
 | `src/messages.ts` | Type definitions for RPC messages, DTOs, and error codes |
 | `src/errorBody.ts` | Pure shared transport fallback (`unknownErrorBody`) for host and webview without coupling typed error handling |
-| `src/repository.ts` | Repository state cache, commit graph layout invocation, commit pagination |
+| `src/repository.ts` | Repository state cache, commit graph layout invocation, commit pagination, and the persisted read-only branch record (`readOnlyBranches`, `markReadOnlyBranch`, `clearReadOnlyBranch`). The record answers whether the LAST checkout of a branch came from a fork pull request, so a same-repository checkout of the same number clears it; the bridge refuses a publish of a marked branch |
 | `src/watcher.ts` | Dual-source file watcher (`vscode.workspace` + `fs.watch` for `.git`) with 500ms debounce |
 | `src/logger.ts` | Diagnostic logger with regex credential redaction, including signed-URL query secrets (`sig`, `signature`, `token`, `x-amz-signature`, `x-goog-signature`, `x-amz-security-token`) |
 | `src/githubGuard.ts` | Pure write policy for GitHub mutations (`GitHubWriteAction`, `GitHubGuardContext`, `requiredScopes`, `hasWriteScope`, `evaluateGitHubAction`). Decides connection, token trust, breaker state, write scope, and confirmation level in that order; returns the same `GuardVerdict` shape as `src/guard.ts`. `unknown` scopes (fine-grained tokens) never block. Zero `vscode` imports |
@@ -216,7 +216,7 @@ Encodes module purity boundaries (pure logic vs I/O) and execution trust boundar
 | `src/webview/ui.tsx` | Shared webview UI primitives (skeletons, banners, icons, error boundary) |
 | `src/webview/GraphCanvas.tsx` | Canvas/SVG renderer for 2D git commit graph and lane routing |
 | `src/webview/PendingChanges.tsx` | Sidebar panel. Changes and Stashes sub-tabs (route `sub`) over one tabpanel that swaps the tree view for staged, unstaged, and untracked changes and the stash list. `CommitForm` and the banners stay mounted in both |
-| `src/webview/PullRequestsView.tsx` | Sidebar Pull requests view. Banners, search row, filter chips, current-branch card, grouped list, footer. Reads only through store actions; reloads on mount and on `prs` activation while stale, no polling. Each row carries a check badge loaded through one `IntersectionObserver`, so only rows that reach the list viewport ask for checks; the count travels in the row button's `aria-label` because that label replaces every descendant's accessible name |
+| `src/webview/PullRequestsView.tsx` | Sidebar Pull requests view. Banners, search row, filter chips, current-branch card, grouped list, footer. Reads only through store actions; reloads on mount and on `prs` activation while stale, no polling. Each row carries a check badge loaded through one `IntersectionObserver`, so only rows that reach the list viewport ask for checks; the count travels in the row button's `aria-label` because that label replaces every descendant's accessible name. The row's checkout button sends `checkout-pr` with the number only and adds `readOnly` for a fork row, and the row shows a Checked out chip while HEAD is `pr/<n>` |
 | `src/webview/IssuesView.tsx` | Sidebar Issues view. Sign-in required, chips Assigned / Created / Mentioned, label menu, expandable row preview with Start work, recently closed group, footer quota |
 | `src/webview/BranchesView.tsx` | Sidebar Branches view. Sub-tabs Local / Remote / Tags, filter row, sections Current / Local / Worktrees / Recent tags, row menu (Checkout, Merge into current, Copy name), sort menu, footer New branch and fetch age. Owns its prompt and merge hosts; the guard dialog stays the shell's single host |
 | `src/webview/StartWorkDialog.tsx` | "Start work on #n" dialog. Suggested branch name, command preview through `gitCommandOf`, dirty-tree note, inline name problem. Closes before it awaits `runAction` so a host guard verdict cannot stack modals |

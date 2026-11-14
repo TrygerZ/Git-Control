@@ -46,6 +46,7 @@ import { useGitHubStore, useOperationStore, usePrDraftStore, useRepoStore, useRo
 import { useT } from './useT';
 import { EmptyState, FileListSkeleton, Icon, InfoBanner } from './ui';
 import type { Lang, PullRequestInfo } from '../messages';
+import { prBranchName, validatePullRequestNumber } from '../validation';
 
 const CHIP_ORDER: readonly PrFilterId[] = ['open', 'review-requested', 'mine', 'draft'];
 
@@ -55,6 +56,18 @@ const GROUP_ORDER: readonly GroupId[] = ['needsReview', 'mine', 'other'];
 
 /** One second is the finest step a quota countdown needs. */
 const TICK_MS = 1000;
+
+/**
+ * A row's branch name, or null when the row carries no usable number. The
+ * GitHub mapper defaults a malformed number to 0, but any non-integer can still
+ * arrive, and `prBranchName` throws on it; this view renders inside the app
+ * error boundary, so one bad row must degrade to "not checked out" rather than
+ * replace the sidebar. The guard is the same predicate `prBranchName` enforces,
+ * so no number that would throw reaches it.
+ */
+function checkedOutBranch(pr: PullRequestInfo): string | null {
+  return validatePullRequestNumber(pr.number) ? prBranchName(pr.number) : null;
+}
 
 export function PullRequestsView(): JSX.Element {
   const strings = useT();
@@ -192,6 +205,7 @@ export function PullRequestsView(): JSX.Element {
   const draftStatus = usePrDraftStore((s) => s.status);
   const openDraft = usePrDraftStore((s) => s.open);
   const pushToast = useOperationStore((s) => s.pushToast);
+  const runAction = useOperationStore((s) => s.runAction);
   const dialogOpen = draftStatus !== 'closed';
   const canOfferCreate = branch !== null && !branchHasPr && linkage?.owner != null && linkage.repo != null;
 
@@ -488,12 +502,34 @@ export function PullRequestsView(): JSX.Element {
                               ? 0
                               : summary.failing - summary.failingNames.length;
                           const name = strings.prs.rowAria(label, title, author);
+                          const checkoutBranch = checkedOutBranch(pr);
+                          const isCheckedOut = checkoutBranch !== null && status?.branch === checkoutBranch;
+                          const isFork = pr.isFork;
                           // The button's `aria-label` replaces every descendant's
-                          // name, so the check state has to travel in it or a
-                          // screen reader user never hears it.
-                          const rowName = [name, checkText, checkNames]
+                          // name, so the row state and the check state have to
+                          // travel in it or a screen reader user never hears them.
+                          const rowName = [
+                            name,
+                            isCheckedOut ? strings.prs.checkedOut : '',
+                            isFork ? strings.prs.readOnlyChip : '',
+                            checkText,
+                            checkNames,
+                          ]
                             .filter((part) => part.length > 0)
                             .join(', ');
+                          // One name for the button and its tooltip: an already checked
+                          // out row refreshes on the same click, so promising "Checkout"
+                          // would describe a no-op.
+                          const checkoutName = isCheckedOut
+                            ? strings.prs.checkedOut
+                            : strings.prs.checkoutAria(String(pr.number));
+                          const checkout = (): void => {
+                            void runAction({
+                              action: 'checkout-pr',
+                              number: pr.number,
+                              ...(isFork ? { readOnly: true } : {}),
+                            });
+                          };
                           return (
                             <li key={pr.number} className="gc-prs__row">
                               <button
@@ -524,6 +560,18 @@ export function PullRequestsView(): JSX.Element {
                                   <span className="gc-prs__refs">
                                     {head} → {base}
                                   </span>
+                                  {(isCheckedOut || isFork) && (
+                                    <span className="gc-prs__tags">
+                                      {isCheckedOut && (
+                                        <span className="gc-chip gc-prs__tag">{strings.prs.checkedOut}</span>
+                                      )}
+                                      {isFork && (
+                                        <span className="gc-chip gc-prs__tag" title={strings.prs.readOnlyHint}>
+                                          {strings.prs.readOnlyChip}
+                                        </span>
+                                      )}
+                                    </span>
+                                  )}
                                 </span>
                                 {/*
                                   Frame 05 puts the count at the row's right edge,
@@ -574,6 +622,28 @@ export function PullRequestsView(): JSX.Element {
                                   </span>
                                 )}
                               </button>
+                              {/*
+                                Checkout is a real tab stop: it does something the row
+                                click cannot, so it stays visible at rest instead of
+                                appearing only on hover like the link below. Already
+                                checked out, the same click refreshes pr/<n>, so the
+                                name says the state rather than promise a no-op.
+                                A row whose number the host would reject gets no button,
+                                because the click could only produce a 400. Not a
+                                disabled state: this is malformed data, not a
+                                permission the user could ever be granted.
+                              */}
+                              {checkoutBranch !== null && (
+                                <button
+                                  type="button"
+                                  className="gc-prs__checkout"
+                                  aria-label={checkoutName}
+                                  title={checkoutName}
+                                  onClick={checkout}
+                                >
+                                  <Icon name="git-branch" />
+                                </button>
+                              )}
                               {/*
                                 The row opens the same URL, so this is the frame's hover
                                 affordance: decoration, never a second tab stop.

@@ -9,7 +9,7 @@
  */
 import { createHash } from 'node:crypto';
 import * as path from 'node:path';
-import { GitRunner } from './git';
+import { GitError, GitRunner } from './git';
 import { layoutGraph, type LayoutRef } from './layout';
 import type {
   BranchRef,
@@ -29,6 +29,7 @@ import type {
   WorktreeInfo,
 } from './messages';
 import { parseTrack, type ParsedCommit, type ParsedNumstatEntry, type ParsedRef, type ParsedStatusEntry } from './gitParse';
+import { validateBranchName } from './validation';
 
 /** Narrow slice of `vscode.Memento` that this service needs. */
 export interface PersistentStore {
@@ -76,6 +77,7 @@ export const MAX_STAT_ENTRIES = 2000;
  */
 export const DETAIL_CACHE_MAX_ENTRIES = 200;
 const LAST_FETCH_KEY_PREFIX = 'gitControl.lastFetchAt:';
+const READ_ONLY_BRANCHES_KEY_PREFIX = 'gitControl.readOnlyBranches:';
 /** Matches the symbolic remote head `refs/remotes/<remote>/HEAD` (exactly three segments). */
 const SYMBOLIC_REMOTE_HEAD = /^refs\/remotes\/[^/]+\/HEAD$/;
 
@@ -452,6 +454,48 @@ export class RepositoryService {
 
   private lastFetchKey(): string {
     return `${LAST_FETCH_KEY_PREFIX}${this.folderPath}`;
+  }
+
+  private readOnlyKey(): string {
+    return `${READ_ONLY_BRANCHES_KEY_PREFIX}${this.folderPath}`;
+  }
+
+  /**
+   * Branches checked out from a fork pull request, which may never be pushed.
+   * Derived from the most recent checkout per branch, so this is a current fact
+   * rather than a history. Read through the store on every call: a cached copy
+   * would keep letting a push through after the mark landed.
+   */
+  readOnlyBranches(): ReadonlySet<string> {
+    const stored = this.store.get<string[]>(this.readOnlyKey(), []);
+    return new Set(
+      (Array.isArray(stored) ? stored : []).filter((b): b is string => typeof b === 'string'),
+    );
+  }
+
+  /**
+   * Record that the LAST checkout of `branch` came from a fork pull request, so a
+   * push is refused. Paired with `clearReadOnlyBranch`, so the record answers
+   * "did the last checkout come from a fork", not "was this branch ever a fork".
+   */
+  async markReadOnlyBranch(branch: string): Promise<void> {
+    if (!validateBranchName(branch)) {
+      throw new GitError({ code: 'VALIDATION_ERROR', message: `Invalid branch name: ${branch}` });
+    }
+    const current = this.readOnlyBranches();
+    if (current.has(branch)) return;
+    await this.store.update(this.readOnlyKey(), [...current, branch]);
+  }
+
+  /** Inverse of `markReadOnlyBranch`: the last checkout was not from a fork. */
+  async clearReadOnlyBranch(branch: string): Promise<void> {
+    if (!validateBranchName(branch)) {
+      throw new GitError({ code: 'VALIDATION_ERROR', message: `Invalid branch name: ${branch}` });
+    }
+    const current = this.readOnlyBranches();
+    if (!current.has(branch)) return;
+    const next = [...current].filter((b) => b !== branch);
+    await this.store.update(this.readOnlyKey(), next);
   }
 
   // ---------------------------------------------------------------- private

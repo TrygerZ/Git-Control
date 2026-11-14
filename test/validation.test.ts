@@ -10,6 +10,8 @@ import {
   validateHash,
   validateLimit,
   validateMainline,
+  validatePullRequestNumber,
+  prBranchName,
   validateRemoteName,
   validateRepoRelativePath,
   validateStashIndex,
@@ -93,6 +95,34 @@ test('validateRemoteName enforces charset and length', () => {
   assert.equal(validateRemoteName('a/b'), false);
   assert.equal(validateRemoteName('x'.repeat(101)), false);
   assert.equal(validateRemoteName(7), false);
+});
+
+/**
+ * The pull request number reaches a refspec, so the only acceptable shape is a
+ * positive integer inside git's own 32-bit ref namespace. A string `'1'`, a
+ * float, and a value past the ceiling all fail: the branch name is composed from
+ * the number, and a value that survives here is one that can be interpolated
+ * without a second check.
+ */
+test('validatePullRequestNumber accepts positive integers inside the 32-bit range', () => {
+  assert.equal(validatePullRequestNumber(1), true);
+  assert.equal(validatePullRequestNumber(150), true);
+  assert.equal(validatePullRequestNumber(2_147_483_647), true);
+  for (const value of [0, -1, 1.5, '1', NaN, Infinity, 2_147_483_648]) {
+    assert.equal(validatePullRequestNumber(value), false, String(value));
+  }
+  for (const value of [null, undefined, {}, []]) {
+    assert.equal(validatePullRequestNumber(value), false, String(value));
+  }
+});
+
+test('prBranchName derives a branch git accepts, from the number alone', () => {
+  assert.equal(prBranchName(150), 'pr/150');
+  assert.equal(prBranchName(1), 'pr/1');
+  // The derived name is a branch the rest of the stack accepts without a special case.
+  assert.equal(validateBranchName(prBranchName(150)), true);
+  // And it is not a name a delete rule would confuse with the current branch.
+  assert.notEqual(prBranchName(150), 'main');
 });
 
 test('validateRepoRelativePath blocks traversal and absolute paths', () => {

@@ -9,7 +9,7 @@ import { idempotencyKeyOf, shouldRemember } from '../src/bridgePure';
 import { hostText } from '../src/hostText';
 import { Logger, type LogSink } from '../src/logger';
 import { RepositoryService, type PersistentStore } from '../src/repository';
-import { advanceRemote, cleanup, makeFixture } from './repoFixture';
+import { advancePullRequest, advanceRemote, cleanup, makeFixture, setPullRequestHead } from './repoFixture';
 import type {
   ActionsJobsPayload,
   ActionsRunsPayload,
@@ -94,6 +94,77 @@ test('non-fast-forward push maps to 409 NON_FAST_FORWARD with a fetch remedy onl
   );
   assert.equal(bodyEn.message, hostText('en').bridge.nonFastForward);
 });
+
+/**
+ * A diverged `pr/<n>` is a refusal the user is meant to read, not a crash. The
+ * git layer raises it with its own `CONFLICT` code, and the transport must map
+ * that code rather than fall through to the generic 500 arm: the whole point of
+ * the refusal is that its message names the branch.
+ */
+test('P23: a diverged pull request branch maps to 409 CONFLICT with a cancel remedy', () => {
+  const message = 'Local pr/2 has commits that are not on the pull request.';
+  const bodyId = toErrorBody(new GitError({ code: 'CONFLICT', message }), 'id');
+  assert.equal(bodyId.status, 409);
+  assert.equal(bodyId.code, 'CONFLICT');
+  assert.equal(bodyId.message, message, 'the branch name reaches the user');
+  assert.deepEqual(bodyId.remedies, ['cancel'], 'fetch does not help a diverged local branch');
+
+  const bodyEn = toErrorBody(new GitError({ code: 'CONFLICT', message }), 'en');
+  assert.equal(bodyEn.status, 409);
+  assert.equal(bodyEn.code, 'CONFLICT');
+});
+
+/**
+ * The checked-out refresh path cannot move a diverged branch either, and git says
+ * so with its own sentence rather than a code we raised. Both spellings have to
+ * land on the same refusal, or the user sees a crash screen for the case the
+ * changelog describes.
+ */
+test('P23: a refused fast-forward maps to 409 CONFLICT, not a server error', () => {
+  const diverged =
+    'hint: Diverging branches can be fast-forwarded, you need to either:\nfatal: Not possible to fast-forward, aborting.';
+  const body = toErrorBody(new GitError({ code: 'GIT_FAILED', message: 'failed', exitCode: 128, stderr: diverged }), 'en');
+  assert.equal(body.status, 409);
+  assert.equal(body.code, 'CONFLICT');
+  assert.deepEqual(body.remedies, ['cancel']);
+  assert.equal(body.message, hostText('en').bridge.prBranchDiverged);
+
+  // A dirty tree is still a dirty tree: git refusing to overwrite local changes
+  // is the case the commit and stash remedies exist for, and classifying it as a
+  // divergence would offer no way out.
+  const dirty =
+    'error: Your local changes to the following files would be overwritten by merge:\n\ta.txt\nPlease commit your changes or stash them before you merge.\nAborting';
+  const dirtyBody = toErrorBody(
+    new GitError({ code: 'GIT_FAILED', message: 'failed', exitCode: 128, stderr: dirty }),
+    'en',
+  );
+  assert.equal(dirtyBody.status, 412, 'a dirty tree keeps its own classification');
+  assert.equal(dirtyBody.code, 'DIRTY_TREE');
+  assert.deepEqual(dirtyBody.remedies, ['commit', 'stash', 'cancel']);
+
+  // A real merge with staged-only changes: the guard does not block it (a staged
+  // file is not "dirty"), git's ort path refuses with the bare merge line and no
+  // advice sentence, and the user must still get the commit/stash escape. Treating
+  // this as a divergence would tell them a false story about their pull request.
+  const mergeNoAdvice =
+    'error: Your local changes to the following files would be overwritten by merge:\n\ta.txt\nAborting';
+  const mergeBody = toErrorBody(
+    new GitError({ code: 'GIT_FAILED', message: 'failed', exitCode: 128, stderr: mergeNoAdvice }),
+    'en',
+  );
+  assert.equal(mergeBody.code, 'DIRTY_TREE', 'a bare merge refusal is a dirty tree, not a divergence');
+  assert.deepEqual(mergeBody.remedies, ['commit', 'stash', 'cancel']);
+
+  // The same overwrite line without git's advice sentence must not be mistaken
+  // for a divergence either: the checkout spelling is still a dirty tree.
+  const dirtyNoAdvice =
+    'error: Your local changes to the following files would be overwritten by checkout:\n\ta.txt\nAborting';
+  const noAdvice = toErrorBody(
+    new GitError({ code: 'GIT_FAILED', message: 'failed', exitCode: 128, stderr: dirtyNoAdvice }),
+    'en',
+  );
+  assert.equal(noAdvice.code, 'DIRTY_TREE', 'the checkout spelling stays a dirty tree');
+})
 
 test('validation failures from git map to 400', () => {
   const body = toErrorBody(new GitError({ code: 'VALIDATION_ERROR', message: 'Invalid branch name: -x' }));
@@ -3788,4 +3859,188 @@ test('P21: both kinds answer UNAVAILABLE when the host has no callback', async (
     assert.equal(response.error.code, 'UNAVAILABLE', kind);
     assert.equal(response.error.status, 503, kind);
   }
+});
+
+// ------------------------------------------------ pull request checkout (P23)
+
+/**
+ * The host sequence is fetch, then switch, under one operation id. A failed
+ * fetch must not leave the user on a half-updated branch, so the switch only
+ * runs after the fetch returned.
+ */
+test('P23: checkout-pr fetches the pull request and switches to pr/<n>', async (t) => {
+  const dir = await makeFixture('remote-pulls');
+  t.after(() => cleanup(dir));
+  const repo = new RepositoryService({ folderPath: dir, gitPath: 'git', store: new MemoryStore() });
+  const h = harness(repo);
+  t.after(() => h.bridge.dispose());
+
+  const response = await h.webview.send(
+    req('actions/git', { action: 'checkout-pr', number: 1, remote: 'origin', idempotencyKey: 'cp-ok' }),
+  );
+  assert.equal(response.ok, true, JSON.stringify(response));
+  if (!response.ok) return;
+  const data = response.data as { ok: boolean };
+  assert.equal(data.ok, true);
+
+  const { branch } = await repo.git.currentBranch();
+  assert.equal(branch, 'pr/1', 'HEAD is on the pull request branch');
+  assert.equal(await repo.git.localBranchExists('pr/1'), true);
+});
+
+test('P23: a failed fetch does not switch branches', async (t) => {
+  const dir = await makeFixture('remote-pulls');
+  t.after(() => cleanup(dir));
+  const repo = new RepositoryService({ folderPath: dir, gitPath: 'git', store: new MemoryStore() });
+  const h = harness(repo);
+  t.after(() => h.bridge.dispose());
+
+  const response = await h.webview.send(
+    req('actions/git', { action: 'checkout-pr', number: 99, remote: 'origin', idempotencyKey: 'cp-404' }),
+  );
+  assert.equal(response.ok, false);
+  if (response.ok) return;
+  assert.equal(response.error.code, 'NOT_FOUND');
+  const { branch } = await repo.git.currentBranch();
+  assert.equal(branch, 'main', 'the current branch is unchanged');
+});
+
+test('P23: a dirty tree refuses checkout-pr with the stash and commit remedies', async (t) => {
+  const dir = await makeFixture('remote-pulls');
+  t.after(() => cleanup(dir));
+  await fs.writeFile(path.join(dir, 'dirty.txt'), 'x\n', 'utf8');
+  const repo = new RepositoryService({ folderPath: dir, gitPath: 'git', store: new MemoryStore() });
+  const h = harness(repo);
+  t.after(() => h.bridge.dispose());
+
+  const response = await h.webview.send(
+    req('actions/git', { action: 'checkout-pr', number: 1, idempotencyKey: 'cp-dirty' }),
+  );
+  assert.equal(response.ok, false);
+  if (response.ok) return;
+  assert.equal(response.error.status, 412);
+  assert.equal(response.error.code, 'DIRTY_TREE');
+  assert.deepEqual(response.error.remedies, ['commit', 'stash', 'cancel']);
+  const { branch } = await repo.git.currentBranch();
+  assert.equal(branch, 'main');
+});
+
+test('P23: the same key replayed runs git once', async (t) => {
+  const dir = await makeFixture('remote-pulls');
+  t.after(() => cleanup(dir));
+  const repo = new RepositoryService({ folderPath: dir, gitPath: 'git', store: new MemoryStore() });
+  const h = harness(repo);
+  t.after(() => h.bridge.dispose());
+
+  const payload = { action: 'checkout-pr', number: 1, remote: 'origin', idempotencyKey: 'cp-replay' };
+  const first = await h.webview.send(req('actions/git', payload));
+  assert.equal(first.ok, true);
+  // Move the pull request on: a second real run would fast-forward the branch.
+  const before = (await repo.git.run(['rev-parse', 'refs/heads/pr/1'])).stdout.trim();
+  await advancePullRequest(dir, 'replay.txt', 'replay advance');
+  await setPullRequestHead(dir, 1);
+  const second = await h.webview.send(req('actions/git', payload));
+  assert.equal(second.ok, true);
+  const after = (await repo.git.run(['rev-parse', 'refs/heads/pr/1'])).stdout.trim();
+  assert.equal(after, before, 'the replay answered from the stored outcome, it did not fetch again');
+});
+
+/**
+ * A branch whose commits came from a fork is read only. The bridge is where the
+ * set is built, because only it can read the pull request list and the refs
+ * together; the guard then refuses the push on that set.
+ */
+test('P23: a push from a fork pull request branch is refused by the host', async (t) => {
+  const dir = await makeFixture('remote-pulls');
+  t.after(() => cleanup(dir));
+  const repo = new RepositoryService({ folderPath: dir, gitPath: 'git', store: new MemoryStore() });
+  const h = harness(repo);
+  t.after(() => h.bridge.dispose());
+
+  await repo.git.fetchPullRequest('origin', 1);
+  await repo.git.switchBranch('pr/1');
+  await repo.git.run(['branch', 'pr/9', 'pr/1']);
+  await repo.markReadOnlyBranch('pr/9');
+  repo.invalidate();
+
+  const response = await h.webview.send(
+    req('actions/git', { action: 'push', remote: 'origin', branch: 'pr/9', idempotencyKey: 'cp-ro' }),
+  );
+  assert.equal(response.ok, false);
+  if (response.ok) return;
+  assert.equal(response.error.code, 'FORBIDDEN');
+  assert.equal(response.error.status, 403);
+  assert.deepEqual(response.error.remedies, ['cancel']);
+  assert.match(response.error.message, /fork pull request/i);
+});
+
+/**
+ * The mark is what the checkout writes, so the flag has to survive the round
+ * trip through the request. A payload without it marks nothing, which keeps a
+ * same-repository pull request pushable like any other branch.
+ */
+/**
+ * A mark that only ever grows would leave a user's own `pr/<n>` branch refused
+ * forever once a same-numbered fork pull request was checked out. The record is
+ * therefore the result of the LAST checkout of that number, not an accumulation:
+ * a same-repository pull request clears the mark its fork sibling left behind.
+ */
+test('P23: a same-repository checkout clears an earlier fork mark', async (t) => {
+  const dir = await makeFixture('remote-pulls');
+  t.after(() => cleanup(dir));
+  const repo = new RepositoryService({ folderPath: dir, gitPath: 'git', store: new MemoryStore() });
+  const h = harness(repo);
+  t.after(() => h.bridge.dispose());
+
+  const fork = await h.webview.send(
+    req('actions/git', {
+      action: 'checkout-pr',
+      number: 2,
+      remote: 'origin',
+      readOnly: true,
+      idempotencyKey: 'cp-mark',
+    }),
+  );
+  assert.equal(fork.ok, true, JSON.stringify(fork));
+  assert.equal(repo.readOnlyBranches().has('pr/2'), true);
+
+  const own = await h.webview.send(
+    req('actions/git', { action: 'checkout-pr', number: 2, remote: 'origin', idempotencyKey: 'cp-unmark' }),
+  );
+  assert.equal(own.ok, true, JSON.stringify(own));
+  assert.equal(repo.readOnlyBranches().has('pr/2'), false, 'the fork mark is gone');
+
+  const push = await h.webview.send(
+    req('actions/git', { action: 'push', remote: 'origin', branch: 'pr/2', idempotencyKey: 'cp-own-push' }),
+  );
+  // The push may still fail for an ordinary reason (no upstream, non-fast-forward);
+  // what must not happen is the read-only refusal.
+  if (!push.ok) assert.notEqual(push.error.code, 'FORBIDDEN', 'the push is no longer refused as read only');
+});
+
+test('P23: checking out a fork pull request marks its branch read only', async (t) => {
+  const dir = await makeFixture('remote-pulls');
+  t.after(() => cleanup(dir));
+  const repo = new RepositoryService({ folderPath: dir, gitPath: 'git', store: new MemoryStore() });
+  const h = harness(repo);
+  t.after(() => h.bridge.dispose());
+
+  const response = await h.webview.send(
+    req('actions/git', {
+      action: 'checkout-pr',
+      number: 2,
+      remote: 'origin',
+      readOnly: true,
+      idempotencyKey: 'cp-fork',
+    }),
+  );
+  assert.equal(response.ok, true, JSON.stringify(response));
+  assert.equal(repo.readOnlyBranches().has('pr/2'), true);
+
+  const push = await h.webview.send(
+    req('actions/git', { action: 'push', remote: 'origin', branch: 'pr/2', idempotencyKey: 'cp-fork-push' }),
+  );
+  assert.equal(push.ok, false);
+  if (push.ok) return;
+  assert.equal(push.error.code, 'FORBIDDEN');
 });

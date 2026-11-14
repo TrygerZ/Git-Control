@@ -5223,6 +5223,39 @@ h3 {
   color: var(--gc-text-primary);
 }
 
+/* Same box as the link button, but visible at rest: checkout is an action the
+   row click cannot reach, so it must not hide until hover. */
+.gc-prs__checkout {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  min-width: var(--gc-hit);
+  min-height: var(--gc-hit);
+  padding: 0;
+  border: none;
+  border-radius: var(--gc-radius);
+  background: transparent;
+  color: var(--gc-text-muted);
+  cursor: pointer;
+  opacity: 1;
+}
+
+.gc-prs__row:hover .gc-prs__checkout,
+.gc-prs__row:focus-within .gc-prs__checkout {
+  color: var(--gc-text-primary);
+}
+
+.gc-prs__tags {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: var(--gc-space-1);
+}
+
+.gc-prs__tag {
+  font-size: var(--gc-fs-2xs);
+}
+
 .gc-prs__footer {
   display: flex;
   flex-wrap: wrap;

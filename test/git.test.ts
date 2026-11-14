@@ -4,7 +4,7 @@ import * as fs from 'node:fs/promises';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { GitError, GitRunner, MAX_STDERR_BYTES, resolveGitExecutable } from '../src/git';
-import { advanceRemote, cleanup, makeFixture } from './repoFixture';
+import { advanceRemote, advancePullRequest, cleanup, makeFixture, setPullRequestHead } from './repoFixture';
 
 /** Throwaway repository with one commit. Copied from a per-process template. */
 function makeRepo(): Promise<string> {
@@ -1239,4 +1239,146 @@ test('no range runner can emit a force push or a plus refspec', async (t) => {
     assert.doesNotMatch(line, /--force|--force-with-lease/, line);
     assert.doesNotMatch(line, /\s\+[^\s]/, line);
   }
+});
+
+// ------------------------------------------------- pull request checkout (P23)
+
+/**
+ * Fetching a pull request must never be able to overwrite a local ref. The
+ * checkout therefore fetches into `FETCH_HEAD`, which no local branch points at,
+ * and then decides: a refspec fetch straight into `pr/<n>` is refused outright
+ * when `pr/<n>` is the checked-out branch, which is exactly the refresh case.
+ */
+test('fetchPullRequest creates pr/<n> from the pull request head', async (t) => {
+  const dir = await makeFixture('remote-pulls');
+  t.after(() => cleanup(dir));
+  const lines: string[] = [];
+  const git = new GitRunner({ gitPath: 'git', cwd: dir, logger: (line) => lines.push(line) });
+
+  assert.equal(await git.localBranchExists('pr/1'), false);
+  const result = await git.fetchPullRequest('origin', 1);
+  assert.deepEqual(result, { branch: 'pr/1', created: true });
+  assert.equal(await git.localBranchExists('pr/1'), true);
+
+  // Read the head from the bare origin, not from the working repository: a plain
+  // fetch writes FETCH_HEAD and nothing else, so a local `refs/pull/*` copy would
+  // be a ref this feature invented and would show up in the ref list.
+  const origin = new GitRunner({ gitPath: 'git', cwd: path.join(dir, '.git', 'bare.git') });
+  const head = await origin.run(['rev-parse', 'refs/pull/1/head']);
+  const tip = await git.run(['rev-parse', 'refs/heads/pr/1']);
+  assert.equal(tip.stdout.trim(), head.stdout.trim(), 'the branch points at the pull request head');
+  const local = await git.run(['for-each-ref', '--format=%(refname)', 'refs/pull']);
+  assert.equal(local.stdout.trim(), '', 'the fetch writes no local pull ref');
+
+  assert.ok(lines.length > 0);
+  for (const line of lines) {
+    assert.doesNotMatch(line, /--force|--force-with-lease/, line);
+    assert.doesNotMatch(line, /\s\+[^\s]/, line);
+  }
+});
+
+test('fetchPullRequest fast-forwards an existing pr/<n> when the pull request advanced', async (t) => {
+  const dir = await makeFixture('remote-pulls');
+  t.after(() => cleanup(dir));
+  const git = new GitRunner({ gitPath: 'git', cwd: dir });
+
+  await git.fetchPullRequest('origin', 1);
+  const first = (await git.run(['rev-parse', 'refs/heads/pr/1'])).stdout.trim();
+
+  const advanced = await advancePullRequest(dir, 'pr.txt', 'pull request work');
+  await setPullRequestHead(dir, 1);
+
+  const result = await git.fetchPullRequest('origin', 1);
+  assert.deepEqual(result, { branch: 'pr/1', created: false });
+  const second = (await git.run(['rev-parse', 'refs/heads/pr/1'])).stdout.trim();
+  assert.notEqual(second, first, 'the branch moved');
+  assert.equal(second, advanced, 'it moved to the new pull request head');
+});
+
+test('fetchPullRequest refuses a diverged pr/<n> and leaves its tip alone', async (t) => {
+  const dir = await makeFixture('remote-pulls');
+  t.after(() => cleanup(dir));
+  const git = new GitRunner({ gitPath: 'git', cwd: dir });
+
+  await git.fetchPullRequest('origin', 2);
+  await git.switchBranch('pr/2');
+  await fs.writeFile(path.join(dir, 'local.txt'), 'local\n', 'utf8');
+  await git.stage(['local.txt']);
+  await git.commit('local work on the pr branch');
+  await git.switchBranch('main');
+  const localTip = (await git.run(['rev-parse', 'refs/heads/pr/2'])).stdout.trim();
+
+  // The pull request advances on a history the local branch does not contain.
+  await advancePullRequest(dir, 'upstream.txt', 'upstream work');
+  await setPullRequestHead(dir, 2);
+
+  const err = await git.fetchPullRequest('origin', 2).then(
+    () => null,
+    (e: unknown) => e,
+  );
+  assert.ok(err instanceof GitError, 'a divergence is refused, not applied');
+  assert.equal(err.code, 'CONFLICT');
+  assert.match(err.message, /pr\/2/);
+
+  const after = (await git.run(['rev-parse', 'refs/heads/pr/2'])).stdout.trim();
+  assert.equal(after, localTip, 'the local tip is untouched');
+});
+
+test('fetchPullRequest reports an unknown pull request number as NOT_FOUND', async (t) => {
+  const dir = await makeFixture('remote-pulls');
+  t.after(() => cleanup(dir));
+  const git = new GitRunner({ gitPath: 'git', cwd: dir });
+
+  const err = await git.fetchPullRequest('origin', 99).then(
+    () => null,
+    (e: unknown) => e,
+  );
+  assert.ok(err instanceof GitError);
+  assert.equal(err.code, 'NOT_FOUND');
+  assert.equal(await git.localBranchExists('pr/99'), false, 'nothing was created');
+});
+
+test('fetchPullRequest validates before any git process starts', async (t) => {
+  const dir = await makeFixture('remote-pulls');
+  t.after(() => cleanup(dir));
+  const lines: string[] = [];
+  const git = new GitRunner({ gitPath: 'git', cwd: dir, logger: (line) => lines.push(line) });
+
+  await assert.rejects(() => git.fetchPullRequest('-x', 1), /Invalid remote name/);
+  await assert.rejects(() => git.fetchPullRequest('origin', 0), /Invalid pull request number/);
+  await assert.rejects(() => git.fetchPullRequest('origin', 1.5), /Invalid pull request number/);
+  assert.equal(lines.length, 0, 'nothing reached git');
+});
+
+test('fetchPullRequest fast-forwards a checked-out pr/<n> instead of refusing', async (t) => {
+  const dir = await makeFixture('remote-pulls');
+  t.after(() => cleanup(dir));
+  const git = new GitRunner({ gitPath: 'git', cwd: dir });
+
+  await git.fetchPullRequest('origin', 1);
+  await git.switchBranch('pr/1');
+
+  // Same pull request, no new commits: the refresh is a no-op, not a failure.
+  const same = await git.fetchPullRequest('origin', 1);
+  assert.deepEqual(same, { branch: 'pr/1', created: false });
+
+  const advanced = await advancePullRequest(dir, 'co.txt', 'checked-out advance');
+  await setPullRequestHead(dir, 1);
+
+  const moved = await git.fetchPullRequest('origin', 1);
+  assert.deepEqual(moved, { branch: 'pr/1', created: false });
+  const tip = (await git.run(['rev-parse', 'HEAD'])).stdout.trim();
+  assert.equal(tip, advanced, 'the checked-out branch fast-forwarded to the pull request head');
+});
+
+test('localBranchExists answers for a real branch and a missing one', async (t) => {
+  const dir = await makeFixture('remote-pulls');
+  t.after(() => cleanup(dir));
+  const git = new GitRunner({ gitPath: 'git', cwd: dir });
+
+  assert.equal(await git.localBranchExists('main'), true);
+  assert.equal(await git.localBranchExists('pr/1'), false);
+  await git.fetchPullRequest('origin', 1);
+  assert.equal(await git.localBranchExists('pr/1'), true);
+  assert.equal(await git.localBranchExists('pr/404'), false);
 });

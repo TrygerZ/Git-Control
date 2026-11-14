@@ -44,6 +44,12 @@ export interface GuardSnapshot {
    * the branch a user is standing on can never be deleted.
    */
   branch: string | null;
+  /**
+   * Local branches whose commits come from a fork pull request. Nothing may be
+   * pushed from them: the fork is not the user's repository, so the push cannot
+   * succeed no matter what the user confirms.
+   */
+  readOnlyBranches: ReadonlySet<string>;
 }
 
 export type GuardVerdict =
@@ -79,6 +85,7 @@ const RESOLUTION_ACTIONS = new Set<GuardAction['action']>([
 const DIRTY_BLOCKED = new Set<GuardAction['action']>([
   'checkout-branch',
   'checkout-commit',
+  'checkout-pr',
   'merge',
   'merge-into',
   'pull',
@@ -161,6 +168,23 @@ export function evaluate(action: GuardAction, snapshot: GuardSnapshot, lang: Lan
       code: 'DIRTY_TREE',
       message: text.dirty,
       remedies: ['commit', 'stash', 'cancel'],
+    };
+  }
+
+  /*
+   * A fork pull request branch is read only: the fork is not the user's
+   * repository, so no confirmation makes the push possible. Offering `Confirm`
+   * would teach the user the dialog is decorative.
+   */
+  if (
+    (action.action === 'push' || action.action === 'push-up-to') &&
+    snapshot.readOnlyBranches.has(action.branch)
+  ) {
+    return {
+      allow: false,
+      code: 'FORBIDDEN',
+      message: text.forkReadOnly,
+      remedies: ['cancel'],
     };
   }
 

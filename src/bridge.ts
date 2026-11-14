@@ -44,6 +44,7 @@ import {
 import type { RepositoryService } from './repository';
 import { parseRoute } from './webview/route';
 import {
+  prBranchName,
   validateBranchName,
   validateDeletableBranch,
   validateEmail,
@@ -969,6 +970,17 @@ export class MessageBridge {
     const repo = await this.repository();
     const remote = payload.remote ?? 'origin';
 
+    // A branch checked out from a fork pull request may never be published. This
+    // path has no git guard, so the refusal is made here from the repository's own
+    // record: a caller that omits `readOnly` on the checkout cannot make the branch
+    // publishable through this request. The record itself is written from the
+    // webview's checkout flag, which is defence in depth rather than a boundary: a
+    // webview that can forge that flag can already issue any git action.
+    if (payload.publish === true && repo.readOnlyBranches().has(payload.head)) {
+      const lang = this.host.settings().language ?? 'en';
+      fail(403, 'FORBIDDEN', hostText(lang).guard.forkReadOnly, { remedies: ['cancel'] });
+    }
+
     let pushed = false;
     if (payload.publish === true && !(await repo.git.remoteTrackingExists(remote, payload.head))) {
       // ponytail: the push guard's stale/behind rules read the CURRENT branch's
@@ -1007,7 +1019,7 @@ export class MessageBridge {
 
     const repo = await this.repository();
     const status = await this.assertToken(repo, payload.statusToken);
-    this.gate({ action: 'stage' }, status, payload);
+    this.gate(repo, { action: 'stage' }, status, payload);
 
     /*
      * Staging drops ignored entries (`!`) because `git add` fails on ignored
@@ -1073,7 +1085,7 @@ export class MessageBridge {
     const repo = await this.repository();
     const status = await this.assertToken(repo, payload.statusToken);
     const headPublished = amend ? await this.isHeadPublished(repo) : null;
-    this.gate({ action: 'commit', ...(amend ? { amend: true } : {}) }, status, payload, headPublished);
+    this.gate(repo, { action: 'commit', ...(amend ? { amend: true } : {}) }, status, payload, headPublished);
 
     this.progress(operationId, 'commit', 'started');
     let commit: string | null;
@@ -1126,7 +1138,7 @@ export class MessageBridge {
     validateAction(payload, this.text().invalid);
     const repo = await this.repository();
     const status = await this.assertToken(repo, payload.statusToken);
-    this.gate(payload as GuardAction, status, payload);
+    this.gate(repo, payload as GuardAction, status, payload);
 
     // `push-up-to` must be fast-forward; the remedy is fetch, never force.
     //
@@ -1212,6 +1224,20 @@ export class MessageBridge {
         return git.switchBranch(action.branch);
       case 'checkout-commit':
         return git.checkoutDetached(action.hash);
+      case 'checkout-pr': {
+        await git.fetchPullRequest(action.remote ?? 'origin', action.number, {
+          onProgress: this.progressSink(operationId, 'checkout-pr'),
+        });
+        // The mark answers "was the LAST checkout of this branch a fork", so a
+        // same-repository checkout of the same number clears it. An append-only record
+        // would leave a user's own pr/<n> branch refused forever.
+        if (action.readOnly === true) {
+          await repo.markReadOnlyBranch(prBranchName(action.number));
+        } else {
+          await repo.clearReadOnlyBranch(prBranchName(action.number));
+        }
+        return git.switchBranch(prBranchName(action.number));
+      }
       case 'create-branch':
         return git.createBranch(action.name, action.startPoint);
       case 'merge':
@@ -1320,7 +1346,7 @@ export class MessageBridge {
       precheck: async () => {
         repo.invalidate();
         const fresh = await repo.status();
-        this.gate({ action: 'reset-hard', hash }, fresh, meta);
+        this.gate(repo, { action: 'reset-hard', hash }, fresh, meta);
       },
     });
   }
@@ -1357,7 +1383,7 @@ export class MessageBridge {
     if (status.branch === null) {
       return { pushed: false, error: this.text().commitPushFailed };
     }
-    const snapshot = this.snapshotOf(status);
+    const snapshot = this.snapshotOf(status, repo);
     const lang = this.host.settings().language ?? 'en';
     const verdict = SafetyGuard.evaluate({ action: 'push', remote: 'origin', branch: status.branch }, snapshot, lang);
     if (!verdict.allow) {
@@ -1383,13 +1409,14 @@ export class MessageBridge {
    * be a bypass.
    */
   private gate(
+    repo: RepositoryService,
     action: GuardAction,
     status: RepoStatus,
     meta: MutationMeta,
     headPublished: boolean | null = null,
   ): void {
     const lang = this.host.settings().language ?? 'en';
-    const verdict = SafetyGuard.evaluate(action, this.snapshotOf(status, headPublished), lang);
+    const verdict = SafetyGuard.evaluate(action, this.snapshotOf(status, repo, headPublished), lang);
     if (verdict.allow) return;
     if (verdict.requiresConfirmation === true && this.confirmed(verdict, meta)) return;
     fail(verdictStatus(verdict), verdict.code, verdict.message, {
@@ -1448,7 +1475,7 @@ export class MessageBridge {
     return repo.git.isPublished('HEAD').catch(() => true);
   }
 
-  private snapshotOf(status: RepoStatus, headPublished: boolean | null = null): GuardSnapshot {
+  private snapshotOf(status: RepoStatus, repo: RepositoryService, headPublished: boolean | null = null): GuardSnapshot {
     return {
       dirty: status.dirty,
       staged: status.staged,
@@ -1462,6 +1489,7 @@ export class MessageBridge {
       stalenessMs: this.host.settings().fetchStalenessMs || DEFAULT_STALENESS_MS,
       headPublished,
       branch: status.branch,
+      readOnlyBranches: repo.readOnlyBranches(),
     };
   }
 
@@ -1583,8 +1611,9 @@ function validateAction(action: GitActionPayload, msg: string = 'Invalid request
 
 function verdictStatus(verdict: Extract<GuardVerdict, { allow: false }>): number {
   switch (verdict.code) {
-    // The GitHub write guard produces these three; the git guard never does, so
-    // widening the mapping here cannot change a git verdict.
+    // The GitHub write guard produces all three. The git guard also produces
+    // FORBIDDEN now, for a push from a fork pull request branch, and 403 is the
+    // right answer for both: the request is understood and refused.
     case 'AUTH_ERROR':
       return 401;
     case 'FORBIDDEN':
@@ -1639,6 +1668,15 @@ function fromGitError(err: GitError, lang: Lang = 'en'): ErrorBody {
       // 413: the request was valid, the response is too big to hand over. The UI
       // renders it through the SERVER_ERROR arm, which already offers Show Logs.
       return { status: 413, code: 'SERVER_ERROR', message: text.outputTooLarge, detail: redact(err.message) };
+    case 'NOT_FOUND':
+      // Raised only by a deliberately narrow check (a pull request head git itself
+      // reported missing), so the message is already user-facing.
+      return { status: 404, code: 'NOT_FOUND', message: redact(err.message) };
+    case 'CONFLICT':
+      // Raised only by the pull request fetch when a local `pr/<n>` has diverged,
+      // with a sentence naming the branch. A fetch cannot repair a diverged local
+      // branch, so cancel is the only honest remedy.
+      return { status: 409, code: 'CONFLICT', message: redact(err.message), remedies: ['cancel'] };
     case 'GIT_FAILED':
     default:
       return fromGitFailure(err, lang);
@@ -1646,9 +1684,15 @@ function fromGitError(err: GitError, lang: Lang = 'en'): ErrorBody {
 }
 
 const HOOK_MARKERS = [/\bhook\b/i, /hooks\//i, /declined/i];
+// Both overwrite spellings belong here: a merge or a checkout that git refuses
+// because local changes are in the way is a dirty tree, and the advice sentence
+// is only sometimes present. The `--ff-only` refusal is a different sentence
+// (`FF_ONLY_MARKERS`), so it cannot be confused with either spelling, and this
+// arm is evaluated first so a dirty merge wins over any later match.
 const DIRTY_TREE_MARKERS = [
-  /local changes to the following files would be overwritten/i,
   /Please commit your changes or stash them/i,
+  /would be overwritten by checkout/i,
+  /would be overwritten by merge/i,
 ];
 const NON_FF_MARKERS = [/non-fast-forward/i, /fetch first/i, /\[rejected\]/i, /behind its remote/i];
 /**
@@ -1659,6 +1703,17 @@ const NON_FF_MARKERS = [/non-fast-forward/i, /fetch first/i, /\[rejected\]/i, /b
  * gets, so it is forwarded verbatim in `detail`.
  */
 const UNMERGED_MARKERS = [/is not fully merged/i];
+/**
+ * `git merge --ff-only` refusing to move the checked-out branch because it has
+ * diverged from the pull request. Two spellings for the same divergence, which
+ * is what the checked-out refresh actually emits. The pull request checkout
+ * reaches it when the checked-out `pr/<n>` carries local commits the pull
+ * request does not have; the refusal is the designed outcome, not a crash.
+ */
+const FF_ONLY_MARKERS = [
+  /Not possible to fast-forward/i,
+  /Diverging branches can't be fast-forwarded/i,
+];
 
 /**
  * Classify a generic git failure from stderr. Hook output is surfaced verbatim
@@ -1704,6 +1759,15 @@ function fromGitFailure(err: GitError, lang: Lang = 'en'): ErrorBody {
       status: 409,
       code: 'CONFLICT',
       message: text.branchNotMerged,
+      detail: stderr.trim(),
+      remedies: ['cancel'],
+    };
+  }
+  if (FF_ONLY_MARKERS.some((m) => m.test(stderr))) {
+    return {
+      status: 409,
+      code: 'CONFLICT',
+      message: text.prBranchDiverged,
       detail: stderr.trim(),
       remedies: ['cancel'],
     };

@@ -51,6 +51,7 @@ import {
   assertValidHash,
   assertValidRepoPaths,
   buildRepoPathspecs,
+  prBranchName,
   sanitizeRefArg,
   validateBranchName,
   validateCommitMessage,
@@ -58,6 +59,7 @@ import {
   validateHash,
   validateLimit,
   validateMainline,
+  validatePullRequestNumber,
   validateRemoteName,
   validateRepoRelativePath,
   validateStashIndex,
@@ -781,6 +783,91 @@ export class GitRunner {
   async switchBranch(name: string): Promise<void> {
     this.assertBranch(name);
     await this.runExclusive(() => this.run(['switch', '--', sanitizeRefArg(name)]));
+  }
+
+  /** Whether a local branch of that exact name exists. */
+  async localBranchExists(name: string): Promise<boolean> {
+    if (!validateBranchName(name)) {
+      throw new GitError({ code: 'VALIDATION_ERROR', message: `Invalid branch name: ${name}` });
+    }
+    const target = `refs/heads/${name}`;
+    const refs = await this.refs();
+    return refs.some((ref) => ref.refName === target);
+  }
+
+  /**
+   * Check a pull request out into `pr/<n>`, fetching its head into `FETCH_HEAD`.
+   *
+   * A refspec fetch straight into `pr/<n>` is refused outright when that branch
+   * is checked out, which is exactly the refresh case, so the fetch lands in
+   * `FETCH_HEAD` (no local branch points at it) and the ref is then moved only
+   * after proving the move is a fast-forward. No ref is ever overwritten on a
+   * divergence, and the local branch is created with an all-zero old value so
+   * git itself refuses to clobber one that appeared meanwhile.
+   */
+  async fetchPullRequest(
+    remote: string,
+    number: number,
+    opts: { onProgress?: (line: string) => void } = {},
+  ): Promise<{ branch: string; created: boolean }> {
+    if (!validateRemoteName(remote)) {
+      throw new GitError({ code: 'VALIDATION_ERROR', message: `Invalid remote name: ${remote}` });
+    }
+    if (!validatePullRequestNumber(number)) {
+      throw new GitError({ code: 'VALIDATION_ERROR', message: `Invalid pull request number: ${String(number)}` });
+    }
+    const branch = prBranchName(number);
+    const ref = `refs/heads/${branch}`;
+    const progress = opts.onProgress === undefined ? {} : { onStderrLine: opts.onProgress };
+    return this.runExclusive(async () => {
+      try {
+        await this.run(['fetch', sanitizeRefArg(remote), sanitizeRefArg(`pull/${number}/head`)], {
+          timeoutMs: 120_000,
+          ...progress,
+        });
+      } catch (err) {
+        // Narrow: only git's own missing-remote-ref sentence is a 404. A network
+        // or auth failure keeps its GIT_FAILED code.
+        if (err instanceof GitError && /couldn't find remote ref pull\/\d+\/head/.test(err.stderr)) {
+          throw new GitError({
+            code: 'NOT_FOUND',
+            message: `Pull request #${number} was not found on ${remote}.`,
+            exitCode: err.exitCode,
+            stderr: err.stderr,
+            args: err.args,
+          });
+        }
+        throw err;
+      }
+
+      if (!(await this.localBranchExists(branch))) {
+        await this.run([
+          'update-ref',
+          ref,
+          'FETCH_HEAD',
+          '0000000000000000000000000000000000000000',
+        ]);
+        return { branch, created: true };
+      }
+
+      if ((await this.currentBranch()).branch === branch) {
+        // Checked out: git refuses a ref update, and the working tree must move
+        // with it, so the refresh is a fast-forward merge of the same head.
+        await this.run(['merge', '--ff-only', 'FETCH_HEAD']);
+        return { branch, created: false };
+      }
+
+      const { stdout } = await this.run(['rev-parse', '--verify', ref]);
+      const tip = stdout.trim();
+      if (!(await this.isAncestor(tip, 'FETCH_HEAD'))) {
+        throw new GitError({
+          code: 'CONFLICT',
+          message: `Local ${branch} has commits that are not on the pull request.`,
+        });
+      }
+      await this.run(['update-ref', ref, 'FETCH_HEAD', tip]);
+      return { branch, created: false };
+    });
   }
 
   /**
