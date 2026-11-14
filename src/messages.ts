@@ -273,7 +273,13 @@ export type GitActionRequest =
    * payload because it is derived from the number host-side, and the number is
    * the only variable part of the refspec.
    */
-  | { action: 'checkout-pr'; number: number; remote?: string };
+  | {
+      action: 'checkout-pr';
+      number: number;
+      remote?: string;
+      /** Set when the pull request comes from a fork, so the host refuses a later push from that branch. */
+      readOnly?: boolean;
+    };
 
 // ---------------------------------------------------------------- payloads
 

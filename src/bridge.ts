@@ -44,6 +44,7 @@ import {
 import type { RepositoryService } from './repository';
 import { parseRoute } from './webview/route';
 import {
+  prBranchName,
   validateBranchName,
   validateDeletableBranch,
   validateEmail,
@@ -1007,7 +1008,7 @@ export class MessageBridge {
 
     const repo = await this.repository();
     const status = await this.assertToken(repo, payload.statusToken);
-    this.gate({ action: 'stage' }, status, payload);
+    this.gate(repo, { action: 'stage' }, status, payload);
 
     /*
      * Staging drops ignored entries (`!`) because `git add` fails on ignored
@@ -1073,7 +1074,7 @@ export class MessageBridge {
     const repo = await this.repository();
     const status = await this.assertToken(repo, payload.statusToken);
     const headPublished = amend ? await this.isHeadPublished(repo) : null;
-    this.gate({ action: 'commit', ...(amend ? { amend: true } : {}) }, status, payload, headPublished);
+    this.gate(repo, { action: 'commit', ...(amend ? { amend: true } : {}) }, status, payload, headPublished);
 
     this.progress(operationId, 'commit', 'started');
     let commit: string | null;
@@ -1126,7 +1127,7 @@ export class MessageBridge {
     validateAction(payload, this.text().invalid);
     const repo = await this.repository();
     const status = await this.assertToken(repo, payload.statusToken);
-    this.gate(payload as GuardAction, status, payload);
+    this.gate(repo, payload as GuardAction, status, payload);
 
     // `push-up-to` must be fast-forward; the remedy is fetch, never force.
     //
@@ -1212,6 +1213,13 @@ export class MessageBridge {
         return git.switchBranch(action.branch);
       case 'checkout-commit':
         return git.checkoutDetached(action.hash);
+      case 'checkout-pr': {
+        await git.fetchPullRequest(action.remote ?? 'origin', action.number, {
+          onProgress: this.progressSink(operationId, 'checkout-pr'),
+        });
+        if (action.readOnly === true) await repo.markReadOnlyBranch(prBranchName(action.number));
+        return git.switchBranch(prBranchName(action.number));
+      }
       case 'create-branch':
         return git.createBranch(action.name, action.startPoint);
       case 'merge':
@@ -1320,7 +1328,7 @@ export class MessageBridge {
       precheck: async () => {
         repo.invalidate();
         const fresh = await repo.status();
-        this.gate({ action: 'reset-hard', hash }, fresh, meta);
+        this.gate(repo, { action: 'reset-hard', hash }, fresh, meta);
       },
     });
   }
@@ -1357,7 +1365,7 @@ export class MessageBridge {
     if (status.branch === null) {
       return { pushed: false, error: this.text().commitPushFailed };
     }
-    const snapshot = this.snapshotOf(status);
+    const snapshot = this.snapshotOf(status, repo);
     const lang = this.host.settings().language ?? 'en';
     const verdict = SafetyGuard.evaluate({ action: 'push', remote: 'origin', branch: status.branch }, snapshot, lang);
     if (!verdict.allow) {
@@ -1383,13 +1391,14 @@ export class MessageBridge {
    * be a bypass.
    */
   private gate(
+    repo: RepositoryService,
     action: GuardAction,
     status: RepoStatus,
     meta: MutationMeta,
     headPublished: boolean | null = null,
   ): void {
     const lang = this.host.settings().language ?? 'en';
-    const verdict = SafetyGuard.evaluate(action, this.snapshotOf(status, headPublished), lang);
+    const verdict = SafetyGuard.evaluate(action, this.snapshotOf(status, repo, headPublished), lang);
     if (verdict.allow) return;
     if (verdict.requiresConfirmation === true && this.confirmed(verdict, meta)) return;
     fail(verdictStatus(verdict), verdict.code, verdict.message, {
@@ -1448,7 +1457,7 @@ export class MessageBridge {
     return repo.git.isPublished('HEAD').catch(() => true);
   }
 
-  private snapshotOf(status: RepoStatus, headPublished: boolean | null = null): GuardSnapshot {
+  private snapshotOf(status: RepoStatus, repo: RepositoryService, headPublished: boolean | null = null): GuardSnapshot {
     return {
       dirty: status.dirty,
       staged: status.staged,
@@ -1462,6 +1471,7 @@ export class MessageBridge {
       stalenessMs: this.host.settings().fetchStalenessMs || DEFAULT_STALENESS_MS,
       headPublished,
       branch: status.branch,
+      readOnlyBranches: repo.readOnlyBranches(),
     };
   }
 
@@ -1639,6 +1649,10 @@ function fromGitError(err: GitError, lang: Lang = 'en'): ErrorBody {
       // 413: the request was valid, the response is too big to hand over. The UI
       // renders it through the SERVER_ERROR arm, which already offers Show Logs.
       return { status: 413, code: 'SERVER_ERROR', message: text.outputTooLarge, detail: redact(err.message) };
+    case 'NOT_FOUND':
+      // Raised only by a deliberately narrow check (a pull request head git itself
+      // reported missing), so the message is already user-facing.
+      return { status: 404, code: 'NOT_FOUND', message: redact(err.message) };
     case 'GIT_FAILED':
     default:
       return fromGitFailure(err, lang);

@@ -78,7 +78,9 @@ export function validateAction(action: GitActionPayload, fail: (detail: string) 
       if (!validateBranchName(action.branch)) fail('branch'); return;
     case 'checkout-pr':
       if (!validatePullRequestNumber(action.number)) fail('number');
-      if (action.remote !== undefined && !validateRemoteName(action.remote)) fail('remote'); return;
+      if (action.remote !== undefined && !validateRemoteName(action.remote)) fail('remote');
+      if (action.readOnly !== undefined && typeof action.readOnly !== 'boolean') fail('readOnly');
+      return;
     default: fail('action');
   }
 }
