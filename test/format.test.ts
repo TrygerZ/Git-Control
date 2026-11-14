@@ -683,6 +683,7 @@ const ACTIONS: GitActionRequest[] = [
   { action: 'cherry-pick-abort' },
   { action: 'branch-delete', branch: 'fitur' },
   { action: 'branch-delete-remote', remote: 'origin', branch: 'fitur' },
+  { action: 'checkout-pr', number: 150, remote: 'origin' },
 ];
 
 test('gitCommandOf renders a runnable command for every action', () => {
@@ -739,6 +740,40 @@ test('actionTarget picks the branch, name, hash, or remote', () => {
   assert.equal(actionTarget({ action: 'stash-pop' }), '?');
   assert.equal(actionTarget({ action: 'stash-apply', index: 0 }), 'stash@{0}');
   assert.equal(actionTarget({ action: 'stash-drop', index: 1 }), 'stash@{1}');
+});
+
+/**
+ * The dialog for frame 54 prints two commands for one action, so the preview
+ * has to show both lines: the fetch that brings the head in, then the switch.
+ */
+test('checkout-pr previews both git lines and never a force flag', () => {
+  const command = gitCommandOf({ action: 'checkout-pr', number: 150, remote: 'origin' });
+  assert.equal(command, 'git fetch origin pull/150/head && git switch pr/150');
+  assert.doesNotMatch(command, /--force|\s-f/);
+  assert.doesNotMatch(command, /\s\+[^\s]/, 'no plus refspec');
+
+  assert.equal(
+    gitCommandOf({ action: 'checkout-pr', number: 1 }),
+    'git fetch origin pull/1/head && git switch pr/1',
+    'the remote defaults to origin, which is what the host does',
+  );
+
+  assert.equal(actionTitle({ action: 'checkout-pr', number: 150 }, 'en'), 'Checkout #150');
+  assert.equal(actionTitle({ action: 'checkout-pr', number: 150 }, 'id'), 'Checkout #150');
+  assert.equal(actionTarget({ action: 'checkout-pr', number: 150 }), 'pr/150');
+});
+
+test('checkout-pr consequence explains the fetch, the branch, and the current branch', () => {
+  for (const lang of ['en', 'id'] as const) {
+    const consequence = consequenceOf({ action: 'checkout-pr', number: 150 }, lang);
+    assert.match(consequence, /pr\/150/);
+    assert.doesNotMatch(consequence, /–|—/);
+    assert.notEqual(consequence, t(lang).format.actionConsequences.defaultAction);
+  }
+  assert.notEqual(
+    consequenceOf({ action: 'checkout-pr', number: 150 }, 'en'),
+    consequenceOf({ action: 'checkout-pr', number: 150 }, 'id'),
+  );
 });
 
 test('the delete commands read exactly as git runs them', () => {

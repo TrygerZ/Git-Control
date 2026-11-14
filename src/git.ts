@@ -840,12 +840,6 @@ export class GitRunner {
         throw err;
       }
 
-      // Mirror the remote pull ref locally, the way a GitHub clone carries
-      // `refs/pull/*`, so the head can be named without a second fetch. It is a
-      // read-only mirror of the remote ref, so overwriting it is what a fetch
-      // would have done anyway.
-      await this.run(['update-ref', `refs/pull/${number}/head`, 'FETCH_HEAD']);
-
       if (!(await this.localBranchExists(branch))) {
         await this.run([
           'update-ref',

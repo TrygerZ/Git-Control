@@ -9,7 +9,7 @@ import { idempotencyKeyOf, shouldRemember } from '../src/bridgePure';
 import { hostText } from '../src/hostText';
 import { Logger, type LogSink } from '../src/logger';
 import { RepositoryService, type PersistentStore } from '../src/repository';
-import { advanceRemote, cleanup, makeFixture } from './repoFixture';
+import { advancePullRequest, advanceRemote, cleanup, makeFixture, setPullRequestHead } from './repoFixture';
 import type {
   ActionsJobsPayload,
   ActionsRunsPayload,
@@ -3788,4 +3788,149 @@ test('P21: both kinds answer UNAVAILABLE when the host has no callback', async (
     assert.equal(response.error.code, 'UNAVAILABLE', kind);
     assert.equal(response.error.status, 503, kind);
   }
+});
+
+// ------------------------------------------------ pull request checkout (P23)
+
+/**
+ * The host sequence is fetch, then switch, under one operation id. A failed
+ * fetch must not leave the user on a half-updated branch, so the switch only
+ * runs after the fetch returned.
+ */
+test('P23: checkout-pr fetches the pull request and switches to pr/<n>', async (t) => {
+  const dir = await makeFixture('remote-pulls');
+  t.after(() => cleanup(dir));
+  const repo = new RepositoryService({ folderPath: dir, gitPath: 'git', store: new MemoryStore() });
+  const h = harness(repo);
+  t.after(() => h.bridge.dispose());
+
+  const response = await h.webview.send(
+    req('actions/git', { action: 'checkout-pr', number: 1, remote: 'origin', idempotencyKey: 'cp-ok' }),
+  );
+  assert.equal(response.ok, true, JSON.stringify(response));
+  if (!response.ok) return;
+  const data = response.data as { ok: boolean };
+  assert.equal(data.ok, true);
+
+  const { branch } = await repo.git.currentBranch();
+  assert.equal(branch, 'pr/1', 'HEAD is on the pull request branch');
+  assert.equal(await repo.git.localBranchExists('pr/1'), true);
+});
+
+test('P23: a failed fetch does not switch branches', async (t) => {
+  const dir = await makeFixture('remote-pulls');
+  t.after(() => cleanup(dir));
+  const repo = new RepositoryService({ folderPath: dir, gitPath: 'git', store: new MemoryStore() });
+  const h = harness(repo);
+  t.after(() => h.bridge.dispose());
+
+  const response = await h.webview.send(
+    req('actions/git', { action: 'checkout-pr', number: 99, remote: 'origin', idempotencyKey: 'cp-404' }),
+  );
+  assert.equal(response.ok, false);
+  if (response.ok) return;
+  assert.equal(response.error.code, 'NOT_FOUND');
+  const { branch } = await repo.git.currentBranch();
+  assert.equal(branch, 'main', 'the current branch is unchanged');
+});
+
+test('P23: a dirty tree refuses checkout-pr with the stash and commit remedies', async (t) => {
+  const dir = await makeFixture('remote-pulls');
+  t.after(() => cleanup(dir));
+  await fs.writeFile(path.join(dir, 'dirty.txt'), 'x\n', 'utf8');
+  const repo = new RepositoryService({ folderPath: dir, gitPath: 'git', store: new MemoryStore() });
+  const h = harness(repo);
+  t.after(() => h.bridge.dispose());
+
+  const response = await h.webview.send(
+    req('actions/git', { action: 'checkout-pr', number: 1, idempotencyKey: 'cp-dirty' }),
+  );
+  assert.equal(response.ok, false);
+  if (response.ok) return;
+  assert.equal(response.error.status, 412);
+  assert.equal(response.error.code, 'DIRTY_TREE');
+  assert.deepEqual(response.error.remedies, ['commit', 'stash', 'cancel']);
+  const { branch } = await repo.git.currentBranch();
+  assert.equal(branch, 'main');
+});
+
+test('P23: the same key replayed runs git once', async (t) => {
+  const dir = await makeFixture('remote-pulls');
+  t.after(() => cleanup(dir));
+  const repo = new RepositoryService({ folderPath: dir, gitPath: 'git', store: new MemoryStore() });
+  const h = harness(repo);
+  t.after(() => h.bridge.dispose());
+
+  const payload = { action: 'checkout-pr', number: 1, remote: 'origin', idempotencyKey: 'cp-replay' };
+  const first = await h.webview.send(req('actions/git', payload));
+  assert.equal(first.ok, true);
+  // Move the pull request on: a second real run would fast-forward the branch.
+  const before = (await repo.git.run(['rev-parse', 'refs/heads/pr/1'])).stdout.trim();
+  await advancePullRequest(dir, 'replay.txt', 'replay advance');
+  await setPullRequestHead(dir, 1);
+  const second = await h.webview.send(req('actions/git', payload));
+  assert.equal(second.ok, true);
+  const after = (await repo.git.run(['rev-parse', 'refs/heads/pr/1'])).stdout.trim();
+  assert.equal(after, before, 'the replay answered from the stored outcome, it did not fetch again');
+});
+
+/**
+ * A branch whose commits came from a fork is read only. The bridge is where the
+ * set is built, because only it can read the pull request list and the refs
+ * together; the guard then refuses the push on that set.
+ */
+test('P23: a push from a fork pull request branch is refused by the host', async (t) => {
+  const dir = await makeFixture('remote-pulls');
+  t.after(() => cleanup(dir));
+  const repo = new RepositoryService({ folderPath: dir, gitPath: 'git', store: new MemoryStore() });
+  const h = harness(repo);
+  t.after(() => h.bridge.dispose());
+
+  await repo.git.fetchPullRequest('origin', 1);
+  await repo.git.switchBranch('pr/1');
+  await repo.git.run(['branch', 'pr/9', 'pr/1']);
+  await repo.markReadOnlyBranch('pr/9');
+  repo.invalidate();
+
+  const response = await h.webview.send(
+    req('actions/git', { action: 'push', remote: 'origin', branch: 'pr/9', idempotencyKey: 'cp-ro' }),
+  );
+  assert.equal(response.ok, false);
+  if (response.ok) return;
+  assert.equal(response.error.code, 'FORBIDDEN');
+  assert.equal(response.error.status, 403);
+  assert.deepEqual(response.error.remedies, ['cancel']);
+  assert.match(response.error.message, /fork pull request/i);
+});
+
+/**
+ * The mark is what the checkout writes, so the flag has to survive the round
+ * trip through the request. A payload without it marks nothing, which keeps a
+ * same-repository pull request pushable like any other branch.
+ */
+test('P23: checking out a fork pull request marks its branch read only', async (t) => {
+  const dir = await makeFixture('remote-pulls');
+  t.after(() => cleanup(dir));
+  const repo = new RepositoryService({ folderPath: dir, gitPath: 'git', store: new MemoryStore() });
+  const h = harness(repo);
+  t.after(() => h.bridge.dispose());
+
+  const response = await h.webview.send(
+    req('actions/git', {
+      action: 'checkout-pr',
+      number: 2,
+      remote: 'origin',
+      readOnly: true,
+      idempotencyKey: 'cp-fork',
+    }),
+  );
+  assert.equal(response.ok, true, JSON.stringify(response));
+  assert.equal(repo.readOnlyBranches().has('pr/2'), true);
+
+  const push = await h.webview.send(
+    req('actions/git', { action: 'push', remote: 'origin', branch: 'pr/2', idempotencyKey: 'cp-fork-push' }),
+  );
+  assert.equal(push.ok, false);
+  if (push.ok) return;
+  assert.equal(push.error.code, 'FORBIDDEN');
 });
