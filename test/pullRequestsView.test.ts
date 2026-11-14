@@ -132,3 +132,41 @@ test('Reload revalidates the pull request list instead of replaying the host cac
   assert.match(src, /loadPullRequests\(\s*\{\s*refresh:\s*true\s*\}\s*\)/, 'the reload asks for a refresh');
   assert.match(src, /route\.id === 'prs'/, 'and only while the list is on screen');
 });
+
+// ------------------------------------------------ P23: checkout a pull request
+
+/**
+ * The row action is the same request every other git action sends, so the view
+ * must not grow its own store state or its own bridge call for it. The branch
+ * name is never built here: the payload carries the number and the host derives
+ * `pr/<n>`, which is what makes a crafted branch name impossible.
+ */
+test('the checkout action sends the number, not a branch name', () => {
+  const view = read('src/webview/PullRequestsView.tsx');
+  assert.match(view, /action: 'checkout-pr'/, 'the row action is the checkout request');
+  assert.match(view, /number: pr\.number/);
+  assert.doesNotMatch(view, /pr\/\$\{/, 'the view never composes the branch name');
+  assert.match(view, /runAction\(/);
+
+  const store = read('src/webview/store.ts');
+  assert.doesNotMatch(store, /checkoutPullRequest/, 'no new store state for a one-shot action');
+});
+
+test('a fork row is marked read only and passes the flag to the host', () => {
+  const view = read('src/webview/PullRequestsView.tsx');
+  assert.match(view, /pr\.isFork/, 'the row reads the fork flag');
+  assert.match(view, /readOnly: true/, 'and tells the host, so a push can be refused');
+  assert.match(view, /readOnlyChip/, 'the chip text comes from the catalog');
+});
+
+test('a row whose branch is checked out says so, and the row still opens the pull request', () => {
+  const view = read('src/webview/PullRequestsView.tsx');
+  assert.match(view, /checkedOut/);
+  // The row's own click stays the URL opener: checkout is a separate button, so a
+  // reader never loses the ability to open the pull request on GitHub.
+  assert.match(view, /openUrl\(pr\.url\)/);
+  // The checkout button is a real tab stop with an accessible name carrying the
+  // number, not a hover-only decoration.
+  assert.match(view, /checkoutAria/);
+  assert.match(view, /aria-label=\{strings\.prs\.checkoutAria\(String\(pr\.number\)\)\}/);
+});

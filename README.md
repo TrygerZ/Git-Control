@@ -79,6 +79,7 @@ Right-click any commit node or branch ref to perform standard Git actions:
 * **Checks at a Glance**: Each pull request row carries a check badge, loaded only for the rows scrolled into view. A failing row names the checks that broke.
 * **Commit to Pull Request**: The commit inspector shows the pull request that contains the selected commit, with its state, base branch, and check summary, or says the commit is not part of one.
 * **Create Pull Request**: Open the dialog from the Pull requests view, review the generated title and body, and preview the push and the API call before submitting. A branch that is not on the remote is published first.
+* **Checkout Pull Request**: The branch button on a row fetches the pull request head into a local branch named `pr/<number>` and switches to it. Unsaved changes are handled with the usual commit or stash options. Checking out again fast-forwards the branch, and a branch with local commits the pull request does not have is refused rather than overwritten.
 * **External Navigation**: Direct links to view commits and pull requests in the browser.
 * **Rate Limit Monitoring**: Real-time indicator for GitHub REST API quotas and cache status.
 * **Contributor Identity Resolution**: Resolves author email addresses to GitHub profiles and avatars with cached API queries.
@@ -166,6 +167,8 @@ Behavior that applies to both token types:
 * Writes are never retried automatically. A repeated `POST` would create a second pull request, comment, or release, so a failed write is yours to retry.
 * Creating a pull request from a branch that is not on the remote publishes that branch with upstream tracking first. Nothing is ever force-pushed.
 * A pull request that already exists for the same branch pair is reported with its number instead of creating a second one.
+* A pull request from a fork is checked out for reading only. The row is marked read only, and a push from its `pr/<number>` branch is refused by the host before any git process starts.
+* Checking out a pull request runs the repository's own `post-checkout` hook, not a hook from the fork. Review the hook in `.git/hooks` before checking out code you do not trust.
 
 **After changing a token's scopes**, reconnect so the new permissions are read:
 
