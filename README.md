@@ -78,6 +78,7 @@ Right-click any commit node or branch ref to perform standard Git actions:
 * **Pull Request Visibility**: Displays pull request statuses and numbers associated with branch heads.
 * **Checks at a Glance**: Each pull request row carries a check badge, loaded only for the rows scrolled into view. A failing row names the checks that broke.
 * **Commit to Pull Request**: The commit inspector shows the pull request that contains the selected commit, with its state, base branch, and check summary, or says the commit is not part of one.
+* **Create Pull Request**: Open the dialog from the Pull requests view, review the generated title and body, and preview the push and the API call before submitting. A branch that is not on the remote is published first.
 * **External Navigation**: Direct links to view commits and pull requests in the browser.
 * **Rate Limit Monitoring**: Real-time indicator for GitHub REST API quotas and cache status.
 * **Contributor Identity Resolution**: Resolves author email addresses to GitHub profiles and avatars with cached API queries.
@@ -163,6 +164,8 @@ Behavior that applies to both token types:
 * A write is refused before anything is sent when the connection is missing, the API base came from a repository remote rather than your settings, the circuit breaker is open, or the granted scopes are known to lack `repo`.
 * Fine-grained tokens do not report their scopes, so Git Control cannot check them ahead of time. The write is attempted and a `403` from GitHub is reported as a permission problem instead.
 * Writes are never retried automatically. A repeated `POST` would create a second pull request, comment, or release, so a failed write is yours to retry.
+* Creating a pull request from a branch that is not on the remote publishes that branch with upstream tracking first. Nothing is ever force-pushed.
+* A pull request that already exists for the same branch pair is reported with its number instead of creating a second one.
 
 **After changing a token's scopes**, reconnect so the new permissions are read:
 
