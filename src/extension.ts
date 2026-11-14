@@ -454,7 +454,7 @@ class Controller implements vscode.Disposable {
         prs: null,
         issues: null,
       },
-      available: new Set<Capability>([...SHIPPED_ROUTES, 'checklist', 'help']),
+      available: new Set<Capability>([...SHIPPED_ROUTES, 'checklist', 'help', 'create-pr']),
     };
 
     const rows = buildQuickRows(ctx);

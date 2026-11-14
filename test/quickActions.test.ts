@@ -177,21 +177,22 @@ test('three suggestions appear in rank order, and the group never exceeds three'
 
 test('no row emits a focus target the webview cannot consume', () => {
   // A target with no consumer sits in `pendingFocus` and is later claimed by an
-  // unrelated view, which is worse than not offering the row. `create-pr` has no
-  // consumer until P22 ships the dialog, so the module must not emit it.
+  // unrelated view, which is worse than not offering the row. P22 shipped the
+  // dialog, so `create-pr` now has a consumer and the module may emit it.
   const src = fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'quickActions.ts'), 'utf8');
-  assert.doesNotMatch(src, /focus: 'create-pr'/, 'create-pr focus ships with its consumer');
+  assert.match(src, /focus: 'create-pr'/, 'create-pr focus ships with its consumer');
 
   const messages = fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'messages.ts'), 'utf8');
   const union = /export type FocusTarget = ([^;]+);/.exec(messages)?.[1] ?? '';
-  assert.doesNotMatch(union, /create-pr/, 'the type cannot express an unconsumed target');
+  assert.match(union, /create-pr/, 'the type ships with the view that consumes it');
 });
 
-test('the checklist row appears once the card ships, and create-pr still does not', () => {
-  // P16 shipped the card, so the capability is on. `create-pr` stays off until
-  // P22 ships the dialog that would consume the focus target.
+test('the checklist and create-pr rows both ship, and each still needs its own conditions', () => {
+  // P16 shipped the card and P22 shipped the dialog, so both capabilities are on.
+  // `create-pr` additionally needs a published branch with commits to review, so
+  // this context (no upstream) deliberately does not offer it.
   assert.equal(FEATURES.has('checklist'), true);
-  assert.equal(FEATURES.has('create-pr'), false);
+  assert.equal(FEATURES.has('create-pr'), true);
 
   const rows = buildQuickRows(
     ctx({ available: new Set<Capability>([...SHIPPED_ROUTES, 'create-pr', 'checklist']) }),
@@ -202,7 +203,7 @@ test('the checklist row appears once the card ships, and create-pr still does no
     kind: 'navigate',
     route: { id: 'changes', sub: 'changes' },
   });
-  assert.equal(row(rows, 'suggest.create-pr'), undefined);
+  assert.equal(row(rows, 'suggest.create-pr'), undefined, 'no upstream means nothing to review');
 
   // P17 shipped the Help route, so the row is offered and it opens the panel.
   const helpOpen = row(rows, 'help.open');
@@ -285,4 +286,66 @@ test('SHIPPED_ROUTES matches the destinations the strip actually registers', () 
   const shipped = [...SHIPPED_ROUTES].filter((id) => id !== 'help').sort();
   assert.deepEqual(shipped, [...strip].sort());
   assert.ok(SHIPPED_ROUTES.has('help'), 'the Help route is served by this build');
+});
+
+// ------------------------------------------ create pull request capability (P22)
+
+test('create-pr ships now, so the feature set and the row both carry it', () => {
+  assert.equal(FEATURES.has('create-pr'), true);
+  assert.equal(FEATURES.has('checklist'), true);
+
+  const rows = buildQuickRows(
+    ctx({ hasUpstream: true, ahead: 2, available: new Set<Capability>([...SHIPPED_ROUTES, ...FEATURES]) }),
+  );
+  const row = rows.find((entry) => entry.id === 'suggest.create-pr');
+  assert.ok(row !== undefined, 'the row is offered once the dialog exists');
+  assert.deepEqual(row.target, {
+    kind: 'navigate',
+    route: { id: 'prs' },
+    focus: 'create-pr',
+  });
+});
+
+test('the create-pr row is hidden when the capability is absent, and never hides a conflict remedy', () => {
+  const without = buildQuickRows(ctx({ available: new Set<Capability>([...SHIPPED_ROUTES]) }));
+  assert.equal(without.find((entry) => entry.id === 'suggest.create-pr'), undefined);
+
+  // A conflict is the only thing worth acting on, so nothing else is suggested.
+  const conflicted = buildQuickRows(
+    ctx({ conflictCount: 2, available: new Set<Capability>([...SHIPPED_ROUTES, ...FEATURES]) }),
+  );
+  assert.equal(conflicted.find((entry) => entry.id === 'suggest.create-pr'), undefined);
+  assert.ok(conflicted.find((entry) => entry.id === 'suggest.resolve') !== undefined);
+});
+
+test('the create-pr row needs a branch, an upstream, and commits ahead', () => {
+  const available = new Set<Capability>([...SHIPPED_ROUTES, ...FEATURES]);
+  const has = (overrides: Partial<QuickContext>): boolean =>
+    buildQuickRows(ctx({ available, ...overrides })).some((entry) => entry.id === 'suggest.create-pr');
+
+  assert.equal(has({ branch: null }), false, 'no branch, no pull request');
+  assert.equal(has({ hasUpstream: false }), false, 'publishing comes first');
+  assert.equal(has({ ahead: 0 }), false, 'nothing to review');
+  assert.equal(has({ hasRemote: false }), false, 'no remote, no pull request');
+  assert.equal(has({ hasUpstream: true, ahead: 2 }), true);
+});
+
+test('the create-pr row never displaces the three-suggestion cap', () => {
+  const rows = buildQuickRows(
+    ctx({
+      hasUpstream: true,
+      ahead: 3,
+      stagedCount: 2,
+      failingRuns: 1,
+      available: new Set<Capability>([...SHIPPED_ROUTES, ...FEATURES]),
+    }),
+  );
+  const suggested = rows.filter((entry) => entry.group === 'suggested');
+  assert.ok(suggested.length <= 3, `suggested stays at most three (${suggested.length})`);
+});
+
+test('the focus target now has a consumer, so the type may express it', () => {
+  const messages = fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'messages.ts'), 'utf8');
+  const union = /export type FocusTarget = ([^;]+);/.exec(messages)?.[1] ?? '';
+  assert.match(union, /create-pr/, 'the target ships with the dialog that consumes it');
 });

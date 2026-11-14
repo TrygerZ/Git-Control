@@ -1178,7 +1178,7 @@ export type Route =
   | { id: 'prs' | 'issues' | 'actions' };
 
 /** Which control a navigated view should focus. Closed set, validated at the boundary. */
-export type FocusTarget = 'publish' | 'push' | 'commit' | 'resolve';
+export type FocusTarget = 'publish' | 'push' | 'commit' | 'create-pr' | 'resolve';
 
 export interface NavigateEvent {
   route: Route;

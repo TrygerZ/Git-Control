@@ -200,6 +200,17 @@ export function PullRequestsView(): JSX.Element {
     void openDraft(linkage.owner, linkage.repo);
   };
 
+  // A quick action or the Help row opens this dialog through a focus target.
+  // The target is taken either way: one left pending would be claimed by an
+  // unrelated view later.
+  const pendingFocus = useRouteStore((s) => s.pendingFocus);
+  useEffect(() => {
+    if (pendingFocus !== 'create-pr') return;
+    useRouteStore.getState().takeFocus();
+    if (linkage?.owner == null || linkage.repo == null) return;
+    void openDraft(linkage.owner, linkage.repo);
+  }, [pendingFocus, linkage, openDraft]);
+
   const closeCreate = (): void => {
     // The store's `close` is also called by the dialog; calling it again is a no-op
     // state reset, so the Escape path needs no second flag.

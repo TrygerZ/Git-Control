@@ -11,7 +11,7 @@ import type { IconName } from './icons';
 import { SHORTCUTS, type ShortcutEntry, type ShortcutGroupId } from './shortcuts';
 
 export type HelpTarget =
-  | { kind: 'navigate'; route: RouteId; sub?: ChangesSub; focus?: 'publish' }
+  | { kind: 'navigate'; route: RouteId; sub?: ChangesSub; focus?: 'publish' | 'create-pr' }
   | { kind: 'openExplorer' };
 
 export type HelpGroupId = 'everyday' | 'github' | 'organize';
@@ -82,6 +82,17 @@ const FEATURES: ReadonlyArray<{ row: HelpFeatureRow; gate?: Capability }> = [
       titleKey: 'fPrs',
       descKey: 'fPrsDesc',
       target: { kind: 'navigate', route: 'prs' },
+    },
+  },
+  {
+    gate: 'create-pr',
+    row: {
+      id: 'createPr',
+      group: 'github',
+      icon: 'pr',
+      titleKey: 'fCreatePr',
+      descKey: 'fCreatePrDesc',
+      target: { kind: 'navigate', route: 'prs', focus: 'create-pr' },
     },
   },
   {

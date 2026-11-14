@@ -250,9 +250,12 @@ test('the mutation kind set is exported once and keeps the three git kinds', () 
   }
 });
 
-test('the GitHub mutation set exists and is empty until the endpoint phases land', () => {
+test('the GitHub mutation set holds the registered endpoint kinds and stays disjoint', () => {
   assert.ok(GITHUB_MUTATION_KINDS instanceof Set);
-  assert.equal(GITHUB_MUTATION_KINDS.size, 0);
+  // P22 registered the first endpoint kind. Later phases add theirs to this same
+  // set; the point of the test is that the set is populated deliberately and that
+  // no kind ever appears in both sets.
+  assert.deepEqual([...GITHUB_MUTATION_KINDS], ['github/createPullRequest']);
   for (const kind of GITHUB_MUTATION_KINDS) assert.ok(!MUTATION_KINDS.has(kind), 'the two sets stay disjoint');
 });
 
