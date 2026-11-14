@@ -121,16 +121,37 @@ test('P23: a diverged pull request branch maps to 409 CONFLICT with a cancel rem
  * changelog describes.
  */
 test('P23: a refused fast-forward maps to 409 CONFLICT, not a server error', () => {
-  for (const stderr of [
-    'hint: Diverging branches can be fast-forwarded, you need to either:\nfatal: Not possible to fast-forward, aborting.',
-    'error: Your local changes to the following files would be overwritten by merge:\n\ta.txt',
-  ]) {
-    const body = toErrorBody(new GitError({ code: 'GIT_FAILED', message: 'failed', exitCode: 128, stderr }), 'en');
-    assert.equal(body.status, 409, stderr);
-    assert.equal(body.code, 'CONFLICT', stderr);
-    assert.ok((body.remedies ?? []).length > 0, 'the refusal offers a way out');
-  }
-});
+  const diverged =
+    'hint: Diverging branches can be fast-forwarded, you need to either:\nfatal: Not possible to fast-forward, aborting.';
+  const body = toErrorBody(new GitError({ code: 'GIT_FAILED', message: 'failed', exitCode: 128, stderr: diverged }), 'en');
+  assert.equal(body.status, 409);
+  assert.equal(body.code, 'CONFLICT');
+  assert.deepEqual(body.remedies, ['cancel']);
+  assert.equal(body.message, hostText('en').bridge.prBranchDiverged);
+
+  // A dirty tree is still a dirty tree: git refusing to overwrite local changes
+  // is the case the commit and stash remedies exist for, and classifying it as a
+  // divergence would offer no way out.
+  const dirty =
+    'error: Your local changes to the following files would be overwritten by merge:\n\ta.txt\nPlease commit your changes or stash them before you merge.\nAborting';
+  const dirtyBody = toErrorBody(
+    new GitError({ code: 'GIT_FAILED', message: 'failed', exitCode: 128, stderr: dirty }),
+    'en',
+  );
+  assert.equal(dirtyBody.status, 412, 'a dirty tree keeps its own classification');
+  assert.equal(dirtyBody.code, 'DIRTY_TREE');
+  assert.deepEqual(dirtyBody.remedies, ['commit', 'stash', 'cancel']);
+
+  // The same overwrite line without git's advice sentence must not be mistaken
+  // for a divergence either: the checkout spelling is still a dirty tree.
+  const dirtyNoAdvice =
+    'error: Your local changes to the following files would be overwritten by checkout:\n\ta.txt\nAborting';
+  const noAdvice = toErrorBody(
+    new GitError({ code: 'GIT_FAILED', message: 'failed', exitCode: 128, stderr: dirtyNoAdvice }),
+    'en',
+  );
+  assert.equal(noAdvice.code, 'DIRTY_TREE', 'the checkout spelling stays a dirty tree');
+})
 
 test('validation failures from git map to 400', () => {
   const body = toErrorBody(new GitError({ code: 'VALIDATION_ERROR', message: 'Invalid branch name: -x' }));

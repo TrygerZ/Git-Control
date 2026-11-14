@@ -970,6 +970,15 @@ export class MessageBridge {
     const repo = await this.repository();
     const remote = payload.remote ?? 'origin';
 
+    // A branch checked out from a fork pull request may never be pushed. The
+    // record lives in the repository, so a webview that omits `readOnly` cannot
+    // bypass it, and this runs before the publish check so it refuses whether or
+    // not the branch is already on the remote.
+    if (payload.publish === true && repo.readOnlyBranches().has(payload.head)) {
+      const lang = this.host.settings().language ?? 'en';
+      fail(403, 'FORBIDDEN', hostText(lang).guard.forkReadOnly, { remedies: ['cancel'] });
+    }
+
     let pushed = false;
     if (payload.publish === true && !(await repo.git.remoteTrackingExists(remote, payload.head))) {
       // ponytail: the push guard's stale/behind rules read the CURRENT branch's
@@ -1660,6 +1669,11 @@ function fromGitError(err: GitError, lang: Lang = 'en'): ErrorBody {
       // Raised only by a deliberately narrow check (a pull request head git itself
       // reported missing), so the message is already user-facing.
       return { status: 404, code: 'NOT_FOUND', message: redact(err.message) };
+    case 'CONFLICT':
+      // Raised only by the pull request fetch when a local `pr/<n>` has diverged,
+      // with a sentence naming the branch. A fetch cannot repair a diverged local
+      // branch, so cancel is the only honest remedy.
+      return { status: 409, code: 'CONFLICT', message: redact(err.message), remedies: ['cancel'] };
     case 'GIT_FAILED':
     default:
       return fromGitFailure(err, lang);
@@ -1667,9 +1681,14 @@ function fromGitError(err: GitError, lang: Lang = 'en'): ErrorBody {
 }
 
 const HOOK_MARKERS = [/\bhook\b/i, /hooks\//i, /declined/i];
+// git pairs its "would be overwritten" line with an advice sentence on a
+// dirty-tree refusal. The advice is the reliable marker; the bare overwrite line
+// is not, because the `--ff-only` merge refusal uses the same wording for a
+// different problem and must reach the fast-forward arm below. The checkout
+// spelling stays here so a suppressed advice line still maps to DIRTY_TREE.
 const DIRTY_TREE_MARKERS = [
-  /local changes to the following files would be overwritten/i,
   /Please commit your changes or stash them/i,
+  /would be overwritten by checkout/i,
 ];
 const NON_FF_MARKERS = [/non-fast-forward/i, /fetch first/i, /\[rejected\]/i, /behind its remote/i];
 /**
@@ -1680,6 +1699,20 @@ const NON_FF_MARKERS = [/non-fast-forward/i, /fetch first/i, /\[rejected\]/i, /b
  * gets, so it is forwarded verbatim in `detail`.
  */
 const UNMERGED_MARKERS = [/is not fully merged/i];
+/**
+ * `git merge --ff-only` refusing to move the checked-out branch. Two spellings:
+ * a diverged branch, and a dirty tree that the same merge would overwrite (git
+ * emits no advice sentence in that spelling, so the dirty arm above cannot own
+ * it). The pull request checkout reaches both when the checked-out `pr/<n>`
+ * carries local commits the pull request does not have; the refusal is the
+ * designed outcome, not a crash.
+ */
+const FF_ONLY_MARKERS = [
+  /Not possible to fast-forward/i,
+  /Diverging branches can't be fast-forwarded/i,
+  // Merge-specific: the checkout spelling belongs to the dirty arm.
+  /local changes to the following files would be overwritten by merge/i,
+];
 
 /**
  * Classify a generic git failure from stderr. Hook output is surfaced verbatim
@@ -1725,6 +1758,15 @@ function fromGitFailure(err: GitError, lang: Lang = 'en'): ErrorBody {
       status: 409,
       code: 'CONFLICT',
       message: text.branchNotMerged,
+      detail: stderr.trim(),
+      remedies: ['cancel'],
+    };
+  }
+  if (FF_ONLY_MARKERS.some((m) => m.test(stderr))) {
+    return {
+      status: 409,
+      code: 'CONFLICT',
+      message: text.prBranchDiverged,
       detail: stderr.trim(),
       remedies: ['cancel'],
     };

@@ -368,7 +368,7 @@ const en = {
       branchDeleteRemote: (branch: string, remote: string) =>
         `Delete branch ${branch} on ${remote}. Everyone loses it, and there is no undo.`,
       checkoutPr: (number: number) =>
-        `Fetches the pull request head into pr/${number} and switches to it. Your current branch is unchanged.`,
+        `Fetches the pull request head into pr/${number} and switches to it. Your previous branch stays where it is, with its commits intact.`,
       defaultAction: 'Run git command.',
     },
 

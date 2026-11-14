@@ -25,6 +25,8 @@ const en = {
     locked: 'Repository is locked by another git process.',
     hookRejected: 'Commit rejected by git hook.',
     branchNotMerged: 'Git refused: this branch has commits that are not merged.',
+    prBranchDiverged:
+      'The local pull request branch has commits the pull request does not have. Its tip was left alone.',
     nonFastForward: 'Push is not fast-forward.',
     confirmationRequired: 'This action requires confirmation.',
     staleToken: 'Status changed, reload before continuing.',
@@ -141,6 +143,8 @@ const id: HostCatalog = {
     locked: 'Repository sedang dipakai proses git lain.',
     hookRejected: 'Commit ditolak oleh git hook.',
     branchNotMerged: 'Git menolak: branch ini punya commit yang belum digabung.',
+    prBranchDiverged:
+      'Branch pull request lokal punya commit yang tidak ada di pull request. Ujung branch tidak diubah.',
     nonFastForward: 'Push bukan fast-forward.',
     confirmationRequired: 'Tindakan ini perlu konfirmasi.',
     staleToken: 'Status berubah, muat ulang sebelum melanjutkan.',
