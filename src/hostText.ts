@@ -15,6 +15,7 @@ const en = {
       'Last commit may already be on the upstream branch, and amending it would need a force push, which Git Control never does.',
     branchDeleteCurrent: 'You cannot delete the branch you are on.',
     branchDeleteRemote: 'Removes the branch from the remote for everyone.',
+    forkReadOnly: 'This is a fork pull request. It is read-only here.',
     confirm: 'This action requires confirmation.',
   },
   bridge: {
@@ -130,6 +131,7 @@ const id: HostCatalog = {
       'Commit terakhir mungkin sudah ada di branch upstream, dan amend butuh force push, yang tidak pernah dilakukan Git Control.',
     branchDeleteCurrent: 'Anda tidak dapat menghapus branch yang sedang aktif.',
     branchDeleteRemote: 'Menghapus branch dari remote untuk semua orang.',
+    forkReadOnly: 'Ini pull request dari fork. Hanya baca di sini.',
     confirm: 'Tindakan ini perlu konfirmasi.',
   },
   bridge: {

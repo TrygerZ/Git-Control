@@ -311,6 +311,37 @@ test('validateAction covers both branch delete actions', () => {
   );
 });
 
+/**
+ * The checkout action carries only a number and an optional remote. The branch
+ * name is composed host-side from the number, so a payload cannot name a branch
+ * at all: a request with a crafted name has nowhere to put it.
+ */
+test('validateAction covers checkout-pr number and remote', () => {
+  const fail = (detail: string): never => {
+    throw new Error(`failed:${detail}`);
+  };
+
+  assert.doesNotThrow(() => validateAction({ action: 'checkout-pr', number: 150, idempotencyKey: 'cp-1' }, fail));
+  assert.doesNotThrow(() =>
+    validateAction({ action: 'checkout-pr', number: 1, remote: 'origin', idempotencyKey: 'cp-2' }, fail),
+  );
+
+  for (const number of [0, -1, 1.5, '150', NaN, Infinity, 2_147_483_648, null, undefined]) {
+    assert.throws(
+      () => validateAction({ action: 'checkout-pr', number, idempotencyKey: 'cp-3' } as never, fail),
+      /failed:number/,
+      String(number),
+    );
+  }
+  for (const remote of ['-x', 'a/b', 'a b', '', 'x'.repeat(101)]) {
+    assert.throws(
+      () => validateAction({ action: 'checkout-pr', number: 1, remote, idempotencyKey: 'cp-4' }, fail),
+      /failed:remote/,
+      remote,
+    );
+  }
+});
+
 // ------------------------------------------------- P21: check run payloads
 
 test('P21: commit pull request and check run payloads are validated before the client', () => {

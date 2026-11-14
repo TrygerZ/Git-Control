@@ -454,11 +454,16 @@ test('pull requests default to open and are mapped to the DTO', async () => {
         title: 'Tambah panel',
         state: 'open',
         html_url: 'https://github.com/o/r/pull/7',
-        head: { ref: 'fitur/panel' },
+        head: {
+          ref: 'fitur/panel',
+          repo: { full_name: 'o/r', fork: false },
+          sha: 'a'.repeat(40),
+        },
         base: { ref: 'main' },
         draft: true,
         user: { login: 'octocat' },
         updated_at: '2026-08-01T10:00:00Z',
+        maintainer_can_modify: true,
       },
       {
         number: 6,
@@ -486,9 +491,46 @@ test('pull requests default to open and are mapped to the DTO', async () => {
     author: 'octocat',
     updatedAt: '2026-08-01T10:00:00Z',
     requestedReviewers: [],
+    headRepo: 'o/r',
+    isFork: false,
+    maintainerCanModify: true,
+    headSha: 'a'.repeat(40),
   });
   // `merged_at` wins over `state: closed` so the chip can say "merged".
   assert.equal(result.data[1]?.state, 'merged');
+  // A payload that carries none of the fork fields still maps to a usable row.
+  assert.deepEqual(
+    { headRepo: result.data[1]?.headRepo, isFork: result.data[1]?.isFork, canModify: result.data[1]?.maintainerCanModify },
+    { headRepo: null, isFork: true, canModify: false },
+    'an absent head repository is a deleted fork, which is read only',
+  );
+});
+
+test('a fork pull request carries its head repository and is marked read only', async () => {
+  const h = client([
+    response(200, [
+      {
+        number: 9,
+        title: 'From a fork',
+        state: 'open',
+        html_url: 'https://github.com/o/r/pull/9',
+        head: {
+          ref: 'patch-1',
+          sha: 'b'.repeat(40),
+          repo: { full_name: 'someone/r', fork: true },
+        },
+        base: { ref: 'main' },
+        user: { login: 'someone' },
+        updated_at: '2026-08-02T10:00:00Z',
+        maintainer_can_modify: false,
+      },
+    ]),
+  ]);
+  const pr = (await h.gh.pullRequests('o', 'r')).data[0];
+  assert.equal(pr?.headRepo, 'someone/r');
+  assert.equal(pr?.isFork, true);
+  assert.equal(pr?.maintainerCanModify, false);
+  assert.equal(pr?.headSha, 'b'.repeat(40));
 });
 
 test('pull requests map requested reviewers to logins only', async () => {

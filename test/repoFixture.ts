@@ -51,7 +51,14 @@ export type FixtureKind =
    * dialog reads: a range with commits in it, a template, and a branch that is
    * not on the remote yet.
    */
-  | 'feature-branch';
+  | 'feature-branch'
+  /**
+   * `remote` plus `refs/pull/1/head` and `refs/pull/2/head` in the bare origin,
+   * both at `main`. GitHub publishes those refs on the base repository for every
+   * pull request, fork or not, so this is the shape a checkout fetches from.
+   * Pull 2 stays at `main` so a test can move it with {@link setPullRequestHead}.
+   */
+  | 'remote-pulls';
 
 /** Built templates, one per kind per process. */
 const templates = new Map<FixtureKind, Promise<string>>();
@@ -102,6 +109,45 @@ export async function advanceRemote(dir: string, filename: string, content: stri
   } finally {
     await cleanup(tempDir);
   }
+}
+
+/**
+ * Commit onto `main` in the bare origin of a `remote-pulls` fixture, the way a
+ * pull request branch receives new work. Returns the new commit id.
+ *
+ * The clone is throwaway and the push is a plain fast-forward, so this cannot
+ * rewrite anything the fixture already had.
+ */
+export async function advancePullRequest(dir: string, filename: string, content: string): Promise<string> {
+  const bareDir = path.join(dir, '.git', 'bare.git');
+  const work = await fs.mkdtemp(path.join(os.tmpdir(), 'git-control-pr-adv-'));
+  try {
+    const clone = new GitRunner({ gitPath: 'git', cwd: work });
+    await clone.run(['clone', '--quiet', bareDir, work]);
+    await clone.run(['config', 'user.email', 'pr@example.com']);
+    await clone.run(['config', 'user.name', 'PR Author']);
+    await fs.writeFile(path.join(work, filename), content, 'utf8');
+    await clone.stage([filename]);
+    await clone.commit(`add ${filename} to the pull request`);
+    await clone.run(['push', '--quiet', 'origin', 'HEAD:main']);
+    const { stdout } = await clone.run(['rev-parse', 'HEAD']);
+    return stdout.trim();
+  } finally {
+    await cleanup(work);
+  }
+}
+
+/**
+ * Move a pull request head in the bare origin of a `remote-pulls` fixture, the
+ * way a new push to the pull request branch would. `rev` defaults to `main`, so a
+ * test can make a pull request advance without building a second clone.
+ */
+export async function setPullRequestHead(dir: string, number: number, rev = 'main'): Promise<string> {
+  const bareDir = path.join(dir, '.git', 'bare.git');
+  const inBare = new GitRunner({ gitPath: 'git', cwd: bareDir });
+  await inBare.run(['update-ref', `refs/pull/${number}/head`, rev]);
+  const { stdout } = await inBare.run(['rev-parse', `refs/pull/${number}/head`]);
+  return stdout.trim();
 }
 
 function templateFor(kind: FixtureKind): Promise<string> {
@@ -173,6 +219,24 @@ async function buildTemplate(kind: FixtureKind): Promise<string> {
       await fs.writeFile(path.join(dir, `feat-${n}.txt`), `${n}\n`, 'utf8');
       await git.stage([`feat-${n}.txt`]);
       await git.commit(`add feat ${n}`);
+    }
+    return dir;
+  }
+
+  if (kind === 'remote-pulls') {
+    await fs.writeFile(path.join(dir, 'a.txt'), 'one\n', 'utf8');
+    await git.stage(['a.txt']);
+    await git.commit('initial commit');
+    const bareDir = path.join(dir, '.git', 'bare.git');
+    const bareGit = new GitRunner({ gitPath: 'git', cwd: dir });
+    await bareGit.run(['init', '--bare', '--quiet', '--initial-branch=main', bareDir]);
+    await git.run(['remote', 'add', 'origin', './.git/bare.git']);
+    await git.run(['push', '--quiet', '-u', 'origin', 'main']);
+    // GitHub publishes these on the base repository for every pull request, so
+    // no fork remote is needed to reproduce a checkout.
+    const inBare = new GitRunner({ gitPath: 'git', cwd: bareDir });
+    for (const number of [1, 2]) {
+      await inBare.run(['update-ref', `refs/pull/${number}/head`, 'main']);
     }
     return dir;
   }

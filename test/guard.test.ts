@@ -21,6 +21,7 @@ function snapshot(overrides: Partial<GuardSnapshot> = {}): GuardSnapshot {
     stalenessMs: DEFAULT_STALENESS_MS,
     headPublished: null,
     branch: 'main',
+    readOnlyBranches: new Set<string>(),
     ...overrides,
   };
 }
@@ -543,6 +544,81 @@ test('branch-delete refuses the current branch and asks once for any other', () 
   assert.equal(allowed.confirmationLevel, 1);
   assert.equal(allowed.risk, 'medium');
   assert.deepEqual(allowed.remedies, ['confirm', 'cancel']);
+});
+
+/**
+ * Checking out a pull request switches branches, so a dirty tree blocks it with
+ * the same remedies a branch checkout offers. Nothing here is permanent, so it
+ * never asks for a confirmation on a clean tree.
+ */
+test('checkout-pr is dirty-blocked with the checkout remedies and needs no confirmation', () => {
+  const dirty = verdict({ action: 'checkout-pr', number: 150 }, { dirty: true }, 'en');
+  assert.equal(dirty.allow, false);
+  if (dirty.allow) return;
+  assert.equal(dirty.code, 'DIRTY_TREE');
+  assert.deepEqual(dirty.remedies, ['commit', 'stash', 'cancel']);
+  assert.equal(dirty.requiresConfirmation, undefined);
+
+  const dirtyId = verdict({ action: 'checkout-pr', number: 150 }, { dirty: true }, 'id');
+  assert.equal(dirtyId.allow, false);
+  if (dirtyId.allow) return;
+  assert.equal(dirtyId.message, hostText('id').guard.dirty);
+
+  assert.deepEqual(verdict({ action: 'checkout-pr', number: 150 }), { allow: true }, 'clean tree, no prompt');
+
+  const busy = verdict({ action: 'checkout-pr', number: 150 }, { operation: 'merge' });
+  assert.equal(busy.allow, false);
+  if (busy.allow) return;
+  assert.equal(busy.code, 'CONFLICT');
+  assert.deepEqual(busy.remedies, ['resolve-conflicts', 'cancel']);
+});
+
+/**
+ * A pull request from a fork is read only: its commits are someone else's, and
+ * nothing in this extension can push back to a repository the user does not
+ * control. The refusal is a block, not a confirmation, because no confirmation
+ * makes the push possible.
+ */
+test('push from a read-only branch is refused outright', () => {
+  const readOnly = new Set(['pr/9']);
+  const push = verdict(
+    { action: 'push', remote: 'origin', branch: 'pr/9' },
+    { branch: 'pr/9', readOnlyBranches: readOnly },
+    'en',
+  );
+  assert.equal(push.allow, false);
+  if (push.allow) return;
+  assert.equal(push.code, 'FORBIDDEN');
+  assert.deepEqual(push.remedies, ['cancel']);
+  assert.equal(push.requiresConfirmation, undefined, 'no confirm button on an impossible action');
+  assert.match(push.message, /fork pull request/i);
+
+  const pushId = verdict(
+    { action: 'push', remote: 'origin', branch: 'pr/9' },
+    { branch: 'pr/9', readOnlyBranches: readOnly },
+    'id',
+  );
+  assert.equal(pushId.allow, false);
+  if (pushId.allow) return;
+  assert.match(pushId.message, /fork/i);
+
+  // `push-up-to` publishes a commit to the same branch, so it is refused too.
+  const partial = verdict(
+    { action: 'push-up-to', remote: 'origin', branch: 'pr/9', hash: 'abcdef1' },
+    { branch: 'pr/9', readOnlyBranches: readOnly },
+  );
+  assert.equal(partial.allow, false);
+  if (partial.allow) return;
+  assert.equal(partial.code, 'FORBIDDEN');
+
+  // The same branch when it is not marked read only is unaffected.
+  assert.deepEqual(verdict({ action: 'push', remote: 'origin', branch: 'pr/9' }), { allow: true });
+  // And a read-only branch the user is not on does not block the branch they are.
+  const other = verdict(
+    { action: 'push', remote: 'origin', branch: 'feat/a' },
+    { branch: 'feat/a', readOnlyBranches: readOnly },
+  );
+  assert.deepEqual(other, { allow: true });
 });
 
 test('branch-delete-remote is level 2, high risk, and never dirty-blocked', () => {
