@@ -57,6 +57,16 @@ const GROUP_ORDER: readonly GroupId[] = ['needsReview', 'mine', 'other'];
 /** One second is the finest step a quota countdown needs. */
 const TICK_MS = 1000;
 
+/**
+ * A row's branch name, or null when the row carries no usable number. The
+ * GitHub mapper defaults a malformed number to 0, and `prBranchName` throws on
+ * that; this view renders inside the app error boundary, so one bad row must
+ * degrade to "not checked out" rather than replace the sidebar.
+ */
+function checkedOutBranch(pr: PullRequestInfo): string | null {
+  return pr.number > 0 ? prBranchName(pr.number) : null;
+}
+
 export function PullRequestsView(): JSX.Element {
   const strings = useT();
   const language = useSettingsStore((s) => s.language);
@@ -490,14 +500,34 @@ export function PullRequestsView(): JSX.Element {
                               ? 0
                               : summary.failing - summary.failingNames.length;
                           const name = strings.prs.rowAria(label, title, author);
-                          const isCheckedOut = status?.branch === prBranchName(pr.number);
+                          const checkoutBranch = checkedOutBranch(pr);
+                          const isCheckedOut = checkoutBranch !== null && status?.branch === checkoutBranch;
                           const isFork = pr.isFork;
                           // The button's `aria-label` replaces every descendant's
-                          // name, so the check state has to travel in it or a
-                          // screen reader user never hears it.
-                          const rowName = [name, checkText, checkNames]
+                          // name, so the row state and the check state have to
+                          // travel in it or a screen reader user never hears them.
+                          const rowName = [
+                            name,
+                            isCheckedOut ? strings.prs.checkedOut : '',
+                            isFork ? strings.prs.readOnlyChip : '',
+                            checkText,
+                            checkNames,
+                          ]
                             .filter((part) => part.length > 0)
                             .join(', ');
+                          // One name for the button and its tooltip: an already checked
+                          // out row refreshes on the same click, so promising "Checkout"
+                          // would describe a no-op.
+                          const checkoutName = isCheckedOut
+                            ? strings.prs.checkedOut
+                            : strings.prs.checkoutAria(String(pr.number));
+                          const checkout = (): void => {
+                            void runAction({
+                              action: 'checkout-pr',
+                              number: pr.number,
+                              ...(isFork ? { readOnly: true } : {}),
+                            });
+                          };
                           return (
                             <li key={pr.number} className="gc-prs__row">
                               <button
@@ -593,24 +623,16 @@ export function PullRequestsView(): JSX.Element {
                               {/*
                                 Checkout is a real tab stop: it does something the row
                                 click cannot, so it stays visible at rest instead of
-                                appearing only on hover like the link below.
+                                appearing only on hover like the link below. Already
+                                checked out, the same click refreshes pr/<n>, so the
+                                name says the state rather than promise a no-op.
                               */}
                               <button
                                 type="button"
                                 className="gc-prs__checkout"
-                                aria-label={strings.prs.checkoutAria(String(pr.number))}
-                                title={
-                                  isCheckedOut
-                                    ? strings.prs.checkedOut
-                                    : strings.prs.checkoutAria(String(pr.number))
-                                }
-                                onClick={() =>
-                                  void runAction({
-                                    action: 'checkout-pr',
-                                    number: pr.number,
-                                    ...(isFork ? { readOnly: true } : {}),
-                                  })
-                                }
+                                aria-label={checkoutName}
+                                title={checkoutName}
+                                onClick={checkout}
                               >
                                 <Icon name="git-branch" />
                               </button>

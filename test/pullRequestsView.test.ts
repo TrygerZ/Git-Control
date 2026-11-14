@@ -166,9 +166,13 @@ test('a row whose branch is checked out says so, and the row still opens the pul
   // reader never loses the ability to open the pull request on GitHub.
   assert.match(view, /openUrl\(pr\.url\)/);
   // The checkout button is a real tab stop with an accessible name carrying the
-  // number, not a hover-only decoration.
+  // number, not a hover-only decoration, and the name states the checked-out case
+  // rather than promising an action that would be a no-op.
+  // Both names come from the catalog, and the checked-out case wins when the row
+  // is already on its branch.
   assert.match(view, /checkoutAria/);
-  assert.match(view, /aria-label=\{strings\.prs\.checkoutAria\(String\(pr\.number\)\)\}/);
+  assert.match(view, /aria-label=\{checkoutName\}/);
+  assert.match(view, /isCheckedOut\s*\?\s*strings\.prs\.checkedOut/);
 });
 
 /**
