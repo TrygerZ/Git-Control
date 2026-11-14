@@ -46,6 +46,7 @@ import { useGitHubStore, useOperationStore, usePrDraftStore, useRepoStore, useRo
 import { useT } from './useT';
 import { EmptyState, FileListSkeleton, Icon, InfoBanner } from './ui';
 import type { Lang, PullRequestInfo } from '../messages';
+import { prBranchName } from '../validation';
 
 const CHIP_ORDER: readonly PrFilterId[] = ['open', 'review-requested', 'mine', 'draft'];
 
@@ -192,6 +193,7 @@ export function PullRequestsView(): JSX.Element {
   const draftStatus = usePrDraftStore((s) => s.status);
   const openDraft = usePrDraftStore((s) => s.open);
   const pushToast = useOperationStore((s) => s.pushToast);
+  const runAction = useOperationStore((s) => s.runAction);
   const dialogOpen = draftStatus !== 'closed';
   const canOfferCreate = branch !== null && !branchHasPr && linkage?.owner != null && linkage.repo != null;
 
@@ -488,6 +490,8 @@ export function PullRequestsView(): JSX.Element {
                               ? 0
                               : summary.failing - summary.failingNames.length;
                           const name = strings.prs.rowAria(label, title, author);
+                          const isCheckedOut = status?.branch === prBranchName(pr.number);
+                          const isFork = pr.isFork;
                           // The button's `aria-label` replaces every descendant's
                           // name, so the check state has to travel in it or a
                           // screen reader user never hears it.
@@ -524,6 +528,18 @@ export function PullRequestsView(): JSX.Element {
                                   <span className="gc-prs__refs">
                                     {head} → {base}
                                   </span>
+                                  {(isCheckedOut || isFork) && (
+                                    <span className="gc-prs__tags">
+                                      {isCheckedOut && (
+                                        <span className="gc-chip gc-prs__tag">{strings.prs.checkedOut}</span>
+                                      )}
+                                      {isFork && (
+                                        <span className="gc-chip gc-prs__tag" title={strings.prs.readOnlyHint}>
+                                          {strings.prs.readOnlyChip}
+                                        </span>
+                                      )}
+                                    </span>
+                                  )}
                                 </span>
                                 {/*
                                   Frame 05 puts the count at the row's right edge,
@@ -573,6 +589,30 @@ export function PullRequestsView(): JSX.Element {
                                     )}
                                   </span>
                                 )}
+                              </button>
+                              {/*
+                                Checkout is a real tab stop: it does something the row
+                                click cannot, so it stays visible at rest instead of
+                                appearing only on hover like the link below.
+                              */}
+                              <button
+                                type="button"
+                                className="gc-prs__checkout"
+                                aria-label={strings.prs.checkoutAria(String(pr.number))}
+                                title={
+                                  isCheckedOut
+                                    ? strings.prs.checkedOut
+                                    : strings.prs.checkoutAria(String(pr.number))
+                                }
+                                onClick={() =>
+                                  void runAction({
+                                    action: 'checkout-pr',
+                                    number: pr.number,
+                                    ...(isFork ? { readOnly: true } : {}),
+                                  })
+                                }
+                              >
+                                <Icon name="git-branch" />
                               </button>
                               {/*
                                 The row opens the same URL, so this is the frame's hover
