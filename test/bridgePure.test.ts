@@ -13,7 +13,10 @@ import {
   validateAction,
   validateCheckRunsPayload,
   validateCommitPullRequestsPayload,
+  validateCreatePullRequestPayload,
   validateEmptyPayload,
+  validatePrPreparePayload,
+  validatePrReviewersPayload,
   type Outcome,
 } from '../src/bridgePure';
 import type { ErrorCode, Request } from '../src/messages';
@@ -334,4 +337,129 @@ test('P21: commit pull request and check run payloads are validated before the c
     assert.throws(() => validateCommitPullRequestsPayload({ owner: 'o', repo: 'r', hash }, fail));
     assert.throws(() => validateCheckRunsPayload({ owner: 'o', repo: 'r', sha: hash }, fail));
   }
+});
+
+// ------------------------------------------------- create pull request (P22)
+
+test('github/createPullRequest is a mutation kind, so its key is replayed', () => {
+  const request = {
+    id: 'r1',
+    kind: 'github/createPullRequest',
+    payload: {
+      owner: 'o',
+      repo: 'r',
+      base: 'main',
+      head: 'feat/a',
+      title: 'T',
+      body: '',
+      draft: false,
+      reviewers: [],
+      publish: false,
+      idempotencyKey: 'k1',
+    },
+  } as unknown as Request;
+  assert.equal(idempotencyKeyOf(request), 'github/createPullRequest:k1');
+
+  // The two reads in the same phase are NOT mutations: they carry no key and
+  // must never be replayed from the idempotency store.
+  assert.equal(
+    idempotencyKeyOf({ id: 'r2', kind: 'github/prPrepare', payload: { owner: 'o', repo: 'r' } } as unknown as Request),
+    null,
+  );
+  assert.equal(
+    idempotencyKeyOf({ id: 'r3', kind: 'github/prReviewers', payload: { owner: 'o', repo: 'r' } } as unknown as Request),
+    null,
+  );
+});
+
+test('a create pull request payload with no key is not replayable', () => {
+  const request = {
+    id: 'r1',
+    kind: 'github/createPullRequest',
+    payload: { owner: 'o', repo: 'r', base: 'main', head: 'feat/a', title: 'T', body: '', draft: false, reviewers: [], publish: false },
+  } as unknown as Request;
+  assert.equal(idempotencyKeyOf(request), null);
+});
+
+test('validateCreatePullRequestPayload accepts a well formed request', () => {
+  const invalid = (detail: string): never => {
+    throw new Error(detail);
+  };
+  validateCreatePullRequestPayload(
+    {
+      owner: 'o',
+      repo: 'r',
+      base: 'main',
+      head: 'feat/a',
+      title: 'A title',
+      body: 'A body',
+      draft: true,
+      reviewers: ['ann'],
+      publish: true,
+      remote: 'origin',
+    },
+    invalid,
+  );
+});
+
+test('validateCreatePullRequestPayload rejects each bad field by name', () => {
+  const base = {
+    owner: 'o',
+    repo: 'r',
+    base: 'main',
+    head: 'feat/a',
+    title: 'A title',
+    body: '',
+    draft: false,
+    reviewers: [] as unknown[],
+    publish: false,
+  };
+  const detailOf = (patch: Record<string, unknown>): string => {
+    try {
+      validateCreatePullRequestPayload({ ...base, ...patch } as never, (detail) => {
+        throw new Error(detail);
+      });
+      return 'accepted';
+    } catch (err) {
+      return (err as Error).message;
+    }
+  };
+
+  assert.equal(detailOf({ owner: '-o' }), 'owner/repo');
+  assert.equal(detailOf({ repo: '' }), 'owner/repo');
+  assert.equal(detailOf({ base: '..' }), 'base');
+  assert.equal(detailOf({ head: '-x' }), 'head');
+  assert.equal(detailOf({ head: 'main' }), 'head', 'a pull request from a branch into itself');
+  assert.equal(detailOf({ title: '' }), 'title');
+  assert.equal(detailOf({ title: 'x'.repeat(257) }), 'title');
+  assert.equal(detailOf({ title: 'a\nb' }), 'title');
+  assert.equal(detailOf({ body: 'x'.repeat(65_537) }), 'body');
+  assert.equal(detailOf({ draft: 'yes' }), 'draft');
+  assert.equal(detailOf({ publish: 'yes' }), 'publish');
+  assert.equal(detailOf({ remote: '--upload-pack=calc' }), 'remote');
+  assert.equal(detailOf({ reviewers: ['bad login'] }), 'reviewers');
+  assert.equal(detailOf({ reviewers: Array.from({ length: 16 }, (_, i) => `u${i}`) }), 'reviewers');
+  assert.equal(detailOf({ reviewers: 'ann' }), 'reviewers');
+});
+
+test('validatePrPreparePayload and validatePrReviewersPayload check the slug pair', () => {
+  const detailOf = (fn: () => void): string => {
+    try {
+      fn();
+      return 'accepted';
+    } catch (err) {
+      return (err as Error).message;
+    }
+  };
+  const invalid = (detail: string): never => {
+    throw new Error(detail);
+  };
+
+  assert.equal(detailOf(() => validatePrPreparePayload({ owner: 'o', repo: 'r' }, invalid)), 'accepted');
+  assert.equal(detailOf(() => validatePrPreparePayload({ owner: 'o', repo: 'r', base: 'main' }, invalid)), 'accepted');
+  assert.equal(detailOf(() => validatePrPreparePayload({ owner: 'o', repo: 'r', base: '-x' }, invalid)), 'base');
+  assert.equal(detailOf(() => validatePrPreparePayload({ owner: '', repo: 'r' }, invalid)), 'owner/repo');
+
+  assert.equal(detailOf(() => validatePrReviewersPayload({ owner: 'o', repo: 'r' }, invalid)), 'accepted');
+  assert.equal(detailOf(() => validatePrReviewersPayload({ owner: 'o', repo: '..' }, invalid)), 'owner/repo');
 });

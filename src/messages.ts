@@ -838,6 +838,75 @@ export interface ActionsLogResult {
   rateLimit: GitHubRateLimit;
 }
 
+// ------------------------------------------------ pull requests (write, P22)
+
+export interface PrPreparePayload {
+  owner: string;
+  repo: string;
+  /** Validated with `validateBranchName`; absent means the repository default. */
+  base?: string;
+}
+
+/**
+ * Everything the create dialog asks before it draws. `existing` is the open pull
+ * request for the same head, so the dialog can refuse a duplicate instead of
+ * letting the API answer 422.
+ */
+export interface PrPrepareResult {
+  head: string;
+  base: string;
+  /** Candidate base branches, current one first. */
+  bases: string[];
+  /** Local and remote branch names the head can be chosen from. */
+  heads: string[];
+  /** False means the publish push has to run before the create call. */
+  onRemote: boolean;
+  ahead: number;
+  files: number;
+  commits: Array<{ hash: string; subject: string }>;
+  template: string | null;
+  draft: { title: string; body: string };
+  existing: { number: number; url: string; title: string } | null;
+  connected: boolean;
+  canWrite: 'yes' | 'no' | 'unknown';
+  collaboratorsAvailable: boolean;
+}
+
+export interface CreatePullRequestPayload extends GitHubMutationMeta {
+  owner: string;
+  repo: string;
+  base: string;
+  /** Also the refspec of the publish push, so it is held to the branch rule. */
+  head: string;
+  title: string;
+  body: string;
+  draft: boolean;
+  reviewers: string[];
+  /** Push `head` to `remote` before creating, when it is not there yet. */
+  publish: boolean;
+  remote?: string;
+}
+
+export interface CreatePullRequestResult {
+  number: number;
+  url: string;
+  published: boolean;
+  /** Reviewers GitHub refused. The pull request itself was still created. */
+  reviewersFailed: string[];
+  rateLimit: GitHubRateLimit;
+}
+
+export interface PrReviewersPayload {
+  owner: string;
+  repo: string;
+}
+
+export interface PrReviewersResult {
+  logins: string[];
+  /** False when the collaborators read failed; the dialog falls back to free text. */
+  available: boolean;
+}
+
 export interface CommitAuthorInfo {
   hash: string;
   login: string | null;
@@ -983,6 +1052,15 @@ export interface RequestMap {
   'github/actionsJobs': { payload: ActionsJobsPayload; response: ActionsJobsResult };
   /** Processed tail of one job log. Sign-in required. Carries no URL. */
   'github/actionsLog': { payload: ActionsLogPayload; response: ActionsLogResult };
+  /** Read-only prepare for the create dialog. No idempotency key. */
+  'github/prPrepare': { payload: PrPreparePayload; response: PrPrepareResult };
+  /** The one GitHub write in this phase. Carries an idempotency key. */
+  'github/createPullRequest': {
+    payload: CreatePullRequestPayload;
+    response: CreatePullRequestResult;
+  };
+  /** Reviewer login suggestions. Read-only. */
+  'github/prReviewers': { payload: PrReviewersPayload; response: PrReviewersResult };
   'settings/get': { payload: SettingsGetPayload; response: SettingsSnapshot };
   'settings/set': { payload: SettingsSetPayload; response: SettingsSnapshot };
   /**
