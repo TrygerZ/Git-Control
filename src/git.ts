@@ -457,6 +457,68 @@ export class GitRunner {
     return parseRevListCounts(stdout);
   }
 
+  /**
+   * Commits a pull request would publish: `<base>..<head>`, oldest first.
+   *
+   * Both sides are branch names validated before any argv exists, so an option
+   * smuggled through either one never reaches git. `--reverse` after `--max-count`
+   * is deliberate: git caps the traversal first and reverses the capped set, so a
+   * limit keeps the newest commits, which is what a publish dialog lists.
+   */
+  async rangeLog(base: string, head: string, limit = 500): Promise<ParsedCommit[]> {
+    if (!validateBranchName(base)) {
+      throw new GitError({ code: 'VALIDATION_ERROR', message: `Invalid base branch: ${base}` });
+    }
+    if (!validateBranchName(head)) {
+      throw new GitError({ code: 'VALIDATION_ERROR', message: `Invalid head branch: ${head}` });
+    }
+    if (!validateLimit(limit)) {
+      throw new GitError({ code: 'VALIDATION_ERROR', message: `Invalid commit limit: ${String(limit)}` });
+    }
+    const range = sanitizeRefArg(`${base}..${head}`);
+    const { stdout } = await this.run([
+      'log',
+      '-z',
+      LOG_FORMAT,
+      `--max-count=${limit}`,
+      '--topo-order',
+      '--reverse',
+      range,
+    ]);
+    return parseLog(stdout);
+  }
+
+  /** Distinct files changed across `<base>..<head>`, i.e. the range diff, not a per-commit sum. */
+  async diffFileCount(base: string, head: string): Promise<number> {
+    if (!validateBranchName(base)) {
+      throw new GitError({ code: 'VALIDATION_ERROR', message: `Invalid base branch: ${base}` });
+    }
+    if (!validateBranchName(head)) {
+      throw new GitError({ code: 'VALIDATION_ERROR', message: `Invalid head branch: ${head}` });
+    }
+    const range = sanitizeRefArg(`${base}..${head}`);
+    const { stdout } = await this.run(['diff', '--name-only', '--no-color', range]);
+    return parseRefNameList(stdout).length;
+  }
+
+  /**
+   * Whether the local ref list already holds `refs/remotes/<remote>/<branch>`.
+   *
+   * Reads `refs()` rather than asking the remote: a publish flow must answer
+   * offline, and a tracking ref is the only local evidence that a push landed.
+   */
+  async remoteTrackingExists(remote: string, branch: string): Promise<boolean> {
+    if (!validateRemoteName(remote)) {
+      throw new GitError({ code: 'VALIDATION_ERROR', message: `Invalid remote name: ${remote}` });
+    }
+    if (!validateBranchName(branch)) {
+      throw new GitError({ code: 'VALIDATION_ERROR', message: `Invalid branch name: ${branch}` });
+    }
+    const target = `refs/remotes/${remote}/${branch}`;
+    const refs = await this.refs();
+    return refs.some((ref) => ref.refName === target);
+  }
+
   async show(hash: string): Promise<string> {
     this.assertHash(hash);
     const { stdout } = await this.run(['show', '--no-color', sanitizeRefArg(hash)]);
