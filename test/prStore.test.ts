@@ -33,6 +33,9 @@ function pr(number: number, state: PullRequestInfo['state'] = 'open'): PullReque
     author: 'someone',
     updatedAt: '2026-11-01T00:00:00Z',
     requestedReviewers: [],
+    headRepo: 'o/r',
+    isFork: false,
+    maintainerCanModify: true,
   };
 }
 

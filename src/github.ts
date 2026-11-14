@@ -1736,16 +1736,30 @@ function toPullRequests(body: unknown): PullRequestInfo[] {
       title?: unknown;
       state?: unknown;
       html_url?: unknown;
-      head?: { ref?: unknown; sha?: unknown };
+      head?: {
+        ref?: unknown;
+        sha?: unknown;
+        repo?: { full_name?: unknown; fork?: unknown } | null;
+      };
       base?: { ref?: unknown };
       draft?: unknown;
       user?: { login?: unknown };
       updated_at?: unknown;
       merged_at?: unknown;
       requested_reviewers?: unknown;
+      maintainer_can_modify?: unknown;
     };
     const headSha = typeof pr.head?.sha === 'string' && pr.head.sha.length > 0 ? pr.head.sha : null;
     const merged = typeof pr.merged_at === 'string' && pr.merged_at.length > 0;
+    const headRepoRaw = pr.head?.repo;
+    const headRepo =
+      typeof headRepoRaw?.full_name === 'string' && headRepoRaw.full_name.length > 0
+        ? headRepoRaw.full_name
+        : null;
+    // A missing head repository means the fork was deleted. The ref still exists
+    // on the base repository, so the row is still checkable but never writable.
+    const isFork =
+      typeof headRepoRaw !== 'object' || headRepoRaw === null || headRepoRaw.fork === true;
     return {
       number: typeof pr.number === 'number' ? pr.number : 0,
       title: typeof pr.title === 'string' ? pr.title : '',
@@ -1753,6 +1767,9 @@ function toPullRequests(body: unknown): PullRequestInfo[] {
       url: typeof pr.html_url === 'string' ? pr.html_url : '',
       headRef: typeof pr.head?.ref === 'string' ? pr.head.ref : '',
       baseRef: typeof pr.base?.ref === 'string' ? pr.base.ref : '',
+      headRepo,
+      isFork,
+      maintainerCanModify: pr.maintainer_can_modify === true,
       draft: pr.draft === true,
       author: typeof pr.user?.login === 'string' ? pr.user.login : '',
       updatedAt: typeof pr.updated_at === 'string' ? pr.updated_at : '',

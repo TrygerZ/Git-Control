@@ -853,6 +853,9 @@ test('pullRequestLabel states the number, state word, and draft marker', () => {
     author: 'octocat',
     updatedAt: '2026-06-15T10:00:00.000Z',
     requestedReviewers: [],
+    headRepo: 'o/r',
+    isFork: false,
+    maintainerCanModify: true,
   };
   assert.equal(pullRequestLabel(base, 'id'), '#12 Terbuka');
   assert.equal(pullRequestLabel({ ...base, draft: true }, 'id'), '#12 Terbuka · draft');

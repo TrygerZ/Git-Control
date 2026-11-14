@@ -28,6 +28,9 @@ function pr(over: Partial<PullRequestInfo> & { number: number }): PullRequestInf
     author: 'someone',
     updatedAt: '2026-11-01T00:00:00Z',
     requestedReviewers: [],
+    headRepo: 'o/r',
+    isFork: false,
+    maintainerCanModify: true,
     ...over,
   };
 }
