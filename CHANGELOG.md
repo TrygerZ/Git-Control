@@ -5,6 +5,21 @@ All notable changes to the "Git Control" extension will be documented in this fi
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.18.0] - 2026-11-14
+
+### Added
+- Create a pull request from the Pull requests view, with the title and description prefilled from your commits and the repository template.
+- A branch that is not on the remote is published with upstream tracking first, then the pull request is created. Nothing is ever force-pushed.
+- Choose the base and compare branches, request reviewers, and open the pull request as a draft.
+- The dialog previews the exact push command and API call that will run, and shows the template path it read.
+- A pull request that already exists for the same branch pair is reported with its number and a link, instead of creating a second one.
+- Without a GitHub token the dialog explains how to connect and offers a publish-only path that pushes the branch without calling the API.
+- Quick actions and the Help panel offer Create pull request when the current branch is ahead of its upstream.
+
+### Changed
+- Creating a pull request needs a token with write access to pull requests. Reconnect if your token only has read access.
+- A reviewer that GitHub refuses no longer hides a successful creation; the names that could not be requested are listed in the toast.
+
 ## [3.17.0] - 2026-11-13
 
 ### Added
