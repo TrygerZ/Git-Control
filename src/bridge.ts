@@ -1609,8 +1609,9 @@ function validateAction(action: GitActionPayload, msg: string = 'Invalid request
 
 function verdictStatus(verdict: Extract<GuardVerdict, { allow: false }>): number {
   switch (verdict.code) {
-    // The GitHub write guard produces these three; the git guard never does, so
-    // widening the mapping here cannot change a git verdict.
+    // The GitHub write guard produces all three. The git guard also produces
+    // FORBIDDEN now, for a push from a fork pull request branch, and 403 is the
+    // right answer for both: the request is understood and refused.
     case 'AUTH_ERROR':
       return 401;
     case 'FORBIDDEN':
