@@ -167,7 +167,7 @@ Behavior that applies to both token types:
 * Writes are never retried automatically. A repeated `POST` would create a second pull request, comment, or release, so a failed write is yours to retry.
 * Creating a pull request from a branch that is not on the remote publishes that branch with upstream tracking first. Nothing is ever force-pushed.
 * A pull request that already exists for the same branch pair is reported with its number instead of creating a second one.
-* A pull request from a fork is checked out for reading only. The row is marked read only, and a push from its `pr/<number>` branch is refused by the host before any git process starts.
+* A pull request from a fork is checked out for reading only. The row is marked read only, and a push from its `pr/<number>` branch is refused by the host before any git process starts. The same refusal covers publishing that branch from the create pull request dialog, and the mark is cleared by a later checkout of a same-repository pull request with the same number.
 * Checking out a pull request runs the repository's own `post-checkout` hook, not a hook from the fork. Review the hook in `.git/hooks` before checking out code you do not trust.
 
 **After changing a token's scopes**, reconnect so the new permissions are read:
