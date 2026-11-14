@@ -362,6 +362,8 @@ const id: Catalog = {
         `Hapus branch ${branch}. Git menolak bila branch punya commit yang belum digabung.`,
       branchDeleteRemote: (branch: string, remote: string) =>
         `Hapus branch ${branch} di ${remote}. Semua orang kehilangannya, dan tidak ada undo.`,
+      checkoutPr: (number: number) =>
+        `Mengambil head pull request ke pr/${number} lalu pindah ke sana. Branch Anda saat ini tidak berubah.`,
       defaultAction: 'Menjalankan perintah git.',
     },
 
@@ -390,6 +392,7 @@ const id: Catalog = {
       cherryPickAbort: 'Batalkan cherry-pick',
       branchDelete: (branch: string) => `Hapus branch ${branch}`,
       branchDeleteRemote: (branch: string) => `Hapus ${branch} di remote`,
+      checkoutPr: (number: number) => `Checkout #${number}`,
       defaultAction: 'Tindakan git',
     },
 

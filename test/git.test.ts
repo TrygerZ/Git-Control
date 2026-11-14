@@ -1260,9 +1260,15 @@ test('fetchPullRequest creates pr/<n> from the pull request head', async (t) => 
   assert.deepEqual(result, { branch: 'pr/1', created: true });
   assert.equal(await git.localBranchExists('pr/1'), true);
 
-  const head = await git.run(['rev-parse', 'refs/pull/1/head']);
+  // Read the head from the bare origin, not from the working repository: a plain
+  // fetch writes FETCH_HEAD and nothing else, so a local `refs/pull/*` copy would
+  // be a ref this feature invented and would show up in the ref list.
+  const origin = new GitRunner({ gitPath: 'git', cwd: path.join(dir, '.git', 'bare.git') });
+  const head = await origin.run(['rev-parse', 'refs/pull/1/head']);
   const tip = await git.run(['rev-parse', 'refs/heads/pr/1']);
   assert.equal(tip.stdout.trim(), head.stdout.trim(), 'the branch points at the pull request head');
+  const local = await git.run(['for-each-ref', '--format=%(refname)', 'refs/pull']);
+  assert.equal(local.stdout.trim(), '', 'the fetch writes no local pull ref');
 
   assert.ok(lines.length > 0);
   for (const line of lines) {

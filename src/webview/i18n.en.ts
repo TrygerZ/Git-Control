@@ -367,6 +367,8 @@ const en = {
         `Delete branch ${branch}. Git refuses when the branch has commits that are not merged.`,
       branchDeleteRemote: (branch: string, remote: string) =>
         `Delete branch ${branch} on ${remote}. Everyone loses it, and there is no undo.`,
+      checkoutPr: (number: number) =>
+        `Fetches the pull request head into pr/${number} and switches to it. Your current branch is unchanged.`,
       defaultAction: 'Run git command.',
     },
 
@@ -395,6 +397,7 @@ const en = {
       cherryPickAbort: 'Abort cherry-pick',
       branchDelete: (branch: string) => `Delete branch ${branch}`,
       branchDeleteRemote: (branch: string) => `Delete ${branch} on the remote`,
+      checkoutPr: (number: number) => `Checkout #${number}`,
       defaultAction: 'Git action',
     },
 

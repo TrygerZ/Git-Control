@@ -928,6 +928,8 @@ export function gitCommandOf(
       return `git branch -d ${s(action.branch)}`;
     case 'branch-delete-remote':
       return `git push ${s(action.remote)} --delete ${s(action.branch)}`;
+    case 'checkout-pr':
+      return `git fetch ${s(action.remote ?? 'origin')} pull/${action.number}/head && git switch pr/${action.number}`;
     default:
       return 'git';
   }
@@ -1010,6 +1012,8 @@ export function consequenceOf(action: GitActionRequest, lang: Lang = 'en'): stri
       return strings.branchDelete(s(action.branch));
     case 'branch-delete-remote':
       return strings.branchDeleteRemote(s(action.branch), s(action.remote));
+    case 'checkout-pr':
+      return strings.checkoutPr(action.number);
     default:
       return strings.defaultAction;
   }
@@ -1070,6 +1074,8 @@ export function actionTitle(action: GitActionRequest, lang: Lang = 'en'): string
       return strings.branchDelete(s(action.branch));
     case 'branch-delete-remote':
       return strings.branchDeleteRemote(s(action.branch));
+    case 'checkout-pr':
+      return strings.checkoutPr(action.number);
     default:
       return strings.defaultAction;
   }
@@ -1085,6 +1091,7 @@ export function actionTarget(action: GitActionRequest): string {
     return 'HEAD';
   }
   if (action.action === 'stash-apply' || action.action === 'stash-drop') return `stash@{${action.index}}`;
+  if (action.action === 'checkout-pr') return `pr/${action.number}`;
   if ('branch' in action && typeof action.branch === 'string') return sanitizeGitText(action.branch);
   if ('name' in action) return sanitizeGitText(action.name);
   if ('hash' in action) return shortHash(action.hash);
