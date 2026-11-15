@@ -805,7 +805,14 @@ export function GraphCanvas({
           scroller drifts away with the content.
         */}
         <div className="gc-graph__stage">
-          {graph !== null && <LaneGutterView graph={graph} zoom={zoom} scrollTop={scrollTop} />}
+          {graph !== null && (
+            <LaneGutterView
+              graph={graph}
+              zoom={zoom}
+              scrollTop={scrollTop}
+              scrollLeft={scrollLeft}
+            />
+          )}
           {/*
             One tab stop for the whole grid. Tab lands on the container, which
             immediately hands focus to the cursor row (`onFocus` below) so the row's

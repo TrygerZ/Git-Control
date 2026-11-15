@@ -10,7 +10,14 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { gutterRowHeight, laneRowTop, laneSummaries, mergedLanes } from '../src/webview/laneGutter';
+import {
+  gutterRowHeight,
+  laneRowTop,
+  laneSummaries,
+  mergedLanes,
+  mergedNameAt,
+  type LaneSummary,
+} from '../src/webview/laneGutter';
 import { LANE_HEIGHT, MIN_ZOOM, RULER_HEIGHT, laneY } from '../src/webview/viewport';
 import type { GraphEdge, GraphLane, GraphNode, RefInfo } from '../src/messages';
 
@@ -140,11 +147,12 @@ test('every lane shape from the frame gets its own status word', () => {
     { index: 4, ref: 'refs/tags/v2.7.0', color: '#555555' },
     { index: 5, color: '#666666' },
   ];
+  // x grows with time, so the largest x is the newest commit: that is the tip.
   const nodes = [
-    node(A, 0),
-    node(C, 0),
-    node(B, 1),
-    node(D, 2),
+    node(A, 0, { x: 400 }),
+    node(C, 0, { x: 300 }),
+    node(B, 1, { x: 200 }),
+    node(D, 2, { x: 100 }),
   ];
   // main reaches the feat tip, so feat is merged into main.
   const edges = [edge(A, B, 0, 1), edge(B, C, 1, 0)];
@@ -165,6 +173,77 @@ test('every lane shape from the frame gets its own status word', () => {
   );
   // The upstream detail is what the frame prints after the dot.
   assert.equal(summaries[0]?.detail, 'origin/main');
+});
+
+test('the tip of a lane is its newest commit, not its oldest', () => {
+  // x grows with time in the layout (oldest first), so a lane's tip is the node
+  // with the LARGEST x. Picking the smallest makes the root commit look like the
+  // tip, which inverts every merged decision: `main` reported itself as merged and
+  // a fully merged lane reported `remote only`. Reproduced on a real repository.
+  const lanes: GraphLane[] = [
+    { index: 0, ref: 'refs/heads/main', color: '#111111' },
+    { index: 1, ref: 'refs/heads/topic', color: '#222222' },
+  ];
+  // main: root R (x=100) ... tip M (x=500). topic ends at T (x=300), which main's
+  // tip M has as a parent, so topic is contained in main. Main is reached by nobody.
+  //
+  // The shape matters: M -> T -> R, not M -> R and T -> R. The second shape is a
+  // plain fork that the earlier test already pins as unmerged, and it cannot
+  // separate the bug from the fix. This one does: picking the smallest x makes
+  // lane 0's "tip" the root R, and then T's walk reaches R, so lane 0 falsely
+  // reports merged while lane 1 reports unmerged. Exactly the inversion seen on
+  // the real repository.
+  const R = 'r'.repeat(40);
+  const M = 'm'.repeat(40);
+  const T = 't'.repeat(40);
+  const nodes = [node(R, 0, { x: 100 }), node(M, 0, { x: 500 }), node(T, 1, { x: 300 })];
+  const edges = [edge(M, T, 0, 1), edge(T, R, 1, 0)];
+  const summaries = laneSummaries(
+    lanes,
+    nodes,
+    edges,
+    [ref('main', 'local', 'origin/main'), ref('topic', 'local')],
+    fallback,
+  );
+  assert.equal(summaries[0]?.status, 'upstream', 'main is not merged into anything');
+  assert.equal(summaries[1]?.status, 'merged', 'topic is contained in main');
+});
+
+test('a lane lists every ref that points into it, not just the winner', () => {
+  // The row used to print one name per lane, so on a repository with 41 branches
+  // sharing a lane, 40 names vanished. The row now carries the whole list.
+  const lanes: GraphLane[] = [{ index: 0, ref: 'refs/heads/main', color: '#111111' }];
+  const nodes = [node(A, 0, { x: 100 })];
+  const refs = [
+    ref('main', 'local', 'origin/main'),
+    ref('feat/a', 'local'),
+    ref('feat/b', 'local'),
+    ref('origin/feat/c', 'remote'),
+  ];
+  const summaries = laneSummaries(lanes, nodes, [], refs, fallback);
+  assert.equal(summaries.length, 1);
+  assert.deepEqual(summaries[0]?.names, ['main', 'feat/a', 'feat/b', 'origin/feat/c']);
+  // The first name stays the lane's headline so the frame's layout is unchanged.
+  assert.equal(summaries[0]?.name, 'main');
+});
+
+test('the headline is the lane ref the layout picked, not whichever ref arrives first', () => {
+  // `lane.ref` is the highest-priority ref the layout chose for that lane (current
+  // branch, then remote, then local, then tag). The `refs` array arrives in git's
+  // `for-each-ref` order, which is alphabetical, so taking `names[0]` from it makes
+  // the headline an arbitrary branch. On a real repository the `main` row was
+  // headlined `ci/fix-gate-failures`.
+  const lanes: GraphLane[] = [{ index: 0, ref: 'refs/heads/main', color: '#111111' }];
+  const nodes = [node(A, 0, { x: 100 })];
+  // Alphabetical order, so the current branch is NOT first.
+  const refs = [
+    ref('ci/build', 'local'),
+    ref('feat/a', 'local'),
+    ref('main', 'local', 'origin/main'),
+  ];
+  const summaries = laneSummaries(lanes, nodes, [], refs, fallback);
+  assert.equal(summaries[0]?.name, 'main', 'the layout ref is the headline');
+  assert.deepEqual(summaries[0]?.names, ['main', 'ci/build', 'feat/a'], 'and it leads the list');
 });
 
 test('the colour comes from the layout lane, never from a literal here', () => {
@@ -313,6 +392,46 @@ test('the column is decorative for assistive tech: the rows repeat the graph', (
   assert.doesNotMatch(src, /role="grid"|role="listbox"/);
 });
 
+test('a row shows the headline name plus how many others share the lane', () => {
+  // 41 branches can land in one lane. Printing all of them would be a wall of
+  // text, printing one hides 40. The row prints the headline and a `+N` count, and
+  // the full list rides in the tooltip.
+  const src = read('src/webview/LaneGutterView.tsx');
+  assert.match(src, /row\.names/, 'the row reads the full list');
+  assert.match(src, /names\.slice\(1\)|names\.length - 1/, 'it counts the others');
+  assert.match(src, /laneMoreOthers|laneOthers/, 'the count is a catalog string, not a literal');
+  // The gap is the CSS `gap` on the flex container, not a space in the string, so
+  // the count has to be a flex child that the container actually spaces.
+  const css = read('src/webview/styles.css');
+  const nameRule = css.match(/\.gc-gutter__name\s*\{([^}]*)\}/)?.[1] ?? '';
+  assert.match(nameRule, /display:\s*flex/, 'the name is a flex row so the count is spaced');
+  // 2 px reads as one word next to an ellipsized branch name. The count needs a
+  // visible break from the name it does not belong to.
+  assert.match(nameRule, /gap:\s*var\(--gc-space-2\)/, 'and the gap is one visible step');
+  // The tooltip carries every name, so nothing is lost. A newline never renders in
+  // a native tooltip, so the separator has to be a visible character.
+  assert.match(src, /names\.join\(' · '\)|names\.join\(" · "\)|names\.join\('\\u00b7'\)/, 'the tooltip lists them all on one readable line');
+  for (const lang of ['en', 'id']) {
+    const catalog = read(`src/webview/i18n.${lang}.ts`);
+    assert.ok(catalog.includes('    laneMoreOthers:'), `${lang} catalog is missing laneMoreOthers`);
+  }
+});
+
+test('the headline keeps a usable width, so the count does not eat the name', () => {
+  // In a 150 px column the label was shrinking to `fix/fronten...` while `+14 more`
+  // kept its full width. The name is the identity; the count is the hint. The name
+  // gets a floor and the count yields its space before the name does.
+  const css = read('src/webview/styles.css');
+  const label = css.match(/\.gc-gutter__label\s*\{([^}]*)\}/)?.[1] ?? '';
+  assert.ok(label.length > 0, 'the label has a rule');
+  assert.match(label, /flex:\s*1 1 auto|flex-grow:\s*1/, 'the label takes the free space');
+  const more = css.match(/\.gc-gutter__more\s*\{([^}]*)\}/)?.[1] ?? '';
+  assert.ok(more.length > 0, 'the count has a rule');
+  assert.match(more, /flex:\s*0 0 auto|flex:\s*none/, 'the count never grows');
+  // The count may shrink to nothing before the name is squeezed out.
+  assert.match(more, /min-width:\s*0/, 'the count can shrink');
+});
+
 test('the gutter styles use tokens only and the frame width', () => {
   const css = read('src/webview/styles.css');
   const gutter = css.match(/\.gc-gutter\s*\{([^}]*)\}/)?.[1] ?? '';
@@ -337,4 +456,93 @@ test('every other lane band is tinted, so the rows read as separate lanes', () =
   assert.match(alt, /background:/, 'it is a fill');
   assert.match(alt, /var\(--gc-/, 'from a token, never a literal');
   assert.doesNotMatch(alt, /#[0-9a-fA-F]{3,8}/, 'no literal colour');
+});
+
+// ------------------------------------------------- merged lane follows scroll
+
+/**
+ * Frame 01's merged row does not list one name. The branches merged into `main`
+ * sit along the timeline in the order they landed, and the row names the branch
+ * whose merge boundary the viewport is currently past. `mergedNameAt` is that
+ * answer, kept pure so the scroll behaviour is testable without a DOM.
+ */
+function summary(names: string[], status: LaneSummary['status'] = 'merged'): LaneSummary {
+  return { index: 2, color: '#123456', name: names[0] ?? '', names, commits: 9, status, detail: null };
+}
+
+test('the merged row names the branch whose merge the viewport is looking at', () => {
+  // Three branches merged in this order, each with a merge commit at x.
+  //   feat/a at x 300, docs/b at x 600, fix/c at x 900
+  //
+  // The rule is "the next merge at or after the left edge": the row tells you
+  // which branch is coming, and advances the moment the previous one is fully
+  // behind you. The user's words: show the NEXT merged branch.
+  const row = summary(['feat/a', 'docs/b', 'fix/c']);
+  const boundaries = [
+    { name: 'feat/a', x: 300 },
+    { name: 'docs/b', x: 600 },
+    { name: 'fix/c', x: 900 },
+  ];
+
+  assert.equal(mergedNameAt(row, boundaries, 0), 'feat/a', 'at the far left, the first merge is ahead');
+  assert.equal(mergedNameAt(row, boundaries, 299), 'feat/a', 'still approaching feat/a');
+  assert.equal(mergedNameAt(row, boundaries, 300), 'feat/a', 'at the merge itself, still feat/a');
+  assert.equal(mergedNameAt(row, boundaries, 301), 'docs/b', 'past feat/a, docs/b is the next one');
+  assert.equal(mergedNameAt(row, boundaries, 599), 'docs/b');
+  assert.equal(mergedNameAt(row, boundaries, 600), 'docs/b', 'at docs/b, still docs/b');
+  assert.equal(mergedNameAt(row, boundaries, 601), 'fix/c');
+  assert.equal(mergedNameAt(row, boundaries, 900), 'fix/c', 'the last merge holds while it is on screen');
+  assert.equal(mergedNameAt(row, boundaries, 99999), 'fix/c', 'past the last merge, the last name holds');
+});
+
+test('a gap between merges keeps the next branch named, never a blank row', () => {
+  // The real repository has 41 refs but only 14 merge commits, so there are long
+  // stretches with no boundary. The row keeps naming the branch that is coming,
+  // which is the whole point: it tells you what is ahead, not what is behind.
+  const row = summary(['feat/a', 'docs/b']);
+  const boundaries = [
+    { name: 'feat/a', x: 100 },
+    { name: 'docs/b', x: 9000 },
+  ];
+  assert.equal(mergedNameAt(row, boundaries, 50), 'feat/a', 'before the first merge');
+  assert.equal(mergedNameAt(row, boundaries, 100), 'feat/a', 'at the first merge');
+  assert.equal(mergedNameAt(row, boundaries, 2000), 'docs/b', 'past feat/a, docs/b is next across the gap');
+  assert.equal(mergedNameAt(row, boundaries, 4500), 'docs/b');
+  assert.equal(mergedNameAt(row, boundaries, 8999), 'docs/b', 'still approaching docs/b');
+  assert.equal(mergedNameAt(row, boundaries, 9000), 'docs/b', 'at docs/b');
+});
+
+test('a name that is not in the row is skipped, not rendered', () => {
+  // A merge can bring in a commit whose ref is no longer in the row, for example a
+  // deleted branch or a ref outside the page. Naming it would print a branch the
+  // row does not hold, so the search continues to the next boundary that does.
+  const row = summary(['feat/a', 'fix/c']);
+  const boundaries = [
+    { name: 'feat/a', x: 100 },
+    { name: 'deleted/branch', x: 200 },
+    { name: 'fix/c', x: 300 },
+  ];
+  assert.equal(mergedNameAt(row, boundaries, 150), 'fix/c', 'the deleted branch is skipped entirely');
+  assert.equal(mergedNameAt(row, boundaries, 300), 'fix/c');
+});
+
+test('a row with no boundaries falls back to its headline', () => {
+  const row = summary(['feat/a', 'docs/b']);
+  assert.equal(mergedNameAt(row, [], 0), 'feat/a');
+  assert.equal(mergedNameAt(row, [], 5000), 'feat/a');
+});
+
+test('only the merged row follows the scroll; every other row keeps its headline', () => {
+  const src = read('src/webview/LaneGutterView.tsx');
+  // The rule is scoped by status, so an upstream or tag row cannot start changing
+  // name as the user pans.
+  assert.match(src, /status === 'merged'/, 'the behaviour is gated on the merged status');
+  assert.match(src, /mergedNameAt\(/, 'and reads the pure helper');
+});
+
+test('the view derives the scroll position from the scroller, not from a guess', () => {
+  const src = read('src/webview/LaneGutterView.tsx');
+  // `scrollLeft` is what decides which merge is ahead of the viewport.
+  assert.match(src, /scrollLeft/, 'the row reads the horizontal offset');
+  assert.match(src, /zoom/, 'and scales it into world units');
 });

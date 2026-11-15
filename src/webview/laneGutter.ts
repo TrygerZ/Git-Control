@@ -15,7 +15,10 @@ export type LaneStatusKind = 'merged' | 'upstream' | 'local-only' | 'remote-only
 export interface LaneSummary {
   index: number;
   color: string;
+  /** Headline name: the highest-priority ref whose tip lands in this lane. */
   name: string;
+  /** Every ref whose tip lands in this lane, headline first. Never empty. */
+  names: string[];
   commits: number;
   status: LaneStatusKind;
   detail: string | null;
@@ -109,22 +112,35 @@ export function laneSummaries(
   fallbackName: (index: number) => string,
 ): LaneSummary[] {
   const counts = new Map<number, number>();
-  /** Newest node per lane, which is the lane's tip: smallest `x`, first wins a tie. */
+  const laneOfHash = new Map<string, number>();
+  /** Newest node per lane, which is the lane's tip: largest `x`, first wins a tie. */
   const tipOf = new Map<number, GraphNode>();
   for (const node of nodes) {
     counts.set(node.lane, (counts.get(node.lane) ?? 0) + 1);
+    laneOfHash.set(node.hash, node.lane);
     const current = tipOf.get(node.lane);
-    if (current === undefined || node.x < current.x) tipOf.set(node.lane, node);
+    if (current === undefined || node.x > current.x) tipOf.set(node.lane, node);
   }
   const merged = mergedLanes(
     [...tipOf].map(([lane, node]) => ({ lane, hash: node.hash })),
     edges,
   );
 
+  /** Ref names per lane, in the order `refs` arrives, so the row is deterministic. */
+  const namesOf = new Map<number, string[]>();
+  for (const ref of refs) {
+    const lane = laneOfHash.get(ref.objectName);
+    if (lane === undefined) continue;
+    const list = namesOf.get(lane);
+    if (list === undefined) namesOf.set(lane, [stripRefPrefix(ref.refName)]);
+    else list.push(stripRefPrefix(ref.refName));
+  }
+
   return lanes.map((lane) => {
     const ref = lane.ref;
     const kind = ref === undefined ? null : kindOfRef(ref);
     const short = ref === undefined ? null : stripRefPrefix(ref);
+    const names = namesOf.get(lane.index) ?? [short ?? fallbackName(lane.index)];
 
     let status: LaneStatusKind;
     let detail: string | null = null;
@@ -148,10 +164,24 @@ export function laneSummaries(
       status = 'unknown';
     }
 
+    // The layout picked this lane's highest-priority ref (current branch, then
+    // remote, then local, then tag). Git hands `refs` over alphabetically, so the
+    // row would otherwise headline `ci/...` instead of `main`. Move that entry to
+    // the front and keep the rest in arrival order, so the result stays stable.
+    if (short !== null && names[0] !== short) {
+      const at = names.indexOf(short);
+      if (at > 0) {
+        names.splice(at, 1);
+        names.unshift(short);
+      }
+    }
+
+    const [headline = fallbackName(lane.index)] = names;
     return {
       index: lane.index,
       color: lane.color,
-      name: short ?? fallbackName(lane.index),
+      name: headline,
+      names,
       commits: counts.get(lane.index) ?? 0,
       status,
       detail,
@@ -188,4 +218,54 @@ export function laneRowTop(
  */
 export function gutterRowHeight(zoom: number): number {
   return LANE_HEIGHT * zoom;
+}
+
+/**
+ * One merge boundary: the x of a merge commit that brought a named branch in.
+ *
+ * `x` is world units, so the caller scales it by the zoom before comparing with a
+ * scroll offset. `name` is the short branch name, already stripped of its prefix.
+ */
+export interface MergeBoundary {
+  name: string;
+  x: number;
+}
+
+/**
+ * The name the merged row shows for a given horizontal scroll position.
+ *
+ * Frame 01's merged row is not a list. The branches merged into the base sit along
+ * the timeline in landing order, and the row names the NEXT branch: the first merge
+ * at or after the viewport's left edge, so the row tells you what is coming rather
+ * than what is behind. It advances the moment the previous merge falls behind the
+ * edge.
+ *
+ * `scrollX` is the LEFT edge of the viewport in world units.
+ *
+ * Two deliberate rules:
+ *  - A gap between merges keeps the next name rather than blanking the row. The
+ *    real repository has 41 refs and 14 merges, so long gaps are normal.
+ *  - A boundary whose name is not in `row.names` is skipped. A merge can reference
+ *    a branch that has since been deleted or was never paged in, and printing it
+ *    would name a branch the row does not hold.
+ *
+ * Past the last merge the row holds that last name instead of blanking, and it
+ * falls back to `row.name` when there are no boundaries at all.
+ */
+export function mergedNameAt(
+  row: LaneSummary,
+  boundaries: readonly MergeBoundary[],
+  scrollX: number,
+): string {
+  // Read in arrival order, never sorted: the caller's array is read-only. The
+  // first qualifying boundary ahead of the edge wins; the last qualifying one is
+  // the fallback once every merge has scrolled behind.
+  let ahead: string | null = null;
+  let last: string | null = null;
+  for (const boundary of boundaries) {
+    if (!row.names.includes(boundary.name)) continue;
+    last = boundary.name;
+    if (ahead === null && boundary.x >= scrollX) ahead = boundary.name;
+  }
+  return ahead ?? last ?? row.name;
 }
