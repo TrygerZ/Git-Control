@@ -94,6 +94,18 @@ const id: Catalog = {
     syncBehind: (count: string) => `${count} untuk di-pull`,
     syncDiverged: 'Bercabang',
     notPublished: 'Belum dipublikasikan',
+    // Tombol buat cepat header ringkas (frame 05, 08, 09, 11) dan menu More
+    // (frame 42). Lihat katalog en untuk alasan nama per tombol.
+    addPr: 'Pull request baru',
+    addIssue: 'Issue baru',
+    addWorkflow: 'Jalankan workflow',
+    addBranch: 'Branch baru',
+    moreAria: 'Aksi lainnya',
+    moreTitle: 'Lainnya',
+    menuReload: 'Muat ulang',
+    menuOpenRepo: 'Buka repository di GitHub',
+    menuCopyUrl: 'Salin URL repository',
+    menuCopied: 'URL repository disalin.',
   },
 
   // Sidebar nav strip: tab labels and accessible names

@@ -1539,6 +1539,39 @@ h3 {
   padding: var(--gc-space-4) var(--gc-space-4) var(--gc-space-3);
 }
 
+/*
+ * Frames 05, 08, 09, 11: every destination except Changes draws one 24 px title
+ * row. The base padding stays the source of the 12 px inset and the 8 px foot,
+ * so 12 + 24 + 8 is the 44 px header; only the extra rows and the stack gap go.
+ */
+.gc-sidebar-header--compact {
+  gap: 0;
+}
+
+.gc-sidebar-header--compact .gc-sidebar-header__row {
+  min-height: var(--gc-space-6);
+}
+
+/* Name and slug sit together at the left; the buttons stay right-aligned. */
+.gc-sidebar-header--compact .gc-sidebar-header__title {
+  flex: 0 1 auto;
+}
+
+.gc-sidebar-header--compact .gc-sidebar-header__actions {
+  margin-left: auto;
+}
+
+/* The parsed remote, muted and clipped, so a long name cannot push the buttons out. */
+.gc-sidebar-header__slug {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--gc-text-muted);
+  font-size: var(--gc-fs-xs);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 /* Title row gap is 2 px in the frame; the branch row overrides it to 6 px. */
 .gc-sidebar-header__row {
   display: flex;

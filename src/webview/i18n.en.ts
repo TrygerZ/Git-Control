@@ -98,6 +98,18 @@ const en = {
     syncBehind: (count: string) => `${count} to pull`,
     syncDiverged: 'Diverged',
     notPublished: 'Not published',
+    // Compact header quick-create buttons (frames 05, 08, 09, 11) and the More
+    // menu (frame 42). Each name is what the button does, not what it draws.
+    addPr: 'New pull request',
+    addIssue: 'New issue',
+    addWorkflow: 'Run workflow',
+    addBranch: 'New branch',
+    moreAria: 'More actions',
+    moreTitle: 'More',
+    menuReload: 'Reload',
+    menuOpenRepo: 'Open repository on GitHub',
+    menuCopyUrl: 'Copy repository URL',
+    menuCopied: 'Repository URL copied.',
   },
 
   // Sidebar nav strip: tab labels and accessible names

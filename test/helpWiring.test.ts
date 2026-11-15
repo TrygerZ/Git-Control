@@ -20,11 +20,14 @@ test('the header info button is wired and keeps its catalog names', () => {
   assert.match(src, /openHelp\(/);
   assert.match(src, /data-help-open/, 'the button is the focus return target');
   assert.match(src, /<Icon name="info" \/>/, 'the frame draws an info glyph');
-  // The button lives in the title row, after the search button and before the graph.
+  // Frame 20 draws the title row as refresh, graph, quick actions, help, more.
+  // `test/sidebarHeaderParity.test.ts` owns the full five-button order; this
+  // assertion only pins the neighbour relationship the Help feature introduced.
   const search = src.indexOf('strings.palette.openAria');
   const help = src.indexOf('strings.help.openAria');
   const graph = src.indexOf('strings.pending.openGraphAria');
-  assert.ok(search > 0 && help > search && graph > help, 'title row order: search, help, graph');
+  assert.ok(search > 0 && graph > 0 && help > search, 'help follows the search button');
+  assert.ok(graph < search, 'the graph button sits before quick actions, as frame 20 draws it');
 });
 
 test('the shell draws the panel for the help route and no sub-tabs there', () => {
