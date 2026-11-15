@@ -498,6 +498,14 @@ const en = {
     diffTruncated: 'Diff truncated.',
     loadMoreTitle: 'Load next page of files.',
     loadMore: 'Load more',
+    // Actions bar (frame 01, `9:179`): the panel's footer.
+    actionCheckout: 'Checkout',
+    actionBranchHere: 'Branch here',
+    actionMoreAria: 'More commit actions',
+    actionCheckoutTitle: 'Check out this commit in detached HEAD.',
+    actionCheckoutAtHead: 'This commit is already checked out.',
+    actionBranchHereTitle: 'Create a branch pointing at this commit.',
+    actionBusy: 'Another operation is still running.',
     loadingMore: 'Loading next files...',
     // P21 pull request card
     pullRequestCard: (number: string) => `Pull request #${number}`,

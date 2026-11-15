@@ -33,9 +33,15 @@ import type { CommitDetail, CommitFileChange, ErrorBody } from '../messages';
 
 interface Props {
   hash: string | null;
+  /**
+   * Report the loaded commit, or `null` when the selection clears or the request
+   * fails. The aside's actions bar lives in `ExplorerApp` and needs the hash and
+   * short hash; handing them up keeps one fetch instead of a second request.
+   */
+  onDetailLoaded?: (detail: CommitDetail | null) => void;
 }
 
-export function Inspector({ hash }: Props): JSX.Element {
+export function Inspector({ hash, onDetailLoaded }: Props): JSX.Element {
   const strings = useT();
   const language = useSettingsStore((x) => x.language);
   const [detail, setDetail] = useState<CommitDetail | null>(null);
@@ -89,6 +95,7 @@ export function Inspector({ hash }: Props): JSX.Element {
     if (hash === null) {
       setDetail(null);
       setError(null);
+      onDetailLoaded?.(null);
       return;
     }
     let cancelled = false;
@@ -101,6 +108,9 @@ export function Inspector({ hash }: Props): JSX.Element {
         setDetail(data);
         setParent(data.parents[0] ?? null);
         setLoading(false);
+        // The aside's actions bar reads this commit, so it learns about it here
+        // rather than asking the host a second time for the same detail.
+        onDetailLoaded?.(data);
         // Pull the author's GitHub face alongside the detail; a miss keeps the initial.
         void loadCommitAuthors([data.hash]);
         setImgFailed(false);
@@ -109,11 +119,14 @@ export function Inspector({ hash }: Props): JSX.Element {
         if (cancelled) return;
         setError(toErrorBody(err));
         setLoading(false);
+        // No detail means no actions: the bar would otherwise act on the previous
+        // commit, which is the one the user just navigated away from.
+        onDetailLoaded?.(null);
       });
     return () => {
       cancelled = true;
     };
-  }, [hash]);
+  }, [hash, onDetailLoaded]);
 
   const copy = async (text: string): Promise<void> => {
     try {

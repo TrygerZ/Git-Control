@@ -2,7 +2,7 @@
  * Explorer root: the graph plus the inspector, conflict banner, guard dialog,
  * and toast region.
  */
-import { useCallback, useEffect, useId, useState, type JSX } from 'react';
+import { useCallback, useEffect, useId, useRef, useState, type JSX } from 'react';
 import { ConflictPanel, OperationBanner } from './ConflictPanel';
 import { GraphCanvas } from './GraphCanvas';
 import { GuardDialog } from './GuardDialog';
@@ -14,7 +14,7 @@ import { MergeDialog, mergeActionPayload, mergeIntoActionPayload } from './Merge
 import { PromptDialog } from './PromptDialog';
 import { ToastRegion } from './Toast';
 import { bridge, loadState } from './bridge';
-import { githubBaseUrl, type MenuItem } from './NodeContextMenu';
+import { githubBaseUrl, NodeContextMenu, type MenuAnchor, type MenuItem } from './NodeContextMenu';
 import { useT } from './useT';
 import {
   useGitHubStore,
@@ -26,7 +26,7 @@ import {
 } from './store';
 import { ContextBar, ErrorBanner, Icon } from './ui';
 import { sanitizeGitText } from './format';
-import type { GraphNode } from '../messages';
+import type { CommitDetail, GraphNode } from '../messages';
 
 export function ExplorerApp(): JSX.Element {
   const strings = useT();
@@ -58,6 +58,10 @@ export function ExplorerApp(): JSX.Element {
 
   const [githubUrl, setGithubUrl] = useState<string | null>(null);
   const [inspectorOpen, setInspectorOpen] = useState(true);
+  /** The commit the Inspector loaded, so the aside footer can act on it. */
+  const [selectedDetail, setSelectedDetail] = useState<CommitDetail | null>(null);
+  const [menuAnchor, setMenuAnchor] = useState<MenuAnchor | null>(null);
+  const moreRef = useRef<HTMLButtonElement>(null);
   const openUrl = useGitHubStore((s) => s.openUrl);
   // `aria-controls` needs a stable id even across two roots in one bundle.
   const asideId = useId();
@@ -136,6 +140,42 @@ export function ExplorerApp(): JSX.Element {
   const newest = graph === null ? undefined : graph.nodes[0];
   const newestSubject = newest === undefined ? undefined : sanitizeGitText(newest.subject);
 
+  /*
+   * The aside footer's rules, taken from the same two facts the canvas menu reads:
+   * the commit at HEAD cannot be checked out again, and an operation in flight
+   * would collide with the next one.
+   */
+  const atHead = selectedDetail !== null && selectedDetail.hash === status?.head;
+  const busy = status !== null && status.operation !== 'idle';
+  /*
+   * The node the menu acts on, from the loaded graph when it is there.
+   *
+   * `menuItemsFor` gates `push-up-to` on `node.local`, so a synthesised node that
+   * claimed to be local would offer a push for a commit already on the remote. The
+   * fallback says not-local: an unanswerable question is not a reason to offer it.
+   */
+  const graphNode = selectedDetail === null
+    ? undefined
+    : graph?.nodes.find((n) => n.hash === selectedDetail.hash);
+  const menuNode: GraphNode | null =
+    graphNode ??
+    (selectedDetail === null
+      ? null
+      : {
+          hash: selectedDetail.hash,
+          shortHash: selectedDetail.shortHash,
+          x: 0,
+          y: 0,
+          lane: 0,
+          isHead: atHead,
+          isMerge: selectedDetail.parents.length > 1,
+          local: false,
+          subject: selectedDetail.subject,
+          authorName: selectedDetail.authorName,
+          authoredAt: selectedDetail.authoredAt,
+          refNames: selectedDetail.refNames,
+        });
+
   return (
     <div className="gc-explorer">
       {/*
@@ -198,7 +238,7 @@ export function ExplorerApp(): JSX.Element {
           <div id={asideId} className="gc-explorer__aside-content">
             {inspectorOpen && (
               <>
-                <Inspector hash={selectedHash} />
+                <Inspector hash={selectedHash} onDetailLoaded={setSelectedDetail} />
                 <Contributors />
                 {status !== null && status.conflicts.length > 0 && (
                   <ConflictPanel conflicts={status.conflicts} operation={status.operation} />
@@ -214,6 +254,84 @@ export function ExplorerApp(): JSX.Element {
               </>
             )}
           </div>
+
+          {/*
+            Frame 01 (`9:179`): the aside's fixed footer. It is a sibling of the
+            scrollable body, not a child, so Checkout stays on screen however long
+            the file list gets. Availability matches the canvas menu's rules, so
+            the two surfaces cannot disagree.
+          */}
+          {inspectorOpen && selectedDetail !== null && (
+            <div className="gc-explorer__aside-actions gc-inspector__actions">
+              <button
+                type="button"
+                className="gc-button gc-button--quiet"
+                disabled={atHead || busy}
+                title={
+                  atHead
+                    ? strings.inspector.actionCheckoutAtHead
+                    : busy
+                      ? strings.inspector.actionBusy
+                      : strings.inspector.actionCheckoutTitle
+                }
+                onClick={() =>
+                  void runAction({ action: 'checkout-commit', hash: selectedDetail.hash })
+                }
+              >
+                <Icon name="check" />
+                <span>{strings.inspector.actionCheckout}</span>
+              </button>
+              <button
+                type="button"
+                className="gc-button gc-button--quiet"
+                disabled={busy}
+                title={busy ? strings.inspector.actionBusy : strings.inspector.actionBranchHereTitle}
+                onClick={() =>
+                  setCreateBranchTarget({
+                    startPoint: selectedDetail.hash,
+                    defaultName: `${strings.explorer.defaultBranchPrefix}/${selectedDetail.shortHash}`,
+                  })
+                }
+              >
+                <Icon name="branch-add" />
+                <span>{strings.inspector.actionBranchHere}</span>
+              </button>
+              <button
+                ref={moreRef}
+                type="button"
+                className="gc-icon-button gc-inspector__more"
+                aria-label={strings.inspector.actionMoreAria}
+                title={strings.inspector.actionMoreAria}
+                aria-haspopup="menu"
+                aria-expanded={menuAnchor !== null}
+                onClick={() => {
+                  const box = moreRef.current?.getBoundingClientRect();
+                  setMenuAnchor(box === undefined ? { x: 0, y: 0 } : { x: box.left, y: box.bottom });
+                }}
+              >
+                <Icon name="ellipsis" />
+              </button>
+            </div>
+          )}
+
+          {/*
+            The canvas menu, not a copy of it: one implementation owns the
+            destructive verbs. The node comes from the loaded graph when it is
+            there; `menuItemsFor` gates `push-up-to` on `node.local`, so the
+            fallback says not-local rather than offering a push for a commit that
+            may already be on the remote.
+          */}
+          {menuAnchor !== null && menuNode !== null && (
+            <NodeContextMenu
+              node={menuNode}
+              status={status}
+              refs={graph?.refs ?? []}
+              githubUrl={githubUrl}
+              anchor={menuAnchor}
+              onSelect={(item) => onMenuCommand(item, menuNode)}
+              onClose={() => setMenuAnchor(null)}
+            />
+          )}
         </aside>
       </div>
 

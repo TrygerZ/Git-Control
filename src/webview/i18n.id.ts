@@ -494,6 +494,14 @@ const id: Catalog = {
     loadMoreTitle: 'Ambil halaman file berikutnya.',
     loadMore: 'Muat lebih banyak',
     loadingMore: 'Memuat file berikutnya…',
+    // Bar aksi (frame 01, `9:179`): footer panel.
+    actionCheckout: 'Checkout',
+    actionBranchHere: 'Branch di sini',
+    actionMoreAria: 'Aksi commit lainnya',
+    actionCheckoutTitle: 'Checkout commit ini dalam detached HEAD.',
+    actionCheckoutAtHead: 'Commit ini sudah di-checkout.',
+    actionBranchHereTitle: 'Buat branch yang menunjuk ke commit ini.',
+    actionBusy: 'Operasi lain masih berjalan.',
     // P21 pull request card
     pullRequestCard: (number: string) => `Pull request #${number}`,
     pullRequestNone: 'Bukan bagian dari pull request',

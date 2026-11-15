@@ -994,7 +994,12 @@ h3 {
   padding-left: var(--gc-space-3);
   border-left: 1px solid var(--gc-border);
   background: var(--gc-surface-1);
-  overflow: auto;
+  /*
+   * The aside itself does not scroll: the actions bar is its footer and has to
+   * stay on screen. `overflow: hidden` would clip the bar at 200 % text zoom, so
+   * the scroller is the body below instead.
+   */
+  overflow: hidden;
   /* Lock the gutter so the dropdown chevron does not drift when the list scrolls. */
   scrollbar-gutter: stable;
 }
@@ -1032,10 +1037,19 @@ h3 {
   font-size: var(--gc-fs-sm);
 }
 
+/* The one scroller in the aside; the actions bar sits below it, outside this box. */
 .gc-explorer__aside-content {
   display: flex;
   flex-direction: column;
+  flex: 1 1 auto;
   gap: var(--gc-space-4);
+  min-height: 0;
+  overflow: auto;
+}
+
+/* The aside footer: never scrolls, never squeezes, always at the bottom. */
+.gc-explorer__aside-actions {
+  flex: 0 0 auto;
 }
 
 /*
@@ -4737,6 +4751,41 @@ h3 {
 .gc-inspector__block:last-child {
   padding-bottom: 0;
   border-bottom: none;
+}
+
+/*
+ * Actions bar (frame 01, `9:179`): the panel's footer, one row of two primary
+ * buttons with the overflow pinned to the end. The rule above it is the frame's
+ * separator from the file list, so the last block keeps its own bottom border
+ * removed only while the bar is absent.
+ */
+.gc-inspector__actions {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--gc-space-2);
+  padding: var(--gc-space-2) 0;
+  border-top: 1px solid var(--gc-border);
+}
+
+/* The overflow sits at the far end, away from the two commit actions. */
+.gc-inspector__more {
+  margin-left: auto;
+}
+
+/*
+ * The last block keeps its own rule out of the way of the bar: the bar is the
+ * aside's footer now, so a second line 12 px above it would read as a double rule.
+ */
+.gc-explorer__aside-content .gc-inspector__block--files:last-child {
+  border-bottom: none;
+}
+
+/* Both primary buttons share the row and never squeeze the glyph off the label. */
+.gc-inspector__actions .gc-button {
+  gap: var(--gc-space-1);
+  white-space: nowrap;
 }
 
 /*
