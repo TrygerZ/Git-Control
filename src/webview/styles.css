@@ -3116,15 +3116,19 @@ h3 {
   color: var(--gc-danger);
 }
 
-.gc-menu__hint {
-  color: var(--gc-muted);
+/*
+ * Frame 03's single hint box (`15:91`): a footer band under the last group that
+ * explains the row the pointer or the cursor is on. It replaces the per-row
+ * sub-line, so the menu keeps one height no matter which row is hovered.
+ */
+.gc-menu__focus-hint {
+  margin-top: var(--gc-space-2);
+  padding: var(--gc-space-2) var(--gc-space-3);
+  border-top: 1px solid var(--gc-border);
+  color: var(--gc-text-muted);
   font-size: var(--gc-fs-xs);
+  line-height: 1.4;
   white-space: normal;
-}
-
-.gc-menu__item:hover .gc-menu__hint,
-.gc-menu__item:focus-visible .gc-menu__hint {
-  color: inherit;
 }
 
 /* --------------------------------------------------------------------- modal */

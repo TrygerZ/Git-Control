@@ -606,15 +606,18 @@ test('every menu item declares a group, and the read-only ones cannot mutate', (
     'https://github.com/a/b',
   );
   assert.ok(items.length > 0, 'the menu is not empty');
+  // Frame 03 names three groups. `inspect` is the read-only half, and both
+  // mutating groups may run git, so the rule is stated once per direction.
+  const groups = new Set(['inspect', 'branch', 'rewrite']);
   for (const item of items) {
-    assert.ok(item.group === 'jelajah' || item.group === 'ubah', item.id);
-    if (item.group === 'jelajah') {
+    assert.ok(groups.has(item.group), `${item.id} declares a frame group`);
+    if (item.group === 'inspect') {
       assert.notEqual(item.command.kind, 'action', `${item.id} must not run git`);
       assert.notEqual(item.command.kind, 'createBranch', `${item.id} must not write a ref`);
       assert.notEqual(item.command.kind, 'mergeInto', `${item.id} must not mutate repository`);
     }
     if (item.command.kind === 'action' || item.command.kind === 'mergeInto') {
-      assert.equal(item.group, 'ubah', `${item.id} runs git and belongs in the mutating half`);
+      assert.notEqual(item.group, 'inspect', `${item.id} runs git and cannot sit in Inspect`);
     }
   }
 });
@@ -670,7 +673,7 @@ test('the destructive items are the ones marked risky, and they say what is lost
 test('groupedMenuItems keeps read-only first and drops empty groups', () => {
   const items = menuItemsFor(node(), null, [], null);
   const groups = groupedMenuItems(items);
-  assert.equal(groups[0]?.group, 'jelajah', 'the safe half is shown first');
+  assert.equal(groups[0]?.group, 'inspect', 'the safe half is shown first');
   for (const group of groups) {
     assert.ok(group.items.length > 0, `${group.group} is non-empty`);
   }

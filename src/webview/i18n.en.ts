@@ -682,8 +682,9 @@ const en = {
   // Node context menu
   menu: {
     groupLabels: {
-      jelajah: 'View and copy',
-      ubah: 'Modify repository',
+      inspect: 'Inspect',
+      branch: 'Branch',
+      rewrite: 'Rewrite history',
     },
     checkoutBranch: (name: string) => `Checkout branch ${name}`,
     checkoutCommit: (hash: string) => `Checkout commit ${hash}`,
@@ -691,17 +692,17 @@ const en = {
     createBranch: 'Create branch here',
     merge: (branch: string, current: string) => `Merge ${branch} into ${current}`,
     mergeInto: 'Merge to...',
-    mergeIntoHint: 'Switch to target branch and merge this node into it.',
+    mergeIntoHint: 'Switch to the target branch and merge this node into it. Risky: a conflict leaves the tree half merged.',
     cherryPick: 'Cherry-pick this commit',
-    cherryPickHint: 'Apply changes from this commit onto active branch.',
+    cherryPickHint: 'Apply this commit onto the active branch. Risky: a conflict stops the tree until you resolve it.',
     revert: 'Revert this commit',
-    revertHint: 'Revert changes with a new commit; history remains intact.',
+    revertHint: 'Revert with a new commit. History stays intact, but the working tree discards the change.',
     resetSoft: 'Reset soft to here',
-    resetSoftHint: 'Move commit; subsequent changes remain in staging.',
+    resetSoftHint: 'Move the branch back. Risky: later commits leave the history and survive only in staging.',
     resetHard: 'Reset hard to here',
     resetHardHint: 'Permanently discard all changes including uncommitted files.',
     pushUpTo: 'Push up to this commit',
-    pushUpToHint: 'Only works if fast-forward.',
+    pushUpToHint: 'Publish up to this commit. Risky: only works if fast-forward, and nothing is forced.',
     viewDiff: 'View commit diff',
     copyFull: 'Copy full hash',
     copyShort: (short: string) => `Copy short hash (${short})`,
@@ -710,6 +711,19 @@ const en = {
     menuAria: (short: string) => `Actions for commit ${short}`,
     riskyWord: 'risky',
     riskyAria: (label: string, hint: string) => `${label}: risky. ${hint}`.trim(),
+    // Focus hint box (frame 03, `15:91`). One sentence per row, shown for whichever
+    // row the pointer or the keyboard cursor is on. A risky row always names its
+    // risk in words, because the glyph is `aria-hidden` and colour is never enough.
+    focusHintAria: 'What this action does',
+    hintViewDiff: 'Read the change this commit made. Nothing is modified.',
+    hintCopyFull: 'Put the full 40-character hash on the clipboard.',
+    hintCopyShort: 'Put the abbreviated hash on the clipboard.',
+    hintOpenGitHub: 'Open this commit on GitHub in the browser.',
+    hintCreateBranch: 'Create a branch pointing at this commit. Nothing is moved.',
+    hintMerge: 'Merge this branch into the current one, then leave the result to review.',
+    hintCheckoutBranch: 'Switch to this branch. Uncommitted work is refused, not discarded.',
+    hintRisky: 'This is risky: it can discard work that has no other copy.',
+    hintPlain: 'Runs this action against the repository.',
   },
 
   // Branch cleanup (P20)
