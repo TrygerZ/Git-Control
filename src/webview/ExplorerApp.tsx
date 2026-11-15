@@ -214,6 +214,8 @@ export function ExplorerApp(): JSX.Element {
               selectCommit(hash);
               setInspectorOpen(true);
             }}
+            inspectorOpen={inspectorOpen}
+            onToggleInspector={() => setInspectorOpen(!inspectorOpen)}
           />
         </div>
 
@@ -223,17 +225,6 @@ export function ExplorerApp(): JSX.Element {
         >
           <div className="gc-explorer__aside-head">
             <span className="gc-explorer__aside-title">{strings.explorer.asideTitle}</span>
-            <button
-              type="button"
-              className="gc-icon-button gc-explorer__aside-toggle"
-              aria-expanded={inspectorOpen}
-              aria-controls={asideId}
-              aria-label={inspectorOpen ? strings.explorer.hideDetails : strings.explorer.showDetails}
-              title={inspectorOpen ? strings.explorer.hideDetails : strings.explorer.showDetails}
-              onClick={() => setInspectorOpen(!inspectorOpen)}
-            >
-              <Icon name={inspectorOpen ? 'chevron-down' : 'chevron-right'} />
-            </button>
           </div>
           <div id={asideId} className="gc-explorer__aside-content">
             {inspectorOpen && (

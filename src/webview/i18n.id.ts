@@ -671,6 +671,18 @@ const id: Catalog = {
     checkoutBranchCurrent: (name: string) => `${name} (aktif)`,
     checkoutBranchDetached: 'Detached HEAD',
     resetFilter: 'Reset',
+    // Frame 01 (`9:45`): toolbar tanpa label form terlihat. Lihat katalog en.
+    branchFilterAria: 'Filter menurut branch',
+    panelToggleAria: 'Tampilkan atau sembunyikan panel detail commit',
+    panelToggleTitle: 'Tampilkan atau sembunyikan detail commit',
+    // Frame 01 (`10:158`): dua aksi di balik pemisah zoom.
+    zoomFitAria: 'Sesuaikan grafik dengan jendela',
+    zoomFitTitle: 'Muat seluruh histori dalam tampilan',
+    zoomHeadAria: 'Pusatkan pada commit HEAD',
+    zoomHeadTitle: 'Gulir ke HEAD dan pusatkan',
+    // Frame 01 (`10:184`): pil legenda menggantikan panel panduan.
+    legendPushed: 'Sudah di-push',
+    legendNotPushed: 'Belum di-push',
     // Lane gutter (frame 01, node 10:127). See the en catalog for why this column
     // is decorative and its words are never announced.
     laneGutterHead: 'Jalur',

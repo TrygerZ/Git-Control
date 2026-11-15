@@ -550,4 +550,20 @@ export const ICON_PATHS: Record<IconName, () => JSX.Element> = {
       fill="none"
     />
   ),
+  // Fit to window: four corner brackets pushing out to the frame edges.
+  maximize: () => (
+    <>
+      <path d="M2.5 6V2.5H6" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" fill="none" />
+      <path d="M10 2.5h3.5V6" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" fill="none" />
+      <path d="M13.5 10v3.5H10" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" fill="none" />
+      <path d="M6 13.5H2.5V10" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" fill="none" />
+    </>
+  ),
+  // Centre HEAD: a crosshair ring with four ticks, distinct from the target dot.
+  crosshair: () => (
+    <>
+      <circle cx="8" cy="8" r="4.25" stroke="currentColor" strokeWidth="1.4" fill="none" />
+      <path d="M8 1.5v2.25M8 12.25v2.25M1.5 8h2.25M12.25 8h2.25" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+    </>
+  ),
 };

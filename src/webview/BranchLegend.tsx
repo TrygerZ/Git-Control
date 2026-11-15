@@ -25,6 +25,11 @@ export interface BranchSelectorProps {
   busy?: boolean;
   /** When true, renders a visible label above the select (graph toolbar). Omit in narrow sidebars. */
   showLabel?: boolean;
+  /**
+   * Accessible name for the select. Defaults to the catalog's checkout name, so a
+   * host that renders no visible label still gets a named control.
+   */
+  'aria-label'?: string;
 }
 
 export interface BranchOption {
@@ -138,6 +143,7 @@ export function BranchSelector({
   refs,
   busy = false,
   showLabel = false,
+  'aria-label': ariaLabel,
 }: BranchSelectorProps): JSX.Element {
   const strings = useT();
   const runAction = useOperationStore((s) => s.runAction);
@@ -171,7 +177,7 @@ export function BranchSelector({
         className="gc-toolbar__branch-select"
         value={state.selectedValue}
         disabled={state.disabled}
-        {...(!showLabel ? { 'aria-label': strings.graph.checkoutBranchAria } : {})}
+        {...(!showLabel ? { 'aria-label': ariaLabel ?? strings.graph.checkoutBranchAria } : {})}
         title={strings.graph.checkoutBranchTitle}
         onChange={(e) => onSelect(e.target.value)}
       >

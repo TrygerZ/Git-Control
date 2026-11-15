@@ -676,6 +676,19 @@ const en = {
     checkoutBranchCurrent: (name: string) => `${name} (current)`,
     checkoutBranchDetached: 'Detached HEAD',
     resetFilter: 'Reset',
+    // Frame 01 (`9:45`): the toolbar carries no visible form labels, so each
+    // control's name lives in the catalog.
+    branchFilterAria: 'Filter by branch',
+    panelToggleAria: 'Toggle commit details panel',
+    panelToggleTitle: 'Show or hide commit details',
+    // Frame 01 (`10:158`): the two actions behind the zoom divider.
+    zoomFitAria: 'Fit graph to window',
+    zoomFitTitle: 'Fit the whole history in view',
+    zoomHeadAria: 'Centre on HEAD commit',
+    zoomHeadTitle: 'Scroll to HEAD and centre it',
+    // Frame 01 (`10:184`): the legend pill in place of the teaching panel.
+    legendPushed: 'Pushed',
+    legendNotPushed: 'Not pushed',
     // Lane gutter (frame 01, node 10:127). The column is decorative, so these
     // words are read only when someone inspects the DOM or a screenshot.
     laneGutterHead: 'Lanes',

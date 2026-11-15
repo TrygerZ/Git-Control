@@ -40,6 +40,25 @@ export function clampZoom(zoom: number): number {
   return Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, zoom));
 }
 
+/**
+ * Zoom that makes the whole world fit the visible width, clamped to the same
+ * 35 %–400 % window as every other zoom path.
+ *
+ * Clamped rather than returned raw: a one-commit repository would otherwise fit at
+ * 800 %, and a 10 000-commit one at 2 %, both outside what the canvas can draw.
+ * A zero or nonsense width falls back to 100 % instead of dividing by zero.
+ */
+export function fitZoom(
+  viewportWidth: number,
+  worldWidth: number,
+  min: number = MIN_ZOOM,
+  max: number = MAX_ZOOM,
+): number {
+  if (!Number.isFinite(viewportWidth) || !Number.isFinite(worldWidth)) return 1;
+  if (viewportWidth <= 0 || worldWidth <= 0) return 1;
+  return Math.min(max, Math.max(min, viewportWidth / worldWidth));
+}
+
 /** Check if target node/column is currently outside the visible scroll view. */
 export function needsScrollToReveal(
   targetX: number,

@@ -34,7 +34,6 @@ import {
   type MouseEvent as ReactMouseEvent,
   type PointerEvent as ReactPointerEvent,
 } from 'react';
-import { BranchLegend, BranchSelector } from './BranchLegend';
 import { GraphMinimap } from './GraphMinimap';
 import { LaneGutterView } from './LaneGutterView';
 import { NodeContextMenu, type MenuAnchor, type MenuItem } from './NodeContextMenu';
@@ -51,6 +50,7 @@ import {
   truncate,
 } from './format';
 import { useT } from './useT';
+import { BranchSelector } from './BranchLegend';
 import { useGitHubStore, useRepoStore, useSettingsStore } from './store';
 import { chipsFor, computeStaggerMap, lanesForFilter, matchesSearch } from './graphQuery';
 import { computeBranchRibbons, edgePath, RIBBON_HALF_HEIGHT } from './ribbon';
@@ -66,6 +66,7 @@ import {
   RULER_HEIGHT,
   TEXT_MIN_ZOOM,
   clampZoom,
+  fitZoom,
   edgeIntersectsBand,
   laneY,
   columnX,
@@ -112,6 +113,9 @@ interface Props {
   githubUrl: string | null;
   onMenuCommand(item: MenuItem, node: GraphNode): void;
   onOpenInspector(hash: string): void;
+  /** The aside is open. The toolbar owns the toggle; `ExplorerApp` owns the state. */
+  inspectorOpen: boolean;
+  onToggleInspector(): void;
 }
 
 /**
@@ -122,6 +126,158 @@ interface Props {
  */
 export { rowLabel };
 
+/**
+ * Filter bar above the canvas (frame 01, node `9:45`).
+ *
+ * One row: search, checkout, filter, count with Load older, the Ribbons switch, and
+ * the panel toggle. No visible form labels; each control's name is in the catalog.
+ */
+function Toolbar({
+  search,
+  branchFilter,
+  currentBranch,
+  busy,
+  refs,
+  countId,
+  countText,
+  canLoadOlder,
+  paging,
+  showRibbons,
+  inspectorOpen,
+  onSearch,
+  onBranchFilter,
+  onLoadOlder,
+  onToggleRibbons,
+  onToggleInspector,
+}: {
+  search: string;
+  branchFilter: string;
+  currentBranch: string | null;
+  busy: boolean;
+  refs: readonly RefInfo[];
+  countId: string;
+  countText: string;
+  canLoadOlder: boolean;
+  paging: boolean;
+  showRibbons: boolean;
+  inspectorOpen: boolean;
+  onSearch(value: string): void;
+  onBranchFilter(value: string): void;
+  onLoadOlder(): void;
+  onToggleRibbons(next: boolean): void;
+  onToggleInspector(): void;
+}): JSX.Element {
+  const strings = useT();
+  const branches = refs.filter((r) => r.kind === 'local' || r.kind === 'remote');
+  return (
+    <div
+      className="gc-toolbar gc-toolbar--filters"
+      role="toolbar"
+      aria-label={strings.graph.toolbarAria}
+      aria-orientation="horizontal"
+    >
+      <div className="gc-toolbar__search-wrap">
+        <span className="gc-toolbar__search-input-wrap">
+          <span className="gc-toolbar__search-icon" aria-hidden="true">
+            <Icon name="search" />
+          </span>
+          <input
+            type="search"
+            className="gc-toolbar__search-input"
+            value={search}
+            maxLength={100}
+            placeholder={strings.graph.searchPlaceholder}
+            aria-label={strings.graph.searchAria}
+            aria-describedby={countId}
+            onChange={(e) => onSearch(e.target.value)}
+          />
+        </span>
+      </div>
+
+      {/* The count moved up from the paragraph above the canvas; still the live region. */}
+      <p className="gc-toolbar__count" id={countId} role="status" aria-live="polite">
+        {countText}
+      </p>
+      {canLoadOlder && (
+        <button
+          type="button"
+          className="gc-button gc-button--quiet gc-toolbar__load-older"
+          title={strings.graph.moreButtonTitle}
+          disabled={paging}
+          onClick={onLoadOlder}
+        >
+          {strings.graph.moreButton}
+        </button>
+      )}
+      {paging && <Spinner label={strings.graph.moreLoadingSpinner} />}
+
+      <label className="gc-checkbox gc-toolbar__ribbons" title={strings.graph.toggleRibbonsTitle}>
+        <input
+          type="checkbox"
+          className="gc-checkbox__input"
+          checked={showRibbons}
+          aria-label={strings.graph.toggleRibbonsAria}
+          onChange={(e) => onToggleRibbons(e.target.checked)}
+        />
+        <span className="gc-checkbox__text">{strings.graph.toggleRibbonsLabel}</span>
+      </label>
+
+      {/*
+        One checkout control, shared with the sidebar; the unlabelled variant. The
+        name comes from here so the toolbar owns the row's accessible labels.
+      */}
+      <BranchSelector
+        currentBranch={currentBranch}
+        refs={refs}
+        busy={busy}
+        aria-label={strings.graph.checkoutBranchAria}
+      />
+
+      <div className="gc-toolbar__branch-wrap">
+        <select
+          className="gc-toolbar__branch-select"
+          aria-label={strings.graph.branchFilterAria}
+          value={branchFilter}
+          onChange={(e) => onBranchFilter(e.target.value)}
+        >
+          <option value="">{strings.graph.branchFilterAll}</option>
+          {branches.map((ref) => (
+            <option key={ref.refName} value={ref.shortName}>
+              {ref.kind === 'remote'
+                ? strings.graph.branchFilterRemotePrefix(sanitizeGitText(ref.shortName))
+                : sanitizeGitText(ref.shortName)}
+            </option>
+          ))}
+        </select>
+      </div>
+
+      {(search.length > 0 || branchFilter.length > 0) && (
+        <button
+          type="button"
+          className="gc-button gc-button--quiet gc-toolbar__clear"
+          onClick={() => {
+            onSearch('');
+            onBranchFilter('');
+          }}
+        >
+          {strings.graph.resetFilter}
+        </button>
+      )}
+
+      <button
+        type="button"
+        className="gc-icon-button gc-toolbar__panel-toggle"
+        aria-label={strings.graph.panelToggleAria}
+        title={strings.graph.panelToggleTitle}
+        aria-expanded={inspectorOpen}
+        onClick={onToggleInspector}
+      >
+        <Icon name="panel-right" />
+      </button>
+    </div>
+  );
+}
+
 export function GraphCanvas({
   graph,
   status,
@@ -130,6 +286,8 @@ export function GraphCanvas({
   githubUrl,
   onMenuCommand,
   onOpenInspector,
+  inspectorOpen,
+  onToggleInspector,
 }: Props): JSX.Element {
   const strings = useT();
   const language = useSettingsStore((s) => s.language);
@@ -147,13 +305,10 @@ export function GraphCanvas({
   const loadCommitAuthors = useGitHubStore((s) => s.loadCommitAuthors);
 
   const scrollRef = useRef<HTMLDivElement>(null);
-  const legendButtonRef = useRef<HTMLButtonElement>(null);
-  const legendPanelRef = useRef<HTMLDivElement>(null);
   const [scrollLeft, setScrollLeft] = useState(0);
   /** The gutter is fixed, so it needs the vertical offset the scroller owns. */
   const [scrollTop, setScrollTop] = useState(0);
   const [viewportWidthState, setViewportWidthState] = useState(800);
-  const [showLegend, setShowLegend] = useState(false);
   const [showRibbons, setShowRibbons] = useState(() => loadState().showRibbons);
   const [menu, setMenu] = useState<{ node: GraphNode; anchor: MenuAnchor } | null>(null);
   const [focusRow, setFocusRow] = useState(0);
@@ -212,28 +367,9 @@ export function GraphCanvas({
   const spaceHeld = useRef(false);
   const panFrom = useRef<{ x: number; y: number; left: number; top: number } | null>(null);
   const now = useMemo(() => Date.now(), [graph]);
-  // Ids for the grid's description, search result count, and legend popover.
+  // Ids for the grid's description and the search result count.
   const helpId = useId();
   const countId = useId();
-  const legendId = useId();
-
-  // Close legend popover on outside click or focus loss
-  useEffect(() => {
-    if (!showLegend) return undefined;
-    const onPointerDown = (event: PointerEvent): void => {
-      const target = event.target as Node;
-      if (
-        legendPanelRef.current !== null &&
-        !legendPanelRef.current.contains(target) &&
-        legendButtonRef.current !== null &&
-        !legendButtonRef.current.contains(target)
-      ) {
-        setShowLegend(false);
-      }
-    };
-    document.addEventListener('pointerdown', onPointerDown, true);
-    return () => document.removeEventListener('pointerdown', onPointerDown, true);
-  }, [showLegend]);
 
   // Track viewport width so horizontal column culling matches reality after resize or initial layout.
   useLayoutEffect(() => {
@@ -320,12 +456,6 @@ export function GraphCanvas({
     if (rows.length === 0) return 1;
     const maxLane = rows.reduce((max, n) => Math.max(max, n.lane), 0);
     return maxLane + 1;
-  }, [graph, rows]);
-
-  const visibleLanes = useMemo(() => {
-    if (graph === null) return [];
-    const usedLanes = new Set(rows.map((n) => n.lane));
-    return graph.lanes.filter((l) => usedLanes.has(l.index));
   }, [graph, rows]);
 
   const maxNodeX = useMemo(() => {
@@ -654,20 +784,24 @@ export function GraphCanvas({
         busy={status !== null && status.operation !== 'idle'}
         refs={graph?.refs ?? []}
         countId={countId}
+        countText={
+          search.length === 0 && branchFilter.length === 0
+            ? strings.graph.countAll(formatCount(rows.length, language))
+            : strings.graph.countMatched(formatCount(matchCount, language), formatCount(rows.length, language))
+        }
+        canLoadOlder={graph !== null && graph.nextCursor !== null && graph.truncated === false}
+        paging={paging}
+        showRibbons={showRibbons}
+        inspectorOpen={inspectorOpen}
         onSearch={setSearch}
         onBranchFilter={setBranchFilter}
+        onLoadOlder={() => void loadMore()}
+        onToggleRibbons={(next) => {
+          setShowRibbons(next);
+          saveState({ showRibbons: next });
+        }}
+        onToggleInspector={onToggleInspector}
       />
-
-      {/*
-        The only live region on this surface. It announces the filtered total after
-        the user stops typing rather than on every keystroke, because `polite`
-        queues and a per-frame update would leave a screen reader minutes behind.
-      */}
-      <p className="gc-help-text" id={countId} role="status" aria-live="polite">
-        {search.length === 0 && branchFilter.length === 0
-          ? strings.graph.countAll(formatCount(rows.length, language))
-          : strings.graph.countMatched(formatCount(matchCount, language), formatCount(rows.length, language))}
-      </p>
 
       {graph?.stale === true && (
         <InfoBanner tone="warning" glyph="watch">
@@ -1002,27 +1136,16 @@ export function GraphCanvas({
           )}
 
           {/*
-            Floating canvas controls, bottom right, as in the Unity reference:
-            Panduan simbol popover launcher, go to HEAD, then zoom.
+            Floating canvas controls, bottom right: go to HEAD, then zoom. The
+            legend launcher and the Ribbons switch moved out (frame 01 draws the
+            legend as a pill in place and the switch in the toolbar).
           */}
           <div className="gc-canvas__controls" role="group" aria-label={strings.graph.controlsAria}>
             {/*
-              Navigation card: the legend launcher and the go-to-HEAD button.
-              Grouped apart from zoom because they answer "where am I" rather
-              than "how big is it".
+              Navigation card: go to HEAD. Grouped apart from zoom because it
+              answers "where am I" rather than "how big is it".
             */}
             <div className="gc-control-card">
-              <button
-                ref={legendButtonRef}
-                type="button"
-                className="gc-icon-button"
-                aria-label={strings.graph.legendButtonAria}
-                aria-expanded={showLegend}
-                aria-controls={showLegend ? legendId : undefined}
-                onClick={() => setShowLegend(!showLegend)}
-              >
-                <Icon name="info" />
-              </button>
               <button
                 type="button"
                 className="gc-icon-button"
@@ -1036,9 +1159,8 @@ export function GraphCanvas({
               </button>
             </div>
             {/*
-              Zoom card: out, a readout that doubles as the reset, in. The
-              readout stays a button so one control answers both "how far in
-              am I" and "put me back".
+              Zoom card: out, a readout that doubles as the reset, in, then the two
+              frame actions behind a divider: fit the whole history, or centre HEAD.
             */}
             <div className="gc-control-card gc-control-card--zoom">
               <button
@@ -1076,62 +1198,48 @@ export function GraphCanvas({
               >
                 <Icon name="add" />
               </button>
-            </div>
-            <label
-              className="gc-checkbox gc-checkbox--float"
-              title={strings.graph.toggleRibbonsTitle}
-            >
-              <input
-                type="checkbox"
-                className="gc-checkbox__input"
-                checked={showRibbons}
-                aria-label={strings.graph.toggleRibbonsAria}
-                onChange={(e) => {
-                  const next = e.target.checked;
-                  setShowRibbons(next);
-                  saveState({ showRibbons: next });
-                }}
-              />
-              <span className="gc-checkbox__text">
-                {strings.graph.toggleRibbonsLabel}
-              </span>
-            </label>
-
-            {/* Floating popover for BranchLegend, anchored directly above the controls stack */}
-            {showLegend && (
-              <div
-                ref={legendPanelRef}
-                className="gc-legend-popover"
-                style={{ ['--gc-canvas-width' as string]: `${viewportWidthState}px` }}
+              <span className="gc-zoom__divider" aria-hidden="true" />
+              <button
+                type="button"
+                className="gc-icon-button"
+                aria-label={strings.graph.zoomFitAria}
+                title={strings.graph.zoomFitTitle}
+                onClick={() => setZoom(fitZoom(viewportWidthState, totalWorldW))}
               >
-                <BranchLegend
-                  id={legendId}
-                  lanes={visibleLanes}
-                  onClose={() => {
-                    setShowLegend(false);
-                    legendButtonRef.current?.focus();
-                  }}
-                />
-              </div>
-            )}
+                <Icon name="maximize" />
+              </button>
+              <button
+                type="button"
+                className="gc-icon-button"
+                aria-label={strings.graph.zoomHeadAria}
+                title={strings.graph.zoomHeadTitle}
+                disabled={headRow === undefined}
+                onClick={() => {
+                  if (headRow !== undefined) goToRow(headRow);
+                }}
+              >
+                <Icon name="crosshair" />
+              </button>
+            </div>
+          </div>
+
+          {/*
+            Frame 01 (`10:184`): the legend is a pill in place, not a launcher. It
+            names the two node states where the graph is, and the hollow swatch
+            keeps them apart without relying on colour.
+          */}
+          <div className="gc-legend-pill">
+            <span className="gc-legend-pill__item">
+              <span className="gc-legend-pill__dot gc-legend-pill__dot--pushed" aria-hidden="true" />
+              {strings.graph.legendPushed}
+            </span>
+            <span className="gc-legend-pill__item">
+              <span className="gc-legend-pill__dot gc-legend-pill__dot--local" aria-hidden="true" />
+              {strings.graph.legendNotPushed}
+            </span>
           </div>
         </div>
       </div>
-
-      {graph !== null && graph.nextCursor !== null && graph.truncated === false && (
-        <div className="gc-graph__more">
-          <button
-            type="button"
-            className="gc-button"
-            title={strings.graph.moreButtonTitle}
-            disabled={paging}
-            onClick={() => void loadMore()}
-          >
-            {strings.graph.moreButton}
-          </button>
-          {paging && <Spinner label={strings.graph.moreLoadingSpinner} />}
-        </div>
-      )}
 
       {menu !== null && (
         <NodeContextMenu
@@ -1420,104 +1528,3 @@ function Highlight({ text, needle }: { text: string; needle: string }): JSX.Elem
   );
 }
 
-/**
- * Filter bar above the canvas.
- *
- * Zoom used to live here; it now floats over the canvas instead, which leaves this
- * row with one job — narrowing what is drawn — announced by the label the reference
- * puts in front of its own filter row. Two fields, both labelled in words, so the
- * row reads as "Saring: nama / branch" rather than as three unrelated widgets.
- */
-function Toolbar({
-  search,
-  branchFilter,
-  currentBranch,
-  busy,
-  refs,
-  countId,
-  onSearch,
-  onBranchFilter,
-}: {
-  search: string;
-  branchFilter: string;
-  currentBranch: string | null;
-  busy: boolean;
-  refs: readonly RefInfo[];
-  /** Id of the result-count live region, so the search box points at its own output. */
-  countId: string;
-  onSearch(value: string): void;
-  onBranchFilter(value: string): void;
-}): JSX.Element {
-  const strings = useT();
-  const branches = refs.filter((r) => r.kind === 'local' || r.kind === 'remote');
-  return (
-    <div
-      className="gc-toolbar gc-toolbar--filters"
-      role="toolbar"
-      aria-label={strings.graph.toolbarAria}
-      aria-orientation="horizontal"
-    >
-      <div className="gc-toolbar__search-wrap">
-        <label className="gc-field gc-toolbar__field">
-          <span className="gc-field__label">{strings.graph.searchLabel}</span>
-          <span className="gc-toolbar__search-input-wrap">
-            <span className="gc-toolbar__search-icon" aria-hidden="true">
-              <Icon name="search" />
-            </span>
-            <input
-              type="search"
-              className="gc-toolbar__search-input"
-              value={search}
-              maxLength={100}
-              placeholder={strings.graph.searchPlaceholder}
-              aria-describedby={countId}
-              onChange={(e) => onSearch(e.target.value)}
-            />
-          </span>
-        </label>
-      </div>
-
-      <BranchSelector
-        currentBranch={currentBranch}
-        refs={refs}
-        busy={busy}
-        showLabel
-      />
-
-      <div className="gc-toolbar__branch-wrap">
-        <label className="gc-field gc-toolbar__field">
-          <span className="gc-field__label">{strings.graph.branchFilterLabel}</span>
-          <select
-            className="gc-toolbar__branch-select"
-            value={branchFilter}
-            onChange={(e) => onBranchFilter(e.target.value)}
-          >
-            <option value="">{strings.graph.branchFilterAll}</option>
-            {branches.map((ref) => (
-              // `value` stays raw: it is compared against lane refs host-side.
-              // Only the label is sanitised.
-              <option key={ref.refName} value={ref.shortName}>
-                {ref.kind === 'remote'
-                  ? strings.graph.branchFilterRemotePrefix(sanitizeGitText(ref.shortName))
-                  : sanitizeGitText(ref.shortName)}
-              </option>
-            ))}
-          </select>
-        </label>
-      </div>
-
-      {(search.length > 0 || branchFilter.length > 0) && (
-        <button
-          type="button"
-          className="gc-button gc-button--quiet gc-toolbar__clear"
-          onClick={() => {
-            onSearch('');
-            onBranchFilter('');
-          }}
-        >
-          {strings.graph.resetFilter}
-        </button>
-      )}
-    </div>
-  );
-}

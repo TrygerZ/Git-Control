@@ -62,4 +62,7 @@ export type IconName =
   | 'status-queued'
   | 'status-skipped'
   // Get started card (P16).
-  | 'sparkle';
+  | 'sparkle'
+  // Zoom bar (frame 01, `10:158`): fit to window and centre HEAD.
+  | 'maximize'
+  | 'crosshair';

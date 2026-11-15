@@ -1112,13 +1112,40 @@ h3 {
  */
 .gc-toolbar--filters {
   display: flex;
-  align-items: flex-end;
-  gap: var(--gc-space-3);
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--gc-space-2);
   padding: var(--gc-space-3);
   border: none;
   border-bottom: 1px solid var(--gc-border);
   border-radius: 0;
   background: var(--gc-surface-1);
+}
+
+/*
+ * Frame 01 (`9:45`): the count sits beside the filters and `Load older` follows
+ * it, both pushed to the far end so the search field keeps the room. The live
+ * region is the count itself, so the search box's `aria-describedby` still lands.
+ */
+.gc-toolbar__count {
+  margin: 0 0 0 auto;
+  color: var(--gc-text-muted);
+  font-size: var(--gc-fs-2xs);
+  white-space: nowrap;
+}
+
+.gc-toolbar__load-older {
+  flex: 0 0 auto;
+}
+
+/* The Ribbons switch keeps its checkbox and loses the floating card chrome. */
+.gc-toolbar__ribbons {
+  flex: 0 0 auto;
+  min-height: var(--gc-hit);
+}
+
+.gc-toolbar__panel-toggle {
+  flex: 0 0 auto;
 }
 
 .gc-toolbar__search-wrap {
@@ -2144,6 +2171,67 @@ h3 {
 
 .gc-control-card--zoom .gc-icon-button {
   font-size: var(--gc-fs-sm);
+}
+
+/* Frame 01 (`10:158`): the divider before maximize and crosshair. */
+.gc-zoom__divider {
+  align-self: center;
+  width: 1px;
+  height: var(--gc-space-5);
+  margin: 0 var(--gc-space-1);
+  background: var(--gc-border);
+}
+
+/*
+ * Frame 01 (`10:184`): the legend as a pill in place, centred at the bottom of
+ * the stage above the minimap. The two states differ by shape as well as colour:
+ * pushed is a filled dot, local only is hollow.
+ */
+.gc-legend-pill {
+  position: absolute;
+  /*
+   * Centred above the minimap: the minimap is 160 px tall and sits at
+   * `--gc-space-4` from the bottom, so the pill clears it by one small step.
+   */
+  bottom: calc(var(--gc-space-4) + 160px + var(--gc-space-2));
+  left: 50%;
+  z-index: 6;
+  display: flex;
+  align-items: center;
+  gap: var(--gc-space-3);
+  padding: var(--gc-space-1) var(--gc-space-3);
+  border: 1px solid var(--gc-border);
+  border-radius: calc(var(--gc-radius) * 4);
+  background: var(--gc-surface-2);
+  color: var(--gc-text-muted);
+  font-size: var(--gc-fs-2xs);
+  transform: translateX(-50%);
+  pointer-events: none;
+}
+
+.gc-legend-pill__item {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--gc-space-1);
+  white-space: nowrap;
+}
+
+.gc-legend-pill__dot {
+  width: var(--gc-space-3);
+  height: var(--gc-space-3);
+  border-radius: 50%;
+  box-sizing: border-box;
+}
+
+/* A commit that reached the remote: filled, like the node it describes. */
+.gc-legend-pill__dot--pushed {
+  background: var(--gc-accent-solid);
+}
+
+/* Not pushed: hollow, so the two read apart in forced colours and for a colour-blind eye. */
+.gc-legend-pill__dot--local {
+  border: 1.5px solid var(--gc-accent-solid);
+  background: transparent;
 }
 
 /*
