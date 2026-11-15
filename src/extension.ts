@@ -1484,7 +1484,27 @@ class Controller implements vscode.Disposable {
       base: payload.base,
       head: payload.head,
       draft: payload.draft,
+      ...(payload.labels === undefined ? {} : { labels: payload.labels }),
+      ...(payload.linkedIssue === undefined ? {} : { linkedIssue: payload.linkedIssue }),
     });
+
+    // Labels go through the issues API, which the create call cannot always do.
+    // A failure here leaves the pull request in place, so it is reported the way a
+    // refused reviewer is: a partial success, never a rollback.
+    let labelsFailed: string[] = [];
+    if (payload.labels !== undefined && payload.labels.length > 0) {
+      try {
+        const applied = await client.addLabels(
+          payload.owner,
+          payload.repo,
+          created.data.number,
+          payload.labels,
+        );
+        labelsFailed = payload.labels.filter((label) => !applied.applied.includes(label));
+      } catch {
+        labelsFailed = [...payload.labels];
+      }
+    }
 
     let reviewersFailed: string[] = [];
     if (payload.reviewers.length > 0) {
@@ -1507,6 +1527,7 @@ class Controller implements vscode.Disposable {
       // The bridge overwrites this with what it actually pushed.
       published: payload.publish,
       reviewersFailed,
+      labelsFailed,
       rateLimit: client.rateLimit(false),
     };
   }

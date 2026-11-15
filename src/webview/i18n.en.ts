@@ -867,6 +867,9 @@ const en = {
     branchCardAhead: (n: string, base: string) => `${n} ahead of ${base}`,
     branchCardNone: 'No pull request for this branch yet. Publish it first, then open one on GitHub.',
     createOnGitHub: 'Create on GitHub',
+    // Frame 05 (`69:64`): the card's second action.
+    compareAction: 'Compare',
+    compareAria: (branch: string) => `Compare ${branch} on GitHub`,
     openOnGitHub: 'Open on GitHub',
     checkoutAria: (n: string) => `Checkout #${n}`,
     checkedOut: 'Checked out',
@@ -1002,6 +1005,11 @@ const en = {
     createdToast: (n: string) => `Pull request #${n} created`,
     openOnGitHub: 'Open on GitHub',
     reviewersUnavailable: 'Reviewer search needs push access to this repository.',
+    // Frame 07 (`72:62`): the metadata row beside Reviewers.
+    addLabel: 'Add label',
+    linkedIssueHint: 'Type an issue number to close it when this pull request merges.',
+    linkedIssueInvalid: 'An issue number is a whole number greater than zero.',
+    labelsFailed: (names: string) => `Created, but could not add labels: ${names}`,
   },
 
   // Explorer root app

@@ -860,6 +860,9 @@ const id: Catalog = {
     branchCardAhead: (n: string, base: string) => `${n} di depan ${base}`,
     branchCardNone: 'Belum ada pull request untuk branch ini. Publish dulu, lalu buka satu di GitHub.',
     createOnGitHub: 'Buat di GitHub',
+    // Frame 05 (`69:64`): aksi kedua di kartu.
+    compareAction: 'Bandingkan',
+    compareAria: (branch: string) => `Bandingkan ${branch} di GitHub`,
     openOnGitHub: 'Buka di GitHub',
     checkoutAria: (n: string) => `Checkout #${n}`,
     checkedOut: 'Sudah di-checkout',
@@ -994,6 +997,11 @@ const id: Catalog = {
     createdToast: (n: string) => `Pull request #${n} dibuat`,
     openOnGitHub: 'Buka di GitHub',
     reviewersUnavailable: 'Pencarian reviewer memerlukan akses push ke repositori ini.',
+    // Frame 07 (`72:62`): baris metadata di samping Reviewer.
+    addLabel: 'Tambah label',
+    linkedIssueHint: 'Ketik nomor issue untuk menutupnya saat pull request ini di-merge.',
+    linkedIssueInvalid: 'Nomor issue adalah bilangan bulat lebih besar dari nol.',
+    labelsFailed: (names: string) => `Terbuat, tetapi label gagal ditambahkan: ${names}`,
   },
 
   // Explorer root app

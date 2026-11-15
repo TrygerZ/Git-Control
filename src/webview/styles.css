@@ -7224,18 +7224,29 @@ h3 {
   box-shadow: var(--gc-shadow-lg);
 }
 
+/*
+ * Frame 07: the header and the footer stay put and only the form body scrolls.
+ * Scrolling the whole dialog would carry Cancel and the submit button off screen
+ * exactly when the body is long, which is when a user needs them.
+ */
 .gc-create-pr--modal {
   width: min(35em, 100%);
   max-height: 90vh;
-  overflow: auto;
+  overflow: hidden;
   animation: gc-modal-in var(--gc-dur-med) var(--gc-ease-spring);
 }
 
 .gc-create-pr--sidebar {
   flex: 1 1 auto;
   min-height: 0;
-  overflow: auto;
+  overflow: hidden;
   box-shadow: none;
+}
+
+.gc-create-pr__body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
 }
 
 .gc-create-pr__head {
@@ -7388,6 +7399,23 @@ h3 {
   min-width: 0;
 }
 
+/*
+ * Frame 07 (`72:62`): Reviewers, Labels, and Linked issue in one row. Three
+ * columns on a wide panel, stacked once the dialog is the width of the sidebar,
+ * because a 100 px column cannot hold a chip and a remove button.
+ */
+.gc-create-pr__meta {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(11em, 1fr));
+  gap: var(--gc-space-3);
+  align-items: start;
+}
+
+/* The issue field stays narrow: an issue number is a few digits. */
+.gc-create-pr__issue {
+  min-width: 0;
+}
+
 .gc-create-pr__add .gc-field__label {
   justify-content: flex-start;
 }
@@ -7494,13 +7522,24 @@ h3 {
 
 /* ------------------------------------------------------------------ footer */
 
+/*
+ * The footer is the last child of the scrolling body, so it sticks to the bottom
+ * of the scrollport: frame 07 keeps Cancel, Create draft, and the submit visible
+ * while the fields above scroll. The fill is required, or the last field shows
+ * through the band.
+ */
 .gc-create-pr__footer {
+  position: sticky;
+  bottom: calc(-1 * var(--gc-space-5));
+  z-index: 1;
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: var(--gc-space-3);
-  padding-top: var(--gc-space-4);
+  margin-top: auto;
+  padding: var(--gc-space-4) 0 var(--gc-space-5);
   border-top: 1px solid var(--gc-border-subtle);
+  background: var(--gc-bg-surface);
 }
 
 .gc-create-pr__footer-end {

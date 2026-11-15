@@ -53,6 +53,15 @@ import { validateHash } from './validation';
 /** Minimum scope for private repositories, per the PRD. */
 export const REQUIRED_PRIVATE_SCOPE = 'repo:status';
 
+/**
+ * Whether a body already links the issue, so the closing keyword is not added
+ * twice. Matches `#97` anywhere, which covers `Closes #97`, `Fixes #97`, and a
+ * plain mention: a duplicate line would read as a mistake in the pull request.
+ */
+function mentionsIssue(body: string, issue: number): boolean {
+  return new RegExp(`(^|[^0-9])#${issue}(?![0-9])`).test(body);
+}
+
 /** Structured GitHub failure, shaped so the bridge can map it without guessing. */
 export class GitHubError extends Error {
   readonly status: number;
@@ -446,15 +455,35 @@ export class GitHubClient {
    * the only common cause is "a pull request already exists for this head", and
    * GitHub's `errors[].message` says so in words the dialog can show verbatim.
    */
+  /**
+   * Create a pull request.
+   *
+   * `labels` is accepted but never sent on this call: GitHub only takes labels on
+   * `POST /pulls` for some API versions, so the caller applies them afterwards
+   * through {@link addLabels}. `linkedIssue` is folded into the body as a closing
+   * keyword, which is what makes GitHub link the two.
+   */
   async createPullRequest(
     owner: string,
     repo: string,
-    input: { title: string; body: string; base: string; head: string; draft: boolean },
+    input: {
+      title: string;
+      body: string;
+      base: string;
+      head: string;
+      draft: boolean;
+      labels?: readonly string[];
+      linkedIssue?: number;
+    },
   ): Promise<{ data: { number: number; url: string }; rateLimit: GitHubRateLimit }> {
+    const body =
+      input.linkedIssue === undefined || mentionsIssue(input.body, input.linkedIssue)
+        ? input.body
+        : `${input.body.trimEnd()}\n\nCloses #${input.linkedIssue}`.trimStart();
     return this.mutate<{ number: number; url: string }>({
       method: 'POST',
       path: `/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/pulls`,
-      body: { title: input.title, body: input.body, head: input.head, base: input.base, draft: input.draft },
+      body: { title: input.title, body, head: input.head, base: input.base, draft: input.draft },
       invalidate: ['pulls:', 'commitPulls:'],
       invalid: (body) => {
         const detail = errorMessages(body).join('; ');
@@ -499,6 +528,35 @@ export class GitHubClient {
       (body) => toPullRequests(body),
     );
     return result.data[0] ?? null;
+  }
+
+  /**
+   * Apply labels to a created pull request through the issues API.
+   *
+   * The create call cannot carry them on every API version, so this runs after it.
+   * A failure here must not undo the pull request: the caller reports the names it
+   * could not apply, the same way it reports refused reviewers.
+   */
+  async addLabels(
+    owner: string,
+    repo: string,
+    number: number,
+    labels: readonly string[],
+  ): Promise<{ applied: string[]; rateLimit: GitHubRateLimit }> {
+    const result = await this.mutate<Array<{ name?: unknown }>>({
+      method: 'POST',
+      path: `/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/issues/${number}/labels`,
+      body: { labels },
+      invalidate: ['pulls:'],
+      map: (body) => {
+        if (!Array.isArray(body)) return labels.map((name) => ({ name }));
+        return body;
+      },
+    });
+    const applied = result.data
+      .map((entry) => entry?.name)
+      .filter((name): name is string => typeof name === 'string');
+    return { applied: applied.length === 0 ? [...labels] : applied, rateLimit: result.rateLimit };
   }
 
   /**

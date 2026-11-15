@@ -364,23 +364,6 @@ export function PullRequestsView(): JSX.Element {
                   onChange={(event) => setQueryAndPersist(event.target.value)}
                 />
               </div>
-              {canOfferCreate && (
-                <>
-                  <button type="button" className="gc-button gc-button--action" onClick={startCreate}>
-                    <Icon name="add" />
-                    {strings.createPr.title}
-                  </button>
-                  <button
-                    type="button"
-                    className="gc-icon-button"
-                    aria-label={strings.createPr.title}
-                    title={strings.createPr.title}
-                    onClick={startCreate}
-                  >
-                    <Icon name="add" />
-                  </button>
-                </>
-              )}
             </div>
           </div>
 
@@ -422,13 +405,28 @@ export function PullRequestsView(): JSX.Element {
                 )}
                 <span className="gc-prs__card-text">{strings.prs.branchCardNone}</span>
               </div>
-              <button
-                type="button"
-                className="gc-button gc-button--action"
-                onClick={() => void openUrl(compareUrl(webUrl, branch))}
-              >
-                {strings.prs.createOnGitHub}
-              </button>
+              {/*
+                Frame 05 (`69:64`) puts both actions inside the card: the dialog
+                stays in the extension, and Compare is the one trip to GitHub.
+              */}
+              <div className="gc-prs__card-actions">
+                {canOfferCreate && (
+                  <button type="button" className="gc-button gc-button--action" onClick={startCreate}>
+                    <Icon name="add" />
+                    {strings.createPr.title}
+                  </button>
+                )}
+                <button
+                  type="button"
+                  className="gc-button gc-button--quiet"
+                  aria-label={strings.prs.compareAria(sanitizeGitText(branch))}
+                  title={strings.prs.compareAria(sanitizeGitText(branch))}
+                  onClick={() => void openUrl(compareUrl(webUrl, branch))}
+                >
+                  <Icon name="external" />
+                  <span>{strings.prs.compareAction}</span>
+                </button>
+              </div>
             </div>
           )}
 
