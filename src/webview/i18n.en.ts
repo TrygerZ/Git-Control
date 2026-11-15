@@ -657,9 +657,6 @@ const en = {
     zoomOutTitle: 'Zoom out (-)',
     zoomResetAria: 'Reset zoom to 100 percent',
     zoomResetTitle: '100% (0)',
-    toggleRibbonsAria: 'Toggle branch ribbons',
-    toggleRibbonsTitle: 'Show or hide branch ribbons',
-    toggleRibbonsLabel: 'Ribbons',
     moreButtonTitle: 'Load next page.',
     moreButton: 'Load more',
     moreLoadingSpinner: 'Loading next page...',
@@ -691,7 +688,7 @@ const en = {
     legendNotPushed: 'Not pushed',
     // Lane gutter (frame 01, node 10:127). The column is decorative, so these
     // words are read only when someone inspects the DOM or a screenshot.
-    laneGutterHead: 'Lanes',
+    laneGutterHead: 'Branches',
     laneCommits: (count: string) => `${count} commits`,
     laneMerged: 'merged',
     laneLocalOnly: 'local only',
@@ -832,8 +829,6 @@ const en = {
     localDesc: 'Commit only exists on this machine, not pushed to remote yet.',
     mergeTitle: 'Large circle: merge',
     mergeDesc: 'Point where two branches merge.',
-    ribbonTitle: 'Ribbon trail: branch membership',
-    ribbonDesc: 'Colored horizontal ribbon indicating nodes belong to the same branch.',
     sectionRefLabels: 'Ref labels',
     currentBranchDesc: 'Active branch.',
     localBranchDesc: 'Other local branches.',

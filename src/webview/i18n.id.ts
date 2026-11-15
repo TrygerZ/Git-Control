@@ -652,9 +652,6 @@ const id: Catalog = {
     zoomOutTitle: 'Perkecil (-)',
     zoomResetAria: 'Kembalikan perbesaran ke 100 persen',
     zoomResetTitle: '100% (0)',
-    toggleRibbonsAria: 'Alihkan pita branch',
-    toggleRibbonsTitle: 'Tampilkan atau sembunyikan pita branch',
-    toggleRibbonsLabel: 'Pita',
     moreButtonTitle: 'Ambil halaman berikutnya.',
     moreButton: 'Muat lebih banyak',
     moreLoadingSpinner: 'Memuat halaman berikutnya...',
@@ -685,7 +682,7 @@ const id: Catalog = {
     legendNotPushed: 'Belum di-push',
     // Lane gutter (frame 01, node 10:127). See the en catalog for why this column
     // is decorative and its words are never announced.
-    laneGutterHead: 'Jalur',
+    laneGutterHead: 'Branch',
     laneCommits: (count: string) => `${count} commit`,
     laneMerged: 'sudah digabung',
     laneLocalOnly: 'hanya lokal',
@@ -825,8 +822,6 @@ const id: Catalog = {
     localDesc: 'Commit baru ada di komputer ini, belum di-push ke remote.',
     mergeTitle: 'Bulatan besar: merge',
     mergeDesc: 'Titik temu penggabungan dua branch.',
-    ribbonTitle: 'Pita trail: keanggotaan branch',
-    ribbonDesc: 'Pita horizontal berwarna yang menunjukkan commit berada dalam branch yang sama.',
     sectionRefLabels: 'Label ref',
     currentBranchDesc: 'Branch aktif.',
     localBranchDesc: 'Branch lokal lainnya.',

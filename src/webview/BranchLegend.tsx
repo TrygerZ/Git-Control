@@ -315,13 +315,6 @@ export function BranchLegend({ lanes, id, onClose }: Props): JSX.Element {
             {strings.legend.mergeDesc}
           </dd>
 
-          <dt>
-            <span className="gc-legend__swatch gc-legend__swatch--ribbon" aria-hidden="true" />
-            {strings.legend.ribbonTitle}
-          </dt>
-          <dd>
-            {strings.legend.ribbonDesc}
-          </dd>
         </dl>
 
         <h3 className="gc-legend__heading">{strings.legend.sectionRefLabels}</h3>

@@ -38,7 +38,6 @@ import { GraphMinimap } from './GraphMinimap';
 import { LaneGutterView } from './LaneGutterView';
 import { NodeContextMenu, type MenuAnchor, type MenuItem } from './NodeContextMenu';
 import { EmptyState, GraphSkeleton, Icon, InfoBanner, Spinner, type IconName } from './ui';
-import { loadState, saveState } from './bridge';
 import {
   authorInitials,
   formatCount,
@@ -53,7 +52,6 @@ import { useT } from './useT';
 import { BranchSelector } from './BranchLegend';
 import { useGitHubStore, useRepoStore, useSettingsStore } from './store';
 import { chipsFor, computeStaggerMap, lanesForFilter, matchesSearch } from './graphQuery';
-import { computeBranchRibbons, edgePath, RIBBON_HALF_HEIGHT } from './ribbon';
 import {
   COLUMN_WIDTH,
   DAY_GAP,
@@ -66,6 +64,7 @@ import {
   RULER_HEIGHT,
   TEXT_MIN_ZOOM,
   clampZoom,
+  edgePath,
   fitZoom,
   edgeIntersectsBand,
   laneY,
@@ -82,7 +81,7 @@ import {
 } from './viewport';
 import type { DateBucket, GraphEdge, GraphNode, RefInfo, RepoGraph, RepoStatus } from '../messages';
 export { chipsFor, computeStaggerMap, lanesForFilter, matchesSearch } from './graphQuery';
-export { computeBranchRibbons, edgePath, RIBBON_HALF_HEIGHT } from './ribbon';
+export { edgePath } from './viewport';
 const MINIMAP_HEIGHT = 160;
 
 /**
@@ -129,8 +128,8 @@ export { rowLabel };
 /**
  * Filter bar above the canvas (frame 01, node `9:45`).
  *
- * One row: search, checkout, filter, count with Load older, the Ribbons switch, and
- * the panel toggle. No visible form labels; each control's name is in the catalog.
+ * One row: search, checkout, filter, count with Load older, and the panel toggle.
+ * No visible form labels; each control's name is in the catalog.
  */
 function Toolbar({
   search,
@@ -142,12 +141,10 @@ function Toolbar({
   countText,
   canLoadOlder,
   paging,
-  showRibbons,
   inspectorOpen,
   onSearch,
   onBranchFilter,
   onLoadOlder,
-  onToggleRibbons,
   onToggleInspector,
 }: {
   search: string;
@@ -159,12 +156,10 @@ function Toolbar({
   countText: string;
   canLoadOlder: boolean;
   paging: boolean;
-  showRibbons: boolean;
   inspectorOpen: boolean;
   onSearch(value: string): void;
   onBranchFilter(value: string): void;
   onLoadOlder(): void;
-  onToggleRibbons(next: boolean): void;
   onToggleInspector(): void;
 }): JSX.Element {
   const strings = useT();
@@ -210,17 +205,6 @@ function Toolbar({
         </button>
       )}
       {paging && <Spinner label={strings.graph.moreLoadingSpinner} />}
-
-      <label className="gc-checkbox gc-toolbar__ribbons" title={strings.graph.toggleRibbonsTitle}>
-        <input
-          type="checkbox"
-          className="gc-checkbox__input"
-          checked={showRibbons}
-          aria-label={strings.graph.toggleRibbonsAria}
-          onChange={(e) => onToggleRibbons(e.target.checked)}
-        />
-        <span className="gc-checkbox__text">{strings.graph.toggleRibbonsLabel}</span>
-      </label>
 
       {/*
         One checkout control, shared with the sidebar; the unlabelled variant. The
@@ -309,7 +293,6 @@ export function GraphCanvas({
   /** The gutter is fixed, so it needs the vertical offset the scroller owns. */
   const [scrollTop, setScrollTop] = useState(0);
   const [viewportWidthState, setViewportWidthState] = useState(800);
-  const [showRibbons, setShowRibbons] = useState(() => loadState().showRibbons);
   const [menu, setMenu] = useState<{ node: GraphNode; anchor: MenuAnchor } | null>(null);
   const [focusRow, setFocusRow] = useState(0);
   const [pendingFocusRow, setPendingFocusRow] = useState<number | null>(null);
@@ -487,17 +470,6 @@ export function GraphCanvas({
       out.push({ edge, fromX, toX });
     }
     return out;
-  }, [graph, rows, band.left, band.right]);
-
-  // Compute branch ribbons per branch name following first-parent branch chains
-  const visibleRibbons = useMemo(() => {
-    if (graph === null || rows.length === 0) return [];
-    return computeBranchRibbons(rows, graph.edges, band, {
-      laneHeight: LANE_HEIGHT,
-      rulerHeight: RULER_HEIGHT,
-      capPad: COLUMN_WIDTH / 2,
-      halfHeight: RIBBON_HALF_HEIGHT,
-    });
   }, [graph, rows, band.left, band.right]);
 
   const laneColor = useCallback(
@@ -791,15 +763,10 @@ export function GraphCanvas({
         }
         canLoadOlder={graph !== null && graph.nextCursor !== null && graph.truncated === false}
         paging={paging}
-        showRibbons={showRibbons}
         inspectorOpen={inspectorOpen}
         onSearch={setSearch}
         onBranchFilter={setBranchFilter}
         onLoadOlder={() => void loadMore()}
-        onToggleRibbons={(next) => {
-          setShowRibbons(next);
-          saveState({ showRibbons: next });
-        }}
         onToggleInspector={onToggleInspector}
       />
 
@@ -940,40 +907,6 @@ export function GraphCanvas({
                           y1={RULER_HEIGHT}
                           x2={bucket.bandStartX + bucket.bandWidth}
                           y2={totalWorldH}
-                        />
-                      </g>
-                    );
-                  })}
-
-                  {/*
-                    Branch Ribbons (placed between day background and edges/nodes).
-                    Kept mounted when showRibbons is false to enable smooth CSS opacity transitions without layout pops.
-                  */}
-                  {visibleRibbons.map((ribbon) => {
-                    return (
-                      <g
-                        key={`ribbon-${ribbon.key}`}
-                        className={`gc-branch-ribbon${showRibbons ? '' : ' gc-branch-ribbon--hidden'}`}
-                      >
-                        {/* Semi-transparent track */}
-                        <path
-                          className="gc-branch-ribbon__track"
-                          d={ribbon.trackD}
-                          fill={ribbon.color}
-                        />
-                        {/* Top boundary line */}
-                        <path
-                          className="gc-branch-ribbon__border"
-                          d={ribbon.topD}
-                          fill="none"
-                          stroke={ribbon.color}
-                        />
-                        {/* Bottom boundary line */}
-                        <path
-                          className="gc-branch-ribbon__border"
-                          d={ribbon.bottomD}
-                          fill="none"
-                          stroke={ribbon.color}
                         />
                       </g>
                     );
@@ -1137,8 +1070,8 @@ export function GraphCanvas({
 
           {/*
             Floating canvas controls, bottom right: go to HEAD, then zoom. The
-            legend launcher and the Ribbons switch moved out (frame 01 draws the
-            legend as a pill in place and the switch in the toolbar).
+            legend launcher moved out (frame 01 draws the legend as a pill in
+            place).
           */}
           <div className="gc-canvas__controls" role="group" aria-label={strings.graph.controlsAria}>
             {/*

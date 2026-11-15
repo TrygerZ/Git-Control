@@ -260,6 +260,27 @@ export function edgeIntersectsBand(
 }
 
 /**
+ * SVG path for one graph edge between two world x positions.
+ *
+ * Same-lane edges draw straight; a lane transition bends through the midpoint so
+ * the curve never crosses a node it does not own. Deterministic: identical inputs
+ * yield an identical string.
+ */
+export function edgePath(
+  edge: { fromLane: number; toLane: number },
+  fromX: number,
+  toX: number,
+  laneHeight: number = LANE_HEIGHT,
+  rulerHeight: number = RULER_HEIGHT,
+): string {
+  const y1 = laneY(edge.fromLane, laneHeight, rulerHeight);
+  const y2 = laneY(edge.toLane, laneHeight, rulerHeight);
+  if (y1 === y2) return `M${fromX} ${y1}L${toX} ${y2}`;
+  const mid = (fromX + toX) / 2;
+  return `M${fromX} ${y1}C${mid} ${y1} ${mid} ${y2} ${toX} ${y2}`;
+}
+
+/**
  * A ribbon segment or horizontal band overlaps the visible viewport world band.
  */
 export function segmentIntersectsBand(

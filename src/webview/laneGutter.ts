@@ -8,6 +8,7 @@
  * stay here so the component draws and nothing else.
  */
 import type { GraphEdge, GraphLane, GraphNode, RefInfo } from '../messages';
+import { LANE_HEIGHT, RULER_HEIGHT } from './viewport';
 
 export type LaneStatusKind = 'merged' | 'upstream' | 'local-only' | 'remote-only' | 'tag' | 'unknown';
 
@@ -161,8 +162,13 @@ export function laneSummaries(
 /**
  * Screen `top` for a lane row, so its box is centred on the lane's node.
  *
- * `worldCenterY` is `laneY(lane)`: world units including the ruler. Zoom scales it,
- * the scroller's offset is subtracted, and half the row height centres the box.
+ * `worldCenterY` is `laneY(lane)`: world units inside the canvas world. The gutter's
+ * own coordinate space starts at the top of its ruler band, and the canvas paints
+ * its world below the same band, so the band height is added here. Without it every
+ * label sits exactly `RULER_HEIGHT` above the node it names.
+ *
+ * Zoom scales the world, the scroller's offset is subtracted, and half the row
+ * height centres the box.
  */
 export function laneRowTop(
   worldCenterY: number,
@@ -170,5 +176,16 @@ export function laneRowTop(
   scrollTop: number,
   rowHeight: number,
 ): number {
-  return worldCenterY * zoom - scrollTop - rowHeight / 2;
+  return RULER_HEIGHT + worldCenterY * zoom - scrollTop - rowHeight / 2;
+}
+
+/**
+ * Height of one gutter row at a zoom level.
+ *
+ * A row IS a lane band, not a label floating inside one, so it is exactly one lane
+ * pitch tall. That is what makes the alternating bands tile into continuous stripes
+ * and what guarantees no band ever paints over its neighbour, at any zoom.
+ */
+export function gutterRowHeight(zoom: number): number {
+  return LANE_HEIGHT * zoom;
 }

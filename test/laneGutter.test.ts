@@ -10,7 +10,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { laneRowTop, laneSummaries, mergedLanes } from '../src/webview/laneGutter';
+import { gutterRowHeight, laneRowTop, laneSummaries, mergedLanes } from '../src/webview/laneGutter';
+import { LANE_HEIGHT, MIN_ZOOM, RULER_HEIGHT, laneY } from '../src/webview/viewport';
 import type { GraphEdge, GraphLane, GraphNode, RefInfo } from '../src/messages';
 
 const ROOT = path.join(__dirname, '..', '..');
@@ -197,11 +198,50 @@ test('the fallback name is used only for a lane with no ref', () => {
 // ------------------------------------------------------------------ geometry
 
 test('a lane row is centred on its node and follows zoom and scroll', () => {
-  // World centre 76 (ruler 32 + half of 88). At 100 % with no scroll the row's
-  // 33 px box starts 16.5 px above the centre.
-  assert.equal(laneRowTop(76, 1, 0, 33), 59.5);
-  assert.equal(laneRowTop(76, 2, 0, 33), 135.5);
-  assert.equal(laneRowTop(76, 1, 40, 33), 19.5);
+  // The gutter's own top is the ruler band, and the canvas world starts below that
+  // band, so a row's top is the world centre plus RULER_HEIGHT. Without the offset
+  // every label sits 32 px above the node it names, which is what the first
+  // implementation did.
+  assert.equal(laneRowTop(laneY(0, LANE_HEIGHT, RULER_HEIGHT), 1, 0, 33), 91.5);
+  assert.equal(laneRowTop(laneY(0, LANE_HEIGHT, RULER_HEIGHT), 2, 0, 33), 167.5);
+  assert.equal(laneRowTop(laneY(0, LANE_HEIGHT, RULER_HEIGHT), 1, 40, 33), 51.5);
+});
+
+test('a row centre lands exactly on the node centre it names', () => {
+  // The alignment claim, stated as behaviour instead of as an arithmetic identity
+  // on one constant: whatever the zoom and scroll, centre(row) === centre(node).
+  for (const zoom of [0.35, 0.5, 1, 1.75, 4]) {
+    for (const scrollTop of [0, 37, 512]) {
+      for (const lane of [0, 1, 7]) {
+        const height = gutterRowHeight(zoom);
+        const top = laneRowTop(laneY(lane, LANE_HEIGHT, RULER_HEIGHT), zoom, scrollTop, height);
+        const rowCentre = top + height / 2;
+        // The canvas paints its world below the sticky ruler band.
+        const nodeCentre = RULER_HEIGHT + laneY(lane, LANE_HEIGHT, RULER_HEIGHT) * zoom - scrollTop;
+        assert.ok(
+          Math.abs(rowCentre - nodeCentre) < 1e-9,
+          `lane ${lane} at zoom ${zoom}, scroll ${scrollTop}: row ${rowCentre} vs node ${nodeCentre}`,
+        );
+      }
+    }
+  }
+});
+
+test('a row is exactly one lane tall, so the bands tile with no gap and no overlap', () => {
+  // The row is the lane's band, not a label floating in the middle of one. Two
+  // consequences the user asked for: alternating bands read as continuous stripes,
+  // and no band can ever paint over its neighbour at any zoom.
+  for (const zoom of [MIN_ZOOM, 0.4, 0.5, 0.75, 1, 2, 4]) {
+    assert.equal(gutterRowHeight(zoom), LANE_HEIGHT * zoom, `zoom ${zoom}`);
+  }
+  assert.equal(gutterRowHeight(1), LANE_HEIGHT, '100 % is one lane pitch, 88 px');
+  // Consecutive lanes start exactly where the previous band ends.
+  for (const lane of [0, 1, 2, 6]) {
+    const zoom = 1;
+    const top = laneRowTop(laneY(lane, LANE_HEIGHT, RULER_HEIGHT), zoom, 0, gutterRowHeight(zoom));
+    const next = laneRowTop(laneY(lane + 1, LANE_HEIGHT, RULER_HEIGHT), zoom, 0, gutterRowHeight(zoom));
+    assert.equal(next, top + gutterRowHeight(zoom), `lane ${lane} and ${lane + 1} share an edge`);
+  }
 });
 
 // -------------------------------------------------------------- the surface
@@ -227,6 +267,23 @@ test('the gutter heading is the frame word and both catalogs carry it', () => {
       assert.ok(catalog.includes(`    ${key}:`), `${lang} catalog is missing ${key}`);
     }
   }
+  // The frame's ruler cell reads BRANCHES. `Lanes` names the mechanism; the frame
+  // names the thing the user is looking for.
+  assert.match(read('src/webview/i18n.en.ts'), /laneGutterHead: 'Branches'/);
+  assert.match(read('src/webview/i18n.id.ts'), /laneGutterHead: 'Branch'/);
+});
+
+test('a row reads like the frame: name on its own line, then commits and status', () => {
+  // Frame 01 stacks two lines: `main` beside its dot, then `9 commits · origin/main`
+  // underneath. Right-aligning the count on the first line, as the first pass did,
+  // crowds the name and breaks the reading order the frame establishes.
+  const src = read('src/webview/LaneGutterView.tsx');
+  const metaAt = src.indexOf('gc-gutter__meta');
+  assert.ok(metaAt > src.indexOf('gc-gutter__name'), 'the meta line follows the name');
+  const meta = src.slice(metaAt, metaAt + 400);
+  assert.match(meta, /laneCommits\(/, 'the count is on the meta line');
+  assert.match(meta, /statusWord\(row\)/, 'and the status word shares it');
+  assert.match(meta, /·/, 'the frame separates the two facts with a middle dot');
 });
 
 test('the column is decorative for assistive tech: the rows repeat the graph', () => {
@@ -245,4 +302,20 @@ test('the gutter styles use tokens only and the frame width', () => {
   assert.match(css, /\.gc-gutter__row\s*\{/);
   const literals = css.match(/\.gc-gutter[^{]*\{[^}]*#[0-9a-fA-F]{3,8}/g) ?? [];
   assert.deepEqual(literals, [], 'no literal colour in the gutter rules');
+});
+
+test('every other lane band is tinted, so the rows read as separate lanes', () => {
+  // A zebra: the eye needs a band edge to follow from a lane's label across to its
+  // nodes, and one flat background gives it nothing to follow. Odd lanes take the
+  // tint, even lanes stay on the column surface.
+  const src = read('src/webview/LaneGutterView.tsx');
+  assert.match(src, /gc-gutter__row--alt/, 'odd lanes carry the alternate class');
+  assert.match(src, /index % 2 === 1|% 2 === 1/, 'the alternation is by lane index');
+
+  const css = read('src/webview/styles.css');
+  const alt = css.match(/\.gc-gutter__row--alt\s*\{([^}]*)\}/)?.[1] ?? '';
+  assert.ok(alt.length > 0, 'the alternate band has a rule');
+  assert.match(alt, /background:/, 'it is a fill');
+  assert.match(alt, /var\(--gc-/, 'from a token, never a literal');
+  assert.doesNotMatch(alt, /#[0-9a-fA-F]{3,8}/, 'no literal colour');
 });

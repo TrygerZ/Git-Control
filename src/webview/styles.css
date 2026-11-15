@@ -92,8 +92,7 @@
   --gc-ease-spring: cubic-bezier(0.34, 1.3, 0.64, 1);
 
   /*
-   * Radius ladder. `xs` is for insets smaller than a control (legend ribbon
-   * swatches); `sm` is the control step itself and aliases the base token so
+   * Radius ladder. `xs` is for insets smaller than a control (legend swatches); `sm` is the control step itself and aliases the base token so
    * callers that mean "one control radius" stay correct if the base changes.
    */
   --gc-radius-xs: 2px;
@@ -1138,12 +1137,6 @@ h3 {
   flex: 0 0 auto;
 }
 
-/* The Ribbons switch keeps its checkbox and loses the floating card chrome. */
-.gc-toolbar__ribbons {
-  flex: 0 0 auto;
-  min-height: var(--gc-hit);
-}
-
 .gc-toolbar__panel-toggle {
   flex: 0 0 auto;
 }
@@ -2070,18 +2063,32 @@ h3 {
   right: 0;
   left: 0;
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
+  grid-template-columns: auto minmax(0, 1fr);
   grid-template-areas:
-    'dot name meta'
-    '. status status';
+    'dot name'
+    '. meta';
+  /*
+   * The row is a full lane band, so the grid would otherwise split that height
+   * between its two lines and drift the name and its status far apart. `min-content`
+   * rows packed to the centre keep the label one tight block, as the frame draws it.
+   */
+  align-content: center;
   align-items: center;
+  grid-auto-rows: min-content;
   column-gap: var(--gc-space-2);
   row-gap: var(--gc-space-1);
-  height: 33px;
   padding: 0 var(--gc-space-3);
   box-sizing: border-box;
   color: var(--gc-text-primary);
   font-size: var(--gc-fs-2xs);
+}
+
+/*
+ * Zebra band. The eye needs an edge to follow from a lane's label across to its
+ * nodes; one flat background gives it nothing. Odd lanes take a subtle tint.
+ */
+.gc-gutter__row--alt {
+  background: color-mix(in srgb, var(--gc-bg-hover) 55%, transparent);
 }
 
 /* The lane colour comes from the layout payload as an inline background. */
@@ -2103,13 +2110,8 @@ h3 {
 
 .gc-gutter__meta {
   grid-area: meta;
-  color: var(--gc-text-muted);
-}
-
-.gc-gutter__status {
-  grid-area: status;
   overflow: hidden;
-  color: var(--gc-text-secondary);
+  color: var(--gc-text-muted);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -2557,27 +2559,6 @@ h3 {
 /*
  * Branch pill positioned above lane / node.
  */
-/* ----------------------------------------------------------- branch ribbon */
-
-.gc-branch-ribbon {
-  pointer-events: none;
-  opacity: 1;
-  transition: opacity var(--gc-dur-fast) var(--gc-ease);
-}
-
-.gc-branch-ribbon--hidden {
-  opacity: 0;
-}
-
-.gc-branch-ribbon__track {
-  opacity: 0.28;
-}
-
-.gc-branch-ribbon__border {
-  stroke-width: 1;
-  opacity: 0.85;
-}
-
 .gc-pill {
   position: absolute;
   transform: translate(-50%, -100%);
@@ -2988,18 +2969,6 @@ h3 {
   width: 15px;
   height: 15px;
   box-shadow: inset 0 0 0 1.5px var(--vscode-editor-background);
-}
-
-.gc-legend__swatch--ribbon {
-  width: 16px;
-  height: 8px;
-  border-radius: var(--gc-radius-xs);
-  border-top: 1.5px solid var(--vscode-focusBorder);
-  border-bottom: 1.5px solid var(--vscode-focusBorder);
-  border-left: none;
-  border-right: none;
-  background: var(--vscode-focusBorder);
-  opacity: 0.5;
 }
 
 .gc-legend__lanes {

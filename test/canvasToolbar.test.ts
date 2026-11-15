@@ -52,13 +52,15 @@ test('the commit count and Load older live in the toolbar, as frame 01 draws the
   );
 });
 
-test('the Ribbons switch moved from the floating stack into the toolbar', () => {
+test('the Ribbons switch is gone: the lane gutter already answers what it toggled', () => {
+  // The gutter names every lane in place, permanently, which is what the ribbon
+  // trail was for. Keeping both means two answers to one question, one of them a
+  // switch the user has to know about. Frame 01 draws no switch either.
   const src = read(CANVAS);
-  const controls = src.slice(src.indexOf('gc-canvas__controls'));
-  assert.doesNotMatch(controls, /toggleRibbons/, 'the switch is not in the floating controls');
-  const toolbar = src.slice(src.indexOf('function Toolbar'), src.indexOf('function Toolbar') + 4000);
-  assert.match(toolbar, /toggleRibbons/, 'the switch is in the toolbar');
-  assert.match(toolbar, /showRibbons/, 'and it reads the same state the canvas renders');
+  assert.doesNotMatch(src, /toggleRibbons|showRibbons/, 'no switch, no state');
+  assert.doesNotMatch(src, /gc-branch-ribbon|computeBranchRibbons/, 'no ribbon paths are drawn');
+  assert.doesNotMatch(read('src/webview/styles.css'), /\.gc-branch-ribbon/, 'no ribbon styles remain');
+  assert.doesNotMatch(read('src/webview/bridge.ts'), /showRibbons/, 'no persisted setting remains');
 });
 
 test('the right-panel toggle is a toolbar button, not an aside header control', () => {

@@ -60,7 +60,6 @@ export interface WebviewState {
   selectedPaths: string[];
   commitMessage: string;
   pushAfterCommit: boolean;
-  showRibbons: boolean;
   route: Route;
   /** Help return route. Rides beside `route` because a rebuilt webview has no session memory. */
   helpReturn: Route | null;
@@ -87,7 +86,6 @@ const DEFAULT_STATE: WebviewState = {
   selectedPaths: [],
   commitMessage: '',
   pushAfterCommit: false,
-  showRibbons: true,
   route: DEFAULT_ROUTE,
   helpReturn: null,
   prFilter: 'open',
@@ -314,7 +312,6 @@ export function loadState(): WebviewState {
       : [],
     commitMessage: typeof partial.commitMessage === 'string' ? partial.commitMessage : '',
     pushAfterCommit: partial.pushAfterCommit === true,
-    showRibbons: partial.showRibbons !== false,
     route: parseRoute(partial.route) ?? DEFAULT_ROUTE,
     helpReturn: parseHelpReturn(partial.helpReturn),
     prFilter: PR_FILTERS.find((id) => id === partial.prFilter) ?? 'open',

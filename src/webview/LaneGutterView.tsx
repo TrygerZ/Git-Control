@@ -17,14 +17,11 @@
  */
 import { useMemo, type JSX } from 'react';
 import { formatCount, sanitizeGitText } from './format';
-import { laneRowTop, laneSummaries, type LaneSummary } from './laneGutter';
+import { gutterRowHeight, laneRowTop, laneSummaries, type LaneSummary } from './laneGutter';
 import { useSettingsStore } from './store';
 import { useT } from './useT';
 import { LANE_HEIGHT, RULER_HEIGHT, laneY } from './viewport';
 import type { RepoGraph } from '../messages';
-
-/** Frame row height; the box is centred on the lane, so half of this is the offset. */
-const GUTTER_ROW_HEIGHT = 33;
 
 interface Props {
   graph: RepoGraph;
@@ -65,24 +62,29 @@ export function LaneGutterView({ graph, zoom, scrollTop }: Props): JSX.Element {
   return (
     <div className="gc-gutter" aria-hidden="true">
       <div className="gc-gutter__head">{strings.graph.laneGutterHead}</div>
-      {rows.map((row) => (
-        <div
-          key={row.index}
-          className="gc-gutter__row"
-          style={{
-            top: `${laneRowTop(laneY(row.index, LANE_HEIGHT, RULER_HEIGHT), zoom, scrollTop, GUTTER_ROW_HEIGHT)}px`,
-          }}
-        >
-          <span className="gc-gutter__dot" style={{ background: row.color }} />
-          <span className="gc-gutter__name" title={sanitizeGitText(row.name)}>
-            {sanitizeGitText(row.name)}
-          </span>
-          <span className="gc-gutter__meta">
-            {strings.graph.laneCommits(formatCount(row.commits, language))}
-          </span>
-          <span className="gc-gutter__status">{statusWord(row)}</span>
-        </div>
-      ))}
+      {rows.map((row) => {
+        const height = gutterRowHeight(zoom);
+        return (
+          <div
+            key={row.index}
+            className={
+              row.index % 2 === 1 ? 'gc-gutter__row gc-gutter__row--alt' : 'gc-gutter__row'
+            }
+            style={{
+              top: `${laneRowTop(laneY(row.index, LANE_HEIGHT, RULER_HEIGHT), zoom, scrollTop, height)}px`,
+              height: `${height}px`,
+            }}
+          >
+            <span className="gc-gutter__dot" style={{ background: row.color }} />
+            <span className="gc-gutter__name" title={sanitizeGitText(row.name)}>
+              {sanitizeGitText(row.name)}
+            </span>
+            <span className="gc-gutter__meta">
+              {strings.graph.laneCommits(formatCount(row.commits, language))} · {statusWord(row)}
+            </span>
+          </div>
+        );
+      })}
     </div>
   );
 }
