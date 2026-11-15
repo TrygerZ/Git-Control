@@ -76,6 +76,9 @@ const ALL_ICON_NAMES: readonly IconName[] = [
   'status-skipped',
   // Get started card (P16).
   'sparkle',
+  // Canvas zoom bar (frame 01, node `10:158`): fit to window and centre on HEAD.
+  'maximize',
+  'crosshair',
 ];
 
 test('every IconName has an SVG render function in ICON_PATHS and no orphan paths exist', () => {
