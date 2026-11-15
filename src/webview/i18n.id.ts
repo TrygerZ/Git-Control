@@ -663,6 +663,15 @@ const id: Catalog = {
     checkoutBranchCurrent: (name: string) => `${name} (aktif)`,
     checkoutBranchDetached: 'Detached HEAD',
     resetFilter: 'Reset',
+    // Lane gutter (frame 01, node 10:127). See the en catalog for why this column
+    // is decorative and its words are never announced.
+    laneGutterHead: 'Jalur',
+    laneCommits: (count: string) => `${count} commit`,
+    laneMerged: 'sudah digabung',
+    laneLocalOnly: 'hanya lokal',
+    laneRemoteOnly: 'hanya remote',
+    laneTag: 'tag',
+    laneUnknown: 'tidak diketahui',
   },
 
   // Node context menu

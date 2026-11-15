@@ -36,6 +36,7 @@ import {
 } from 'react';
 import { BranchLegend, BranchSelector } from './BranchLegend';
 import { GraphMinimap } from './GraphMinimap';
+import { LaneGutterView } from './LaneGutterView';
 import { NodeContextMenu, type MenuAnchor, type MenuItem } from './NodeContextMenu';
 import { EmptyState, GraphSkeleton, Icon, InfoBanner, Spinner, type IconName } from './ui';
 import { loadState, saveState } from './bridge';
@@ -149,6 +150,8 @@ export function GraphCanvas({
   const legendButtonRef = useRef<HTMLButtonElement>(null);
   const legendPanelRef = useRef<HTMLDivElement>(null);
   const [scrollLeft, setScrollLeft] = useState(0);
+  /** The gutter is fixed, so it needs the vertical offset the scroller owns. */
+  const [scrollTop, setScrollTop] = useState(0);
   const [viewportWidthState, setViewportWidthState] = useState(800);
   const [showLegend, setShowLegend] = useState(false);
   const [showRibbons, setShowRibbons] = useState(() => loadState().showRibbons);
@@ -701,6 +704,7 @@ export function GraphCanvas({
           scroller drifts away with the content.
         */}
         <div className="gc-graph__stage">
+          {graph !== null && <LaneGutterView graph={graph} zoom={zoom} scrollTop={scrollTop} />}
           {/*
             One tab stop for the whole grid. Tab lands on the container, which
             immediately hands focus to the cursor row (`onFocus` below) so the row's
@@ -730,6 +734,7 @@ export function GraphCanvas({
             onScroll={(event) => {
               clearHoverImmediate();
               setScrollLeft(event.currentTarget.scrollLeft);
+              setScrollTop(event.currentTarget.scrollTop);
             }}
             onPointerLeave={() => clearHoverImmediate()}
             onKeyDown={onKeyDown}

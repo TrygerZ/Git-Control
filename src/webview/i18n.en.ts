@@ -668,6 +668,15 @@ const en = {
     checkoutBranchCurrent: (name: string) => `${name} (current)`,
     checkoutBranchDetached: 'Detached HEAD',
     resetFilter: 'Reset',
+    // Lane gutter (frame 01, node 10:127). The column is decorative, so these
+    // words are read only when someone inspects the DOM or a screenshot.
+    laneGutterHead: 'Lanes',
+    laneCommits: (count: string) => `${count} commits`,
+    laneMerged: 'merged',
+    laneLocalOnly: 'local only',
+    laneRemoteOnly: 'remote only',
+    laneTag: 'tag',
+    laneUnknown: 'unknown',
   },
 
   // Node context menu

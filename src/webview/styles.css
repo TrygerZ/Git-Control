@@ -1985,6 +1985,94 @@ h3 {
   min-height: 0;
 }
 
+/*
+ * Lane gutter (frame 01, node 10:127): the fixed 150 px column naming each lane.
+ *
+ * It is a sibling of `.gc-canvas`, not a child, so the graph pans horizontally
+ * while the column stays put. Rows are positioned by `laneRowTop`, which subtracts
+ * the scroller's `scrollTop` itself, so nothing here scrolls.
+ *
+ * `overflow: hidden` clips the rows above the ruler and below the fold instead of
+ * letting them paint over the toolbar.
+ */
+.gc-gutter {
+  position: relative;
+  flex: 0 0 150px;
+  width: 150px;
+  overflow: hidden;
+  border: 1px solid var(--gc-border);
+  border-right: none;
+  border-radius: var(--gc-radius) 0 0 var(--gc-radius);
+  background: var(--gc-bg-sidebar);
+}
+
+/* Ruler slot: the same 32 px band the canvas ruler occupies, so rows line up. */
+.gc-gutter__head {
+  position: absolute;
+  top: 0;
+  right: 0;
+  left: 0;
+  display: flex;
+  align-items: center;
+  height: 32px;
+  padding: 0 var(--gc-space-3);
+  border-bottom: 1px solid var(--gc-border);
+  color: var(--gc-muted);
+  font-size: var(--gc-fs-2xs);
+  font-weight: var(--gc-weight-strong);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.gc-gutter__row {
+  position: absolute;
+  right: 0;
+  left: 0;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  grid-template-areas:
+    'dot name meta'
+    '. status status';
+  align-items: center;
+  column-gap: var(--gc-space-2);
+  row-gap: var(--gc-space-1);
+  height: 33px;
+  padding: 0 var(--gc-space-3);
+  box-sizing: border-box;
+  color: var(--gc-text-primary);
+  font-size: var(--gc-fs-2xs);
+}
+
+/* The lane colour comes from the layout payload as an inline background. */
+.gc-gutter__dot {
+  grid-area: dot;
+  width: var(--gc-space-3);
+  height: var(--gc-space-3);
+  border-radius: 50%;
+}
+
+.gc-gutter__name {
+  grid-area: name;
+  min-width: 0;
+  overflow: hidden;
+  font-weight: var(--gc-weight-strong);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.gc-gutter__meta {
+  grid-area: meta;
+  color: var(--gc-text-muted);
+}
+
+.gc-gutter__status {
+  grid-area: status;
+  overflow: hidden;
+  color: var(--gc-text-secondary);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .gc-canvas {
   position: relative;
   flex: 1 1 auto;
