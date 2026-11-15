@@ -201,10 +201,29 @@ test('a lane row is centred on its node and follows zoom and scroll', () => {
   // The gutter's own top is the ruler band, and the canvas world starts below that
   // band, so a row's top is the world centre plus RULER_HEIGHT. Without the offset
   // every label sits 32 px above the node it names, which is what the first
-  // implementation did.
-  assert.equal(laneRowTop(laneY(0, LANE_HEIGHT, RULER_HEIGHT), 1, 0, 33), 91.5);
-  assert.equal(laneRowTop(laneY(0, LANE_HEIGHT, RULER_HEIGHT), 2, 0, 33), 167.5);
-  assert.equal(laneRowTop(laneY(0, LANE_HEIGHT, RULER_HEIGHT), 1, 40, 33), 51.5);
+  // implementation did. The expected values are derived from the pitch rather than
+  // hardcoded, so this test survives a pitch change.
+  //
+  // `laneY(0)` is already `RULER_HEIGHT + pitch / 2`, and `laneRowTop` adds
+  // `RULER_HEIGHT` again because the gutter's origin is the top of its own ruler
+  // band, so the band is counted twice in screen space. That is correct: the node
+  // centre is `RULER_HEIGHT + laneY(0) * zoom` on screen.
+  const pitch = LANE_HEIGHT;
+  const lane0Centre = RULER_HEIGHT + pitch / 2;
+  assert.equal(laneRowTop(laneY(0, pitch, RULER_HEIGHT), 1, 0, 33), RULER_HEIGHT + lane0Centre - 16.5);
+  assert.equal(laneRowTop(laneY(0, pitch, RULER_HEIGHT), 2, 0, 33), RULER_HEIGHT + lane0Centre * 2 - 16.5);
+  assert.equal(laneRowTop(laneY(0, pitch, RULER_HEIGHT), 1, 40, 33), RULER_HEIGHT + lane0Centre - 16.5 - 40);
+});
+
+test('the lane pitch matches the frame, which spaces lane dots 150 px apart', () => {
+  // Measured on the frame 01 render at 1440x900: the four gutter dots sit at
+  // y 233, 383, 533 and 683, so the pitch is exactly 150 px. The previous 88 px
+  // left a 62 px gap short of the design and read as cramped.
+  assert.equal(LANE_HEIGHT, 150);
+  const frameDotCentres = [233, 383, 533, 683];
+  for (let i = 1; i < frameDotCentres.length; i += 1) {
+    assert.equal(frameDotCentres[i]! - frameDotCentres[i - 1]!, LANE_HEIGHT, 'frame pitch');
+  }
 });
 
 test('a row centre lands exactly on the node centre it names', () => {
@@ -234,7 +253,7 @@ test('a row is exactly one lane tall, so the bands tile with no gap and no overl
   for (const zoom of [MIN_ZOOM, 0.4, 0.5, 0.75, 1, 2, 4]) {
     assert.equal(gutterRowHeight(zoom), LANE_HEIGHT * zoom, `zoom ${zoom}`);
   }
-  assert.equal(gutterRowHeight(1), LANE_HEIGHT, '100 % is one lane pitch, 88 px');
+  assert.equal(gutterRowHeight(1), LANE_HEIGHT, '100 % is one lane pitch');
   // Consecutive lanes start exactly where the previous band ends.
   for (const lane of [0, 1, 2, 6]) {
     const zoom = 1;

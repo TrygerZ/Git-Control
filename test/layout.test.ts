@@ -353,7 +353,7 @@ test('computeStaggerMap assigns alternating placement to same-lane x-neighbours'
     hash,
     shortHash: hash.slice(0, 7),
     x,
-    y: lane * 88,
+    y: lane * LANE_HEIGHT,
     lane,
     index: 0,
     isHead: false,
@@ -507,24 +507,29 @@ test('ref with other/stash kind does not create branch ribbon attribution', () =
 });
 
 test('edgePath produces deterministic SVG path strings without NaN or undefined', () => {
+  // Expected Y values are derived from the lane pitch so a pitch change does not
+  // restate the constant here as a magic number.
+  const ruler = 40;
+  const lane0 = ruler + LANE_HEIGHT / 2;
+  const lane1 = ruler + LANE_HEIGHT + LANE_HEIGHT / 2;
   // Straight lane (fromLane === toLane)
   const straightEdge = { from: A, to: B, fromLane: 0, toLane: 0, kind: 'direct' as const };
-  const straightPath = edgePath(straightEdge, 100, 200, 88, 40);
-  assert.equal(straightPath, 'M100 84L200 84');
+  const straightPath = edgePath(straightEdge, 100, 200, LANE_HEIGHT, ruler);
+  assert.equal(straightPath, `M100 ${lane0}L200 ${lane0}`);
   assert.equal(straightPath.includes('NaN'), false);
   assert.equal(straightPath.includes('undefined'), false);
 
   // Lane transition (fromLane !== toLane)
   const transitionEdge = { from: A, to: B, fromLane: 0, toLane: 1, kind: 'direct' as const };
-  const transitionPath = edgePath(transitionEdge, 100, 200, 88, 40);
-  assert.equal(transitionPath, 'M100 84C150 84 150 172 200 172');
+  const transitionPath = edgePath(transitionEdge, 100, 200, LANE_HEIGHT, ruler);
+  assert.equal(transitionPath, `M100 ${lane0}C150 ${lane0} 150 ${lane1} 200 ${lane1}`);
   assert.equal(transitionPath.includes('NaN'), false);
   assert.equal(transitionPath.includes('undefined'), false);
 
   // Degenerate same-point (fromX === toX)
   const degenerateEdge = { from: A, to: B, fromLane: 1, toLane: 1, kind: 'direct' as const };
-  const degeneratePath = edgePath(degenerateEdge, 150, 150, 88, 40);
-  assert.equal(degeneratePath, 'M150 172L150 172');
+  const degeneratePath = edgePath(degenerateEdge, 150, 150, LANE_HEIGHT, ruler);
+  assert.equal(degeneratePath, `M150 ${lane1}L150 ${lane1}`);
   assert.equal(degeneratePath.includes('NaN'), false);
   assert.equal(degeneratePath.includes('undefined'), false);
 });

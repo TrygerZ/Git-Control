@@ -490,7 +490,7 @@ test('minimapScrollFor clamps out-of-range input', () => {
 test('hit-circle radius compensation maintains rendered target size across zoom', () => {
   const nodeRadius = 14;
   const avatarRadius = 15; // NODE_RADIUS + 1
-  const maxHitRadius = Math.min(COLUMN_WIDTH, LANE_HEIGHT) / 2; // 44 world px (half lane height)
+  const maxHitRadius = Math.min(COLUMN_WIDTH, LANE_HEIGHT) / 2; // 48 world px (half COLUMN_WIDTH, the smaller of the two)
 
   function computeHitRadius(r: number, zoom: number): number {
     return Math.min(maxHitRadius, zoom < 1 ? Math.max(r, 14 / zoom) : r);

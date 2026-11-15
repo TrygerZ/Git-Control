@@ -96,7 +96,7 @@ const AVATAR_REQUEST_DEBOUNCE_MS = 150;
  * `NODE_RADIUS + 1` (6 px) is the smallest circle that can hold a legible letter at
  * 100 % zoom; a merge node stays one pixel larger than that, exactly as before, so
  * the "merge nodes are bigger" channel the legend describes is unchanged. Lanes are
- * `LANE_HEIGHT` (88 px) apart, so nothing here brings two nodes closer than the merge
+ * one `LANE_HEIGHT` pitch apart, so nothing here brings two nodes closer than the merge
  * ring already did.
  *
  * Presentation-only, so it stays here rather than in `viewport.ts`, which owns the
@@ -1046,25 +1046,46 @@ export function GraphCanvas({
           </div>
 
           {/*
-            Floating Minimap: placed horizontally centred at the bottom of the canvas stage.
-            Hidden when viewport width < 220px to prevent colliding with bottom-right floating controls stack.
+            Frame 01 bottom row: the minimap and the legend pill side by side,
+            sharing one bottom edge (minimap x 167-384, pill x 401-565, both end
+            at y 882). The row owns the absolute positioning, so neither item can
+            drift away from the other. Hidden below 220 px, where the frame draws
+            neither and the bottom-right controls stack would collide.
             Width scales dynamically between 120px and 360px (~45% of stage width), never exceeding 60% of stage width.
           */}
           {viewportWidthState >= 220 && (
-            <div className="gc-minimap-wrap">
-              <GraphMinimap
-                nodes={rows}
-                laneCount={laneCount}
-                scrollLeft={scrollLeft}
-                viewportWidth={viewportWidthState}
-                zoom={zoom}
-                totalWorldWidth={totalWorldW}
-                width={Math.max(120, Math.min(360, Math.round(viewportWidthState * 0.45)))}
-                onScroll={(left) => {
-                  const node = scrollRef.current;
-                  if (node !== null) node.scrollLeft = left;
-                }}
-              />
+            <div className="gc-canvas__bottom-row">
+              <div className="gc-minimap-wrap">
+                <GraphMinimap
+                  nodes={rows}
+                  laneCount={laneCount}
+                  scrollLeft={scrollLeft}
+                  viewportWidth={viewportWidthState}
+                  zoom={zoom}
+                  totalWorldWidth={totalWorldW}
+                  width={Math.max(120, Math.min(360, Math.round(viewportWidthState * 0.45)))}
+                  onScroll={(left) => {
+                    const node = scrollRef.current;
+                    if (node !== null) node.scrollLeft = left;
+                  }}
+                />
+              </div>
+
+              {/*
+                Frame 01 (`10:184`): the legend is a pill in place, not a launcher. It
+                names the two node states where the graph is, and the hollow swatch
+                keeps them apart without relying on colour.
+              */}
+              <div className="gc-legend-pill">
+                <span className="gc-legend-pill__item">
+                  <span className="gc-legend-pill__dot gc-legend-pill__dot--pushed" aria-hidden="true" />
+                  {strings.graph.legendPushed}
+                </span>
+                <span className="gc-legend-pill__item">
+                  <span className="gc-legend-pill__dot gc-legend-pill__dot--local" aria-hidden="true" />
+                  {strings.graph.legendNotPushed}
+                </span>
+              </div>
             </div>
           )}
 
@@ -1155,22 +1176,6 @@ export function GraphCanvas({
               </button>
             </div>
           </div>
-
-          {/*
-            Frame 01 (`10:184`): the legend is a pill in place, not a launcher. It
-            names the two node states where the graph is, and the hollow swatch
-            keeps them apart without relying on colour.
-          */}
-          <div className="gc-legend-pill">
-            <span className="gc-legend-pill__item">
-              <span className="gc-legend-pill__dot gc-legend-pill__dot--pushed" aria-hidden="true" />
-              {strings.graph.legendPushed}
-            </span>
-            <span className="gc-legend-pill__item">
-              <span className="gc-legend-pill__dot gc-legend-pill__dot--local" aria-hidden="true" />
-              {strings.graph.legendNotPushed}
-            </span>
-          </div>
         </div>
       </div>
 
@@ -1235,7 +1240,7 @@ function NodeMark({
   const clipId = `clip-${node.hash}`;
   // Hit circle world radius: ensures rendered pixel radius is max(NODE_RADIUS * zoom, 14) px,
   // clamped so it cannot exceed half of min(COLUMN_WIDTH, LANE_HEIGHT).
-  const maxHitRadius = Math.min(COLUMN_WIDTH, LANE_HEIGHT) / 2; // 44 world px (half lane height, targets never overlap in world space)
+  const maxHitRadius = Math.min(COLUMN_WIDTH, LANE_HEIGHT) / 2; // 48 world px (half COLUMN_WIDTH, targets never overlap in world space)
   const hitRadius = Math.min(maxHitRadius, zoom < 1 ? Math.max(r, 14 / zoom) : r);
 
   // If node is a HEAD commit or tip branch with special trail marker

@@ -108,6 +108,37 @@ test('the legend is a pill in place, with both frame states named', () => {
   assert.match(src, /BranchSelector/, 'the checkout control is still the shared component');
 });
 
+test('the legend pill sits beside the minimap on the canvas bottom edge', () => {
+  // Frame 01 bottom row: minimap at x 167-384, pill at x 401-565, both ending at
+  // y 882. The pill is a sibling of the minimap in that row, not a banner floating
+  // above the graph. Anchoring it 176 px up put it on top of a commit row once the
+  // lanes grew to the frame pitch.
+  const css = read('src/webview/styles.css');
+  const pill = css.match(/\.gc-legend-pill\s*\{([^}]*)\}/)?.[1] ?? '';
+  assert.ok(pill.length > 0, 'the pill has a rule');
+  // A static flex item: the row positions it, and nothing here pretends otherwise.
+  assert.doesNotMatch(pill, /position:\s*absolute/, 'the pill is a flex item, not a floater');
+  assert.doesNotMatch(pill, /left:\s*50%/, 'it is not centred on the canvas');
+  assert.doesNotMatch(pill, /transform:/, 'no centring transform');
+  assert.doesNotMatch(pill, /bottom:/, 'the row owns the offset, not the pill');
+
+  // The row is what carries the placement, shared with the minimap.
+  const row = css.match(/\.gc-canvas__bottom-row\s*\{([^}]*)\}/)?.[1] ?? '';
+  assert.ok(row.length > 0, 'the row has a rule');
+  assert.match(row, /position:\s*absolute/);
+  assert.match(row, /bottom:\s*var\(--gc-space-4\)/, 'the minimap and pill share one bottom edge');
+  assert.match(row, /display:\s*flex/);
+  assert.match(row, /align-items:\s*flex-end/, 'both items rest on that edge');
+
+  // One positioned row holds both, so they cannot drift apart.
+  const src = read(CANVAS);
+  const wrap = src.indexOf('gc-minimap-wrap');
+  const pillMarkup = src.indexOf('gc-legend-pill');
+  assert.ok(wrap > 0 && pillMarkup > wrap, 'the pill follows the minimap in the same bottom row');
+  const rowAt = src.indexOf('gc-canvas__bottom-row');
+  assert.ok(rowAt > 0 && rowAt < wrap, 'both live inside the row');
+});
+
 test('the pill keeps both states distinguishable without colour', () => {
   const css = read('src/webview/styles.css');
   const pill = css.match(/\.gc-legend-pill\s*\{([^}]*)\}/)?.[1] ?? '';

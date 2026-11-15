@@ -92,7 +92,7 @@ export interface LayoutResult {
 }
 
 export const COLUMN_WIDTH = 96;
-export const LANE_HEIGHT = 88;
+export const LANE_HEIGHT = 150;
 export const NODE_RADIUS = 14;
 export const DAY_GAP = 48;
 export const RULER_HEIGHT = 32;

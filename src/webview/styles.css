@@ -2185,19 +2185,12 @@ h3 {
 }
 
 /*
- * Frame 01 (`10:184`): the legend as a pill in place, centred at the bottom of
- * the stage above the minimap. The two states differ by shape as well as colour:
- * pushed is a filled dot, local only is hollow.
+ * Frame 01 (`10:184`): the legend as a pill in place, beside the minimap on the
+ * canvas bottom edge. The two are flex items of `.gc-canvas__bottom-row`, so
+ * neither can drift from the other. The two states differ by shape as well as
+ * colour: pushed is a filled dot, local only is hollow.
  */
 .gc-legend-pill {
-  position: absolute;
-  /*
-   * Centred above the minimap: the minimap is 160 px tall and sits at
-   * `--gc-space-4` from the bottom, so the pill clears it by one small step.
-   */
-  bottom: calc(var(--gc-space-4) + 160px + var(--gc-space-2));
-  left: 50%;
-  z-index: 6;
   display: flex;
   align-items: center;
   gap: var(--gc-space-3);
@@ -2207,7 +2200,6 @@ h3 {
   background: var(--gc-surface-2);
   color: var(--gc-text-muted);
   font-size: var(--gc-fs-2xs);
-  transform: translateX(-50%);
   pointer-events: none;
 }
 
@@ -2512,7 +2504,7 @@ h3 {
 
 /*
  * Resting subject is clamped to 1 line: cards on neighbouring lanes are offset from their
- * node centre and a lane is only 88 px tall, so a second line makes an `above` card and a
+ * node centre and a lane is only one pitch tall, so a second line makes an `above` card and a
  * `below` card meet. Hover expands to 2 lines because a hovered card is on top of the stack.
  */
 .gc-row__subject {
@@ -2777,15 +2769,30 @@ h3 {
 /* ------------------------------------------------------------------- minimap */
 
 /*
- * Minimap wrapper: absolutely positioned at the bottom centre of the canvas stage.
- * Floats over canvas content with a z-index of 9 (above canvas content z-index 1..8,
- * below controls z-index 10 and menu/popover z-index 20+).
+ * Bottom row: the minimap and the legend pill, side by side and sharing one
+ * bottom edge, as frame 01 draws them. Absolutely positioned at the bottom
+ * centre of the canvas stage, over canvas content, with a z-index of 9 (above
+ * canvas content z-index 1..8, below controls z-index 10 and menu/popover
+ * z-index 20+). The row owns the positioning so the two items cannot drift.
  */
-.gc-minimap-wrap {
+.gc-canvas__bottom-row {
   position: absolute;
   left: 50%;
   bottom: var(--gc-space-4);
   transform: translateX(-50%);
+  z-index: 9;
+  display: flex;
+  align-items: flex-end;
+  gap: var(--gc-space-4);
+  pointer-events: auto;
+}
+
+/*
+ * Minimap slot in the bottom row. A plain flex item: the row positions it.
+ * `z-index` stays because `test/a11y.test.ts` reads it from this rule to pin the
+ * stacking ladder (selected card < minimap row); it is inert on a static child.
+ */
+.gc-minimap-wrap {
   z-index: 9;
   display: flex;
   pointer-events: auto;
@@ -6418,7 +6425,7 @@ h3 {
     bottom: var(--gc-space-3);
   }
 
-  .gc-minimap-wrap {
+  .gc-canvas__bottom-row {
     bottom: var(--gc-space-3);
   }
 
