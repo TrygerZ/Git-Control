@@ -108,9 +108,7 @@ export function LaneGutterView({ graph, zoom, scrollTop, scrollLeft }: Props): J
         return (
           <div
             key={row.index}
-            className={
-              row.index % 2 === 1 ? 'gc-gutter__row gc-gutter__row--alt' : 'gc-gutter__row'
-            }
+            className="gc-gutter__row"
             style={{
               top: `${laneRowTop(laneY(row.index, LANE_HEIGHT, RULER_HEIGHT), zoom, scrollTop, height)}px`,
               height: `${height}px`,

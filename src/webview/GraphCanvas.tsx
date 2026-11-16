@@ -895,19 +895,25 @@ export function GraphCanvas({
                 focusable="false"
               >
                 <g transform={`scale(${zoom})`}>
-                  {/* Alternating day backgrounds & separator lines aligned with band geometry */}
+                  {Array.from({ length: laneCount }, (_, lane) =>
+                    lane % 2 === 1 ? (
+                      <rect
+                        key={`lane-band-${lane}`}
+                        className="gc-canvas__lane-band"
+                        x={0}
+                        y={RULER_HEIGHT + lane * LANE_HEIGHT}
+                        width={totalWorldW}
+                        height={LANE_HEIGHT}
+                      />
+                    ) : null,
+                  )}
+                  {/* Odd lanes (lane % 2 === 1) take the band above. It sits under the day
+                      lines and the edges, which are painted after it. */}
+
+                  {/* Day separator lines aligned with band geometry */}
                   {dateBuckets.map((bucket) => {
                     return (
                       <g key={`day-bg-${bucket.timestamp}`}>
-                        {bucket.index % 2 === 1 && (
-                          <rect
-                            className="gc-canvas__day-band"
-                            x={bucket.bandStartX}
-                            y={RULER_HEIGHT}
-                            width={bucket.bandWidth}
-                            height={totalWorldH - RULER_HEIGHT}
-                          />
-                        )}
                         <line
                           className="gc-canvas__day-line"
                           x1={bucket.bandStartX + bucket.bandWidth}

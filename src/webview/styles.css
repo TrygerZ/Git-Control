@@ -1913,14 +1913,6 @@ h3 {
   font-size: var(--gc-fs-2xs);
 }
 
-/*
- * Zebra band. The eye needs an edge to follow from a lane's label across to its
- * nodes; one flat background gives it nothing. Odd lanes take a subtle tint.
- */
-.gc-gutter__row--alt {
-  background: color-mix(in srgb, var(--gc-bg-hover) 55%, transparent);
-}
-
 /* The lane colour comes from the layout payload as an inline background. */
 .gc-gutter__dot {
   grid-area: dot;
@@ -2508,9 +2500,12 @@ h3 {
   box-sizing: border-box;
 }
 
-.gc-canvas__day-band {
-  fill: var(--vscode-list-hoverBackground);
-  opacity: 0.4;
+/*
+ * Frame 01 `LaneBand` (10:2). The alternate lane stripe lives on the canvas, not
+ * the gutter, so the eye follows one band from the label to its nodes.
+ */
+.gc-canvas__lane-band {
+  fill: color-mix(in srgb, var(--gc-bg-hover) 55%, transparent);
 }
 
 .gc-canvas__day-line {

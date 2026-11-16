@@ -442,20 +442,20 @@ test('the gutter styles use tokens only and the frame width', () => {
   assert.deepEqual(literals, [], 'no literal colour in the gutter rules');
 });
 
-test('every other lane band is tinted, so the rows read as separate lanes', () => {
-  // A zebra: the eye needs a band edge to follow from a lane's label across to its
-  // nodes, and one flat background gives it nothing to follow. Odd lanes take the
-  // tint, even lanes stay on the column surface.
+test('the gutter is one flat column: the lane band is painted on the canvas', () => {
+  // Frame 01 paints the gutter `#181818` from the ruler down, and puts the only
+  // zebra on the canvas side of the seam (`LaneBand/main` `10:2`). A tinted gutter
+  // row duplicated that fill on the wrong side, which reads as a misalignment even
+  // when the two zebras tile. `test/canvasFrame01.test.ts` owns the canvas band.
   const src = read('src/webview/LaneGutterView.tsx');
-  assert.match(src, /gc-gutter__row--alt/, 'odd lanes carry the alternate class');
-  assert.match(src, /index % 2 === 1|% 2 === 1/, 'the alternation is by lane index');
+  assert.doesNotMatch(src, /gc-gutter__row--alt/, 'no alternate row class');
+  assert.doesNotMatch(src, /% 2 === 1/, 'and no alternation in the row');
 
   const css = read('src/webview/styles.css');
-  const alt = css.match(/\.gc-gutter__row--alt\s*\{([^}]*)\}/)?.[1] ?? '';
-  assert.ok(alt.length > 0, 'the alternate band has a rule');
-  assert.match(alt, /background:/, 'it is a fill');
-  assert.match(alt, /var\(--gc-/, 'from a token, never a literal');
-  assert.doesNotMatch(alt, /#[0-9a-fA-F]{3,8}/, 'no literal colour');
+  assert.doesNotMatch(css, /\.gc-gutter__row--alt/, 'no alternate row rule survives');
+  const row = css.match(/\.gc-gutter__row\s*\{([^}]*)\}/)?.[1] ?? '';
+  assert.ok(row.length > 0, 'the row has a rule');
+  assert.doesNotMatch(row, /background:/, 'the row paints nothing of its own');
 });
 
 // ------------------------------------------------- merged lane follows scroll
