@@ -36,6 +36,7 @@ import {
 } from 'react';
 import { GraphMinimap } from './GraphMinimap';
 import { LaneGutterView } from './LaneGutterView';
+import { edgeDashed, laneTips, mergedLanes } from './laneGutter';
 import { NodeContextMenu, type MenuAnchor, type MenuItem } from './NodeContextMenu';
 import { EmptyState, GraphSkeleton, Icon, InfoBanner, Spinner, type IconName } from './ui';
 import {
@@ -486,6 +487,12 @@ export function GraphCanvas({
     }
     return out;
   }, [graph, rows, band.left, band.right]);
+
+  /** Lanes whose tip another tip reaches, so an edge into one is solid. */
+  const mergedLaneSet = useMemo(
+    () => mergedLanes(laneTips(graph?.nodes ?? []), graph?.edges ?? []),
+    [graph],
+  );
 
   const laneColor = useCallback(
     (lane: number): string => graph?.lanes[lane]?.color ?? 'currentColor',
@@ -945,7 +952,11 @@ export function GraphCanvas({
                     <path
                       key={`${edge.from}->${edge.to}`}
                       className={
-                        edge.kind === 'merge' ? 'gc-edge gc-edge--merge' : 'gc-edge gc-edge--direct'
+                        edge.kind === 'merge'
+                          ? 'gc-edge gc-edge--merge'
+                          : edgeDashed(edge.toLane, mergedLaneSet)
+                            ? 'gc-edge gc-edge--direct gc-edge--dashed'
+                            : 'gc-edge gc-edge--direct'
                       }
                       d={edgePath(edge, fromX, toX, LANE_HEIGHT, RULER_HEIGHT)}
                       stroke={laneColor(edge.kind === 'merge' ? edge.toLane : edge.fromLane)}

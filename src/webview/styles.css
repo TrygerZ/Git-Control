@@ -2132,6 +2132,14 @@ h3 {
 }
 
 /*
+ * An edge into a lane that has not landed on the current line yet. The dash is the
+ * channel, not a colour, so it needs no token: solid means merged, dashed means not.
+ */
+.gc-edge--dashed {
+  stroke-dasharray: 4 4;
+}
+
+/*
  * Hit target on SVG node: transparent circle that receives pointer events.
  * Scaled inversely with zoom so the hit target never falls below --gc-hit at low zoom.
  */

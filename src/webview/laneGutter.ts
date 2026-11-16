@@ -98,6 +98,22 @@ function kindOfRef(ref: string): 'local' | 'remote' | 'tag' | null {
 }
 
 /**
+ * The tip of every lane: the node with the largest `x`, first wins a tie.
+ *
+ * The single implementation of the tip rule, shared by `laneSummaries` and the
+ * canvas so a dashed edge and a merged gutter row can never disagree about which
+ * commit a lane ends at.
+ */
+export function laneTips(nodes: readonly GraphNode[]): Array<{ lane: number; hash: string }> {
+  const tipOf = new Map<number, GraphNode>();
+  for (const node of nodes) {
+    const current = tipOf.get(node.lane);
+    if (current === undefined || node.x > current.x) tipOf.set(node.lane, node);
+  }
+  return [...tipOf].map(([lane, node]) => ({ lane, hash: node.hash }));
+}
+
+/**
  * One row per lane, in lane order.
  *
  * A lane with no rendered node still gets a row with `commits: 0`: the frame draws
@@ -113,18 +129,11 @@ export function laneSummaries(
 ): LaneSummary[] {
   const counts = new Map<number, number>();
   const laneOfHash = new Map<string, number>();
-  /** Newest node per lane, which is the lane's tip: largest `x`, first wins a tie. */
-  const tipOf = new Map<number, GraphNode>();
   for (const node of nodes) {
     counts.set(node.lane, (counts.get(node.lane) ?? 0) + 1);
     laneOfHash.set(node.hash, node.lane);
-    const current = tipOf.get(node.lane);
-    if (current === undefined || node.x > current.x) tipOf.set(node.lane, node);
   }
-  const merged = mergedLanes(
-    [...tipOf].map(([lane, node]) => ({ lane, hash: node.hash })),
-    edges,
-  );
+  const merged = mergedLanes(laneTips(nodes), edges);
 
   /** Ref names per lane, in the order `refs` arrives, so the row is deterministic. */
   const namesOf = new Map<number, string[]>();
@@ -259,6 +268,18 @@ export interface MergeBoundary {
  */
 export function stripRemotePrefix(ref: string): string {
   return ref.startsWith('refs/remotes/') ? ref.slice('refs/remotes/'.length) : ref;
+}
+
+/**
+ * Whether an edge that lands on `toLane` is drawn dashed.
+ *
+ * Frame 01 dashes an edge into a branch that has not landed on the current line
+ * yet (`12:19` into `feat/graph-ribbons`, `12:20` into `origin/release/1.4`) and
+ * keeps it solid once the branch is merged (`12:17`, `12:18`). An unknown lane is
+ * unmerged, so it stays dashed rather than claiming a merge nobody proved.
+ */
+export function edgeDashed(toLane: number, merged: ReadonlySet<number>): boolean {
+  return !merged.has(toLane);
 }
 
 export function mergedNameAt(
