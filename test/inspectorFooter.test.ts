@@ -22,7 +22,13 @@ const CSS = 'src/webview/styles.css';
 
 test('Checkout is the filled accent button and Branch here is the quiet one', () => {
   const src = read(APP);
-  const bar = src.slice(src.indexOf('gc-explorer__aside-actions'), src.indexOf('NodeContextMenu'));
+  // Anchor on the JSX usage, not the name: `NodeContextMenu` also appears in the
+  // import list at the top of the file, and a slice from there is empty.
+  const barStart = src.indexOf('gc-explorer__aside-actions');
+  assert.ok(barStart > 0, 'the footer bar renders');
+  const barEnd = src.indexOf('<NodeContextMenu', barStart);
+  assert.ok(barEnd > barStart, 'the canvas menu closes the bar');
+  const bar = src.slice(barStart, barEnd);
   const checkoutAt = bar.indexOf('strings.inspector.actionCheckout');
   const branchAt = bar.indexOf('strings.inspector.actionBranchHere');
   assert.ok(checkoutAt > 0 && branchAt > checkoutAt, 'Checkout comes first, as the frame orders it');

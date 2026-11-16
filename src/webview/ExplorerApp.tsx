@@ -253,7 +253,7 @@ export function ExplorerApp(): JSX.Element {
             <div className="gc-explorer__aside-actions gc-inspector__actions">
               <button
                 type="button"
-                className="gc-button gc-button--quiet"
+                className="gc-button gc-button--primary"
                 disabled={atHead || busy}
                 title={
                   atHead
