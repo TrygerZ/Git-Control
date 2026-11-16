@@ -104,6 +104,9 @@ const AVATAR_REQUEST_DEBOUNCE_MS = 150;
  */
 const AVATAR_RADIUS = NODE_RADIUS + 1;
 
+/** HEAD is one size up from a plain node, as the frame draws 34 px against 28 px. */
+const HEAD_RADIUS = NODE_RADIUS + 3;
+
 interface Props {
   graph: RepoGraph | null;
   status: RepoStatus | null;
@@ -1245,9 +1248,10 @@ function NodeMark({
   onHoverChange(hovered: boolean): void;
 }): JSX.Element {
   const [imgFailed, setImgFailed] = useState(false);
+  const strings = useT();
   const x = node.x;
-  // Merge nodes keep their extra pixel, so "bigger circle = merge" still holds.
-  const r = node.isMerge ? NODE_RADIUS + 2 : AVATAR_RADIUS;
+  // HEAD and merge both grow the circle; a merge at HEAD takes the larger of the two.
+  const r = Math.max(AVATAR_RADIUS, node.isHead ? HEAD_RADIUS : 0, node.isMerge ? NODE_RADIUS + 2 : 0);
   // 2 px inside the dot, not flush with it: the selection ring is a 2.5 px stroke centred on
   // the dot's path, so 1.25 px of it falls inside the radius and a flush avatar would cover
   // the half that says "this commit is selected".
@@ -1267,9 +1271,6 @@ function NodeMark({
   // clamped so it cannot exceed half of min(COLUMN_WIDTH, LANE_HEIGHT).
   const maxHitRadius = Math.min(COLUMN_WIDTH, LANE_HEIGHT) / 2; // 48 world px (half COLUMN_WIDTH, targets never overlap in world space)
   const hitRadius = Math.min(maxHitRadius, zoom < 1 ? Math.max(r, 14 / zoom) : r);
-
-  // If node is a HEAD commit or tip branch with special trail marker
-  const isCapsule = node.isHead;
 
   return (
     <g className={classes.join(' ')}>
@@ -1292,38 +1293,27 @@ function NodeMark({
           </clipPath>
         </defs>
       )}
-      {isCapsule ? (
-        <g className="gc-node__capsule-wrap">
-          {/* Capsule outline node matching new_branch_trail.png visual reference */}
-          <rect
-            className="gc-node__capsule"
-            x={x - 20}
-            y={y - 9}
-            width={40}
-            height={18}
-            rx={9}
-            stroke={color}
-          />
-          {/* Centered home icon outline inside capsule */}
-          <g transform={`translate(${x - 7}, ${y - 7})`} stroke={color} fill="none">
-            <path
-              d="M2 6.5L7 2.5l5 4V11.5a1 1 0 0 1-1 1h-2.5V8.5H5.5v4H3a1 1 0 0 1-1-1V6.5z"
-              strokeWidth="1.3"
-              strokeLinejoin="round"
-            />
-          </g>
+      {/* Selection ring behind the dot: frame 01 `10:81` is 46 px against a 28 px node. */}
+      {selected && <circle className="gc-node__halo" cx={x} cy={y} r={r + 9} />}
+      <circle
+        className="gc-node__dot"
+        cx={x}
+        cy={y}
+        r={r}
+        stroke={color}
+        fill={node.local ? 'var(--vscode-editor-background)' : color}
+      />
+      {/*
+        HEAD tag above the circle (frame 01 `151:6`, 39 x 16). Text needs the same
+        zoom threshold as the initial, or it turns into a smudge.
+      */}
+      {node.isHead && showContent && (
+        <g className="gc-node__head-tag">
+          <rect x={x - 19.5} y={y - r - 26} width={39} height={16} rx={4} />
+          <text x={x} y={y - r - 15} textAnchor="middle">{strings.graph.headTag}</text>
         </g>
-      ) : (
-        <circle
-          className="gc-node__dot"
-          cx={x}
-          cy={y}
-          r={r}
-          stroke={color}
-          fill={node.local ? 'var(--vscode-editor-background)' : color}
-        />
       )}
-      {hasAvatar && !isCapsule && isSafeImageSrc(avatarUrl) && (
+      {hasAvatar && isSafeImageSrc(avatarUrl) && (
         <image
           className="gc-node__avatar"
           href={avatarUrl}
@@ -1352,7 +1342,7 @@ function NodeMark({
         filled dot needs the editor background to stay legible against it. Both are
         theme tokens or lane data, never a literal.
       */}
-      {showContent && !hasAvatar && !isCapsule && (
+      {showContent && !hasAvatar && (
         <text
           className="gc-node__initial"
           x={x}
@@ -1364,12 +1354,24 @@ function NodeMark({
         </text>
       )}
       {/*
+        Merge glyph inside the circle (frame 01 `10:51`): two arcs joining into one
+        stem, in the contrast colour of the dot's fill.
+      */}
+      {node.isMerge && (
+        <path
+          className="gc-node__merge-glyph"
+          d={`M${x - 4},${y - 5} v2 a3,3 0 0 0 3,3 h2 M${x + 4},${y - 5} v2 a3,3 0 0 1 -3,3 h-2`}
+          stroke={node.local ? color : 'var(--vscode-editor-background)'}
+          strokeWidth={1.6}
+          fill="none"
+        />
+      )}
+      {/*
         Rings last so they sit above the avatar. `r + 3`, not `r + 4`: at lane 0 the centre
-        sits at `RULER_HEIGHT + LANE_HEIGHT / 2`, and a merge head-ring at `r + 4` plus a 1.5
+        sits at `RULER_HEIGHT + LANE_HEIGHT / 2`, and a head ring at `r + 4` plus a 1.5
         stroke reaches a quarter pixel from the SVG edge, which rounds to a clipped ring.
       */}
-      {node.isHead && !isCapsule && <circle className="gc-node__head-ring" cx={x} cy={y} r={r + 3} stroke={color} />}
-      {node.isMerge && !isCapsule && <circle className="gc-node__merge-ring" cx={x} cy={y} r={r + 2} stroke={color} />}
+      {node.isHead && <circle className="gc-node__head-ring" cx={x} cy={y} r={r + 3} stroke={color} />}
       {/*
         Hover halo, drawn last so it sits above every other ring. The stroke is
         CSS-owned (`--vscode-focusBorder`): it is chrome feedback, not lane data,

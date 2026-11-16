@@ -643,6 +643,7 @@ const en = {
     loadingMoreSpinner: 'Loading next page...',
     helpText: 'Arrows: move commit and lane. Enter: details. Shift+F10: menu. Plus, minus, zero: zoom.',
     canvasAria: 'Commit graph',
+    headTag: 'HEAD',
     controlsAria: 'Canvas view controls',
     legendButtonAria: 'Graph symbol legend',
     jumpHeadAria: 'Jump to HEAD commit',

@@ -196,6 +196,8 @@
   --gc-border-default: var(--gc-border);
   --gc-border-subtle: color-mix(in srgb, var(--gc-border) 55%, transparent);
   --gc-border-strong: var(--vscode-checkbox-border, var(--vscode-input-border, var(--gc-border)));
+  /* Focus and selection rings: the one accent every theme guarantees. */
+  --gc-focus: var(--vscode-focusBorder);
 
   /* Text: muted equals secondary because the description colour is the dimmest a theme guarantees. */
   --gc-text-primary: var(--vscode-foreground);
@@ -2239,10 +2241,36 @@ h3 {
   }
 }
 
-.gc-node__merge-ring {
+.gc-node__halo {
   fill: none;
-  stroke-width: 1;
-  opacity: 0.7;
+  stroke: var(--gc-focus);
+  stroke-width: 1.5;
+}
+
+/* The HEAD tag above the circle: typography on the group, fill on the text. */
+.gc-node__head-tag {
+  font-family: var(--vscode-font-family);
+  /* The node scale: the tag sits on a commit mark, so it shares that size step. */
+  font-size: var(--gc-fs-node);
+  font-weight: var(--gc-weight-strong);
+  letter-spacing: 0.04em;
+  pointer-events: none;
+  user-select: none;
+}
+
+.gc-node__head-tag rect {
+  fill: var(--gc-accent-solid);
+}
+
+.gc-node__head-tag text {
+  fill: var(--vscode-button-foreground, var(--vscode-editor-background));
+}
+
+.gc-node__merge-glyph {
+  fill: none;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  pointer-events: none;
 }
 
 .gc-node--selected .gc-node__dot {
@@ -2467,13 +2495,6 @@ h3 {
 .gc-pill__segment-child {
   color: var(--gc-warning);
   font-weight: var(--gc-weight-strong);
-}
-
-/* Capsule icon button on the newly created branch node */
-.gc-node__capsule {
-  fill: var(--vscode-editorWidget-background, var(--vscode-editor-background));
-  stroke-width: 2;
-  transition: transform var(--gc-dur-fast) var(--gc-ease);
 }
 
 /* Date ruler sticky at top */

@@ -638,6 +638,7 @@ const id: Catalog = {
     loadingMoreSpinner: 'Memuat halaman berikutnya...',
     helpText: 'Panah: pindah commit dan jalur. Enter: detail. Shift+F10: menu. Plus, minus, nol: perbesaran.',
     canvasAria: 'Grafik commit',
+    headTag: 'HEAD',
     controlsAria: 'Kontrol tampilan kanvas',
     legendButtonAria: 'Panduan simbol grafik',
     jumpHeadAria: 'Lompat ke commit HEAD',
