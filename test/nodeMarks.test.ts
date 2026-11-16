@@ -67,7 +67,10 @@ test('the selection halo is a ring behind the dot, not a fatter stroke', () => {
   assert.match(halo, /fill:\s*none/, 'a ring, not a disc');
   assert.match(halo, /stroke:/, 'drawn with a stroke');
   // Frame 01: `10:81` is 46 px against a 28 px node, so the ring clears the dot.
-  assert.match(halo, /var\(--gc-/, 'from tokens');
+  // Chrome colour comes from a theme variable, never a literal: the focus border
+  // is the one accent every theme guarantees.
+  assert.match(halo, /var\(--(?:gc|vscode)-/, 'from a theme token');
+  assert.doesNotMatch(halo, /#[0-9a-fA-F]{3,8}/, 'no literal colour');
 });
 
 test('a merge commit carries the merge glyph inside its circle', () => {

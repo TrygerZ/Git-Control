@@ -196,8 +196,6 @@
   --gc-border-default: var(--gc-border);
   --gc-border-subtle: color-mix(in srgb, var(--gc-border) 55%, transparent);
   --gc-border-strong: var(--vscode-checkbox-border, var(--vscode-input-border, var(--gc-border)));
-  /* Focus and selection rings: the one accent every theme guarantees. */
-  --gc-focus: var(--vscode-focusBorder);
 
   /* Text: muted equals secondary because the description colour is the dimmest a theme guarantees. */
   --gc-text-primary: var(--vscode-foreground);
@@ -2240,7 +2238,7 @@ h3 {
 
 .gc-node__halo {
   fill: none;
-  stroke: var(--gc-focus);
+  stroke: var(--vscode-focusBorder);
   stroke-width: 1.5;
 }
 
