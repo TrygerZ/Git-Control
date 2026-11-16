@@ -892,9 +892,9 @@ h3 {
 }
 
 /*
- * Frame 01 top bar: the crumbs take the width, the two icon buttons keep theirs.
- * The container exists because `ContextBar` is null until the first status, and
- * the actions must not disappear with it.
+ * Frame 01 top bar: one 48 px row. The crumbs take the width, the two icon
+ * buttons keep theirs. The container exists because `ContextBar` is null until
+ * the first status, and the actions must not disappear with it.
  */
 .gc-explorer__top {
   display: flex;
@@ -902,17 +902,12 @@ h3 {
   align-items: center;
   justify-content: flex-end;
   gap: var(--gc-space-2);
+  min-height: var(--gc-space-8);
+  padding: 0 var(--gc-space-3);
   /* The rule and the fill belong to the whole bar, not to the crumbs alone:
      inside the row the bar no longer owns the full width. */
   border-bottom: 1px solid var(--gc-border);
   background: var(--gc-surface-1);
-}
-
-.gc-explorer__top .gc-context {
-  flex: 1 1 auto;
-  min-width: 0;
-  border-bottom: 0;
-  background: transparent;
 }
 
 .gc-explorer__actions {
@@ -1286,25 +1281,34 @@ h3 {
 /* ---------------------------------------------------------------- context bar */
 
 /*
- * Which repository, which branch, how it stands against the remote. Quiet by
- * construction â€” a bottom rule and muted text â€” because it is the answer to a
- * question the user only asks when something looks wrong.
+ * Which repository, which branch, how it stands against the remote, on one line.
+ * Quiet by construction, because it is the answer to a question the user only
+ * asks when something looks wrong.
  */
 .gc-context {
   display: flex;
-  flex-direction: column;
-  gap: var(--gc-space-1);
-  padding: var(--gc-space-3) 0;
-  border-bottom: 1px solid var(--gc-border);
-  background: var(--gc-surface-1);
-}
-
-.gc-context__crumbs {
-  display: flex;
-  flex-wrap: wrap;
+  flex: 1 1 auto;
+  flex-direction: row;
+  flex-wrap: nowrap;
   align-items: center;
   gap: var(--gc-space-2);
   min-width: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+
+/* The frame's 24 px tile: the branch glyph, washed in the accent hue. */
+.gc-context__logo {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  width: var(--gc-space-6);
+  height: var(--gc-space-6);
+  border-radius: var(--gc-radius);
+  background: var(--gc-accent-subtle);
+  color: var(--gc-accent);
 }
 
 /* The repository is the loudest crumb: it is the thing everything else is inside. */
@@ -1327,56 +1331,27 @@ h3 {
   font-size: var(--gc-fs-2xs);
 }
 
-/* Last commit subject: one line, ellipsised, full text in `title`. */
-.gc-context__subject {
-  margin: 0;
-  overflow: hidden;
-  color: var(--gc-muted);
-  font-size: var(--gc-fs-xs);
-  text-overflow: ellipsis;
-  white-space: nowrap;
+.gc-context__divider {
+  flex: 0 0 auto;
+  width: 1px;
+  height: var(--gc-space-5);
+  background: var(--gc-border);
 }
 
-.gc-context__sync {
-  display: flex;
-  align-items: center;
-  gap: var(--gc-space-2);
-  margin: 0;
-  color: var(--gc-muted);
-  font-size: var(--gc-fs-xs);
+.gc-context__dot {
+  flex: 0 0 auto;
+  width: 6px;
+  height: 6px;
+  border-radius: var(--gc-radius-pill);
+  background: var(--gc-accent-solid);
 }
 
-.gc-context__sync-visual {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--gc-space-2);
-  min-width: 0;
-}
-
-/*
- * Ahead/behind arrows restate the numbers in `syncSummary` with tone colour so
- * "mine to push" and "waiting for me" separate at a glance; the words beside
- * them carry the same fact, so colour is never the only channel.
- */
-.gc-context__sync-part {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--gc-space-1);
-  font-variant-numeric: tabular-nums;
-  font-weight: var(--gc-weight-strong);
-}
-
-.gc-context__sync-part--ahead {
-  color: var(--gc-tone-added);
-}
-
-.gc-context__sync-part--behind {
-  color: var(--gc-tone-changed);
-}
-
-.gc-context__sync-text {
+/* The standing sentence: one line, ellipsised, full text in `title`. */
+.gc-context__standing {
   min-width: 0;
   overflow: hidden;
+  color: var(--gc-muted);
+  font-size: var(--gc-fs-2xs);
   text-overflow: ellipsis;
   white-space: nowrap;
 }

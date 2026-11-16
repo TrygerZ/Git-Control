@@ -25,7 +25,6 @@ import {
   wireHostEvents,
 } from './store';
 import { ContextBar, ErrorBanner, Icon } from './ui';
-import { sanitizeGitText } from './format';
 import type { CommitDetail, GraphNode } from '../messages';
 
 export function ExplorerApp(): JSX.Element {
@@ -135,10 +134,8 @@ export function ExplorerApp(): JSX.Element {
     [openUrl, pushToast, runAction, selectCommit, strings.explorer.defaultBranchPrefix, strings.explorer.newBranchPrompt, strings.explorer.toastCopyFailed],
   );
 
-  // Newest commit's subject, for the context breadcrumb. Sanitised here rather than
-  // inside `ContextBar`, so the one git-sourced string it receives is already safe.
-  const newest = graph === null ? undefined : graph.nodes[0];
-  const newestSubject = newest === undefined ? undefined : sanitizeGitText(newest.subject);
+  // Commits that exist only on this machine, for the top bar's standing sentence.
+  const localCommits = graph === null ? undefined : graph.nodes.filter((n) => n.local).length;
 
   /*
    * The aside footer's rules, taken from the same two facts the canvas menu reads:
@@ -183,7 +180,7 @@ export function ExplorerApp(): JSX.Element {
         null until the first status arrives, and both buttons must survive that.
       */}
       <div className="gc-explorer__top">
-        <ContextBar status={status} subject={newestSubject} />
+        <ContextBar status={status} localCommits={localCommits} />
         <ExplorerSyncActions />
         <ExplorerHeaderActions />
       </div>

@@ -4,6 +4,7 @@
  */
 import { Component, useEffect, type ErrorInfo, type JSX, type ReactNode } from 'react';
 import {
+  formatCount,
   isSafeImageSrc,
   presentError,
   remedyConsequence,
@@ -236,13 +237,13 @@ export function Spinner({ label }: { label: string }): JSX.Element {
  * repository" without ever naming it — so a user with two windows open has no way
  * to tell which repository a `Commit` press is about to touch.
  *
- * Hierarchy, deliberately three steps: the repository is the loudest crumb, the
- * branch sits beside it as a chip because it is the thing that changes, and the
- * sync sentence is the quietest because it is context rather than identity.
+ * Frame 01 draws it as ONE 48 px row: logo tile, repository wordmark, chevron,
+ * branch chip, short hash, a divider, a state dot, and the branch's standing
+ * against the remote as a single sentence (`Not published · 3 local commits`).
+ * Fetch, Pull, and Publish follow at the far end of the same row.
  *
- * `subject` is optional: the graph knows the newest commit's subject, the pending
- * panel does not fetch commits at all, and a short hash is still a true answer to
- * "where am I".
+ * `localCommits` is optional: the graph knows how many commits exist only on this
+ * machine, the pending panel does not fetch commits at all.
  *
  * ponytail: no repository switcher here — the reference has one, but picking a
  * repository is `gitControl.pickRepository` on the host and wiring a dropdown to
@@ -251,10 +252,10 @@ export function Spinner({ label }: { label: string }): JSX.Element {
  */
 export function ContextBar({
   status,
-  subject,
+  localCommits,
 }: {
   status: RepoStatus | null;
-  subject?: string | undefined;
+  localCommits?: number | undefined;
 }): JSX.Element | null {
   const strings = useT();
   const language = useSettingsStore((x) => x.language);
@@ -266,78 +267,61 @@ export function ContextBar({
         : strings.ui.detachedAt(shortHash(status.head))
       : sanitizeGitText(status.branch);
   const head = status.head === null ? null : shortHash(status.head);
-  const line = subject === undefined ? null : sanitizeGitText(subject);
 
   /*
-   * The full sentence stays on the tooltip and the visually hidden fallback so a
-   * screen reader still hears the counts. The visible text drops them: the arrow
-   * badges already carry the numbers, and repeating them read as "↑4 4 commits".
+   * One sentence, as the frame writes it. The tooltip and the visually hidden
+   * copy still carry `syncSummary`, so the complete answer survives the shortening
+   * and a screen reader hears the same fact the tooltip shows.
    */
+  const detail: string[] = [];
+  if (status.upstream === null) {
+    if (localCommits !== undefined && localCommits > 0) {
+      detail.push(strings.ui.localCommits(formatCount(localCommits, language)));
+    }
+  } else {
+    if (status.ahead > 0) {
+      detail.push(strings.format.syncSummaryAhead(formatCount(status.ahead, language)));
+    }
+    if (status.behind > 0) {
+      detail.push(strings.format.syncSummaryBehind(formatCount(status.behind, language)));
+    }
+  }
+  const standing =
+    status.upstream === null ? strings.ui.notPublished : sanitizeGitText(status.upstream);
+  const visible = detail.length === 0 ? standing : `${standing} · ${detail.join(', ')}`;
   const fullSummary = syncSummary(status, language);
-  const visibleSummary =
-    status.upstream === null
-      ? fullSummary
-      : status.ahead > 0 || status.behind > 0
-        ? sanitizeGitText(status.upstream)
-        : fullSummary;
 
   return (
     <header className="gc-context">
-      <div className="gc-context__crumbs">
-        <span className="gc-context__repo" title={sanitizeGitText(status.repoRoot)}>
-          {repoName(status.repoRoot)}
-        </span>
-        <span className="gc-context__sep" aria-hidden="true">
-          ›
-        </span>
-        {/*
-          The word "branch" is in the text, not only in the shape: a chip on its own
-          does not say what kind of name it holds, and `detached` is exactly the
-          state a newcomer needs told in words.
-        */}
-        <span className={status.detached ? 'gc-chip gc-chip--detached' : 'gc-chip gc-chip--current'}>
-          {status.detached ? <Icon name="tag" /> : <Icon name="git-branch" />}
-          <span>{strings.ui.branchLabel(branch)}</span>
-        </span>
-        {head !== null && (
-          <code className="gc-context__hash" aria-label={strings.ui.headAtCommit(head)}>
-            {head}
-          </code>
-        )}
-      </div>
-      {line !== null && (
-        <p className="gc-context__subject" title={line}>
-          {strings.ui.lastCommit(line)}
-        </p>
-      )}
+      <span className="gc-context__logo">
+        <Icon name="git-branch" />
+      </span>
+      <span className="gc-context__repo" title={sanitizeGitText(status.repoRoot)}>
+        {repoName(status.repoRoot)}
+      </span>
+      <span className="gc-context__sep" aria-hidden="true">
+        ›
+      </span>
       {/*
-        Sync state is presented as arrows plus the same sentence `syncSummary`
-        builds, so the text (aria-label below, tooltip, and the visually hidden
-        fallback) never drifts from the numbers: a screen reader hears exactly
-        what a sighted user reads. The arrows are decoration on top, tone-marked
-        and labelled in words by the summary itself.
+        The word "branch" is in the text, not only in the shape: a chip on its own
+        does not say what kind of name it holds, and `detached` is exactly the
+        state a newcomer needs told in words.
       */}
-      <p className="gc-context__sync" title={fullSummary}>
-        <span
-          className="gc-context__sync-visual"
-          aria-hidden="true"
-        >
-          {status.upstream !== null && status.ahead > 0 && (
-            <span className="gc-context__sync-part gc-context__sync-part--ahead">
-              <Icon name="arrow-up" />
-              {status.ahead}
-            </span>
-          )}
-          {status.upstream !== null && status.behind > 0 && (
-            <span className="gc-context__sync-part gc-context__sync-part--behind">
-              <Icon name="arrow-down" />
-              {status.behind}
-            </span>
-          )}
-          <span className="gc-context__sync-text">{visibleSummary}</span>
-        </span>
+      <span className={status.detached ? 'gc-chip gc-chip--detached' : 'gc-chip gc-chip--current'}>
+        {status.detached ? <Icon name="tag" /> : <Icon name="git-branch" />}
+        <span>{strings.ui.branchLabel(branch)}</span>
+      </span>
+      {head !== null && (
+        <code className="gc-context__hash" aria-label={strings.ui.headAtCommit(head)}>
+          {head}
+        </code>
+      )}
+      <span className="gc-context__divider" aria-hidden="true" />
+      <span className="gc-context__dot" aria-hidden="true" />
+      <span className="gc-context__standing" title={fullSummary}>
+        <span aria-hidden="true">{visible}</span>
         <span className="gc-visually-hidden">{fullSummary}</span>
-      </p>
+      </span>
     </header>
   );
 }
