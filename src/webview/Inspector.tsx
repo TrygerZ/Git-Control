@@ -18,6 +18,7 @@ import {
   checkLabel,
   checkNamesLabel,
   checkTone,
+  dirOf,
   formatCount,
   isSafeImageSrc,
   pullRequestState,
@@ -559,9 +560,11 @@ export function Inspector({ hash, onDetailLoaded }: Props): JSX.Element {
                         ? `${sanitizeGitText(file.origPath)} → ${baseName(file.path)}`
                         : baseName(file.path)}
                     </span>
-                    <span className="gc-filelist__dir" aria-hidden="true">
-                      {safePath}
-                    </span>
+                    {dirOf(safePath) !== '' && (
+                      <span className="gc-filelist__dir" aria-hidden="true">
+                        {dirOf(safePath)}
+                      </span>
+                    )}
                     {file.binary ? (
                       <span className="gc-filelist__binary" aria-hidden="true">
                         {strings.inspector.churnBinary}

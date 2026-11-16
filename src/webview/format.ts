@@ -438,7 +438,9 @@ export function baseName(path: string): string {
  * so a root-level file gets an empty string rather than repeating its own name.
  */
 export function dirOf(path: string): string {
-  throw new Error('not implemented');
+  const safe = sanitizeGitText(path);
+  const at = safe.lastIndexOf('/');
+  return at <= 0 ? '' : safe.slice(0, at);
 }
 
 // ------------------------------------------------------------------ breadcrumb
