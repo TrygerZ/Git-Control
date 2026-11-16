@@ -111,8 +111,6 @@ export function PendingChangesApp(): JSX.Element {
   const toggleFolder = useChangesStore((s) => s.toggleFolder);
   const toggleCollapsed = useChangesStore((s) => s.toggleCollapsed);
   const toggleSection = useChangesStore((s) => s.toggleSection);
-  const selectAll = useChangesStore((s) => s.selectAll);
-  const clear = useChangesStore((s) => s.clear);
   const stage = useChangesStore((s) => s.stage);
   const unstage = useChangesStore((s) => s.unstage);
   const stashes = useChangesStore((s) => s.stashes);
@@ -131,7 +129,6 @@ export function PendingChangesApp(): JSX.Element {
   const loadSettings = useSettingsStore((s) => s.load);
   const loadIconTheme = useIconThemeStore((s) => s.load);
   const language = useSettingsStore((s) => s.language);
-  const setLanguage = useSettingsStore((s) => s.setLanguage);
   const pushToast = useOperationStore((s) => s.pushToast);
   const showLogs = useOperationStore((s) => s.showLogs);
   const runAction = useOperationStore((s) => s.runAction);
@@ -192,8 +189,6 @@ export function PendingChangesApp(): JSX.Element {
     () => filterStashes(stashes, stashFilter, language),
     [stashes, stashFilter, language],
   );
-  const selected = [...selection];
-
   /*
    * The Actions dot has to be right before the view is ever opened, so the shell
    * probes it once per (repository, branch, auth) change. `refreshDot` is bounded
@@ -347,24 +342,6 @@ export function PendingChangesApp(): JSX.Element {
       ) : (
         <>
       <div
-        className="gc-pending__bar gc-toolbar--actions"
-        role="toolbar"
-        aria-label={strings.pending.toolbarLabel}
-        aria-orientation="horizontal"
-      >
-        <div className="gc-toolbar__end">
-          <button
-            type="button"
-            className="gc-button gc-button--quiet gc-lang-toggle"
-            aria-label={strings.pending.switchLanguageAria(language === 'en' ? 'Bahasa Indonesia' : 'English')}
-            onClick={() => setLanguage(language === 'en' ? 'id' : 'en')}
-          >
-            {language.toUpperCase()}
-          </button>
-        </div>
-      </div>
-
-      <div
         role="tabpanel"
         id={CHANGES_PANEL_ID}
         aria-labelledby={changesTabId(sub)}
@@ -440,38 +417,6 @@ export function PendingChangesApp(): JSX.Element {
                 formatCount(changes.length, language),
               )}
             />
-
-            {sub === 'changes' && (
-              <div className="gc-listbar__selection">
-                <div className="gc-selection-group" role="group" aria-label={strings.pending.selectionGroupAria}>
-                  <div className="gc-segmented gc-segmented--quiet">
-                    <button
-                      type="button"
-                      className="gc-button gc-button--quiet"
-                      title={strings.pending.selectAllTitle}
-                      disabled={changes.length === 0}
-                      onClick={selectAll}
-                    >
-                      <Icon name="check" />
-                      {strings.pending.selectAll}
-                    </button>
-                    <button
-                      type="button"
-                      className="gc-button gc-button--quiet"
-                      title={strings.pending.clearSelectionTitle}
-                      disabled={selected.length === 0}
-                      onClick={clear}
-                    >
-                      <Icon name="close" />
-                      {strings.pending.clearSelection}
-                    </button>
-                  </div>
-                  <span className="gc-pending__count" aria-live="off" aria-atomic="true">
-                    {strings.pending.selectedCount(formatCount(selected.length, language))}
-                  </span>
-                </div>
-              </div>
-            )}
 
             {visible.length === 0 ? (
               <EmptyState

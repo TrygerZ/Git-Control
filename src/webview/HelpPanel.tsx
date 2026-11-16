@@ -187,62 +187,64 @@ export function HelpPanel(): JSX.Element {
         classPrefix="gc-subtabs"
       />
 
-      <div role="tabpanel" id={PANEL_ID} aria-labelledby={`${TABS_PREFIX}-tab-${tab}`} tabIndex={-1}>
-        {tab === 'features' ? (
-          <>
-            {GROUP_ORDER.map((group) => {
-              const groupRows = rows.filter((row) => row.group === group);
-              if (groupRows.length === 0) return null;
-              return (
-                <div className="gc-help__group" key={group}>
-                  <h3 className="gc-help__group-title">{copy[GROUP_HEADING[group]]}</h3>
-                  <ul role="list" className="gc-help__rows">
-                    {groupRows.map((row) => (
-                      <li key={row.id}>
-                        <button type="button" className="gc-help__row" onClick={() => openTarget(row.target)}>
-                          <span className="gc-help__icon" aria-hidden="true">
-                            <Icon name={row.icon} />
-                          </span>
-                          <span className="gc-help__body">
-                            <strong>{copy[row.titleKey]}</strong>
-                            <span className="gc-help__desc">{copy[row.descKey]}</span>
-                          </span>
-                          <span className="gc-help__open">{strings.help.open}</span>
-                        </button>
-                      </li>
+      <div className="gc-help__body">
+        <div role="tabpanel" id={PANEL_ID} aria-labelledby={`${TABS_PREFIX}-tab-${tab}`} tabIndex={-1}>
+          {tab === 'features' ? (
+            <>
+              {GROUP_ORDER.map((group) => {
+                const groupRows = rows.filter((row) => row.group === group);
+                if (groupRows.length === 0) return null;
+                return (
+                  <div className="gc-help__group" key={group}>
+                    <h3 className="gc-help__group-title">{copy[GROUP_HEADING[group]]}</h3>
+                    <ul role="list" className="gc-help__rows">
+                      {groupRows.map((row) => (
+                        <li key={row.id}>
+                          <button type="button" className="gc-help__row" onClick={() => openTarget(row.target)}>
+                            <span className="gc-help__icon" aria-hidden="true">
+                              <Icon name={row.icon} />
+                            </span>
+                            <span className="gc-help__row-body">
+                              <strong>{copy[row.titleKey]}</strong>
+                              <span className="gc-help__desc">{copy[row.descKey]}</span>
+                            </span>
+                            <span className="gc-help__open">{strings.help.open}</span>
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                );
+              })}
+            </>
+          ) : (
+            <>
+              <p className="gc-help__intro">{strings.help.shortcutsIntro}</p>
+              {shortcutGroups().map((group) => (
+                <div className="gc-help__group" key={group.id}>
+                  <h3 className="gc-help__group-title">{copy[SHORTCUT_HEADING[group.id]]}</h3>
+                  <dl className="gc-help__keys">
+                    {group.entries.map((entry) => (
+                      <div className="gc-help__key" key={entry.id}>
+                        <dt>{copy[entry.labelKey]}</dt>
+                        <dd>
+                          {entry.keys.map((key, i) => (
+                            <Fragment key={`${entry.id}-${key}`}>
+                              {i > 0 && entry.joiner !== null && (
+                                <span>{entry.joiner === 'or' ? strings.help.or : '+'}</span>
+                              )}
+                              <kbd className="gc-kbd">{key}</kbd>
+                            </Fragment>
+                          ))}
+                        </dd>
+                      </div>
                     ))}
-                  </ul>
+                  </dl>
                 </div>
-              );
-            })}
-          </>
-        ) : (
-          <>
-            <p className="gc-help__intro">{strings.help.shortcutsIntro}</p>
-            {shortcutGroups().map((group) => (
-              <div className="gc-help__group" key={group.id}>
-                <h3 className="gc-help__group-title">{copy[SHORTCUT_HEADING[group.id]]}</h3>
-                <dl className="gc-help__keys">
-                  {group.entries.map((entry) => (
-                    <div className="gc-help__key" key={entry.id}>
-                      <dt>{copy[entry.labelKey]}</dt>
-                      <dd>
-                        {entry.keys.map((key, i) => (
-                          <Fragment key={`${entry.id}-${key}`}>
-                            {i > 0 && entry.joiner !== null && (
-                              <span>{entry.joiner === 'or' ? strings.help.or : '+'}</span>
-                            )}
-                            <kbd className="gc-kbd">{key}</kbd>
-                          </Fragment>
-                        ))}
-                      </dd>
-                    </div>
-                  ))}
-                </dl>
-              </div>
-            ))}
-          </>
-        )}
+              ))}
+            </>
+          )}
+        </div>
       </div>
 
       {AVAILABLE.has('checklist') && (

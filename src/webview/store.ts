@@ -339,8 +339,6 @@ export interface ChangesState {
   toggleFolder(node: TreeNode): void;
   toggleCollapsed(prefix: string): void;
   toggleSection(section: ChangeSection): void;
-  selectAll(): void;
-  clear(): void;
   setCommitMessage(message: string): void;
   setPushAfterCommit(value: boolean): void;
   setAmend(on: boolean): Promise<void>;
@@ -519,17 +517,6 @@ export const useChangesStore = create<ChangesState>((set, get) => ({
     else collapsedSections.add(section);
     set({ collapsedSections });
     saveState({ collapsedSections: [...collapsedSections] });
-  },
-
-  selectAll() {
-    const selection = new Set(get().changes.map((c) => c.path));
-    set({ selection });
-    saveState({ selectedPaths: [...selection] });
-  },
-
-  clear() {
-    set({ selection: new Set<string>() });
-    saveState({ selectedPaths: [] });
   },
 
   setCommitMessage(message) {

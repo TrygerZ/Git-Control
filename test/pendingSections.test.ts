@@ -178,11 +178,14 @@ test('the list area is one tabpanel labelled by the active sub-tab, and the two 
   assert.equal(src.match(/role="tabpanel"/g)?.length, 1, 'one panel, not one per view');
   assert.match(src, /===\s*'stashes'/, 'the panel shows the stash list or the change list');
   // Frame 67 draws a search row above the stashes, and the owner chose to make it a real stash
-  // filter (see the filter test below). Select all and Clear still act on file paths only, so
-  // they stay in the Changes list bar and disappear with it.
-  assert.match(src, /gc-listbar__selection/, 'selection helpers ride in the list bar, which only Changes renders');
+  // filter (see the filter test below).
   assert.equal(src.match(/className="gc-listbar"/g)?.length, 1);
-  assert.equal(src.match(/strings\.pending\.switchLanguageAria/g)?.length, 1, 'the language toggle stays reachable in both sub-tabs');
+  // Frame 6:2 draws no Select all / Clear row and no language toggle anywhere in the panel.
+  // Both were code-only affordances; the owner asked for frame parity on 2026-11-16, so the
+  // rows and their strings are gone rather than restyled.
+  assert.doesNotMatch(src, /gc-listbar__selection/, 'no selection row, frame 6:2 has none');
+  assert.doesNotMatch(src, /strings\.pending\.switchLanguageAria/, 'no language toggle in the panel');
+  assert.doesNotMatch(src, /gc-pending__bar/, 'and no empty bar left behind where the toggle lived');
 });
 
 test('the Stashes sub-tab filters its own list through the pure helper, with its own strings and one shared search row', () => {
@@ -246,7 +249,7 @@ test('the footer is a full-bleed border-topped strip that scrolls internally, an
     css.match(new RegExp(`\\${selector}\\s*\\{([^}]*)\\}`))?.[1] ?? '';
 
   const footer = rule('.gc-pending__footer');
-  assert.match(footer, /flex:\s*0 0 auto/, 'the footer never grows, so the list scrolls instead');
+  assert.match(footer, /flex:\s*0 1 auto/, 'the footer never grows, and it yields height so the list keeps a floor');
   assert.match(footer, /border-top:\s*1px solid var\(--gc-border\)/, 'separation is a border, which survives forced colours');
   assert.match(footer, /max-height:\s*50%/, 'a short panel scrolls the footer rather than clipping the buttons');
   assert.match(footer, /margin:\s*calc\(-1 \* var\(--gc-space-2\)\)/, 'full bleed over the panel padding and gap');
@@ -282,34 +285,38 @@ test('the footer is a full-bleed border-topped strip that scrolls internally, an
   assert.match(panel, /overflow:\s*hidden/, 'panel children clip at the panel box, not over the footer');
 });
 
-test('select all, clear, and the count live in the list bar, not the toolbar', () => {
+test('the selection row and the language toggle are gone, with their styles and their strings', () => {
+  // Frame 6:2 (and 20, 103) draw neither control. Owner decision 2026-11-16: parity beats the
+  // code-only affordance, so the row, the toggle, the segmented pair that only it used, and
+  // every string that named them are removed rather than left dead.
   const src = fs.readFileSync(
     path.join(__dirname, '..', '..', 'src', 'webview', 'PendingChanges.tsx'),
     'utf8',
   );
-  const bar = src.indexOf('className="gc-listbar__selection"');
-  const changesBranch = src.indexOf('strings.pending.searchPlaceholder');
-  const scroller = src.indexOf('className="gc-pending__sections"', bar);
-  const selectAll = src.indexOf('onClick={selectAll}');
-  const clear = src.indexOf('onClick={clear}');
-  assert.ok(bar > changesBranch, 'the selection row sits in the Changes branch only, so Stashes has none');
-  assert.ok(selectAll > bar, 'select all moved into the selection row');
-  assert.ok(clear > bar, 'clear moved into the selection row');
-  assert.ok(scroller > clear, 'and both stay outside the scroller, so they never scroll away');
-
-  // The toolbar keeps the language toggle only; the old column group is gone.
-  const toolbar = src.slice(src.indexOf('gc-pending__bar'), bar);
-  assert.doesNotMatch(toolbar, /gc-selection-group/);
-  assert.match(toolbar, /switchLanguageAria/);
-  assert.doesNotMatch(src, /gc-toolbar__secondary-group/, 'no dead wrapper');
+  for (const gone of [
+    'gc-listbar__selection',
+    'gc-selection-group',
+    'gc-segmented',
+    'gc-lang-toggle',
+    'gc-pending__bar',
+    'gc-toolbar__end',
+  ]) {
+    assert.doesNotMatch(src, new RegExp(gone), `PendingChanges: ${gone} is gone`);
+  }
+  for (const gone of ['selectAllTitle', 'clearSelectionTitle', 'selectedCount', 'selectionGroupAria', 'switchLanguageAria']) {
+    assert.doesNotMatch(src, new RegExp(`strings\\.pending\\.${gone}`), `PendingChanges: ${gone} is gone`);
+  }
 
   const css = fs
     .readFileSync(path.join(__dirname, '..', '..', 'src', 'webview', 'styles.css'), 'utf8')
     .replace(/\/\*[\s\S]*?\*\//g, '');
-  assert.doesNotMatch(css, /gc-toolbar__secondary-group/, 'the wrapper CSS goes with the wrapper');
-  const row = css.match(/\.gc-listbar__selection\s*\{([^}]*)\}/)?.[1] ?? '';
-  assert.match(row, /display:\s*flex/);
-  assert.match(row, /flex-wrap:\s*wrap/, 'at 300 px the count drops below the pair');
+  for (const gone of ['.gc-listbar__selection', '.gc-selection-group', '.gc-segmented', '.gc-lang-toggle', '.gc-pending__bar', '.gc-toolbar__end', '.gc-toolbar--actions']) {
+    assert.ok(!css.includes(gone), `styles.css: ${gone} is gone`);
+  }
+  // The action tier keeps its bottom hairline in the frame, so the rule that drew it
+  // for the bar has to survive under a name the panel still uses, or the list loses
+  // the separation the frame shows above the search row.
+  assert.match(css, /\.gc-pending__panel\s*\{[^}]*border-top:\s*1px solid var\(--gc-border\)/, 'the frame rule above the list survives');
 });
 
 test('the segmented control no longer repeats the list heading, and its i18n key is gone', () => {
@@ -632,8 +639,9 @@ test('pending panel renders SidebarHeader and the toolbar no longer owns branch,
   assert.doesNotMatch(src, /BranchSelector/);
   assert.doesNotMatch(src, /strings\.pending\.reloadAria/);
   assert.doesNotMatch(src, /strings\.pending\.openGraphAria/);
-  assert.match(src, /strings\.pending\.switchLanguageAria/, 'language toggle stays in the toolbar');
-  assert.match(src, /strings\.pending\.selectAll\b/, 'select all stays reachable');
+  // Frame 6:2 parity: neither the toggle nor the selection row is drawn any more.
+  assert.doesNotMatch(src, /strings\.pending\.switchLanguageAria/);
+  assert.doesNotMatch(src, /strings\.pending\.selectAll\b/);
 });
 
 test('sidebar header keeps both icon buttons named and routes checkout through BranchSelector', () => {
@@ -1222,7 +1230,7 @@ test('the notification slot may shrink on a short panel, so the footer stays on 
   // actually left after the slot has taken its natural height.
   const panel = rule('.gc-pending__panel');
   assert.match(panel, /flex:\s*1 1 0/, 'the panel takes the remainder from a zero basis');
-  assert.match(panel, /min-height:\s*0/, 'and may shrink below its content');
+  assert.match(panel, /min-height:\s*\d+px/, 'and keeps a measured floor rather than collapsing to zero');
 });
 
 test('the get started card caps against the viewport, never against its own slot', () => {
@@ -1248,10 +1256,104 @@ test('the get started card caps against the viewport, never against its own slot
   const card = rule('.gc-started');
   assert.doesNotMatch(card, /max-height:\s*\d+%/, 'a percentage here measures the card against its own slot');
   assert.match(card, /max-height:\s*\d+vh/, 'the cap is viewport-relative, so it cannot depend on the card itself');
-  assert.match(card, /flex:\s*0 0 auto/, 'the card sizes to its content below the cap');
+  // Shrink 1, not 0: a `0 0 auto` card holds its 227 px even when the panel is shorter
+  // than the card, which is exactly the zero-height list measured at 380x667.
+  assert.match(card, /flex:\s*0 1 auto/, 'the card yields height before the list does');
 
   const slot = rule('.gc-pending__notifications');
   assert.doesNotMatch(slot, /max-height:/, 'the slot carries no cap of its own');
   assert.match(slot, /flex:\s*0 1 auto/, 'grow 0 so the list keeps the free space, shrink 1 so a short panel still fits the footer');
   assert.match(slot, /min-height:\s*0/, 'and it may shrink below its content');
+});
+
+test('the card and the commit footer both yield, so the list never collapses to zero', () => {
+  // Measured in Chromium at 380x667 with the checklist active: `.gc-pending__panel`
+  // came out 0 px high while the card held its full 227 px and the footer its 197 px.
+  // The list was unreachable, and the panel's own `overflow: hidden` hid the fact.
+  // Three rules make the floor hold; each is asserted here because any one of them
+  // regressing brings the zero back.
+  const src = fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'webview', 'styles.css'), 'utf8');
+  const rule = (selector: string): string => {
+    const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const match = src.match(new RegExp(`${escaped}\\s*\\{([^}]*)\\}`));
+    assert.ok(match, `${selector} must have a rule`);
+    return match[1] ?? '';
+  };
+
+  // 1. The card shrinks. A `0 0 auto` card holds its intrinsic height no matter how
+  //    short the panel is, so the slot above the list can never give anything back.
+  const card = rule('.gc-started');
+  assert.match(card, /flex:\s*0 1 auto/, 'the card gives height back before the list does');
+  assert.match(card, /max-height:\s*\d+vh/, 'and it still caps itself against the viewport');
+
+  // 2. The commit footer shrinks too. `max-height: 50%` alone is a cap, not a floor:
+  //    at 380x667 the footer measured 197 px and left the panel zero.
+  const footer = rule('.gc-pending__footer');
+  assert.match(footer, /flex:\s*0 1 auto/, 'the footer yields height to the list');
+
+  // 3. The panel keeps a real floor, so even a hostile stack cannot hide the list.
+  const panel = rule('.gc-pending__panel');
+  assert.match(panel, /min-height:\s*\d+px/, 'the list keeps a measured floor');
+  const floor = Number(panel.match(/min-height:\s*(\d+)px/)?.[1] ?? '0');
+  assert.ok(floor >= 96, `the floor has to fit the search row and a row or two, got ${floor} px`);
+});
+
+test('each sidebar destination scrolls in exactly one box, and no footer floats', () => {
+  // Reported from a real window: the Actions tab showed a page scrollbar and an inner
+  // list scrollbar, so the wheel moved the wrong thing and the quota line looked like
+  // it was hovering. The shell is a flex column with `overflow: hidden`, so any second
+  // scroller has to come from a child that grows past it.
+  const css = fs
+    .readFileSync(path.join(__dirname, '..', '..', 'src', 'webview', 'styles.css'), 'utf8')
+    .replace(/\/\*[\s\S]*?\*\//g, '');
+  const rule = (selector: string): string =>
+    css.match(new RegExp(`\\${selector}\\s*\\{([^}]*)\\}`))?.[1] ?? '';
+
+  // The shell clips, so nothing can scroll the page under a pinned footer.
+  assert.match(rule('.gc-pending'), /overflow:\s*hidden/, 'the shell is the clip');
+
+  // Every view root is a flex column with a zero floor and its own clip; the one
+  // scroller inside it then owns the wheel for the whole destination.
+  for (const view of ['.gc-prs', '.gc-issues', '.gc-actions', '.gc-branches']) {
+    const body = rule(view);
+    assert.match(body, /min-height:\s*0/, `${view} may shrink, or it pushes its footer out`);
+    assert.match(body, /overflow:\s*hidden/, `${view} clips its own children`);
+  }
+
+  // The Actions log is a block inside the list, not a second scroll region. Frame 08
+  // draws it inline at its natural height with the list owning the wheel; a cap plus
+  // `overflow: visible` would spill the tail over the following rows instead, so both
+  // the cap and the scroll go, and the one list scroller handles the length.
+  const log = rule('.gc-actions__log-body');
+  assert.doesNotMatch(log, /max-height:/, 'the log grows to its content inside the list');
+  assert.doesNotMatch(log, /overflow:\s*(auto|scroll)/, 'and it is not a nested scroller');
+
+  // The footer sits on the panel's bottom edge in every frame (08 at y 854, 09 and 05
+  // at y 870, 11 at y 854, 105 at y 849), not right under the last row. Measured with a
+  // short list the shipped footers landed at 340 of 1000 (Issues) and 758 of 1000
+  // (Help): a floating strip with the view's own background under it.
+  //
+  // The four list views are flex columns whose scroller is `flex: 1 1 auto`, so the
+  // free space goes to the scroller while rows fill it. When the view renders an empty
+  // state instead, nothing grows and the footer rides up. `margin-top: auto` is the
+  // one-line rule that absorbs that slack without touching the filled case.
+  for (const footer of ['.gc-prs__footer', '.gc-issues__footer', '.gc-actions__footer', '.gc-branches__footer']) {
+    assert.match(rule(footer), /margin-top:\s*auto/, `${footer} stays on the bottom edge when the list is short`);
+  }
+
+  // Help needs the other shape: `.gc-help` was its own scroller, so `position: sticky`
+  // on the footer had nothing to stick to and the footer still measured 242 px above
+  // the panel's bottom edge at 380x1000. The section is a flex column with the clip,
+  // the body between the tabs and the footer is the one scroller, and the footer is a
+  // flex sibling that the column pins. Frame 105 draws it at y 849 of 900.
+  const help = rule('.gc-help');
+  assert.match(help, /display:\s*flex/, 'the section is the column');
+  assert.match(help, /overflow:\s*hidden/, 'and the clip, not the scroller');
+  const helpBody = rule('.gc-help__body');
+  assert.match(helpBody, /flex:\s*1 1 auto/, 'the body takes the remainder');
+  assert.match(helpBody, /min-height:\s*0/, 'and may shrink below its content');
+  assert.match(helpBody, /overflow-y:\s*auto/, 'the body owns the wheel');
+  const helpFooter = rule('.gc-help__footer');
+  assert.doesNotMatch(helpFooter, /position:\s*sticky/, 'a flex sibling needs no sticky');
+  assert.match(helpFooter, /flex:\s*0 0 auto/, 'the footer keeps its height');
 });
