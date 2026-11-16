@@ -1189,3 +1189,69 @@ test('commit refuses to amend when HEAD moved away from the captured base', asyn
   assert.equal(sent.length, 0, 'nothing was sent');
   assert.equal(useChangesStore.getState().amend, false, 'amend mode drops so the user sees the plain form');
 });
+
+test('the notification slot may shrink on a short panel, so the footer stays on screen', () => {
+  // `.gc-pending` is a flex column with a definite height. The slot holding the
+  // Get started card must not GROW (or it steals the list's space) but it must be
+  // able to SHRINK, or on a short panel it holds its 227 px and pushes the commit
+  // footer past the bottom edge. Measured at 510x480: with `flex: 0 0 auto` the
+  // footer's bottom sat below the root's bottom.
+  //
+  // The height cap and the scroll live on this slot, so it can give height back.
+  const src = fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'webview', 'styles.css'), 'utf8');
+  const rule = (selector: string): string => {
+    const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const match = src.match(new RegExp(`${escaped}\\s*\\{([^}]*)\\}`));
+    assert.ok(match, `${selector} must have a rule`);
+    return match[1] ?? '';
+  };
+
+  const notifications = rule('.gc-pending__notifications');
+  // Grow must stay 0: a grower steals the list's height.
+  assert.match(notifications, /flex:\s*0 [01] auto/, 'grow must be 0, so the list keeps the free space');
+  // Shrink must be 1: a non-shrinker holds its content height and pushes the footer out.
+  assert.match(notifications, /flex:\s*0 1 auto/, 'it must shrink when the panel is short');
+  assert.match(notifications, /overflow-y:\s*auto/, 'and scroll what it can no longer show');
+
+  // The panel keeps the whole remainder, which is what makes the list fill it.
+  // The panel must take the remainder with a ZERO basis. With `flex: 1 1 auto`
+  // its basis is its content height, so it competes with the notification slot on
+  // equal terms and both shrink: measured at 510x1104 the slot came out 193.8 px
+  // against a 227.3 px card, clipping the checklist even though the panel had
+  // 392.5 px of unused room. A zero basis makes the panel absorb only what is
+  // actually left after the slot has taken its natural height.
+  const panel = rule('.gc-pending__panel');
+  assert.match(panel, /flex:\s*1 1 0/, 'the panel takes the remainder from a zero basis');
+  assert.match(panel, /min-height:\s*0/, 'and may shrink below its content');
+});
+
+test('the get started card caps against the viewport, never against its own slot', () => {
+  // `max-height: 45%` on `.gc-started` resolved against its containing block, which
+  // is `.gc-pending__notifications`. That slot is sized by the card's own content, so
+  // the percentage became a self-reference: the card's intrinsic height set the slot,
+  // then the card was clamped to 45 % of the slot it had just created. Measured at
+  // 510x993: slot 227.3 px, card 102.3 px, which is exactly 45 %, leaving 125 px empty
+  // and clipping the last checklist row mid-line.
+  //
+  // Moving the percentage to the slot did not help either: the slot's flex basis is
+  // still its content, so the same self-reference came back one level up (slot 193.8
+  // against a 227.3 px card at full height). The cap has to be independent of the
+  // content it caps, so it is expressed in viewport units.
+  const src = fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'webview', 'styles.css'), 'utf8');
+  const rule = (selector: string): string => {
+    const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const match = src.match(new RegExp(`${escaped}\\s*\\{([^}]*)\\}`));
+    assert.ok(match, `${selector} must have a rule`);
+    return match[1] ?? '';
+  };
+
+  const card = rule('.gc-started');
+  assert.doesNotMatch(card, /max-height:\s*\d+%/, 'a percentage here measures the card against its own slot');
+  assert.match(card, /max-height:\s*\d+vh/, 'the cap is viewport-relative, so it cannot depend on the card itself');
+  assert.match(card, /flex:\s*0 0 auto/, 'the card sizes to its content below the cap');
+
+  const slot = rule('.gc-pending__notifications');
+  assert.doesNotMatch(slot, /max-height:/, 'the slot carries no cap of its own');
+  assert.match(slot, /flex:\s*0 1 auto/, 'grow 0 so the list keeps the free space, shrink 1 so a short panel still fits the footer');
+  assert.match(slot, /min-height:\s*0/, 'and it may shrink below its content');
+});

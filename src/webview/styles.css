@@ -3465,6 +3465,9 @@ h3 {
 .gc-pending__notifications {
   display: flex;
   flex-direction: column;
+  flex: 0 1 auto;
+  min-height: 0;
+  overflow-y: auto;
   gap: var(--gc-space-3);
 }
 
@@ -3494,7 +3497,14 @@ h3 {
 .gc-pending__panel {
   display: flex;
   flex-direction: column;
-  flex: 1 1 auto;
+  /*
+   * Zero basis, not `auto`. With `auto` the basis is the panel's content height,
+   * so it competes with the notification slot for the leftover space and both
+   * shrink: the slot came out 193.8 px against a 227.3 px card, clipping the
+   * checklist while the panel still had 392 px of unused room. A zero basis makes
+   * the panel absorb exactly what is left after the slot takes its natural height.
+   */
+  flex: 1 1 0;
   min-height: 0;
   gap: var(--gc-space-2);
   /*
@@ -3660,7 +3670,7 @@ h3 {
   border: 1px solid var(--gc-border-subtle);
   border-radius: var(--gc-radius-lg);
   background: var(--gc-bg-surface);
-  max-height: 45%;
+  max-height: 45vh;
   overflow-y: auto;
   box-sizing: border-box;
 }
