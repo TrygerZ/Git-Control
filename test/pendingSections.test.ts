@@ -1357,3 +1357,39 @@ test('each sidebar destination scrolls in exactly one box, and no footer floats'
   assert.doesNotMatch(helpFooter, /position:\s*sticky/, 'a flex sibling needs no sticky');
   assert.match(helpFooter, /flex:\s*0 0 auto/, 'the footer keeps its height');
 });
+
+test('the visually hidden helper stays inside a scroller instead of stretching the document', () => {
+  // Reported again from a real window: the Actions tab still showed two scrollbars.
+  // The list scroller was already the only `overflow: auto` box, so the second bar was
+  // the page itself. Measured at 380x622 and 380x1000: `document.scrollHeight` was 1112
+  // at both heights, and `window.scrollTo(0, 400)` moved 112 px.
+  //
+  // Cause: `.gc-visually-hidden` used `position: absolute` with no positioned ancestor.
+  // Its containing block was the viewport, so every one of the 20 hidden spans inside
+  // the Actions rows escaped the scroller's clip and landed at its document offset,
+  // with the last at y 1111. Hiding them dropped the document back to 1000; so did
+  // giving the scroller `position: relative`, which confirms the mechanism.
+  //
+  // The fix is the modern clip recipe: keep the box in flow so it can never be
+  // positioned outside its parent, and clip it to a 1 px square instead. Screen
+  // readers still get the text and the box still takes no visible space.
+  const css = fs
+    .readFileSync(path.join(__dirname, '..', '..', 'src', 'webview', 'styles.css'), 'utf8')
+    .replace(/\/\*[\s\S]*?\*\//g, '');
+  const rule = (selector: string): string => {
+    const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const match = css.match(new RegExp(`${escaped}\\s*\\{([^}]*)\\}`));
+    assert.ok(match, `${selector} must have a rule`);
+    return match[1] ?? '';
+  };
+
+  const hidden = rule('.gc-visually-hidden');
+  assert.doesNotMatch(hidden, /position:\s*absolute/, 'an absolute box escapes any scroller it sits in');
+  assert.match(hidden, /clip-path:\s*inset\(50%\)/, 'the modern clip keeps the text available and the box invisible');
+  assert.match(hidden, /width:\s*1px/, 'a 1 px box takes no visible space');
+  assert.match(hidden, /height:\s*1px/);
+  assert.match(hidden, /white-space:\s*nowrap/, 'a wrapped box would grow taller than 1 px');
+  // The legacy `clip` rectangle only works with absolute positioning; keeping both
+  // would make the helper's intent ambiguous for the next reader.
+  assert.doesNotMatch(hidden, /clip:\s*rect/, 'the legacy clip rectangle goes with the absolute position');
+});

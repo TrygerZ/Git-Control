@@ -280,14 +280,22 @@ h3 {
 
 /* --------------------------------------------------------------- a11y basics */
 
+/*
+ * The helper used `position: absolute`, which with no positioned ancestor
+ * resolves against the viewport. A hidden span inside a scroller therefore
+ * escaped that scroller's clip and landed at its document offset, stretching
+ * the page: measured at 380x622 and 380x1000, `document.scrollHeight` was 1112
+ * at both heights and `window.scrollTo(0, 400)` moved 112 px. Removing the
+ * absolute position dropped it to 1000. The 1 px clipped box keeps the text
+ * available to screen readers and takes no visible space.
+ */
 .gc-visually-hidden {
-  position: absolute;
   width: 1px;
   height: 1px;
   margin: -1px;
   padding: 0;
   overflow: hidden;
-  clip: rect(0 0 0 0);
+  clip-path: inset(50%);
   white-space: nowrap;
   border: 0;
 }
