@@ -392,44 +392,34 @@ test('the column is decorative for assistive tech: the rows repeat the graph', (
   assert.doesNotMatch(src, /role="grid"|role="listbox"/);
 });
 
-test('a row shows the headline name plus how many others share the lane', () => {
-  // 41 branches can land in one lane. Printing all of them would be a wall of
-  // text, printing one hides 40. The row prints the headline and a `+N` count, and
-  // the full list rides in the tooltip.
+test('a row prints one name; the full list rides in the tooltip', () => {
+  // 41 branches can land in one lane. Frame 01 prints one name per row and draws
+  // no overflow count, so the row prints the headline and the tooltip carries the
+  // rest. Losing the count costs nothing a pointer cannot recover in one hover.
   const src = read('src/webview/LaneGutterView.tsx');
   assert.match(src, /row\.names/, 'the row reads the full list');
-  assert.match(src, /names\.slice\(1\)|names\.length - 1/, 'it counts the others');
-  assert.match(src, /laneMoreOthers|laneOthers/, 'the count is a catalog string, not a literal');
-  // The gap is the CSS `gap` on the flex container, not a space in the string, so
-  // the count has to be a flex child that the container actually spaces.
-  const css = read('src/webview/styles.css');
-  const nameRule = css.match(/\.gc-gutter__name\s*\{([^}]*)\}/)?.[1] ?? '';
-  assert.match(nameRule, /display:\s*flex/, 'the name is a flex row so the count is spaced');
-  // 2 px reads as one word next to an ellipsized branch name. The count needs a
-  // visible break from the name it does not belong to.
-  assert.match(nameRule, /gap:\s*var\(--gc-space-2\)/, 'and the gap is one visible step');
-  // The tooltip carries every name, so nothing is lost. A newline never renders in
-  // a native tooltip, so the separator has to be a visible character.
+  assert.doesNotMatch(src, /names\.length - 1|names\.slice\(1\)/, 'no overflow count is computed');
+  assert.doesNotMatch(src, /laneMoreOthers/, 'and no catalog string for it');
+  // A newline never renders in a native tooltip, so the separator has to be a
+  // visible character.
   assert.match(src, /names\.join\(' · '\)|names\.join\(" · "\)|names\.join\('\\u00b7'\)/, 'the tooltip lists them all on one readable line');
   for (const lang of ['en', 'id']) {
     const catalog = read(`src/webview/i18n.${lang}.ts`);
-    assert.ok(catalog.includes('    laneMoreOthers:'), `${lang} catalog is missing laneMoreOthers`);
+    assert.ok(!catalog.includes('    laneMoreOthers:'), `${lang} catalog still carries laneMoreOthers`);
   }
 });
 
-test('the headline keeps a usable width, so the count does not eat the name', () => {
-  // In a 150 px column the label was shrinking to `fix/fronten...` while `+14 more`
-  // kept its full width. The name is the identity; the count is the hint. The name
-  // gets a floor and the count yields its space before the name does.
+test('the single name gets the whole row width and ellipsises there', () => {
+  // With the count gone the label owns the row, so it must be the child that
+  // grows and the one that carries the ellipsis. A label that stops growing would
+  // leave the name short while the row has room.
   const css = read('src/webview/styles.css');
   const label = css.match(/\.gc-gutter__label\s*\{([^}]*)\}/)?.[1] ?? '';
   assert.ok(label.length > 0, 'the label has a rule');
   assert.match(label, /flex:\s*1 1 auto|flex-grow:\s*1/, 'the label takes the free space');
-  const more = css.match(/\.gc-gutter__more\s*\{([^}]*)\}/)?.[1] ?? '';
-  assert.ok(more.length > 0, 'the count has a rule');
-  assert.match(more, /flex:\s*0 0 auto|flex:\s*none/, 'the count never grows');
-  // The count may shrink to nothing before the name is squeezed out.
-  assert.match(more, /min-width:\s*0/, 'the count can shrink');
+  assert.match(label, /text-overflow:\s*ellipsis/, 'and it ellipsises');
+  assert.match(label, /min-width:\s*0/, 'so it can shrink inside the flex row');
+  assert.doesNotMatch(css, /\.gc-gutter__more\s*\{/, 'the count rule is gone');
 });
 
 test('the gutter styles use tokens only and the frame width', () => {

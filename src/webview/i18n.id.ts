@@ -687,7 +687,6 @@ const id: Catalog = {
     laneRemoteOnly: 'hanya remote',
     laneTag: 'tag',
     laneUnknown: 'tidak diketahui',
-    laneMoreOthers: (count: number) => `+${count} lainnya`,
   },
 
   // Node context menu

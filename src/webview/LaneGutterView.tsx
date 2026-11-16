@@ -124,11 +124,6 @@ export function LaneGutterView({ graph, zoom, scrollTop, scrollLeft }: Props): J
                   row.status === 'merged' ? mergedNameAt(row, boundaries, scrollX) : row.name,
                 )}
               </span>
-              {row.names.length - 1 > 0 ? (
-                <span className="gc-gutter__more">
-                  {strings.graph.laneMoreOthers(row.names.length - 1)}
-                </span>
-              ) : null}
             </span>
             <span className="gc-gutter__meta">
               {strings.graph.laneCommits(formatCount(row.commits, language))} · {statusWord(row)}

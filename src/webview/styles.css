@@ -1942,22 +1942,12 @@ h3 {
   white-space: nowrap;
 }
 
-/*
- * The name is the identity and the count is the hint, so the name grows and the
- * count yields. The count stays first in its own box: `flex: 0 0 auto` with
- * `min-width: 0` lets it shrink to nothing before the label is squeezed out.
- */
+/* The name is the identity, so it takes the row's free space and ellipsises. */
 .gc-gutter__label {
   flex: 1 1 auto;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
-}
-
-.gc-gutter__more {
-  flex: 0 0 auto;
-  min-width: 0;
-  font-weight: normal;
 }
 
 .gc-gutter__meta {

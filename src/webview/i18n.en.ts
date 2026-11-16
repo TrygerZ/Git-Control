@@ -693,7 +693,6 @@ const en = {
     laneRemoteOnly: 'remote only',
     laneTag: 'tag',
     laneUnknown: 'unknown',
-    laneMoreOthers: (count: number) => `+${count} more`,
   },
 
   // Node context menu

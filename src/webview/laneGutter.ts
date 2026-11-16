@@ -158,7 +158,7 @@ export function laneSummaries(
         status = 'local-only';
       } else {
         status = 'upstream';
-        detail = upstream;
+        detail = stripRemotePrefix(upstream);
       }
     } else {
       status = 'unknown';
@@ -252,6 +252,15 @@ export interface MergeBoundary {
  * Past the last merge the row holds that last name instead of blanking, and it
  * falls back to `row.name` when there are no boundaries at all.
  */
+/**
+ * `refs/remotes/origin/main` -> `origin/main`, the name frame 01 prints on a lane
+ * row's meta line. Anything else is returned unchanged, so the helper is safe to
+ * call on a value that is already short.
+ */
+export function stripRemotePrefix(ref: string): string {
+  return ref.startsWith('refs/remotes/') ? ref.slice('refs/remotes/'.length) : ref;
+}
+
 export function mergedNameAt(
   row: LaneSummary,
   boundaries: readonly MergeBoundary[],
