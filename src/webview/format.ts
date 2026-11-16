@@ -431,6 +431,16 @@ export function baseName(path: string): string {
   return parts[parts.length - 1] ?? path;
 }
 
+/**
+ * Directory part of a repository path, for the file row's second cell.
+ *
+ * Frame 01 (`9:142`) prints `src/webview` beside the file name it already shows,
+ * so a root-level file gets an empty string rather than repeating its own name.
+ */
+export function dirOf(path: string): string {
+  throw new Error('not implemented');
+}
+
 // ------------------------------------------------------------------ breadcrumb
 
 /**

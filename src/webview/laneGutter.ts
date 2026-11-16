@@ -273,10 +273,11 @@ export function stripRemotePrefix(ref: string): string {
 /**
  * Whether an edge that lands on `toLane` is drawn dashed.
  *
- * Frame 01 dashes an edge into a branch that has not landed on the current line
- * yet (`12:19` into `feat/graph-ribbons`, `12:20` into `origin/release/1.4`) and
- * keeps it solid once the branch is merged (`12:17`, `12:18`). An unknown lane is
- * unmerged, so it stays dashed rather than claiming a merge nobody proved.
+ * `merged` is the set of lanes that have landed: a lane merged into another tip,
+ * or the lane HEAD sits on. Frame 01 dashes an edge into a branch that has not
+ * landed yet (`12:19` into `feat/graph-ribbons`, `12:20` into `origin/release/1.4`)
+ * and keeps it solid once it has (`12:17`, `12:18`). An unknown lane is not
+ * landed, so it stays dashed rather than claiming a merge nobody proved.
  */
 export function edgeDashed(toLane: number, merged: ReadonlySet<number>): boolean {
   return !merged.has(toLane);

@@ -490,11 +490,17 @@ export function GraphCanvas({
     return out;
   }, [graph, rows, band.left, band.right]);
 
-  /** Lanes whose tip another tip reaches, so an edge into one is solid. */
-  const mergedLaneSet = useMemo(
-    () => mergedLanes(laneTips(graph?.nodes ?? []), graph?.edges ?? []),
-    [graph],
-  );
+  /**
+   * Lanes that have landed: merged into another tip, or carrying HEAD. An edge
+   * into one of these is solid; anything else is dashed, since the branch it
+   * points at is not in your current line yet.
+   */
+  const mergedLaneSet = useMemo(() => {
+    const merged = mergedLanes(laneTips(graph?.nodes ?? []), graph?.edges ?? []);
+    const head = graph?.nodes.find((n) => n.isHead);
+    if (head !== undefined) merged.add(head.lane);
+    return merged;
+  }, [graph]);
 
   const laneColor = useCallback(
     (lane: number): string => graph?.lanes[lane]?.color ?? 'currentColor',

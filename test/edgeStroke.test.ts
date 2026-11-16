@@ -21,20 +21,29 @@ const read = (relative: string): string => {
   return fs.readFileSync(file, 'utf8');
 };
 
-test('an edge into a merged lane is solid, one into an unmerged lane is dashed', () => {
-  const merged = new Set([1]);
-  assert.equal(edgeDashed(1, merged), false, 'merged lane: solid');
-  assert.equal(edgeDashed(2, merged), true, 'local only lane: dashed');
-  assert.equal(edgeDashed(3, merged), true, 'remote only lane: dashed');
-  // A lane index the graph does not know is unmerged, so it stays dashed rather
+test('an edge into a landed lane is solid, one into an unlanded lane is dashed', () => {
+  // "Landed" is merged OR the lane HEAD sits on. The current branch is never
+  // merged into anything, so a set of merged lanes alone would dash every edge of
+  // the branch the user is standing on.
+  const landed = new Set([0, 1]);
+  assert.equal(edgeDashed(0, landed), false, 'the HEAD lane: solid');
+  assert.equal(edgeDashed(1, landed), false, 'a merged lane: solid');
+  assert.equal(edgeDashed(2, landed), true, 'a local only lane: dashed');
+  assert.equal(edgeDashed(3, landed), true, 'a remote only lane: dashed');
+  // A lane index the graph does not know is unlanded, so it stays dashed rather
   // than claiming a merge nobody proved.
-  assert.equal(edgeDashed(9, merged), true, 'unknown lane: dashed');
+  assert.equal(edgeDashed(9, landed), true, 'unknown lane: dashed');
 });
 
 test('the canvas uses the rule for the edge class', () => {
   const src = read('src/webview/GraphCanvas.tsx');
   assert.match(src, /edgeDashed/, 'the canvas asks the pure rule');
   assert.match(src, /gc-edge--dashed/, 'and applies a class for it');
+  // The landed set must include the lane HEAD sits on, or the whole current
+  // branch draws dashed. Both facts come from the graph the canvas already holds.
+  const memo = src.slice(src.indexOf('mergedLaneSet'), src.indexOf('mergedLaneSet') + 500);
+  assert.match(memo, /mergedLanes\(/, 'the merged set is the base');
+  assert.match(memo, /headLane|isHead/, 'and the HEAD lane joins it');
 });
 
 test('the dashed stroke is a dash pattern, not a thinner solid line', () => {
