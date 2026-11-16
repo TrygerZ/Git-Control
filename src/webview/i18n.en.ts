@@ -671,6 +671,8 @@ const en = {
     // Frame 01 (`9:45`): the toolbar carries no visible form labels, so each
     // control's name lives in the catalog.
     branchFilterAria: 'Filter by branch',
+    // Frame 01 (`9:67`): the visible verb above the filter dropdown.
+    showLabel: 'Show',
     panelToggleAria: 'Toggle commit details panel',
     panelToggleTitle: 'Show or hide commit details',
     // Frame 01 (`10:158`): the two actions behind the zoom divider.

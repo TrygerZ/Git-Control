@@ -1109,13 +1109,16 @@ h3 {
 }
 
 /*
- * The filter row above the graph. Clean, unified one-line strip.
+ * The filter row above the graph. Frame 01 (`9:45`) draws ONE 44 px strip, so
+ * it never wraps: only the search field absorbs spare width.
  */
 .gc-toolbar--filters {
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   align-items: center;
   gap: var(--gc-space-2);
+  /* Frame 01 (`9:45`) is 44 px tall; --gc-space-7 is 32, so the frame wins. */
+  min-height: 44px;
   padding: var(--gc-space-3);
   border: none;
   border-bottom: 1px solid var(--gc-border);
@@ -1123,13 +1126,35 @@ h3 {
   background: var(--gc-surface-1);
 }
 
+/* A labelled control: visible frame word plus the control it names. */
+.gc-toolbar__group {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: var(--gc-space-2);
+  min-width: 0;
+}
+
+.gc-toolbar__label {
+  color: var(--gc-text-muted);
+  font-size: var(--gc-fs-2xs);
+  white-space: nowrap;
+}
+
+.gc-toolbar__divider {
+  flex: 0 0 auto;
+  width: 1px;
+  height: var(--gc-space-5);
+  background: var(--gc-border);
+}
+
 /*
- * Frame 01 (`9:45`): the count sits beside the filters and `Load older` follows
- * it, both pushed to the far end so the search field keeps the room. The live
- * region is the count itself, so the search box's `aria-describedby` still lands.
+ * Frame 01 (`9:45`): the count ends the filter group, so it no longer pushes
+ * itself right. The live region is the count itself, so the search box's
+ * `aria-describedby` still lands.
  */
 .gc-toolbar__count {
-  margin: 0 0 0 auto;
+  flex: 0 0 auto;
   color: var(--gc-text-muted);
   font-size: var(--gc-fs-2xs);
   white-space: nowrap;
@@ -1192,6 +1217,14 @@ h3 {
   max-width: 100%;
   /* The width cap moved onto the inner select wrapper; this row only lays out. */
   min-height: var(--gc-hit);
+}
+
+/*
+ * Inside a labelled group the wrap shrinks instead of growing: a long branch
+ * list must not push the panel toggle off the one-row toolbar.
+ */
+.gc-toolbar__group .gc-toolbar__branch-wrap {
+  max-width: 18em;
 }
 
 .gc-toolbar__field {

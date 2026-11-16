@@ -665,6 +665,8 @@ const id: Catalog = {
     resetFilter: 'Reset',
     // Frame 01 (`9:45`): toolbar tanpa label form terlihat. Lihat katalog en.
     branchFilterAria: 'Filter menurut branch',
+    // Frame 01 (`9:67`): kata kerja di atas dropdown filter. Lihat katalog en.
+    showLabel: 'Tampilkan',
     panelToggleAria: 'Tampilkan atau sembunyikan panel detail commit',
     panelToggleTitle: 'Tampilkan atau sembunyikan detail commit',
     // Frame 01 (`10:158`): dua aksi di balik pemisah zoom.

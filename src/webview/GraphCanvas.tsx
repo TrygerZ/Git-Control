@@ -128,8 +128,10 @@ export { rowLabel };
 /**
  * Filter bar above the canvas (frame 01, node `9:45`).
  *
- * One row: search, checkout, filter, count with Load older, and the panel toggle.
- * No visible form labels; each control's name is in the catalog.
+ * One row, never wrapping: search, a labelled Checkout group, a labelled Show
+ * group, the count with Load older, then the panel toggle behind a divider.
+ * The two labels are frame words, not form labels: `gc-toolbar__label` is the
+ * quiet inline style, and each control keeps its own accessible name.
  */
 function Toolbar({
   search,
@@ -189,6 +191,43 @@ function Toolbar({
         </span>
       </div>
 
+      {/*
+        One checkout control, shared with the sidebar; the unlabelled variant, so
+        the visible `Checkout` word sits beside it and the accessible name stays.
+      */}
+      <div className="gc-toolbar__group">
+        <span className="gc-toolbar__label">{strings.graph.checkoutBranchLabel}</span>
+        <BranchSelector
+          currentBranch={currentBranch}
+          refs={refs}
+          busy={busy}
+          aria-label={strings.graph.checkoutBranchAria}
+        />
+      </div>
+
+      <div className="gc-toolbar__group">
+        <span className="gc-toolbar__label">{strings.graph.showLabel}</span>
+        <div className="gc-toolbar__branch-wrap">
+          <select
+            className="gc-toolbar__branch-select"
+            aria-label={strings.graph.branchFilterAria}
+            value={branchFilter}
+            onChange={(e) => onBranchFilter(e.target.value)}
+          >
+            <option value="">{strings.graph.branchFilterAll}</option>
+            {branches.map((ref) => (
+              <option key={ref.refName} value={ref.shortName}>
+                {ref.kind === 'remote'
+                  ? strings.graph.branchFilterRemotePrefix(sanitizeGitText(ref.shortName))
+                  : sanitizeGitText(ref.shortName)}
+              </option>
+            ))}
+          </select>
+        </div>
+      </div>
+
+      <span className="gc-toolbar__divider" aria-hidden="true" />
+
       {/* The count moved up from the paragraph above the canvas; still the live region. */}
       <p className="gc-toolbar__count" id={countId} role="status" aria-live="polite">
         {countText}
@@ -206,34 +245,7 @@ function Toolbar({
       )}
       {paging && <Spinner label={strings.graph.moreLoadingSpinner} />}
 
-      {/*
-        One checkout control, shared with the sidebar; the unlabelled variant. The
-        name comes from here so the toolbar owns the row's accessible labels.
-      */}
-      <BranchSelector
-        currentBranch={currentBranch}
-        refs={refs}
-        busy={busy}
-        aria-label={strings.graph.checkoutBranchAria}
-      />
-
-      <div className="gc-toolbar__branch-wrap">
-        <select
-          className="gc-toolbar__branch-select"
-          aria-label={strings.graph.branchFilterAria}
-          value={branchFilter}
-          onChange={(e) => onBranchFilter(e.target.value)}
-        >
-          <option value="">{strings.graph.branchFilterAll}</option>
-          {branches.map((ref) => (
-            <option key={ref.refName} value={ref.shortName}>
-              {ref.kind === 'remote'
-                ? strings.graph.branchFilterRemotePrefix(sanitizeGitText(ref.shortName))
-                : sanitizeGitText(ref.shortName)}
-            </option>
-          ))}
-        </select>
-      </div>
+      <span className="gc-toolbar__divider" aria-hidden="true" />
 
       {(search.length > 0 || branchFilter.length > 0) && (
         <button
