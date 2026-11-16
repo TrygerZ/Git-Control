@@ -646,7 +646,6 @@ const en = {
     headTag: 'HEAD',
     controlsAria: 'Canvas view controls',
     legendButtonAria: 'Graph symbol legend',
-    jumpHeadAria: 'Jump to HEAD commit',
     zoomInAria: 'Zoom in graph',
     zoomInTitle: 'Zoom in (+)',
     zoomOutAria: 'Zoom out graph',

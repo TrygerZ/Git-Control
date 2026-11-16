@@ -1972,12 +1972,11 @@ h3 {
 /*
  * Floating zoom / home controls, bottom right, as in the Unity reference.
  *
- * A column rather than a row: in a 300 px sidebar a horizontal strip would cover the
- * commit subjects it sits on top of. `right`/`bottom` are one step off the edge so
- * the group never overlaps the scrollbar gutter.
+ * A row rather than a column: frame 01 (`10:158`) draws one bar. `right`/`bottom`
+ * are one step off the edge so the bar never overlaps the scrollbar gutter.
  *
- * `align-items: flex-end` anchors every child to the right axis so square icon
- * buttons do not stretch to the wider checkbox label when translations change.
+ * `align-items: center` keeps the square icon buttons and the readout on one
+ * baseline when translations change.
  */
 .gc-canvas__controls {
   position: absolute;
@@ -1985,8 +1984,8 @@ h3 {
   bottom: var(--gc-space-4);
   z-index: 10;
   display: flex;
-  flex-direction: column;
-  align-items: flex-end;
+  flex-direction: row;
+  align-items: center;
   gap: var(--gc-space-2);
 }
 
@@ -2642,16 +2641,15 @@ h3 {
 
 /*
  * Bottom row: the minimap and the legend pill, side by side and sharing one
- * bottom edge, as frame 01 draws them. Absolutely positioned at the bottom
- * centre of the canvas stage, over canvas content, with a z-index of 9 (above
- * canvas content z-index 1..8, below controls z-index 10 and menu/popover
- * z-index 20+). The row owns the positioning so the two items cannot drift.
+ * bottom edge, as frame 01 draws them. Absolutely positioned at the bottom left
+ * of the canvas stage, over canvas content, with a z-index of 9 (above canvas
+ * content z-index 1..8, below controls z-index 10 and menu/popover z-index 20+).
+ * The row owns the positioning so the two items cannot drift.
  */
 .gc-canvas__bottom-row {
   position: absolute;
-  left: 50%;
+  left: var(--gc-space-4);
   bottom: var(--gc-space-4);
-  transform: translateX(-50%);
   z-index: 9;
   display: flex;
   align-items: flex-end;

@@ -641,7 +641,6 @@ const id: Catalog = {
     headTag: 'HEAD',
     controlsAria: 'Kontrol tampilan kanvas',
     legendButtonAria: 'Panduan simbol grafik',
-    jumpHeadAria: 'Lompat ke commit HEAD',
     zoomInAria: 'Perbesar grafik',
     zoomInTitle: 'Perbesar (+)',
     zoomOutAria: 'Perkecil grafik',

@@ -21,6 +21,8 @@ interface Props {
   zoom: number;
   totalWorldWidth: number;
   width: number;
+  /** Frame height; defaults to the compact strip other callers draw. */
+  height?: number;
   onScroll(scrollLeft: number): void;
 }
 
@@ -36,6 +38,7 @@ export function GraphMinimap({
   zoom,
   totalWorldWidth,
   width,
+  height = HEIGHT,
   onScroll,
 }: Props): JSX.Element | null {
   const strings = useT();
@@ -64,7 +67,7 @@ export function GraphMinimap({
   for (let i = 0; i < nodes.length; i += step) {
     const node = nodes[i] as GraphNode;
     const x = node.x * colScale;
-    const y = 4 + (node.lane / laneSpan) * (HEIGHT - 8);
+    const y = 4 + (node.lane / laneSpan) * (height - 8);
     ticks.push(`M${x.toFixed(1)} ${y.toFixed(1)}v3`);
   }
 
@@ -108,7 +111,7 @@ export function GraphMinimap({
       ref={ref}
       className="gc-minimap"
       width={width}
-      height={HEIGHT}
+      height={height}
       role="slider"
       tabIndex={0}
       aria-label={strings.minimap.ariaLabel}
@@ -155,7 +158,7 @@ export function GraphMinimap({
         x={geometry.rectLeft}
         y={0.5}
         width={geometry.rectWidth}
-        height={HEIGHT - 1}
+        height={height - 1}
         rx={2}
       />
     </svg>

@@ -83,7 +83,9 @@ import {
 import type { DateBucket, GraphEdge, GraphNode, RefInfo, RepoGraph, RepoStatus } from '../messages';
 export { chipsFor, computeStaggerMap, lanesForFilter, matchesSearch } from './graphQuery';
 export { edgePath } from './viewport';
-const MINIMAP_HEIGHT = 160;
+/** Frame 01 (`10:178`): the minimap is 220 x 68 at the canvas left edge. */
+const MINIMAP_WIDTH = 220;
+const MINIMAP_HEIGHT = 68;
 
 /**
  * `range` is recomputed on every `scrollLeft` change, so without a pause one continuous
@@ -1085,12 +1087,12 @@ export function GraphCanvas({
           </div>
 
           {/*
-            Frame 01 bottom row: the minimap and the legend pill side by side,
-            sharing one bottom edge (minimap x 167-384, pill x 401-565, both end
-            at y 882). The row owns the absolute positioning, so neither item can
-            drift away from the other. Hidden below 220 px, where the frame draws
-            neither and the bottom-right controls stack would collide.
-            Width scales dynamically between 120px and 360px (~45% of stage width), never exceeding 60% of stage width.
+            Frame 01 bottom row: the minimap at the canvas left edge, the legend
+            pill beside it, sharing one bottom edge (minimap 220 x 68 at x 166,
+            pill x 401-565, both end at y 882). The row owns the absolute
+            positioning, so neither item can drift away from the other. Hidden
+            below 220 px, where the frame draws neither and the bottom-right
+            controls stack would collide.
           */}
           {viewportWidthState >= 220 && (
             <div className="gc-canvas__bottom-row">
@@ -1102,7 +1104,8 @@ export function GraphCanvas({
                   viewportWidth={viewportWidthState}
                   zoom={zoom}
                   totalWorldWidth={totalWorldW}
-                  width={Math.max(120, Math.min(360, Math.round(viewportWidthState * 0.45)))}
+                  width={MINIMAP_WIDTH}
+                  height={MINIMAP_HEIGHT}
                   onScroll={(left) => {
                     const node = scrollRef.current;
                     if (node !== null) node.scrollLeft = left;
@@ -1129,32 +1132,11 @@ export function GraphCanvas({
           )}
 
           {/*
-            Floating canvas controls, bottom right: go to HEAD, then zoom. The
-            legend launcher moved out (frame 01 draws the legend as a pill in
-            place).
+            Floating canvas controls, bottom right. Frame 01 (`10:158`) draws one
+            bar: out, a readout that doubles as the reset, in, then the two frame
+            actions behind a divider: fit the whole history, or centre HEAD.
           */}
           <div className="gc-canvas__controls" role="group" aria-label={strings.graph.controlsAria}>
-            {/*
-              Navigation card: go to HEAD. Grouped apart from zoom because it
-              answers "where am I" rather than "how big is it".
-            */}
-            <div className="gc-control-card">
-              <button
-                type="button"
-                className="gc-icon-button"
-                aria-label={strings.graph.jumpHeadAria}
-                disabled={headRow === undefined}
-                onClick={() => {
-                  if (headRow !== undefined) goToRow(headRow);
-                }}
-              >
-                <Icon name="home" />
-              </button>
-            </div>
-            {/*
-              Zoom card: out, a readout that doubles as the reset, in, then the two
-              frame actions behind a divider: fit the whole history, or centre HEAD.
-            */}
             <div className="gc-control-card gc-control-card--zoom">
               <button
                 type="button"
