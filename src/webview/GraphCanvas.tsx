@@ -41,9 +41,9 @@ import { NodeContextMenu, type MenuAnchor, type MenuItem } from './NodeContextMe
 import { EmptyState, GraphSkeleton, Icon, InfoBanner, Spinner, type IconName } from './ui';
 import {
   authorInitials,
+  compactAge,
   formatCount,
   isSafeImageSrc,
-  relativeTime,
   rowLabel,
   sanitizeGitText,
   shortHash,
@@ -1429,7 +1429,6 @@ function Row({
   // visible text cannot disagree.
   const subject = sanitizeGitText(node.subject);
   const author = sanitizeGitText(node.authorName);
-  const time = relativeTime(node.authoredAt, now, lang);
 
   // Position row below or above node center depending on stagger placement
   const nodeCenterY = laneY(node.lane, LANE_HEIGHT, RULER_HEIGHT);
@@ -1470,7 +1469,7 @@ function Row({
         <span className="gc-row__meta" aria-hidden="true">
           <span className="gc-row__author" title={author}>{author}</span>
           <span className="gc-row__dot">·</span>
-          <span className="gc-row__time">{time}</span>
+          <span className="gc-row__time">{compactAge(node.authoredAt, now)}</span>
         </span>
       </span>
     </div>

@@ -181,6 +181,8 @@ const id: Catalog = {
     unknownDate: 'Tanggal tidak diketahui',
     unknownTime: 'waktu tidak diketahui',
     justNow: 'baru saja',
+    compactUnknown: 'tidak diketahui',
+    compactNow: 'sekarang',
     secondsAgo: (count: number) => `${count} detik lalu`,
     minutesAgo: (count: number) => `${count} menit lalu`,
     hoursAgo: (count: number) => `${count} jam lalu`,

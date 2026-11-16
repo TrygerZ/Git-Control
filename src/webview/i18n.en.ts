@@ -186,6 +186,8 @@ const en = {
     unknownDate: 'Unknown date',
     unknownTime: 'unknown time',
     justNow: 'just now',
+    compactUnknown: 'unknown',
+    compactNow: 'now',
     secondsAgo: (count: number) => `${count}s ago`,
     minutesAgo: (count: number) => `${count}m ago`,
     hoursAgo: (count: number) => `${count}h ago`,
