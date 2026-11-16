@@ -35,3 +35,15 @@ test('the file row prints the directory, not the whole path', () => {
   assert.match(row, /dirOf\(/, 'and it is built by the helper');
   assert.doesNotMatch(row, /\{safePath\}\s*<\/span>/, 'the whole path is not the cell');
 });
+
+test('the churn column survives a 320 px panel', () => {
+  // Measured in the browser at the frame's panel width: the name cell took its
+  // full intrinsic width and the directory grew, so `+9 -3` was clipped by the
+  // button's edge. The name yields first; the churn never shrinks.
+  const css = read('src/webview/styles.css');
+  const name = css.match(/\.gc-filelist__name\s*\{([^}]*)\}/)?.[1] ?? '';
+  assert.ok(name.length > 0, 'the name has a rule');
+  assert.match(name, /min-width:\s*[1-9]/, 'the name can shrink to a floor');
+  const stats = css.match(/\.gc-filelist__stats\s*\{([^}]*)\}/)?.[1] ?? '';
+  assert.match(stats, /flex:\s*0 0 auto/, 'the churn keeps its width');
+});

@@ -71,6 +71,9 @@ test('the row does not wrap: the frame is one 44 px strip', () => {
   assert.match(search, /flex:\s*1 1/, 'the search field grows');
   const count = css.match(/\.gc-toolbar__count\s*\{([^}]*)\}/)?.[1] ?? '';
   assert.doesNotMatch(count, /margin:\s*0 0 0 auto/, 'the count no longer pushes itself right');
+  // The count is a `<p>`, and a paragraph carries the user agent's 1em block
+  // margins. Without an explicit reset the 44 px strip measured 59 px.
+  assert.match(count, /margin:\s*0;/, 'the paragraph margins are reset');
 });
 
 test('the frame dividers separate the count group and the panel toggle', () => {

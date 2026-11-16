@@ -1155,6 +1155,9 @@ h3 {
  */
 .gc-toolbar__count {
   flex: 0 0 auto;
+  /* A paragraph carries the user agent's 1em block margins, which made a 44 px
+     strip 59 px tall. The row owns the spacing. */
+  margin: 0;
   color: var(--gc-text-muted);
   font-size: var(--gc-fs-2xs);
   white-space: nowrap;
@@ -5032,6 +5035,9 @@ h3 {
 
 .gc-filelist__name {
   flex: 0 1 auto;
+  /* The name yields before the directory does: `dir` is the longer fact and the
+     one the frame truncates, so a 320 px panel still shows the churn column. */
+  min-width: 3em;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
