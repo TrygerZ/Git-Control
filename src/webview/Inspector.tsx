@@ -327,6 +327,16 @@ export function Inspector({ hash, onDetailLoaded }: Props): JSX.Element {
               <Icon name="copy" />
             </button>
           </div>
+          {/*
+            The parent hash belongs beside the commit hash, not in Details: the
+            frame reads one row of identifiers before anything else, and a merge
+            commit shows one chip per parent without opening a key-value block.
+          */}
+          {detail.parents.map((p) => (
+            <code key={p} className="gc-inspector__parent">
+              {strings.inspector.parentChip(shortHash(p))}
+            </code>
+          ))}
           {linkage?.available === true && (
             // External leaves the app — not in the clipboard rhythm. Own button
             // with divider, icon-only for the same width reason as the copy pair.
@@ -342,40 +352,6 @@ export function Inspector({ hash, onDetailLoaded }: Props): JSX.Element {
           )}
         </div>
       </header>
-
-      <section className="gc-inspector__block">
-        <h3 className="gc-inspector__heading">{strings.inspector.sectionDetails}</h3>
-        <dl className="gc-inspector__meta">
-          <dt>{strings.inspector.labelAuthor}</dt>
-          <dd>
-            {author} &lt;{sanitizeGitText(detail.authorEmail)}&gt;
-          </dd>
-          <dt>{strings.inspector.labelAuthored}</dt>
-          <dd>
-            {absoluteTime(detail.authoredAt, language)} · {relativeTime(detail.authoredAt, Date.now(), language)}
-          </dd>
-          <dt>{strings.inspector.labelCommitted}</dt>
-          <dd>
-            {absoluteTime(detail.committedAt, language)} · {relativeTime(detail.committedAt, Date.now(), language)}
-            {detail.committerName !== detail.authorName &&
-              strings.inspector.committedBy(sanitizeGitText(detail.committerName))}
-          </dd>
-          <dt>{strings.inspector.labelParents}</dt>
-          <dd>
-            {detail.parents.length === 0 ? (
-              strings.inspector.noParents
-            ) : (
-              <ul className="gc-inspector__parents">
-                {detail.parents.map((p) => (
-                  <li key={p}>
-                    <code className="gc-inspector__hash-value">{shortHash(p)}</code>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </dd>
-        </dl>
-      </section>
 
       {detail.refNames.length > 0 && (
         <section className="gc-inspector__block">
@@ -508,7 +484,26 @@ export function Inspector({ hash, onDetailLoaded }: Props): JSX.Element {
       )}
 
       <section className="gc-inspector__block gc-inspector__block--files">
-        <h3 className="gc-inspector__heading">{strings.inspector.sectionFiles}</h3>
+        {/* Count and churn ride the heading, as in the frame: one line, one place. */}
+        <div className="gc-inspector__heading-row">
+          <h3 className="gc-inspector__heading">{strings.inspector.sectionFiles}</h3>
+          <span className="gc-inspector__count">{formatCount(detail.files.length, language)}</span>
+          {totals !== null && (
+            <>
+              <span className="gc-stat gc-stat--add">+{formatCount(totals.additions, language)}</span>
+              <span className="gc-stat gc-stat--del">−{formatCount(totals.deletions, language)}</span>
+            </>
+          )}
+          {/*
+            Binary files carry no line churn, so without this the heading counts
+            fewer files than the list below it shows.
+          */}
+          {totals !== null && totals.binary > 0 && (
+            <span className="gc-inspector__count">
+              {strings.inspector.totalsBinary(formatCount(totals.binary, language))}
+            </span>
+          )}
+        </div>
 
         {detail.parents.length > 1 && (
           <label className="gc-field">
@@ -529,15 +524,6 @@ export function Inspector({ hash, onDetailLoaded }: Props): JSX.Element {
               ))}
             </select>
           </label>
-        )}
-
-        {totals !== null && (
-          <p className="gc-inspector__totals">
-            {strings.inspector.totalsFiles(formatCount(totals.files, language))} ·{' '}
-            <span className="gc-stat gc-stat--add">+{formatCount(totals.additions, language)}</span>{' '}
-            <span className="gc-stat gc-stat--del">−{formatCount(totals.deletions, language)}</span>
-            {totals.binary > 0 && ` · ${strings.inspector.totalsBinary(formatCount(totals.binary, language))}`}
-          </p>
         )}
 
         {detail.files.length === 0 ? (
@@ -609,6 +595,27 @@ export function Inspector({ hash, onDetailLoaded }: Props): JSX.Element {
             {paging && <Spinner label={strings.inspector.loadingMore} />}
           </InfoBanner>
         )}
+      </section>
+
+      {/* Last, as the frame orders it: metadata closes the panel. */}
+      <section className="gc-inspector__block">
+        <h3 className="gc-inspector__heading">{strings.inspector.sectionDetails}</h3>
+        <dl className="gc-inspector__meta">
+          <dt>{strings.inspector.labelAuthor}</dt>
+          <dd>
+            {author} &lt;{sanitizeGitText(detail.authorEmail)}&gt;
+          </dd>
+          <dt>{strings.inspector.labelAuthored}</dt>
+          <dd>
+            {absoluteTime(detail.authoredAt, language)} · {relativeTime(detail.authoredAt, Date.now(), language)}
+          </dd>
+          <dt>{strings.inspector.labelCommitted}</dt>
+          <dd>
+            {absoluteTime(detail.committedAt, language)} · {relativeTime(detail.committedAt, Date.now(), language)}
+            {detail.committerName !== detail.authorName &&
+              strings.inspector.committedBy(sanitizeGitText(detail.committerName))}
+          </dd>
+        </dl>
       </section>
     </section>
   );

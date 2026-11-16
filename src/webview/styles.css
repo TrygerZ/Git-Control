@@ -4878,7 +4878,6 @@ h3 {
   font-variant-numeric: tabular-nums;
 }
 
-.gc-inspector__parents,
 .gc-inspector__refs {
   display: flex;
   flex-wrap: wrap;
@@ -4958,9 +4957,12 @@ h3 {
   color: var(--gc-text-muted);
 }
 
+/*
+ * The panel scrolls, the message does not: the frame reads the description as
+ * part of one column, and a nested scroller hides the changed files behind a
+ * second scrollbar.
+ */
 .gc-inspector__body {
-  max-height: 14em;
-  overflow: auto;
   margin: 0;
   padding: var(--gc-space-3);
   border-radius: var(--gc-radius);
@@ -4968,11 +4970,31 @@ h3 {
   white-space: pre-wrap;
 }
 
-.gc-inspector__totals {
-  margin: 0;
-  color: var(--gc-muted);
-  font-size: var(--gc-fs-xs);
+/* Heading, file count, and churn share one baseline, as in the frame. */
+.gc-inspector__heading-row {
+  display: flex;
+  align-items: baseline;
+  gap: var(--gc-space-2);
+  flex-wrap: wrap;
+}
+
+.gc-inspector__count {
+  color: var(--gc-text-muted);
+  font-size: var(--gc-fs-2xs);
   font-variant-numeric: tabular-nums;
+}
+
+/* Parent hash chip in the hash row. Same box as a button, muted like metadata. */
+.gc-inspector__parent {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--gc-space-1);
+  padding: 0 var(--gc-space-2);
+  min-height: var(--gc-hit);
+  border: 1px solid var(--gc-border-subtle);
+  border-radius: var(--gc-radius);
+  color: var(--gc-text-muted);
+  font-size: var(--gc-fs-2xs);
 }
 
 .gc-filelist {
