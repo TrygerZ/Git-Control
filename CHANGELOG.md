@@ -5,6 +5,17 @@ All notable changes to the "Git Control" extension will be documented in this fi
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.20.0] - 2026-11-19
+
+### Added
+- Pull requests open in an editor tab with Conversation, Commits, Checks, and Files changed tabs, beside a rail with the reviewers and labels.
+- The Files changed tab opens each file in a VS Code diff against the merge base when the branch is available locally. Without it the row states the fetch hint and sends nothing.
+- Commit rows reveal the commit in the graph.
+- Each pull request number gets one panel. Opening the same number again reveals the existing tab instead of stacking another.
+
+### Security
+- Pull request text renders as plain text, so a body carrying markup shows as those characters. Links open only through the https allowlist.
+
 ## [3.19.0] - 2026-11-14
 
 ### Added
