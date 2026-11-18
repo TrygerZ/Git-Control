@@ -1152,64 +1152,6 @@ h3 {
   flex: 0 0 auto;
 }
 
-/*
- * Frame 01 (`9:45`): the Ribbons switch ends the filter group. 28 x 16 track,
- * knob right when on. Colour comes from tokens so it survives all three themes.
- */
-.gc-switch {
-  display: inline-flex;
-  flex: 0 0 auto;
-  align-items: center;
-  gap: var(--gc-space-2);
-  min-height: var(--gc-hit);
-  padding: 0 var(--gc-space-2);
-  border: 0;
-  border-radius: var(--gc-radius);
-  background: transparent;
-  color: var(--gc-text-muted);
-  font: inherit;
-  font-size: var(--gc-fs-2xs);
-  cursor: pointer;
-}
-
-.gc-switch:hover {
-  background: var(--gc-bg-hover);
-}
-
-.gc-switch__track {
-  position: relative;
-  flex: 0 0 auto;
-  width: 28px;
-  height: 16px;
-  border-radius: var(--gc-radius-pill);
-  background: var(--gc-surface-3);
-  transition: background var(--gc-dur-fast) var(--gc-ease);
-}
-
-.gc-switch__knob {
-  position: absolute;
-  top: 2px;
-  left: 2px;
-  width: 12px;
-  height: 12px;
-  border-radius: 50%;
-  background: var(--gc-text-secondary);
-  transition: transform var(--gc-dur-fast) var(--gc-ease), background var(--gc-dur-fast) var(--gc-ease);
-}
-
-.gc-switch--on .gc-switch__track {
-  background: var(--gc-accent-solid);
-}
-
-.gc-switch--on .gc-switch__knob {
-  transform: translateX(12px);
-  background: var(--vscode-button-foreground, var(--gc-bg-editor));
-}
-
-.gc-switch__label {
-  white-space: nowrap;
-}
-
 .gc-toolbar__search-wrap {
   display: flex;
   align-items: center;
@@ -2630,11 +2572,6 @@ h3 {
  */
 .gc-canvas__lane-band {
   fill: color-mix(in srgb, var(--gc-bg-hover) 55%, transparent);
-}
-
-/* The Ribbons switch off: the band recedes but the lane pitch stays readable. */
-.gc-canvas__lane-band--quiet {
-  opacity: 0.4;
 }
 
 .gc-canvas__day-line {

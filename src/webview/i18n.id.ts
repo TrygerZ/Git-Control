@@ -669,9 +669,6 @@ const id: Catalog = {
     showLabel: 'Tampilkan',
     panelToggleAria: 'Tampilkan atau sembunyikan panel detail commit',
     panelToggleTitle: 'Tampilkan atau sembunyikan detail commit',
-    // Frame 01 (`9:45`): kata di samping switch. Lihat katalog en.
-    toggleRibbonsLabel: 'Ribbon',
-    toggleRibbonsAria: 'Tampilkan atau sembunyikan ribbon cabang',
     // Frame 01 (`10:158`): dua aksi di balik pemisah zoom.
     zoomFitAria: 'Sesuaikan grafik dengan jendela',
     zoomFitTitle: 'Muat seluruh histori dalam tampilan',

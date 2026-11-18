@@ -2,10 +2,10 @@
  * Toolbar right end (frame 01, node `9:45`).
  *
  * The frame ends the toolbar with a `Switch` (28 x 16, knob on the right) and the
- * word `Ribbons`, a divider, then the panel toggle. The app has a checkbox-shaped
- * control in an earlier commit and none now, and its panel toggle is the generic
- * icon button with a hover fill and an inset focus rule, so it reads as a pressed
- * button rather than the frame's quiet glyph.
+ * word `Ribbons`, a divider, then the panel toggle. The switch was built, then
+ * retired, then restored, and the owner has now asked for it gone for good: the
+ * lane gutter already names every branch, and the switch only dimmed a stripe.
+ * These tests pin the removal, so a later pass cannot quietly bring it back.
  */
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -29,14 +29,26 @@ function toolbar(): string {
   return src.slice(start, src.indexOf('\nexport function GraphCanvas', start));
 }
 
-test('the Ribbons switch is back, as a switch and not a checkbox', () => {
+test('the Ribbons switch and its state are gone', () => {
   const body = toolbar();
-  assert.match(body, /gc-switch/, 'the switch has its own element');
-  assert.match(body, /role="switch"/, 'announced as a switch');
-  assert.match(body, /aria-checked=\{/, 'and reports its state');
-  assert.match(body, /strings\.graph\.toggleRibbonsLabel/, 'the frame word labels it');
-  // The frame draws the word beside the control, not only in an accessible name.
-  assert.match(body, /gc-switch__label/, 'a visible label span');
+  assert.doesNotMatch(body, /gc-switch|role="switch"/, 'no switch in the toolbar');
+  assert.doesNotMatch(body, /ribbons|Ribbons/, 'and no leftover prop or label');
+  const src = read(CANVAS);
+  assert.doesNotMatch(src, /showRibbons|onToggleRibbons/, 'the canvas owns no such state');
+  assert.doesNotMatch(read('src/webview/bridge.ts'), /showRibbons/, 'and it left the webview state');
+});
+
+test('the quiet lane band left with the switch', () => {
+  // `--quiet` existed only for the switch's off position. With the switch gone the
+  // ternary has one branch, so the class and its rule must go too.
+  assert.doesNotMatch(read(CSS), /gc-canvas__lane-band--quiet/, 'no dead band class');
+});
+
+test('the catalogs no longer name a switch that does not exist', () => {
+  for (const lang of ['en', 'id']) {
+    const catalog = read(`src/webview/i18n.${lang}.ts`);
+    assert.doesNotMatch(catalog, /toggleRibbons/, `${lang} still carries a dead key`);
+  }
 });
 
 test('the panel toggle is the frame quiet glyph, not a pressed button', () => {
@@ -54,19 +66,11 @@ test('the panel toggle is the frame quiet glyph, not a pressed button', () => {
   );
 });
 
-test('the switch and the label sit before the divider and the toggle', () => {
+test('the panel toggle is the last control on the row', () => {
   const body = toolbar();
-  const sw = body.indexOf('gc-switch');
-  const divider = body.indexOf('gc-toolbar__divider', body.indexOf('gc-toolbar__count'));
   const toggle = body.indexOf('gc-toolbar__panel-toggle');
-  assert.ok(sw > 0 && divider > sw && toggle > divider, 'frame order: switch, divider, toggle');
-});
-
-test('both catalogs name the switch', () => {
-  for (const lang of ['en', 'id']) {
-    const catalog = read(`src/webview/i18n.${lang}.ts`);
-    for (const key of ['toggleRibbonsLabel', 'toggleRibbonsAria']) {
-      assert.ok(catalog.includes(`    ${key}:`), `${lang} catalog is missing ${key}`);
-    }
-  }
+  assert.ok(toggle > 0, 'the toggle is in the toolbar');
+  const after = body.slice(toggle);
+  // Nothing but the closing tags may follow the toggle's own button element.
+  assert.doesNotMatch(after, /<button/, 'no control sits past the toggle');
 });

@@ -3,8 +3,8 @@
  *
  * Three rows of the frame, one contract:
  *  - `9:45` toolbar: a search input, a checkout dropdown, a show dropdown, the
- *    commit count with `Load older`, the Ribbons switch, and the right-panel
- *    toggle. No visible form labels.
+ *    commit count with `Load older`, and the right-panel toggle. No visible form
+ *    labels.
  *  - `10:158` zoom bar: minus, percent, plus, divider, maximize, crosshair.
  *  - `10:184` legend: a 166x28 pill naming the two node states in place, not a
  *    button that opens a teaching panel.
@@ -52,19 +52,10 @@ test('the commit count and Load older live in the toolbar, as frame 01 draws the
   );
 });
 
-test('the Ribbons switch is a switch in the toolbar, as frame 01 draws it', () => {
-  // Frame 01 (`9:45`) ends the toolbar with a 28 x 16 switch and the word
-  // `Ribbons`. An earlier pass deleted the whole feature on the argument that the
-  // lane gutter answers the same question; the owner asked for the frame back, so
-  // the control and its persisted setting return while the ribbon drawing itself
-  // stays retired.
+test('the retired ribbon drawing stays retired', () => {
+  // The Ribbons switch is gone (see `toolbarEnd.test.ts`). The feature it once
+  // gated was already retired; neither may come back through a different door.
   const src = read(CANVAS);
-  assert.match(src, /role="switch"/, 'a real switch');
-  assert.match(src, /showRibbons/, 'and its state');
-  assert.match(src, /saveState\(\{ showRibbons/, 'the choice persists');
-  assert.match(read('src/webview/bridge.ts'), /showRibbons/, 'the setting is in the webview state');
-  // The retired module stays retired: the switch quiets the lane bands, it does
-  // not resurrect the ribbon paths.
   assert.doesNotMatch(src, /gc-branch-ribbon|computeBranchRibbons/, 'no ribbon paths are drawn');
   assert.doesNotMatch(read('src/webview/styles.css'), /\.gc-branch-ribbon/, 'no ribbon styles remain');
 });
@@ -132,7 +123,13 @@ test('the legend pill sits beside the minimap on the canvas bottom edge', () => 
   const row = css.match(/\.gc-canvas__bottom-row\s*\{([^}]*)\}/)?.[1] ?? '';
   assert.ok(row.length > 0, 'the row has a rule');
   assert.match(row, /position:\s*absolute/);
-  assert.match(row, /bottom:\s*var\(--gc-space-4\)/, 'the minimap and pill share one bottom edge');
+  // One bottom edge, offset past the horizontal scrollbar band the canvas reserves
+  // (owner report: the row sat on the bar).
+  assert.match(
+    row,
+    /bottom:\s*calc\(var\(--gc-scrollbar-band\) \+ var\(--gc-space-2\)\)/,
+    'the minimap and pill share one bottom edge, above the scrollbar',
+  );
   assert.match(row, /display:\s*flex/);
   assert.match(row, /align-items:\s*flex-end/, 'both items rest on that edge');
 

@@ -675,9 +675,6 @@ const en = {
     showLabel: 'Show',
     panelToggleAria: 'Toggle commit details panel',
     panelToggleTitle: 'Show or hide commit details',
-    // Frame 01 (`9:45`): the switch word sits beside the control.
-    toggleRibbonsLabel: 'Ribbons',
-    toggleRibbonsAria: 'Toggle branch ribbons',
     // Frame 01 (`10:158`): the two actions behind the zoom divider.
     zoomFitAria: 'Fit graph to window',
     zoomFitTitle: 'Fit the whole history in view',
