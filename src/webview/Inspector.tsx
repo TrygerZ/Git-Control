@@ -358,11 +358,29 @@ export function Inspector({ hash, onDetailLoaded }: Props): JSX.Element {
         <section className="gc-inspector__block">
           <h3 className="gc-inspector__heading">{strings.inspector.sectionRefs}</h3>
           <ul className="gc-inspector__refs" aria-label={strings.inspector.refsAria}>
-            {detail.refNames.map((ref) => (
-              <li key={ref} className="gc-chip gc-chip--local">
-                {sanitizeGitText(ref)}
-              </li>
-            ))}
+            {detail.refNames.map((ref) => {
+              // `tag: v1` is a tag; anything with a slash that is not a local
+              // branch is a remote; the rest is a local branch. The full name
+              // stays in `title`, the visible text drops only the tag prefix.
+              const isTag = ref.startsWith('tag: ');
+              const isRemote = !isTag && ref.includes('/') && !ref.startsWith('refs/heads/');
+              return (
+                <li
+                  key={ref}
+                  className={`gc-chip gc-chip--${isTag ? 'tag' : isRemote ? 'remote' : 'local'}`}
+                  title={sanitizeGitText(ref)}
+                >
+                  {isTag ? (
+                    <Icon name="tag" />
+                  ) : isRemote ? (
+                    <Icon name="cloud" />
+                  ) : (
+                    <Icon name="git-branch" />
+                  )}
+                  {sanitizeGitText(isTag ? ref.slice(5) : ref)}
+                </li>
+              );
+            })}
           </ul>
         </section>
       )}
@@ -418,7 +436,10 @@ export function Inspector({ hash, onDetailLoaded }: Props): JSX.Element {
                   #{pr.number} {sanitizeGitText(pr.title)}
                 </span>
                 <span className="gc-inspector__pr-meta">
-                  {pullRequestState(pr.state, language)} ·{' '}
+                  <span className={`gc-inspector__pr-state gc-inspector__pr-state--${pr.state}`}>
+                    {pullRequestState(pr.state, language)}
+                  </span>{' '}
+                  ·{' '}
                   {strings.inspector.intoBase(
                     sanitizeGitText(pr.baseRef),
                     relativeTime(pr.updatedAt, Date.now(), language),
@@ -507,24 +528,23 @@ export function Inspector({ hash, onDetailLoaded }: Props): JSX.Element {
         </div>
 
         {detail.parents.length > 1 && (
-          <label className="gc-field">
-            <span className="gc-field__label">{strings.inspector.compareParentLabel}</span>
-            <select
-              value={parent ?? ''}
-              onChange={(e) => {
-                setParent(e.target.value);
-                // The host diffs against the first parent, so switching parents
-                // only changes what `actions/openDiff` is asked for.
-                setOpening(null);
-              }}
-            >
-              {detail.parents.map((p, i) => (
-                <option key={p} value={p}>
-                  {strings.inspector.parentOption(i + 1, shortHash(p))}
-                </option>
-              ))}
-            </select>
-          </label>
+          <select
+            className="gc-inspector__parent-select"
+            aria-label={strings.inspector.compareParentLabel}
+            value={parent ?? ''}
+            onChange={(e) => {
+              setParent(e.target.value);
+              // The host diffs against the first parent, so switching parents
+              // only changes what `actions/openDiff` is asked for.
+              setOpening(null);
+            }}
+          >
+            {detail.parents.map((p, i) => (
+              <option key={p} value={p}>
+                {strings.inspector.parentOption(i + 1, shortHash(p))}
+              </option>
+            ))}
+          </select>
         )}
 
         {detail.files.length === 0 ? (

@@ -5022,6 +5022,35 @@ h3 {
   font-size: var(--gc-fs-2xs);
 }
 
+/* State pill: the word stays the carrier, the tone is decoration. */
+.gc-inspector__pr-state {
+  display: inline-flex;
+  align-items: center;
+  padding: 0 var(--gc-space-2);
+  border-radius: var(--gc-radius-pill);
+  background: var(--gc-surface-3);
+  color: var(--gc-text-secondary);
+  font-size: var(--gc-fs-2xs);
+  font-weight: var(--gc-weight-strong);
+}
+
+.gc-inspector__pr-state--merged { background: var(--gc-state-merged-subtle); color: var(--gc-state-merged); }
+.gc-inspector__pr-state--open { background: var(--gc-status-added-subtle); color: var(--gc-status-added); }
+.gc-inspector__pr-state--closed { background: var(--gc-surface-3); color: var(--gc-text-muted); }
+.gc-inspector__pr-state--draft { background: var(--gc-surface-3); color: var(--gc-text-muted); }
+
+/* Compact parent picker: the label lives on the control, not above it. */
+.gc-inspector__parent-select {
+  min-height: var(--gc-hit);
+  padding: 0 var(--gc-space-2);
+  border: 1px solid var(--gc-border);
+  border-radius: var(--gc-radius);
+  background: var(--vscode-input-background);
+  color: var(--vscode-input-foreground);
+  font: inherit;
+  font-size: var(--gc-fs-xs);
+}
+
 .gc-inspector__pr-none,
 .gc-inspector__pr-none-hint {
   margin: 0;
@@ -5043,9 +5072,6 @@ h3 {
  */
 .gc-inspector__body {
   margin: 0;
-  padding: var(--gc-space-3);
-  border-radius: var(--gc-radius);
-  background: var(--vscode-textCodeBlock-background, var(--vscode-editor-background));
   white-space: pre-wrap;
 }
 
