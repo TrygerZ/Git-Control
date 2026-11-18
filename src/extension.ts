@@ -10,7 +10,7 @@ import * as path from 'node:path';
 import * as vscode from 'vscode';
 import { MessageBridge, type BridgeHost, type WebviewLike } from './bridge';
 import { summarizeChecks } from './checkSummary';
-import { GitRunner, resolveGitExecutable } from './git';
+import { GitError, GitRunner, resolveGitExecutable } from './git';
 import {
   GitHubClient,
   GitHubError,
@@ -22,6 +22,7 @@ import { buildIconThemeSnapshot, iconThemeRootUri } from './iconTheme';
 import { Logger } from './logger';
 import { parseRemoteUrl, resolveGitHubApiBase, webUrlOf, type GitHubApiBase, type ParsedRemoteUrl } from './remoteUrl';
 import { buildDraft } from './pullRequestDraft';
+import { validateFullHash, validatePullRequestNumber } from './validation';
 import { isFresh, parseRoute, PENDING_ROUTE_TTL_MS } from './webview/route';
 import { clampZoom } from './webview/viewport';
 import { MAX_COMMIT_LIMIT, RepositoryService } from './repository';
@@ -55,6 +56,7 @@ import type {
   FocusTarget,
   GitHubAuthState,
   GitHubLinkage,
+  GitHubRateLimit,
   GitHubRepoInfo,
   GitHubRepoPayload,
   IconThemeSnapshot,
@@ -68,9 +70,14 @@ import type {
   PrPrepareResult,
   PrReviewersPayload,
   PrReviewersResult,
+  PullCommit,
+  PullDetail,
+  PullDetailPayload,
+  PullFile,
   PullRequestsPayload,
   PullRequestsResult,
   Route,
+  TimelineItem,
   SettingsSetPayload,
   SettingsSnapshot,
   UiPreferences,
@@ -130,6 +137,14 @@ class Controller implements vscode.Disposable {
   private readonly bridges = new Set<MessageBridge>();
   private readonly disposables: vscode.Disposable[] = [];
   private panel: vscode.WebviewPanel | undefined;
+  /** One detail panel per pull request number; memory only, never serialized. */
+  private readonly prPanels = new Map<number, vscode.WebviewPanel>();
+  /**
+   * Bridge of each PR panel. The explorer/pending icon-theme snapshot is built
+   * through a different webview's `asWebviewUri`, so the shared broadcast skips
+   * these bridges and each panel gets a snapshot built against its own webview.
+   */
+  private readonly prPanelBridges = new Map<MessageBridge, vscode.WebviewPanel>();
   private pendingFocusHash: string | undefined;
   /** One-shot route for the sidebar. Memory only: a route is never written to `workspaceState`. */
   private pendingRoute: { route: Route; focus?: FocusTarget; at: number } | undefined;
@@ -192,6 +207,9 @@ class Controller implements vscode.Disposable {
     this.repositories.clear();
     this.panel?.dispose();
     this.panel = undefined;
+    for (const panel of this.prPanels.values()) panel.dispose();
+    this.prPanels.clear();
+    this.prPanelBridges.clear();
     this.pendingFocusHash = undefined;
     this.pendingRoute = undefined;
   }
@@ -829,6 +847,48 @@ class Controller implements vscode.Disposable {
     this.panel = panel;
   }
 
+  /**
+   * Open (or focus) the detail panel for one pull request.
+   *
+   * One panel per number, reused on a second click, so a list of ten PRs does
+   * not leave ten tabs behind. The number reaches the document attribute only
+   * after `validatePullRequestNumber`, the same gate the checkout refspec uses.
+   */
+  private openPullRequest(prNumber: number): boolean {
+    if (!validatePullRequestNumber(prNumber)) return false;
+    const existing = this.prPanels.get(prNumber);
+    if (existing !== undefined) {
+      existing.reveal();
+      return true;
+    }
+    const panel = vscode.window.createWebviewPanel(
+      'gitControl.pullRequest',
+      `PR #${prNumber}`,
+      vscode.ViewColumn.Active,
+      {
+        ...this.webviewOptions(),
+        // Each panel keeps no hidden context: N open PRs would pin N rendered
+        // documents in memory, and the detail reloads from the host on show.
+        retainContextWhenHidden: false,
+      },
+    );
+    panel.iconPath = {
+      light: vscode.Uri.joinPath(this.context.extensionUri, 'resources', 'graph-light.svg'),
+      dark: vscode.Uri.joinPath(this.context.extensionUri, 'resources', 'graph-dark.svg'),
+    };
+    panel.webview.html = this.htmlPullRequest(panel.webview, prNumber);
+    const bridge = this.attachBridge(panel.webview, panel);
+    this.prPanelBridges.set(bridge, panel);
+    this.prPanels.set(prNumber, panel);
+    panel.onDidDispose(() => {
+      this.prPanelBridges.delete(bridge);
+      // Only clear the entry this panel owns: a reopened number installs its
+      // own panel before the previous one's dispose event can run.
+      if (this.prPanels.get(prNumber) === panel) this.prPanels.delete(prNumber);
+    });
+    return true;
+  }
+
   private revealCommit(hash: string): boolean {
     if (this.panel !== undefined) {
       this.panel.reveal();
@@ -857,7 +917,7 @@ class Controller implements vscode.Disposable {
     };
   }
 
-  private attachBridge(webview: vscode.Webview, owner: { onDidDispose?: vscode.Event<void> }): void {
+  private attachBridge(webview: vscode.Webview, owner: { onDidDispose?: vscode.Event<void> }): MessageBridge {
     const bridge = new MessageBridge(webview as unknown as WebviewLike, {
       ...this.bridgeHost(),
       // Bound to THIS webview: `buildIconThemeSnapshot` resolves asset URIs
@@ -871,6 +931,7 @@ class Controller implements vscode.Disposable {
     };
     if (owner.onDidDispose !== undefined) owner.onDidDispose(detach);
     else this.disposables.push({ dispose: detach });
+    return bridge;
   }
 
   /** Snapshot for one webview; `undefined` (no active theme) maps to `null`. */
@@ -900,6 +961,7 @@ class Controller implements vscode.Disposable {
         void this.navigate(route);
         return true;
       },
+      openPullRequest: (payload) => this.openPullRequest(payload.number),
       pickRepository: () => this.pickRepository(),
       revealCommit: (hash) => this.revealCommit(hash),
       openExternal: (url) => this.openExternal(url),
@@ -907,6 +969,10 @@ class Controller implements vscode.Disposable {
       githubPullRequests: (payload) => this.githubPullRequests(payload),
       githubCommitPullRequests: (payload) => this.githubCommitPullRequests(payload),
       githubCheckRuns: (payload) => this.githubCheckRuns(payload),
+      githubPullDetail: (payload) => this.githubPullDetail(payload),
+      githubPullCommits: (payload) => this.githubPullCommits(payload),
+      githubPullFiles: (payload) => this.githubPullFiles(payload),
+      githubPullTimeline: (payload) => this.githubPullTimeline(payload),
       githubIssues: (payload) => this.githubIssues(payload),
       githubActionsRuns: (payload) => this.githubActionsRuns(payload),
       githubActionsJobs: (payload) => this.githubActionsJobs(payload),
@@ -948,12 +1014,24 @@ class Controller implements vscode.Disposable {
     const current = this.webviewOptions();
     if (this.pendingView !== undefined) this.pendingView.webview.options = current;
     if (this.panel !== undefined) this.panel.webview.options = current;
+    for (const panel of this.prPanels.values()) panel.webview.options = current;
+    // Each PR panel resolves `asWebviewUri` against its own webview, so the
+    // snapshot has to be built per panel rather than borrowed from the explorer.
+    for (const [bridge, panel] of this.prPanelBridges) {
+      const prSnapshot = await buildIconThemeSnapshot(panel.webview);
+      if (generation !== this.iconThemeGeneration) return; // superseded — drop
+      bridge.emit('event/iconThemeChanged', prSnapshot ?? null);
+    }
     const webview = this.pendingView?.webview ?? this.panel?.webview;
     if (webview === undefined) return; // no webview ⇒ no bridge ⇒ no receiver
     const snapshot = await buildIconThemeSnapshot(webview);
     if (generation !== this.iconThemeGeneration) return; // superseded — drop
     const payload = snapshot === undefined ? null : snapshot;
-    for (const bridge of this.bridges) bridge.emit('event/iconThemeChanged', payload);
+    for (const bridge of this.bridges) {
+      // PR bridges already received their own snapshot above.
+      if (this.prPanelBridges.has(bridge)) continue;
+      bridge.emit('event/iconThemeChanged', payload);
+    }
   }
 
   // -------------------------------------------------------------- settings
@@ -1257,6 +1335,100 @@ class Controller implements vscode.Disposable {
       summary: summarizeChecks(result.data),
       rateLimit: client.rateLimit(result.cached),
     };
+  }
+
+  // --------------------------------------------------- pull request detail (P24)
+
+  private async githubPullDetail(
+    payload: PullDetailPayload,
+  ): Promise<{ detail: PullDetail; rateLimit: GitHubRateLimit }> {
+    const { client } = await this.githubClient();
+    const result = await client.pullRequest(payload.owner, payload.repo, payload.number);
+    return { detail: result.data, rateLimit: client.rateLimit(result.cached) };
+  }
+
+  private async githubPullCommits(
+    payload: PullDetailPayload,
+  ): Promise<{ commits: PullCommit[]; truncated: boolean; rateLimit: GitHubRateLimit }> {
+    const { client } = await this.githubClient();
+    const result = await client.pullCommits(payload.owner, payload.repo, payload.number);
+    return {
+      commits: result.data.commits,
+      truncated: result.data.truncated,
+      rateLimit: client.rateLimit(result.cached),
+    };
+  }
+
+  /**
+   * Files plus the local merge base the Files tab sends as the diff's left side.
+   *
+   * A shallow clone, or a base that predates a prune, is missing one of the two
+   * commits, and `merge-base` would fail. The panel degrades to "fetch the branch
+   * first" instead, so a lookup miss is `null`, never an error. Only the number
+   * and status reach the log: a git error message can carry paths or refs.
+   */
+  private async githubPullFiles(
+    payload: PullDetailPayload,
+  ): Promise<{
+    files: PullFile[];
+    truncated: boolean;
+    mergeBase: string | null;
+    rateLimit: GitHubRateLimit;
+  }> {
+    const { client } = await this.githubClient();
+    const [result, detail] = await Promise.all([
+      client.pullFiles(payload.owner, payload.repo, payload.number),
+      // The detail read is cached under its own key, so the panel's own
+      // `github/pullDetail` and this one share a single request.
+      client.pullRequest(payload.owner, payload.repo, payload.number),
+    ]);
+    const mergeBase = await this.pullMergeBase(payload.number, detail.data);
+    return {
+      files: result.data.files,
+      truncated: result.data.truncated,
+      mergeBase,
+      rateLimit: client.rateLimit(result.cached),
+    };
+  }
+
+  private async githubPullTimeline(
+    payload: PullDetailPayload,
+  ): Promise<{ items: TimelineItem[]; truncated: boolean; rateLimit: GitHubRateLimit }> {
+    const { client } = await this.githubClient();
+    const result = await client.pullTimeline(payload.owner, payload.repo, payload.number);
+    return {
+      items: result.data.items,
+      truncated: result.data.truncated,
+      rateLimit: client.rateLimit(result.cached),
+    };
+  }
+
+  /**
+   * Merge base of the pull request's head and base commits, when both are here.
+   *
+   * `headSha`/`baseSha` are untrusted API values, so they face three gates before
+   * an argv: full-hash shape, local presence, and the runner's own re-validation.
+   * Any failure is a `null`; a diff with the wrong left side is worse than none.
+   */
+  private async pullMergeBase(number: number, detail: PullDetail): Promise<string | null> {
+    try {
+      const head = detail.headSha;
+      const base = detail.baseSha;
+      if (!validateFullHash(head) || !validateFullHash(base)) return null;
+      const repo = await this.resolveRepository();
+      if (repo === null) return null;
+      if (!(await repo.git.hasObject(head)) || !(await repo.git.hasObject(base))) {
+        this.logger.info('pull/files', `#${number} mergeBase: commit missing locally`);
+        return null;
+      }
+      return await repo.git.mergeBase(head, base);
+    } catch (err) {
+      this.logger.info(
+        'pull/files',
+        `#${number} mergeBase failed${err instanceof GitError ? ` (${err.code})` : ''}`,
+      );
+      return null;
+    }
   }
 
   private async githubIssues(payload: IssuesPayload): Promise<IssuesResult> {
@@ -1563,12 +1735,24 @@ class Controller implements vscode.Disposable {
 
   // ------------------------------------------------------------------ html
 
-
   /**
    * Strict CSP: `default-src 'none'`, scripts only with the per-load nonce.
    * Styles carry the same nonce, so no `unsafe-inline` anywhere.
    */
   private html(webview: vscode.Webview, view: 'explorer' | 'pending'): string {
+    return this.documentHtml(webview, `<body data-view="${view}">`);
+  }
+
+  /**
+   * The pull request detail document. Same shell, same CSP, plus the number as
+   * a data attribute so the webview knows which pull request it draws.
+   */
+  private htmlPullRequest(webview: vscode.Webview, number: number): string {
+    return this.documentHtml(webview, `<body data-view="pr" data-pr="${number}">`);
+  }
+
+  /** One document shell for every view, so the CSP cannot drift per panel. */
+  private documentHtml(webview: vscode.Webview, bodyOpen: string): string {
     const nonce = makeNonce();
     const script = webview.asWebviewUri(
       vscode.Uri.joinPath(this.context.extensionUri, 'dist', 'webview.js'),
@@ -1600,7 +1784,7 @@ class Controller implements vscode.Disposable {
 <link nonce="${nonce}" rel="stylesheet" href="${style.toString()}">
 <title>Git Control</title>
 </head>
-<body data-view="${view}">
+${bodyOpen}
 <div id="root"></div>
 <script nonce="${nonce}" src="${script.toString()}"></script>
 </body>
