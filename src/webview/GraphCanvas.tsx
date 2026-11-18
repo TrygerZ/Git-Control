@@ -1001,6 +1001,9 @@ export function GraphCanvas({
               {rows.slice(range.start, range.end).map((node) => {
                 const chips = chipsFor(node.refNames, currentBranch);
                 if (chips.length === 0) return null;
+                // Frame 01 marks HEAD with its own tag and draws no pill on that node: the
+                // pill for the current branch sits on the branch tip, a different commit.
+                if (node.isHead) return null;
                 const branchChip = chips[0];
                 if (!branchChip) return null;
 
