@@ -5,6 +5,40 @@ All notable changes to the "Git Control" extension will be documented in this fi
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.21.0] - 2026-11-19
+
+### Added
+- A Branches column beside the graph canvas names every lane, with its commit count and whether it is merged, remote only, local only, or a tag.
+- A merged lane names the branch whose merge is ahead of the viewport and advances as you pan. Every ref name in the lane stays in the row tooltip.
+- The commit inspector closes with an actions footer holding Checkout as the filled button, Branch here beside it, and the same commit actions the canvas menu offers.
+- The create pull request dialog takes labels and an issue number to close. A label GitHub refuses is listed in the result, and the pull request stays created.
+- The canvas zoom bar gains Fit to window and Centre on HEAD. The separate home button is gone.
+- The graph legend is a pill naming Pushed and Not pushed in place of the teaching panel.
+
+### Changed
+- The Explorer header is one row carrying the repository, branch, short hash, and the branch standing against its remote as one sentence, with Fetch, Pull, and Publish at the end.
+- The filter toolbar is one row with visible Checkout and Show labels, and it wraps below 1100 px with the panel toggle pinned right.
+- Graph lanes are 150 px tall and alternate by lane instead of by calendar day.
+- HEAD is a dot with a tag above it, selection is a halo behind the dot, and the merge glyph draws only when the commit has no author avatar.
+- Edges into a lane that has not landed draw dashed. The current branch always counts as landed.
+- The commit label prints the compact age (`12m`, `3d`) while the tooltip and the accessible name keep the full sentence.
+- The date ruler names the weekday and marks today as `Today · Sat 31 Oct`.
+- The minimap sits at the canvas left at the frame size, draws one line per lane, and shares the bottom row with the legend pill.
+- The commit inspector follows the frame order, with the parent hash beside the short hash, a glyph on each ref chip, a state pill on the pull request card, the message scrolling with the panel, and the file row printing its directory.
+- The sidebar header is one compact row on Pull requests, Issues, Actions, and Branches, with the repository slug and one quick-create button. The Changes title row gains the More menu.
+- The sidebar keeps one scroller per view, with the footer on the panel's bottom edge.
+- Select all, Clear, the selected count, and the language toggle leave the change list, which no frame draws.
+- The commit context menu groups into Inspect, Branch, and Rewrite history, and closes with one hint box that explains the row under the pointer or the keyboard cursor.
+- The branch ribbon drawing and its Ribbons switch are removed. The Branches column carries the branch identity instead.
+
+### Fixed
+- The toolbar no longer clips its second row at a narrow pane, and the details panel toggle stays in view. The minimap, legend, and zoom bar sit clear of the scrollbars.
+- The Changes list no longer collapses while the Get started card is visible, and no sidebar view draws a page scrollbar beside its own.
+- A local branch whose name contains a slash is no longer shown as a remote.
+- The commit author avatar is no longer clipped at its top edge.
+- The changed-file row keeps its churn column visible at a 320 px panel.
+- Ref chips in the Explorer read the configured remotes, so `origin/...` no longer renders as a local branch.
+
 ## [3.20.0] - 2026-11-19
 
 ### Added
