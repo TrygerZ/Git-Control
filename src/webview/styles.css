@@ -4715,12 +4715,13 @@ h3 {
 
 .gc-inspector__identity .gc-avatar {
   /*
-   * Optically center avatar with the first line of the subject title.
-   * Subject is --gc-fs-xl (1.2em) with line-height 1.25 -> first line height ~19.5px.
-   * Avatar is 28px. Slight negative top margin pulls avatar up ~2px so its
-   * center line aligns with the first line cap-height, stable across 1, 2, or 3 lines.
+   * Top-align the face with the first title line, matching the row's own
+   * `align-items`, and keep it there when the subject wraps. A negative top
+   * offset lifted the circle 2 px above `.gc-explorer__aside-content`, whose
+   * `overflow: auto` then clipped the top of the face. `align-self` cannot
+   * leave the box.
    */
-  margin-top: calc(-1 * var(--gc-space-1));
+  align-self: flex-start;
 }
 
 .gc-inspector__titles {
