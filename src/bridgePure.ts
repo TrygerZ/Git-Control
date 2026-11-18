@@ -184,6 +184,35 @@ export function validatePrReviewersPayload(
 }
 
 /**
+ * `github/pullDetail`, `github/pullCommits`, `github/pullFiles` and
+ * `github/pullTimeline` share one payload: the slug pair plus the number. The
+ * number names a path segment of every URL, so it is held to the same rule the
+ * checkout refspec uses.
+ */
+export function validatePullDetailPayload(
+  payload: { owner: unknown; repo: unknown; number: unknown },
+  fail: (detail: string) => never,
+): void {
+  if (!isSlug(payload.owner) || !isSlug(payload.repo)) fail('owner/repo');
+  if (!validatePullRequestNumber(payload.number)) fail('number');
+}
+
+/**
+ * `actions/openPullRequest`. The action takes a number and nothing else, so a
+ * payload that carries more is a caller bug and is refused rather than ignored.
+ * The extra-key check runs first, so an unknown field reports `payload`, not
+ * whichever field happens to be malformed.
+ */
+export function validateOpenPullRequestPayload(
+  payload: { number: unknown } & Record<string, unknown>,
+  fail: (detail: string) => never,
+): void {
+  const keys = Object.keys(payload);
+  if (keys.length !== 1 || keys[0] !== 'number') fail('payload');
+  if (!validatePullRequestNumber(payload.number)) fail('number');
+}
+
+/**
  * `github/createPullRequest`. The one payload in this phase that reaches an
  * argv-adjacent surface: `head` becomes the refspec of the publish push, so it is
  * held to the same branch rule the git layer applies.
