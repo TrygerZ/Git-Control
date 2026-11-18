@@ -836,6 +836,49 @@ const en = {
     footerNotConnected: 'Not connected',
   },
 
+  // Pull request detail panel (P24). Every fact the panel states in words, so a
+  // screen reader hears the same answer a sighted user reads off the frame.
+  prDetail: {
+    panelTitle: (n: string) => `PR #${n}`,
+    tabConversation: 'Conversation',
+    tabCommits: 'Commits',
+    tabChecks: 'Checks',
+    tabFiles: 'Files changed',
+    wantsToMerge: (author: string, n: string, base: string, head: string) =>
+      `${author} wants to merge ${n} commits into ${base} from ${head}`,
+    checkoutBranch: 'Checkout branch',
+    openOnGitHub: 'Open on GitHub',
+    openPanelAria: (n: string) => `Open pull request #${n}`,
+    mergeLater: 'Merging is available in a later version.',
+    noConflicts: 'No conflicts with base branch',
+    checksRunning: 'Checks are running',
+    allChecksPassed: 'All checks have passed',
+    checksFailed: (n: string) => `${n} failing checks`,
+    checksPassedOf: (a: string, b: string) => `${a} of ${b} checks passed`,
+    openInActions: 'Open in Actions',
+    filesSummary: (n: string, a: string, d: string) => `${n} files changed, +${a} -${d}`,
+    fileStatusAdded: 'Added',
+    fileStatusModified: 'Modified',
+    fileStatusRemoved: 'Removed',
+    fileStatusRenamed: 'Renamed',
+    openDiffAria: (path: string) => `Open diff ${path}`,
+    fetchBranchFirst: 'Fetch the branch first to open diffs.',
+    truncatedNote: (n: string) => `Showing the first ${n} items.`,
+    reviewers: 'Reviewers',
+    labels: 'Labels',
+    loadFailed: 'Could not load this pull request.',
+    noRemote: 'Open this repository on GitHub to see the pull request.',
+    signIn: 'Connect GitHub to read this pull request.',
+    retry: 'Try again',
+    reviewApproved: 'Approved',
+    reviewChanges: 'Changes requested',
+    reviewCommented: 'Commented',
+    mergeDisabledAria: 'Merge controls are not available yet',
+    openCommitInGraph: 'Show in graph',
+    copyHash: 'Copy commit hash',
+    tooltipMoreUnavailable: 'More actions are not available yet',
+  },
+
   // Check badges (P21). A count carries the state, so the strings read as
   // sentences on their own for a screen reader.
   checks: {

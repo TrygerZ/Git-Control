@@ -191,7 +191,61 @@ async function repoScenario() {
 
   await inspectExplorerHtml();
   await inspectPendingView();
+  await inspectPullPanel();
   await inspectPanelDisposal();
+}
+
+/**
+ * One panel per pull request number.
+ *
+ * The internal command is not contributed (D-17), so this is the only way to
+ * reach it. Two calls for #1 must leave one `PR #1` tab: a second click reveals
+ * rather than stacks, which is what keeps ten clicked rows from leaving ten
+ * panels behind.
+ */
+async function inspectPullPanel() {
+  const registered = await vscode.commands.getCommands(true);
+  assert.ok(
+    registered.includes('gitControl.internal.openPullRequest'),
+    'gitControl.internal.openPullRequest is registered',
+  );
+  await vscode.commands.executeCommand('gitControl.internal.openPullRequest', 1);
+  const first = findLivePanel('PR #1');
+  assert.ok(first, 'the first call created the PR #1 panel');
+  const firstHtml = first.webview.html;
+  await vscode.commands.executeCommand('gitControl.internal.openPullRequest', 1);
+  // Identity, not just count: a reveal that silently recreated the panel would
+  // pass a count check and still wrong the "one tab per number" contract.
+  const again = findLivePanel('PR #1');
+  assert.equal(again, first, 'the second call reveals the same panel object');
+  assert.match(firstHtml, /data-view="pr"/);
+  assert.match(firstHtml, /data-pr="1"/);
+  // An argument the host would refuse opens nothing and throws nothing.
+  await vscode.commands.executeCommand('gitControl.internal.openPullRequest', 0);
+  assert.equal(findLivePanel('PR #0'), undefined, 'an invalid number opens no panel');
+  pass('gitControl.internal.openPullRequest reveals one panel object per number');
+}
+
+/**
+ * The newest live panel with this title, or `undefined`.
+ *
+ * Reading `webview.html` on a disposed panel throws, and the suites dispose
+ * panels as they go, so a plain `seen.panels.find` would trip over a retired
+ * entry. This walks newest-first and skips what cannot be read.
+ */
+function findLivePanel(title) {
+  for (let i = seen.panels.length - 1; i >= 0; i -= 1) {
+    const panel = seen.panels[i];
+    try {
+      // Every property of a disposed panel throws, `title` included, so the
+      // whole probe sits inside the guard.
+      if (panel.title !== title) continue;
+      return panel.webview.html.length >= 0 ? panel : undefined;
+    } catch {
+      continue;
+    }
+  }
+  return undefined;
 }
 
 function historicalUri(rev, filePath, folder) {
@@ -210,7 +264,9 @@ function historicalUri(rev, filePath, folder) {
  * string-building shortcut, no guesswork.
  */
 async function inspectExplorerHtml() {
-  const panel = seen.panels[0];
+  // Selected by its document, not by position: later phases add panels, and
+  // `seen.panels[0]` would silently become whichever panel happened to open first.
+  const panel = findLivePanel('Git Control');
   assert.ok(panel, 'the explorer panel was created through vscode.window.createWebviewPanel');
   const html = panel.webview.html;
   const csp = /<meta http-equiv="Content-Security-Policy" content="([^"]+)"/.exec(html);
@@ -241,7 +297,8 @@ async function inspectExplorerHtml() {
   const before = nonce;
   panel.dispose();
   await vscode.commands.executeCommand('gitControl.openExplorer');
-  const reopened = seen.panels[seen.panels.length - 1];
+  const reopened = findLivePanel('Git Control');
+  assert.ok(reopened, 'openExplorer recreated the explorer panel');
   assert.notEqual(reopened, panel, 'a disposed panel is rebuilt, not revived');
   const after = /nonce-([0-9a-f]{32})/.exec(reopened.webview.html)[1];
   assert.notEqual(after, before, 'each webview load gets a fresh nonce');
@@ -282,12 +339,17 @@ async function inspectPendingView() {
  * mode a leaked disposable would produce here.
  */
 async function inspectPanelDisposal() {
-  const panel = seen.panels[seen.panels.length - 1];
+  // The EXPLORER panel, named explicitly: the last panel in `seen.panels` may be
+  // a PR panel, and disposing that one would say nothing about the explorer
+  // bridge this scenario is about.
+  const panel = findLivePanel('Git Control');
+  assert.ok(panel, 'the explorer panel exists before disposal');
   panel.dispose();
   await vscode.commands.executeCommand('gitControl.refresh');
   await vscode.commands.executeCommand('gitControl.openExplorer');
   await vscode.commands.executeCommand('gitControl.refresh');
-  pass('disposing a webview panel detaches its bridge and the extension keeps working');
+  assert.notEqual(findLivePanel('Git Control'), panel, 'the disposed explorer panel is replaced');
+  pass('disposing the explorer webview panel detaches its bridge and the extension keeps working');
   limitation(
     'clean deactivate is NOT verified: VS Code exposes no API to invoke another ' +
       'extension\'s deactivate or to enumerate its subscriptions. Covered by unit tests only.',

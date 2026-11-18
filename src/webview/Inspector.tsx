@@ -241,7 +241,7 @@ export function Inspector({ hash }: Props): JSX.Element {
   // `failingNames` is capped at three by `summarizeChecks`, so the overflow is
   // the full failing count minus the names that fit.
   const hiddenFailing = summary === undefined ? 0 : summary.failing - summary.failingNames.length;
-  const cardLabel = strings.inspector.openPullRequestAria(String(pr?.number ?? ''));
+  const cardLabel = strings.prDetail.openPanelAria(String(pr?.number ?? ''));
   // The button's `aria-label` replaces every descendant name, so the badge text
   // and the failing names both have to travel in it.
   const rowName = [cardLabel, checkText, checkNames].filter((part) => part.length > 0).join(', ');
@@ -420,7 +420,19 @@ export function Inspector({ hash }: Props): JSX.Element {
               type="button"
               className="gc-inspector__pr-open"
               aria-label={rowName}
-              onClick={() => void openUrl(pr.url)}
+              onClick={() => {
+                // The card opens the detail panel; GitHub is one click away inside
+                // it. A host with no panel method answers `opened: false`, so the
+                // link degrades to the browser instead of doing nothing.
+                void bridge
+                  .request('actions/openPullRequest', { number: pr.number })
+                  .then((result) => {
+                    if (!result.opened) void openUrl(pr.url);
+                  })
+                  .catch((err: unknown) =>
+                    pushToast({ level: 'warning', message: toErrorBody(err).message }),
+                  );
+              }}
             >
               <Icon name="pr" />
               <span className="gc-inspector__pr-body">

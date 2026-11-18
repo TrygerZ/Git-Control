@@ -7263,3 +7263,642 @@ h3 {
     align-items: stretch;
   }
 }
+
+/* ---------------------------------------------------- pull request detail (P24) */
+
+/*
+ * Editor-tab panel. Header 120 px on frame 06, then the tab strip (shared
+ * `.gc-prtabs` rules below), then the body: a scrolling main column beside a
+ * 300 px rail separated by a hairline.
+ *
+ * Like the rest of the file, every colour resolves through a `--gc-*` or
+ * `--vscode-*` token, every spacing value is a `--gc-space-*` step, and every
+ * size is a `--gc-fs-*` step.
+ */
+.gc-prdetail {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.gc-prdetail--empty {
+  align-items: center;
+  justify-content: center;
+  padding: var(--gc-space-6);
+}
+
+.gc-prdetail__header {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gc-space-3);
+  flex: 0 0 auto;
+  min-height: 120px;
+  /* 20 px is the frame's pt and no --gc-space step equals it; the sides stay 24. */
+  padding: 20px var(--gc-space-6);
+  border-bottom: 1px solid var(--gc-border-subtle);
+}
+
+.gc-prdetail__bar {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--gc-space-4);
+  min-width: 0;
+}
+
+.gc-prdetail__title {
+  flex: 1 1 auto;
+  min-width: 0;
+  margin: 0;
+  color: var(--gc-text-primary);
+  font-size: var(--gc-fs-xl);
+  font-weight: var(--gc-weight-strong);
+  overflow-wrap: anywhere;
+}
+
+.gc-prdetail__number {
+  color: var(--gc-text-muted);
+  font-weight: normal;
+}
+
+.gc-prdetail__actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--gc-space-2);
+  flex: 0 0 auto;
+}
+
+.gc-prdetail__branchline {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--gc-space-2);
+  min-width: 0;
+}
+
+.gc-prdetail__sentence {
+  color: var(--gc-text-secondary);
+  font-size: var(--gc-fs-sm);
+  overflow-wrap: anywhere;
+}
+
+.gc-prdetail__chip {
+  font-size: var(--gc-fs-2xs);
+}
+
+/*
+ * The state pill. Its colour is the LAST channel: the word inside says the same
+ * thing, so a forced-colours theme that drops the wash still reads.
+ */
+.gc-prdetail__state {
+  display: inline-flex;
+  align-items: center;
+  padding: 0 var(--gc-space-3);
+  border: 1px solid var(--gc-border);
+  border-radius: var(--gc-radius-pill);
+  font-size: var(--gc-fs-2xs);
+  font-weight: var(--gc-weight-strong);
+  line-height: 1.6;
+}
+
+.gc-prdetail__state--open {
+  border-color: var(--gc-state-success);
+  color: var(--gc-state-success);
+}
+
+.gc-prdetail__state--closed {
+  border-color: var(--gc-tone-removed);
+  color: var(--gc-tone-removed);
+}
+
+.gc-prdetail__state--merged {
+  border-color: var(--gc-state-merged);
+  color: var(--gc-state-merged);
+}
+
+/*
+ * Tab strip: the tablist and the diffstat share one row and one bottom hairline
+ * (frame 06). The inner `[role="tablist"]` element carries the `gc-prtabs` class
+ * too, so its own strip chrome is undone here rather than drawn twice.
+ */
+.gc-prtabs {
+  display: flex;
+  align-items: stretch;
+  flex: 0 0 auto;
+  gap: var(--gc-space-4);
+  padding: 0 var(--gc-space-6);
+  border-bottom: 1px solid var(--gc-border-subtle);
+}
+
+.gc-prtabs [role='tablist'] {
+  display: flex;
+  flex: 1 1 auto;
+  gap: var(--gc-space-1);
+  padding: 0;
+  border-bottom: none;
+}
+
+/*
+ * Frame 06 draws the tab 33 px tall: 6 px above the 16 px label plus the 2 px
+ * underline. 6 px is off the 4 px ladder, so the box takes 4 px and centring
+ * absorbs the rest; the measured height is what the frame pins.
+ */
+.gc-prtabs__tab {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--gc-space-2);
+  min-height: 33px;
+  padding: var(--gc-space-2) var(--gc-space-3) 0;
+  border: none;
+  border-bottom: 2px solid transparent;
+  background: transparent;
+  color: var(--gc-text-secondary);
+  font: inherit;
+  cursor: pointer;
+}
+
+.gc-prtabs__tab:hover {
+  color: var(--gc-text-primary);
+}
+
+.gc-prtabs__tab--active {
+  border-bottom-color: var(--gc-accent);
+  color: var(--gc-text-primary);
+}
+
+.gc-prtabs__tab:focus-visible {
+  outline: 2px solid var(--vscode-focusBorder);
+  outline-offset: -2px;
+}
+
+.gc-prtabs__label {
+  font-size: var(--gc-fs-sm);
+}
+
+/* The count is a pill (frame 06): a 16 px capsule, 4 px each side, 8 px radius. */
+.gc-prtabs__count {
+  display: inline-flex;
+  align-items: center;
+  height: 16px;
+  padding: 0 var(--gc-space-2);
+  border-radius: var(--gc-radius-lg);
+  background: var(--gc-bg-hover);
+  color: var(--gc-text-secondary);
+  font-size: var(--gc-fs-2xs);
+}
+
+/* The pull request diffstat at the strip's right end. */
+.gc-prtabs__stat {
+  display: inline-flex;
+  align-items: center;
+  flex: 0 0 auto;
+  gap: var(--gc-space-2);
+  color: var(--gc-text-secondary);
+  font-family: var(--vscode-editor-font-family);
+  font-size: var(--gc-fs-xs);
+  font-variant-numeric: tabular-nums;
+}
+
+.gc-prtabs__add {
+  color: var(--gc-tone-added);
+}
+
+.gc-prtabs__del {
+  color: var(--gc-tone-removed);
+}
+
+/*
+ * Main plus rail. The rail is fixed at 300 px with a left hairline; the main
+ * column scrolls on its own so the tab strip and the header stay put.
+ */
+.gc-prdetail__body {
+  display: flex;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.gc-prdetail__main {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: var(--gc-space-6);
+  overflow-x: hidden;
+  overflow-y: auto;
+  scrollbar-gutter: stable;
+}
+
+.gc-prrail {
+  flex: 0 0 300px;
+  min-width: 0;
+  padding: var(--gc-space-6) var(--gc-space-5);
+  border-left: 1px solid var(--gc-border-subtle);
+  overflow-y: auto;
+}
+
+.gc-prrail__section + .gc-prrail__section {
+  padding-top: var(--gc-space-5);
+}
+
+.gc-prrail__title {
+  margin: 0 0 var(--gc-space-2);
+  color: var(--gc-text-muted);
+  font-size: var(--gc-fs-2xs);
+  font-weight: var(--gc-weight-strong);
+  text-transform: uppercase;
+}
+
+.gc-prrail__list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  color: var(--gc-text-secondary);
+  font-size: var(--gc-fs-sm);
+}
+
+.gc-prrail__labels {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--gc-space-1);
+}
+
+/* Conversation: description card, then the timeline, then the merge box. */
+.gc-prdetail__card {
+  padding: var(--gc-space-4);
+  border: 1px solid var(--gc-border-subtle);
+  border-radius: var(--gc-radius-lg);
+  background: var(--gc-bg-surface);
+}
+
+.gc-prdetail__meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--gc-space-2);
+  color: var(--gc-text-muted);
+  font-size: var(--gc-fs-2xs);
+}
+
+.gc-prdetail__meta strong {
+  color: var(--gc-text-primary);
+  font-size: var(--gc-fs-sm);
+}
+
+/* Body text is untrusted: plain text nodes, line breaks kept, never markup. */
+.gc-prdetail__text {
+  margin: var(--gc-space-3) 0 0;
+  color: var(--gc-text-primary);
+  font-size: var(--gc-fs-sm);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.gc-prdetail__timeline {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gc-space-3);
+  margin: var(--gc-space-5) 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.gc-prdetail__event {
+  padding: var(--gc-space-4);
+  border: 1px solid var(--gc-border-subtle);
+  border-radius: var(--gc-radius-lg);
+}
+
+/*
+ * Disabled merge box: a real section so it is announced, no control inside it.
+ * Frame 06 tints the card edge by the result, so the border follows the worst
+ * status row; the words inside already say the same thing.
+ */
+.gc-prdetail__merge {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gc-space-3);
+  margin-top: var(--gc-space-5);
+  padding: var(--gc-space-4);
+  border: 1px solid var(--gc-state-success);
+  border-radius: var(--gc-radius-lg);
+}
+
+.gc-prdetail__merge--pending {
+  border-color: var(--gc-tone-pending);
+}
+
+.gc-prdetail__merge--failure {
+  border-color: var(--gc-tone-removed);
+}
+
+.gc-prdetail__statuses {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* One hairline between rows, two lines per row: a title over a muted subtitle. */
+.gc-prdetail__status {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--gc-space-2);
+  padding: var(--gc-space-3) 0;
+  color: var(--gc-text-primary);
+  font-size: var(--gc-fs-sm);
+}
+
+.gc-prdetail__status:first-child {
+  padding-top: 0;
+}
+
+.gc-prdetail__status + .gc-prdetail__status {
+  border-top: 1px solid var(--gc-border-subtle);
+}
+
+.gc-prdetail__status .gc-icon {
+  flex: 0 0 auto;
+  margin-top: var(--gc-space-1);
+}
+
+.gc-prdetail__status-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gc-space-1);
+  min-width: 0;
+}
+
+.gc-prdetail__status-title {
+  color: var(--gc-text-primary);
+  font-size: var(--gc-fs-sm);
+  font-weight: var(--gc-weight-strong);
+}
+
+.gc-prdetail__status-detail {
+  color: var(--gc-text-muted);
+  font-size: var(--gc-fs-xs);
+}
+
+.gc-prdetail__status--success .gc-icon {
+  color: var(--gc-state-success);
+}
+
+.gc-prdetail__status--pending .gc-icon {
+  color: var(--gc-tone-pending);
+}
+
+.gc-prdetail__status--failure .gc-icon {
+  color: var(--gc-tone-removed);
+}
+
+.gc-prdetail__merge-options {
+  flex-wrap: wrap;
+}
+
+.gc-prdetail__merge-caption {
+  margin: 0;
+  color: var(--gc-text-muted);
+  font-size: var(--gc-fs-xs);
+}
+
+/* Commits: one row per commit, the row itself revealing it in the graph. */
+.gc-prcommit__list {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.gc-prcommit {
+  display: flex;
+  align-items: center;
+  gap: var(--gc-space-2);
+  min-width: 0;
+  border-radius: var(--gc-radius);
+}
+
+.gc-prcommit:hover {
+  background: var(--gc-bg-hover);
+}
+
+.gc-prcommit__open {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--gc-space-3);
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: var(--gc-hit);
+  padding: var(--gc-space-2) var(--gc-space-3);
+  border: none;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.gc-prcommit__body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gc-space-1);
+  min-width: 0;
+}
+
+.gc-prcommit__subject {
+  overflow: hidden;
+  color: var(--gc-text-primary);
+  font-size: var(--gc-fs-sm);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.gc-prcommit__meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--gc-space-2);
+  color: var(--gc-text-muted);
+  font-size: var(--gc-fs-2xs);
+}
+
+.gc-prcommit__hash {
+  font-family: var(--vscode-editor-font-family);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Checks: summary line, then one group per app, then the Actions link. */
+.gc-prcheck__summary {
+  margin: 0 0 var(--gc-space-4);
+  color: var(--gc-text-primary);
+  font-size: var(--gc-fs-sm);
+  font-weight: var(--gc-weight-strong);
+}
+
+.gc-prcheck__group + .gc-prcheck__group {
+  padding-top: var(--gc-space-4);
+}
+
+.gc-prcheck__app {
+  margin: 0 0 var(--gc-space-2);
+  color: var(--gc-text-muted);
+  font-size: var(--gc-fs-2xs);
+  font-weight: var(--gc-weight-strong);
+  text-transform: uppercase;
+}
+
+.gc-prcheck__runs {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.gc-prcheck__run {
+  display: flex;
+  align-items: center;
+  gap: var(--gc-space-2);
+  width: 100%;
+  min-height: var(--gc-hit);
+  padding: var(--gc-space-1) var(--gc-space-2);
+  border: none;
+  border-radius: var(--gc-radius);
+  background: transparent;
+  color: var(--gc-text-secondary);
+  font: inherit;
+  font-size: var(--gc-fs-sm);
+  text-align: left;
+  cursor: pointer;
+}
+
+.gc-prcheck__run:hover {
+  background: var(--gc-bg-hover);
+}
+
+.gc-prcheck__name {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.gc-prcheck__meta {
+  display: flex;
+  flex: 0 0 auto;
+  gap: var(--gc-space-2);
+  color: var(--gc-text-muted);
+  font-size: var(--gc-fs-2xs);
+}
+
+.gc-prcheck__footer {
+  display: flex;
+  justify-content: flex-end;
+  padding-top: var(--gc-space-4);
+}
+
+/* Files: summary line, then one button per file that opens the VS Code diff. */
+.gc-prfile__summary {
+  margin: 0 0 var(--gc-space-3);
+  color: var(--gc-text-secondary);
+  font-size: var(--gc-fs-sm);
+  font-weight: var(--gc-weight-strong);
+}
+
+.gc-prfile__list {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.gc-prfile__row {
+  display: flex;
+  align-items: center;
+  gap: var(--gc-space-2);
+  width: 100%;
+  min-height: var(--gc-hit);
+  padding: var(--gc-space-1) var(--gc-space-2);
+  border: none;
+  border-radius: var(--gc-radius);
+  background: transparent;
+  color: var(--gc-text-secondary);
+  font: inherit;
+  font-size: var(--gc-fs-sm);
+  text-align: left;
+  cursor: pointer;
+}
+
+.gc-prfile__row:hover {
+  background: var(--gc-bg-hover);
+}
+
+/* No merge base: the row states why and is not a button, so it does not look live. */
+.gc-prfile__row--static {
+  flex-wrap: wrap;
+  cursor: default;
+}
+
+.gc-prfile__row--static:hover {
+  background: transparent;
+}
+
+.gc-prfile__path {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--gc-text-primary);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.gc-prfile__status {
+  flex: 0 0 auto;
+  color: var(--gc-text-muted);
+  font-size: var(--gc-fs-2xs);
+}
+
+.gc-prfile__churn {
+  flex: 0 0 auto;
+  font-size: var(--gc-fs-2xs);
+  font-variant-numeric: tabular-nums;
+}
+
+.gc-prfile__add {
+  color: var(--gc-tone-added);
+}
+
+.gc-prfile__del {
+  color: var(--gc-tone-removed);
+}
+
+.gc-prfile__hint {
+  flex: 1 0 100%;
+  color: var(--gc-text-muted);
+  font-size: var(--gc-fs-2xs);
+}
+
+/* The rail is the first thing to go when the editor is narrow. */
+@media (max-width: 720px) {
+  .gc-prdetail__body {
+    flex-direction: column;
+  }
+
+  .gc-prrail {
+    flex: 0 0 auto;
+    border-left: none;
+    border-top: 1px solid var(--gc-border-subtle);
+  }
+}
+
+/* The state pills carry their meaning in a border colour, which is discarded here. */
+@media (forced-colors: active) {
+  .gc-prdetail__state,
+  .gc-prdetail__merge,
+  .gc-prdetail__event,
+  .gc-prdetail__card {
+    border: 1px solid ButtonBorder;
+  }
+}

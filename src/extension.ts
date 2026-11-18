@@ -399,6 +399,12 @@ class Controller implements vscode.Disposable {
     // Not in `package.json`: views contribute their own commands (D-17). Takes one
     // argument, validated by `parseRoute`, so it cannot be used to run anything else.
     register('gitControl.internal.navigate', (...args: unknown[]) => this.navigate(args[0]));
+    // Internal-only like `gitControl.internal.navigate`: absent from `package.json`,
+    // because the PR panel has no visible command of its own (D-17). The number is
+    // validated by `openPullRequest` itself, so a bad argument opens nothing.
+    register('gitControl.internal.openPullRequest', (...args: unknown[]) =>
+      this.openPullRequest(args[0] as number),
+    );
   }
 
   /**
