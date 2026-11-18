@@ -29,6 +29,7 @@ import type {
 } from '../messages';
 import { isValidResponse, validateHostEvent } from './hostGuards';
 import { DEFAULT_ROUTE, parseRoute } from './route';
+import { pullTabIds, type PullTab } from './pullView';
 import type { PrFilterId } from './prFilters';
 import type { ChangeSection } from './tree';
 import { activeLang, t } from './i18n';
@@ -75,6 +76,8 @@ export interface WebviewState {
   actionsBranch: string | null;
   /** Actions workflow filter. `null` means every workflow. */
   actionsWorkflow: number | null;
+  /** Active tab of the pull request detail panel, shared by every PR panel. */
+  prTab: PullTab;
 }
 
 const PR_FILTERS: readonly PrFilterId[] = ['open', 'review-requested', 'mine', 'draft'];
@@ -99,6 +102,7 @@ const DEFAULT_STATE: WebviewState = {
   collapsedBranchSections: [],
   actionsBranch: null,
   actionsWorkflow: null,
+  prTab: 'conversation',
 };
 
 /** Rejection carrying the full {@link ErrorBody} so the UI can render remedies. */
@@ -338,6 +342,7 @@ export function loadState(): WebviewState {
       typeof partial.actionsWorkflow === 'number' && Number.isSafeInteger(partial.actionsWorkflow) && partial.actionsWorkflow > 0
         ? partial.actionsWorkflow
         : null,
+    prTab: pullTabIds.find((id) => id === partial.prTab) ?? 'conversation',
   };
 }
 

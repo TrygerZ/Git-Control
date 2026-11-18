@@ -601,6 +601,80 @@ export interface PullRequestsResult {
   rateLimit: GitHubRateLimit;
 }
 
+// ------------------------------------------------------ pull request detail (P24)
+
+export interface PullDetailPayload {
+  owner: string;
+  repo: string;
+  number: number;
+}
+
+/** `mergeable_state` narrowed to the values the panel states a sentence for. */
+export type PullMergeableState = 'clean' | 'dirty' | 'blocked' | 'behind' | 'unstable' | 'unknown';
+
+export interface PullDetail {
+  number: number;
+  title: string;
+  state: 'open' | 'closed' | 'merged';
+  draft: boolean;
+  author: string;
+  /** `https://avatars.githubusercontent.com` only; `null` falls back to initials. */
+  authorAvatarUrl: string | null;
+  headRef: string;
+  baseRef: string;
+  headSha: string;
+  /** Base branch tip from the API; the input to the local merge-base lookup. */
+  baseSha: string;
+  commits: number;
+  additions: number;
+  deletions: number;
+  changedFiles: number;
+  mergeableState: PullMergeableState;
+  /** `html_url`, https only, opened through `actions/openExternal`. */
+  htmlUrl: string;
+  /** Plain text, clamped. Never rendered as HTML. */
+  body: string;
+  createdAt: string;
+  updatedAt: string;
+  mergedAt: string | null;
+  /** Logins with a pending review request. */
+  reviewers: string[];
+  /** Logins whose latest review approves. */
+  approvedBy: string[];
+  /** Logins whose latest review requests changes. */
+  changesRequestedBy: string[];
+  labels: Array<{ name: string }>;
+}
+
+export interface PullCommit {
+  hash: string;
+  shortHash: string;
+  subject: string;
+  author: string;
+  committedAt: string;
+}
+
+export type PullFileStatus = 'added' | 'modified' | 'removed' | 'renamed';
+
+export interface PullFile {
+  path: string;
+  status: PullFileStatus;
+  additions: number;
+  deletions: number;
+}
+
+export type TimelineItem =
+  | { kind: 'comment'; id: number; author: string; at: string; body: string }
+  | {
+      kind: 'review';
+      id: number;
+      author: string;
+      at: string;
+      state: 'approved' | 'changes_requested' | 'commented';
+      body: string;
+    }
+  | { kind: 'reviewComment'; id: number; author: string; at: string; path: string; body: string };
+
 // ------------------------------------------------------------- checks (P21)
 
 /**
@@ -632,6 +706,11 @@ export interface CheckRunInfo {
   conclusion: CheckConclusion;
   /** `html_url`. Opened through `actions/openExternal` only, never an `href`. */
   url: string;
+  /**
+   * App that produced the run, e.g. `GitHub Actions` or `CodeQL`. Empty when the
+   * API sent no app; the Checks tab groups by it and keeps the empty group.
+   */
+  app: string;
   startedAt: string | null;
   completedAt: string | null;
 }
@@ -1044,6 +1123,11 @@ export interface RequestMap {
    * Reveal a commit in the Git Control explorer canvas and select it.
    */
   'graph/revealCommit': { payload: RevealCommitPayload; response: { revealed: boolean } };
+  /**
+   * Reveal the pull request detail panel for one number. Not a mutation and not
+   * guarded: it only opens a panel, and the number selects which one.
+   */
+  'actions/openPullRequest': { payload: { number: number }; response: { opened: boolean } };
   /** Open a URL in the system browser. Host-side only; the webview cannot navigate. */
   'actions/openExternal': { payload: OpenExternalPayload; response: { opened: boolean } };
   'github/auth': { payload: Record<string, never>; response: GitHubAuthState };
@@ -1058,6 +1142,34 @@ export interface RequestMap {
   };
   /** Check runs for one commit SHA, with the collapsed summary the badges read. */
   'github/checkRuns': { payload: CheckRunsPayload; response: CheckRunsResult };
+  /** One pull request as the detail panel draws it. Read-only, no idempotency key. */
+  'github/pullDetail': {
+    payload: PullDetailPayload;
+    response: { detail: PullDetail; rateLimit: GitHubRateLimit };
+  };
+  /** The pull request commit list, capped by the host at its page bound. */
+  'github/pullCommits': {
+    payload: PullDetailPayload;
+    response: { commits: PullCommit[]; truncated: boolean; rateLimit: GitHubRateLimit };
+  };
+  /**
+   * The changed files and the local merge base. The host returns `mergeBase`
+   * already looked up; the bridge passes it through untouched.
+   */
+  'github/pullFiles': {
+    payload: PullDetailPayload;
+    response: {
+      files: PullFile[];
+      truncated: boolean;
+      mergeBase: string | null;
+      rateLimit: GitHubRateLimit;
+    };
+  };
+  /** Reviews and comments as one time-ordered list. */
+  'github/pullTimeline': {
+    payload: PullDetailPayload;
+    response: { items: TimelineItem[]; truncated: boolean; rateLimit: GitHubRateLimit };
+  };
   /** Issues assigned to, created by, or mentioning the viewer. Sign-in required. */
   'github/issues': { payload: IssuesPayload; response: IssuesResult };
   /**

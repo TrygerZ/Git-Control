@@ -44,6 +44,7 @@ const PURE_MODULES = [
   'src/branchCleanup.ts',
   'src/checkSummary.ts',
   'src/pullRequestDraft.ts',
+  'src/webview/pullView.ts',
 ];
 
 test('pure modules contain no vscode imports', () => {

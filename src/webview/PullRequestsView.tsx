@@ -14,7 +14,7 @@
  *   stale. No polling: this phase has no timer.
  */
 import { useCallback, useEffect, useMemo, useRef, useState, type JSX, type KeyboardEvent } from 'react';
-import { loadState, saveState } from './bridge';
+import { bridge, loadState, saveState } from './bridge';
 import { CreatePullRequest } from './CreatePullRequest';
 import { restoreTarget } from './focusTrap';
 import {
@@ -42,7 +42,7 @@ import {
   type PrContext,
   type PrFilterId,
 } from './prFilters';
-import { useGitHubStore, useOperationStore, usePrDraftStore, useRepoStore, useRouteStore, useSettingsStore } from './store';
+import { toErrorBody, useGitHubStore, useOperationStore, usePrDraftStore, useRepoStore, useRouteStore, useSettingsStore } from './store';
 import { useT } from './useT';
 import { EmptyState, FileListSkeleton, Icon, InfoBanner } from './ui';
 import type { Lang, PullRequestInfo } from '../messages';
@@ -523,6 +523,15 @@ export function PullRequestsView(): JSX.Element {
                           const checkoutName = isCheckedOut
                             ? strings.prs.checkedOut
                             : strings.prs.checkoutAria(String(pr.number));
+                          // Opens the detail panel, not the browser. The editor tab
+                          // keeps the list and the graph in view beside it.
+                          const openPanel = (): void => {
+                            void bridge
+                              .request('actions/openPullRequest', { number: pr.number })
+                              .catch((err: unknown) =>
+                                pushToast({ level: 'warning', message: toErrorBody(err).message }),
+                              );
+                          };
                           const checkout = (): void => {
                             void runAction({
                               action: 'checkout-pr',
@@ -541,7 +550,7 @@ export function PullRequestsView(): JSX.Element {
                                 tabIndex={index === active ? 0 : -1}
                                 aria-label={rowName}
                                 data-sha={pr.headSha ?? ''}
-                                onClick={() => void openUrl(pr.url)}
+                                onClick={openPanel}
                                 onKeyDown={(event) => onRowKey(event, index)}
                               >
                                 <span className="gc-prs__state" aria-hidden="true">

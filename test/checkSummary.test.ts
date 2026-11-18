@@ -22,6 +22,7 @@ function run(
   return {
     id: nextId,
     name,
+    app: '',
     status,
     conclusion,
     url: `https://github.com/o/r/runs/${nextId}`,

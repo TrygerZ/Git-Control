@@ -32,10 +32,16 @@ import type {
   Lang,
   LogLine,
   LogState,
+  PullCommit,
+  PullDetail,
+  PullFile,
+  PullFileStatus,
+  PullMergeableState,
   PullRequestInfo,
   RunConclusion,
   RunJobInfo,
   RunStatus,
+  TimelineItem,
   WorkflowInfo,
   WorkflowRunInfo,
 } from './messages';
@@ -48,7 +54,7 @@ import {
   type LogLimits,
 } from './githubLog';
 import { hostText } from './hostText';
-import { validateHash } from './validation';
+import { validateFullHash, validateHash } from './validation';
 
 /** Minimum scope for private repositories, per the PRD. */
 export const REQUIRED_PRIVATE_SCOPE = 'repo:status';
@@ -182,6 +188,10 @@ const BREAKER_THRESHOLD = 5;
 const BREAKER_WINDOW_MS = 60_000;
 const REPO_TTL_MS = 300_000;
 const PR_TTL_MS = 60_000;
+/** A pull request body is comment text; one hostile body cannot bloat the message. */
+const PULL_BODY_MAX = 65_536;
+/** The commits tab stops at three full pages instead of paging a thousand-commit PR. */
+const PULL_COMMIT_PAGES = 3;
 /**
  * The create dialog asks "does this branch pair already have an open pull
  * request?" before it posts. That answer changes the moment anyone opens or
@@ -499,6 +509,125 @@ export class GitHubClient {
       (body) => toPullRequests(body),
     );
     return result.data[0] ?? null;
+  }
+
+  // ------------------------------------------------- pull request detail (P24)
+
+  async pullRequest(owner: string, repo: string, number: number): Promise<Fetched<PullDetail>> {
+    const path = `/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/pulls/${number}`;
+    return this.get<PullDetail>(path, `pull:${owner}/${repo}:${number}`, PR_TTL_MS, (body) =>
+      toPullDetail(body),
+    );
+  }
+
+  /**
+   * The pull request's commits, three pages at most.
+   *
+   * The aggregate is one cache entry, not one per page: paging through `get`
+   * would spend a key per page and let a stale page answer for the list. The
+   * pages themselves are plain `send` reads, since a paged list has no single
+   * ETag to revalidate; the aggregate key carries the TTL and, while the
+   * breaker is open, the last copy.
+   */
+  async pullCommits(
+    owner: string,
+    repo: string,
+    number: number,
+  ): Promise<Fetched<{ commits: PullCommit[]; truncated: boolean }>> {
+    const key = `pullCommits:${owner}/${repo}:${number}`;
+    const fresh = this.readCache<{ commits: PullCommit[]; truncated: boolean }>(key, PR_TTL_MS);
+    if (fresh !== undefined) return { data: fresh, cached: true, rateLimit: this.rateLimit(true) };
+    if (this.breakerOpen) {
+      const stale = this.readCache<{ commits: PullCommit[]; truncated: boolean }>(
+        key,
+        Number.POSITIVE_INFINITY,
+      );
+      if (stale !== undefined) return { data: stale, cached: true, rateLimit: this.rateLimit(true) };
+      throw new GitHubError({
+        status: 503,
+        code: 'UNAVAILABLE',
+        message: this.text().unavailable,
+        detail: 'circuit open',
+      });
+    }
+
+    const base =
+      `/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}` +
+      `/pulls/${number}/commits?per_page=100`;
+    const commits: PullCommit[] = [];
+    let truncated = true;
+    for (let page = 1; page <= PULL_COMMIT_PAGES; page += 1) {
+      const response = await this.send(`${base}&page=${page}`);
+      const pageCommits = toPullCommits(parseJson(response.body));
+      commits.push(...pageCommits);
+      if (pageCommits.length < 100) {
+        truncated = false;
+        break;
+      }
+    }
+    const data = { commits, truncated };
+    this.setCache(key, data);
+    return { data, cached: false, rateLimit: this.rateLimit(false) };
+  }
+
+  async pullFiles(
+    owner: string,
+    repo: string,
+    number: number,
+  ): Promise<Fetched<{ files: PullFile[]; truncated: boolean }>> {
+    const path =
+      `/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}` +
+      `/pulls/${number}/files?per_page=100`;
+    return this.get<{ files: PullFile[]; truncated: boolean }>(
+      path,
+      `pullFiles:${owner}/${repo}:${number}`,
+      PR_TTL_MS,
+      (body) => toPullFiles(body),
+    );
+  }
+
+  /**
+   * Reviews, review comments, and issue comments as one time-ordered list.
+   *
+   * Each read is cached under its own key, so a reload only re-requests the
+   * source that changed; the merge and sort are cheap and run per call.
+   */
+  async pullTimeline(
+    owner: string,
+    repo: string,
+    number: number,
+  ): Promise<Fetched<{ items: TimelineItem[]; truncated: boolean }>> {
+    const base = `/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}`;
+    const [reviews, reviewComments, issueComments] = await Promise.all([
+      this.get<TimelineItem[]>(
+        `${base}/pulls/${number}/reviews?per_page=100`,
+        `pullReviews:${owner}/${repo}:${number}`,
+        PR_TTL_MS,
+        toReviewItems,
+      ),
+      this.get<TimelineItem[]>(
+        `${base}/pulls/${number}/comments?per_page=100`,
+        `pullComments:${owner}/${repo}:${number}`,
+        PR_TTL_MS,
+        toReviewCommentItems,
+      ),
+      this.get<TimelineItem[]>(
+        `${base}/issues/${number}/comments?per_page=100`,
+        `issueComments:${owner}/${repo}:${number}`,
+        PR_TTL_MS,
+        toCommentItems,
+      ),
+    ]);
+    const items = [...reviews.data, ...reviewComments.data, ...issueComments.data].sort((a, b) =>
+      a.at < b.at ? -1 : a.at > b.at ? 1 : 0,
+    );
+    const truncated =
+      reviews.data.length === 100 || reviewComments.data.length === 100 || issueComments.data.length === 100;
+    return {
+      data: { items, truncated },
+      cached: reviews.cached && reviewComments.cached && issueComments.cached,
+      rateLimit: this.rateLimit(reviews.cached && reviewComments.cached && issueComments.cached),
+    };
   }
 
   /**
@@ -1583,6 +1712,7 @@ export function toCheckRuns(body: unknown): CheckRunInfo[] {
     const run = raw as {
       id?: unknown;
       name?: unknown;
+      app?: { name?: unknown } | null;
       status?: unknown;
       conclusion?: unknown;
       html_url?: unknown;
@@ -1592,6 +1722,7 @@ export function toCheckRuns(body: unknown): CheckRunInfo[] {
     return {
       id: typeof run.id === 'number' ? run.id : 0,
       name: typeof run.name === 'string' ? run.name : '',
+      app: typeof run.app?.name === 'string' ? run.app.name : '',
       status: toCheckStatus(run.status),
       conclusion: toCheckConclusion(run.conclusion),
       url: typeof run.html_url === 'string' ? run.html_url : '',
@@ -1779,6 +1910,216 @@ function toPullRequests(body: unknown): PullRequestInfo[] {
             .filter((login): login is string => typeof login === 'string')
         : [],
       ...(headSha === null ? {} : { headSha }),
+    };
+  });
+}
+
+const MERGEABLE_STATES: ReadonlySet<string> = new Set([
+  'clean',
+  'dirty',
+  'blocked',
+  'behind',
+  'unstable',
+]);
+
+/** Avatars are the one image the webview CSP allows, from that host only. */
+function githubAvatarUrl(value: unknown): string | null {
+  if (typeof value !== 'string') return null;
+  try {
+    const url = new URL(value);
+    return url.protocol === 'https:' && url.hostname === 'avatars.githubusercontent.com' ? value : null;
+  } catch {
+    return null;
+  }
+}
+
+/** A full 40-hex commit id, or nothing: the panel pairs two ids it must trust. */
+function fullHashOrEmpty(value: unknown): string {
+  return typeof value === 'string' && validateFullHash(value) ? value : '';
+}
+
+function loginList(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .map((entry) => (entry as { login?: unknown } | null)?.login)
+    .filter((login): login is string => typeof login === 'string');
+}
+
+/**
+ * Whitelist the detail body. Every field the DTO declares is rebuilt here, so a
+ * hostile response can only ever become the data the panel already expects.
+ */
+export function toPullDetail(body: unknown): PullDetail {
+  const pr = (body ?? {}) as {
+    number?: unknown;
+    title?: unknown;
+    state?: unknown;
+    draft?: unknown;
+    user?: { login?: unknown; avatar_url?: unknown } | null;
+    head?: { ref?: unknown; sha?: unknown } | null;
+    base?: { ref?: unknown; sha?: unknown } | null;
+    commits?: unknown;
+    additions?: unknown;
+    deletions?: unknown;
+    changed_files?: unknown;
+    mergeable_state?: unknown;
+    html_url?: unknown;
+    body?: unknown;
+    created_at?: unknown;
+    updated_at?: unknown;
+    merged_at?: unknown;
+    requested_reviewers?: unknown;
+    labels?: unknown;
+  };
+  // GitHub keeps `state: "closed"` on a merged pull request, so `merged_at` has
+  // to be read first or the 'merged' state would be unreachable.
+  const merged = typeof pr.merged_at === 'string' && pr.merged_at.length > 0;
+  const rawBody = typeof pr.body === 'string' ? pr.body : '';
+  return {
+    number: safeInt(pr.number),
+    title: typeof pr.title === 'string' ? pr.title : '',
+    state: merged ? 'merged' : pr.state === 'closed' ? 'closed' : 'open',
+    draft: pr.draft === true,
+    author: typeof pr.user?.login === 'string' ? pr.user.login : '',
+    authorAvatarUrl: githubAvatarUrl(pr.user?.avatar_url),
+    headRef: typeof pr.head?.ref === 'string' ? pr.head.ref : '',
+    baseRef: typeof pr.base?.ref === 'string' ? pr.base.ref : '',
+    headSha: fullHashOrEmpty(pr.head?.sha),
+    baseSha: fullHashOrEmpty(pr.base?.sha),
+    commits: safeInt(pr.commits),
+    additions: safeInt(pr.additions),
+    deletions: safeInt(pr.deletions),
+    changedFiles: safeInt(pr.changed_files),
+    mergeableState:
+      typeof pr.mergeable_state === 'string' && MERGEABLE_STATES.has(pr.mergeable_state)
+        ? (pr.mergeable_state as PullMergeableState)
+        : 'unknown',
+    htmlUrl: httpsUrl(pr.html_url),
+    body: rawBody.length > PULL_BODY_MAX ? rawBody.slice(0, PULL_BODY_MAX) : rawBody,
+    createdAt: isoOrEmpty(pr.created_at),
+    updatedAt: isoOrEmpty(pr.updated_at),
+    mergedAt: isoOrNull(pr.merged_at),
+    reviewers: loginList(pr.requested_reviewers),
+    // Reviews are not in the detail body; the timeline read is where those live.
+    approvedBy: [],
+    changesRequestedBy: [],
+    labels: Array.isArray(pr.labels)
+      ? pr.labels
+          .map((label) => (label as { name?: unknown } | null)?.name)
+          .filter((name): name is string => typeof name === 'string')
+          .map((name) => ({ name }))
+      : [],
+  };
+}
+
+export function toPullCommits(body: unknown): PullCommit[] {
+  if (!Array.isArray(body)) return [];
+  return body.map((raw) => {
+    const entry = raw as {
+      sha?: unknown;
+      commit?: { message?: unknown; author?: { name?: unknown; date?: unknown } | null } | null;
+    };
+    const hash = typeof entry.sha === 'string' ? entry.sha : '';
+    const message = typeof entry.commit?.message === 'string' ? entry.commit.message : '';
+    const newline = message.indexOf('\n');
+    return {
+      hash,
+      shortHash: hash.slice(0, 7),
+      subject: newline === -1 ? message : message.slice(0, newline),
+      author: typeof entry.commit?.author?.name === 'string' ? entry.commit.author.name : '',
+      committedAt: isoOrEmpty(entry.commit?.author?.date),
+    };
+  });
+}
+
+const PULL_FILE_STATUSES: ReadonlySet<string> = new Set(['added', 'removed', 'renamed']);
+
+export function toPullFiles(body: unknown): { files: PullFile[]; truncated: boolean } {
+  if (!Array.isArray(body)) return { files: [], truncated: false };
+  return {
+    files: body.map((raw) => {
+      const file = raw as {
+        filename?: unknown;
+        status?: unknown;
+        additions?: unknown;
+        deletions?: unknown;
+      };
+      return {
+        path: typeof file.filename === 'string' ? file.filename : '',
+        status:
+          typeof file.status === 'string' && PULL_FILE_STATUSES.has(file.status)
+            ? (file.status as PullFileStatus)
+            : 'modified',
+        additions: safeInt(file.additions),
+        deletions: safeInt(file.deletions),
+      };
+    }),
+    truncated: body.length === 100,
+  };
+}
+
+export function toReviewItems(body: unknown): TimelineItem[] {
+  if (!Array.isArray(body)) return [];
+  return body.map((raw) => {
+    const review = raw as {
+      id?: unknown;
+      user?: { login?: unknown } | null;
+      submitted_at?: unknown;
+      state?: unknown;
+      body?: unknown;
+    };
+    return {
+      kind: 'review',
+      id: safeInt(review.id),
+      author: typeof review.user?.login === 'string' ? review.user.login : '',
+      at: isoOrEmpty(review.submitted_at),
+      state:
+        review.state === 'APPROVED'
+          ? 'approved'
+          : review.state === 'CHANGES_REQUESTED'
+            ? 'changes_requested'
+            : 'commented',
+      body: typeof review.body === 'string' ? review.body : '',
+    };
+  });
+}
+
+export function toReviewCommentItems(body: unknown): TimelineItem[] {
+  if (!Array.isArray(body)) return [];
+  return body.map((raw) => {
+    const comment = raw as {
+      id?: unknown;
+      user?: { login?: unknown } | null;
+      created_at?: unknown;
+      path?: unknown;
+      body?: unknown;
+    };
+    return {
+      kind: 'reviewComment',
+      id: safeInt(comment.id),
+      author: typeof comment.user?.login === 'string' ? comment.user.login : '',
+      at: isoOrEmpty(comment.created_at),
+      path: typeof comment.path === 'string' ? comment.path : '',
+      body: typeof comment.body === 'string' ? comment.body : '',
+    };
+  });
+}
+
+export function toCommentItems(body: unknown): TimelineItem[] {
+  if (!Array.isArray(body)) return [];
+  return body.map((raw) => {
+    const comment = raw as {
+      id?: unknown;
+      user?: { login?: unknown } | null;
+      created_at?: unknown;
+      body?: unknown;
+    };
+    return {
+      kind: 'comment',
+      id: safeInt(comment.id),
+      author: typeof comment.user?.login === 'string' ? comment.user.login : '',
+      at: isoOrEmpty(comment.created_at),
+      body: typeof comment.body === 'string' ? comment.body : '',
     };
   });
 }

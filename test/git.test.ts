@@ -1382,3 +1382,61 @@ test('localBranchExists answers for a real branch and a missing one', async (t) 
   assert.equal(await git.localBranchExists('pr/1'), true);
   assert.equal(await git.localBranchExists('pr/404'), false);
 });
+
+// ------------------------------------------------- P24 merge base and object probe
+
+/**
+ * The Files tab of a pull request opens `head` against the MERGE BASE, not
+ * against the head's first parent: a PR with two commits must show what the
+ * branch adds relative to where it forked, not only the last commit's delta.
+ * `mergeBase` is the one lookup that answers it, and it must survive unrelated
+ * histories (exit 1) rather than throw.
+ */
+test('mergeBase returns the fork point of two diverged branches', async (t) => {
+  const dir = await makeFixture('triple');
+  t.after(() => cleanup(dir));
+  const git = new GitRunner({ gitPath: 'git', cwd: dir });
+
+  const fork = (await git.run(['rev-parse', 'HEAD'])).stdout.trim();
+  // `side` adds one commit on top of the triple fixture's `main`.
+  const side = (await git.run(['rev-parse', 'side'])).stdout.trim();
+  assert.match(side, /^[0-9a-f]{40}$/);
+  assert.equal(await git.mergeBase(fork, side), fork, 'side forked from main at the tip');
+  assert.equal(await git.mergeBase(side, fork), fork, 'argument order does not matter');
+
+  await git.switchBranch('main');
+  await fs.writeFile(path.join(dir, 'after.txt'), 'after\n', 'utf8');
+  await git.stage(['after.txt']);
+  const head = (await git.commit('after fork')) as string;
+  assert.equal(await git.mergeBase(head, side), fork, 'the fork point, not either tip');
+
+  const unknown = await git.mergeBase('0'.repeat(40), head);
+  assert.equal(unknown, null, 'an object that is not here has no merge base');
+
+  const early = await git.log({ limit: 10 });
+  assert.equal(early.length >= 4, true);
+});
+
+test('mergeBase returns null for unrelated roots and refuses any input that is not a full hash', async (t) => {
+  const dir = await makeFixture('triple');
+  t.after(() => cleanup(dir));
+  const git = new GitRunner({ gitPath: 'git', cwd: dir });
+
+  // A ref name is NOT accepted: the merge base pairs the two commit ids the pull
+  // request named, and a moving ref would change under the panel.
+  await assert.rejects(() => git.mergeBase('main', 'side'), /Invalid/);
+  await assert.rejects(() => git.mergeBase('a'.repeat(7), 'b'.repeat(40)), /Invalid/);
+  await assert.rejects(() => git.mergeBase('-x', 'b'.repeat(40)), /Invalid/);
+});
+
+test('hasObject answers for a commit that is here and one that is not', async (t) => {
+  const dir = await makeRepo();
+  t.after(() => cleanup(dir));
+  const git = new GitRunner({ gitPath: 'git', cwd: dir });
+
+  const head = (await git.headHash()) as string;
+  assert.equal(await git.hasObject(head), true);
+  assert.equal(await git.hasObject('0'.repeat(40)), false);
+  await assert.rejects(() => git.hasObject('main'), /Invalid/);
+  await assert.rejects(() => git.hasObject('a'.repeat(7)), /Invalid/);
+});
