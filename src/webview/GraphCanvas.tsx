@@ -1386,9 +1386,12 @@ function NodeMark({
       )}
       {/*
         Merge glyph inside the circle (frame 01 `10:51`): two arcs joining into one
-        stem, in the contrast colour of the dot's fill.
+        stem, in the contrast colour of the dot's fill. A fallback for a node with
+        no picture, like the author initial: laid over an avatar it reads as a dark
+        squiggle across the face (owner report). Zoom-gated with the avatar it
+        replaces, so a low zoom shows the plain dot.
       */}
-      {node.isMerge && (
+      {node.isMerge && showContent && !hasAvatar && (
         <path
           className="gc-node__merge-glyph"
           d={`M${x - 4},${y - 5} v2 a3,3 0 0 0 3,3 h2 M${x + 4},${y - 5} v2 a3,3 0 0 1 -3,3 h-2`}
