@@ -1375,6 +1375,7 @@ test('P21: checkRuns maps the fields the badge reads and tolerates junk', async 
         {
           id: 11,
           name: 'Lint',
+          app: { name: 'GitHub Actions' },
           status: 'completed',
           conclusion: 'success',
           html_url: 'https://github.com/o/r/runs/11',
@@ -1392,6 +1393,8 @@ test('P21: checkRuns maps the fields the badge reads and tolerates junk', async 
   assert.deepEqual(result.data[0], {
     id: 11,
     name: 'Lint',
+    // The Checks tab groups by producer, so the app name is part of the row.
+    app: 'GitHub Actions',
     status: 'completed',
     conclusion: 'success',
     url: 'https://github.com/o/r/runs/11',
