@@ -46,6 +46,18 @@ test('each ref chip carries the branch glyph the frame draws', () => {
   assert.match(refs, /refChipKind\(/, 'the kind comes from one named rule');
 });
 
+test('the Explorer fills the remote list the chip rule reads', () => {
+  // `refChipKind` can only tell `origin/main` from `feat/main` when the configured
+  // remote names are known, and `loadRemotes` was only ever called by the sidebar
+  // Get started card. In the Explorer document the slice stayed `null`, so every
+  // remote-tracking ref fell through to `local`. Measured in the browser before
+  // the fix: `origin/feat/stash-pinned-footer` rendered as a local chip.
+  const app = read('src/webview/ExplorerApp.tsx');
+  assert.match(app, /loadRemotes/, 'the Explorer asks for the remote list');
+  const inspector = read(INSPECTOR);
+  assert.match(inspector, /useRepoStore\(\(st\) => st\.remotes\)/, 'and the inspector reads it');
+});
+
 test('refChipKind tells a slashed local branch from a remote-tracking ref', () => {
   // `git log --decorate` prints short names, so a local branch with a slash and a
   // remote-tracking ref look alike. Only the remote names disambiguate them.

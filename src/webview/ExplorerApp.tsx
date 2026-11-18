@@ -13,7 +13,7 @@ import { ExplorerSyncActions } from './ExplorerSyncActions';
 import { MergeDialog, mergeActionPayload, mergeIntoActionPayload } from './MergeDialog';
 import { PromptDialog } from './PromptDialog';
 import { ToastRegion } from './Toast';
-import { bridge, loadState } from './bridge';
+import { loadState } from './bridge';
 import { githubBaseUrl, NodeContextMenu, type MenuAnchor, type MenuItem } from './NodeContextMenu';
 import { useT } from './useT';
 import {
@@ -36,6 +36,7 @@ export function ExplorerApp(): JSX.Element {
   const error = useRepoStore((s) => s.error);
   const selectedHash = useRepoStore((s) => s.selectedHash);
   const refresh = useRepoStore((s) => s.refresh);
+  const loadRemotes = useRepoStore((s) => s.loadRemotes);
   const selectCommit = useRepoStore((s) => s.selectCommit);
   const loadSettings = useSettingsStore((s) => s.load);
   const loadIconTheme = useIconThemeStore((s) => s.load);
@@ -74,17 +75,18 @@ export function ExplorerApp(): JSX.Element {
     void loadIconTheme();
     void loadSettings();
     void refresh();
-    // The host parses each remote URL, so the GitHub item appears only when a
-    // GitHub remote actually exists.
-    bridge
-      .request('repos/remotes', {})
-      .then((result) => setGithubUrl(githubBaseUrl(result.remotes)))
-      .catch(() => setGithubUrl(null));
+    // The inspector's ref chips and the GitHub items read the remote list.
+    // `loadRemotes` caches and coalesces in flight, so deriving `githubUrl` from
+    // the same answer costs one request, not two. The host parses each remote
+    // URL, so the GitHub item appears only when a GitHub remote exists.
+    void loadRemotes().then(() => {
+      setGithubUrl(githubBaseUrl(useRepoStore.getState().remotes ?? []));
+    });
     // Commit avatars, the remote linkage, and the context-menu item all read this
     // slice, so the load stays even though the panel that used to own it is gone.
     void useGitHubStore.getState().load();
     return off;
-  }, [loadIconTheme, loadSettings, refresh, selectCommit]);
+  }, [loadIconTheme, loadRemotes, loadSettings, refresh, selectCommit]);
 
   const onMenuCommand = useCallback(
     (item: MenuItem, node: GraphNode): void => {
