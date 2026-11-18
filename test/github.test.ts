@@ -1657,3 +1657,197 @@ test('collaborators returns logins when the token can read them', async () => {
   const result = await gh.collaborators('o', 'r');
   assert.deepEqual(result.data, { logins: ['ann', 'bob'], available: true });
 });
+
+// ---------------------------------------------------- P24 pull request detail
+
+/** A pull detail body with every field the mapper reads. */
+function pullDetailBody(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+  return {
+    number: 150,
+    title: 'Rebalance change row content inset to 8px',
+    state: 'open',
+    draft: false,
+    user: { login: 'TrygerZ', avatar_url: 'https://avatars.githubusercontent.com/u/1?v=4' },
+    head: { ref: 'fix/ui-review-polish', sha: 'a'.repeat(40), repo: { full_name: 'o/r' } },
+    base: { ref: 'main', sha: 'b'.repeat(40) },
+    commits: 2,
+    additions: 84,
+    deletions: 15,
+    changed_files: 3,
+    mergeable_state: 'clean',
+    html_url: 'https://github.com/o/r/pull/150',
+    body: 'Change rows used a 12px inset.',
+    created_at: '2026-11-18T00:00:00Z',
+    updated_at: '2026-11-18T03:00:00Z',
+    merged_at: null,
+    requested_reviewers: [{ login: 'meganr' }],
+    labels: [{ name: 'ui' }],
+    ...overrides,
+  };
+}
+
+test('P24: pullRequest hits the pulls/:number route with the PR TTL', async () => {
+  const h = client([response(200, pullDetailBody())]);
+  const result = await h.gh.pullRequest('o', 'r', 150);
+  assert.equal(h.calls[0]?.url, 'https://api.github.com/repos/o/r/pulls/150');
+  assert.equal(result.data.number, 150);
+  assert.equal(result.data.mergeableState, 'clean');
+  assert.equal(result.data.headSha, 'a'.repeat(40));
+  assert.equal(result.data.baseSha, 'b'.repeat(40));
+  assert.deepEqual(result.data.reviewers, ['meganr']);
+  assert.equal(result.data.authorAvatarUrl, 'https://avatars.githubusercontent.com/u/1?v=4');
+  assert.equal(result.cached, false);
+});
+
+test('P24: a second read inside the TTL is served from the cache without a request', async () => {
+  const h = client([response(200, pullDetailBody())]);
+  await h.gh.pullRequest('o', 'r', 150);
+  h.advance(59_999);
+  const again = await h.gh.pullRequest('o', 'r', 150);
+  assert.equal(again.cached, true);
+  assert.equal(h.calls.length, 1);
+  h.advance(2);
+  await h.gh.pullRequest('o', 'r', 150);
+  assert.equal(h.calls.length, 2);
+});
+
+test('P24: a hostile detail body stays data and drops non-https links', async () => {
+  const h = client([
+    response(200, pullDetailBody({
+      title: '<img src=x onerror=alert(1)>',
+      body: '<script>alert(1)</script>',
+      html_url: 'javascript:alert(1)',
+      user: { login: 'mallory', avatar_url: 'https://evil.example/a.png' },
+      mergeable_state: 'invented',
+      commits: 'lots',
+      labels: 'no',
+      requested_reviewers: 'no',
+    })),
+  ]);
+  const detail = (await h.gh.pullRequest('o', 'r', 150)).data;
+  assert.equal(detail.body, '<script>alert(1)</script>', 'text stays text; the panel renders it as such');
+  assert.equal(detail.htmlUrl, '', 'only https links survive');
+  assert.equal(detail.authorAvatarUrl, null, 'a foreign avatar host is refused');
+  assert.equal(detail.mergeableState, 'unknown');
+  assert.equal(detail.commits, 0);
+  assert.deepEqual(detail.labels, []);
+  assert.deepEqual(detail.reviewers, []);
+});
+
+test('P24: a very long body is clamped', async () => {
+  const h = client([response(200, pullDetailBody({ body: 'x'.repeat(70_000) }))]);
+  const detail = (await h.gh.pullRequest('o', 'r', 150)).data;
+  assert.ok(detail.body.length <= 65_536);
+});
+
+test('P24: pullCommits paginates to the cap and reports truncation', async () => {
+  const page = (n: number): unknown[] =>
+    Array.from({ length: 100 }, (_, i) => ({
+      sha: `${String(n).repeat(2)}${String(i).padStart(2, '0')}`.padEnd(40, '0'),
+      commit: {
+        message: `commit ${n}-${i}`,
+        author: { name: 'TrygerZ', date: '2026-11-18T00:00:00Z' },
+      },
+    }));
+  const h = client([response(200, page(1)), response(200, page(2)), response(200, page(3))]);
+  const result = await h.gh.pullCommits('o', 'r', 150);
+  assert.equal(result.data.commits.length, 300);
+  assert.equal(result.data.truncated, true, 'a full third page means there may be more');
+  assert.match(h.calls[0]?.url ?? '', /\/pulls\/150\/commits\?per_page=100&page=1$/);
+  assert.match(h.calls[2]?.url ?? '', /page=3$/);
+});
+
+test('P24: pullCommits stops early and is not truncated when a page is short', async () => {
+  const h = client([
+    response(200, [
+      { sha: 'a'.repeat(40), commit: { message: 'one', author: { name: 'T', date: '2026-11-18T00:00:00Z' } } },
+    ]),
+  ]);
+  const result = await h.gh.pullCommits('o', 'r', 150);
+  assert.equal(result.data.commits.length, 1);
+  assert.equal(result.data.truncated, false);
+  assert.equal(h.calls.length, 1);
+  assert.equal(result.data.commits[0]?.shortHash, 'aaaaaaa');
+});
+
+test('P24: pullFiles maps status and counts and tolerates junk', async () => {
+  const h = client([
+    response(200, [
+      { filename: 'src/a.ts', status: 'modified', additions: 4, deletions: 1 },
+      { filename: 'src/b.ts', status: 'added', additions: 7, deletions: 0 },
+      { filename: 'src/c.ts', status: 'removed', additions: 0, deletions: 3 },
+      { filename: 'src/d.ts', status: 'renamed', additions: 0, deletions: 0 },
+      { filename: 'src/e.ts', status: 'invented', additions: -1, deletions: 'x' },
+      {},
+    ]),
+  ]);
+  const result = await h.gh.pullFiles('o', 'r', 150);
+  assert.deepEqual(result.data.files.map((f) => f.status), [
+    'modified',
+    'added',
+    'removed',
+    'renamed',
+    'modified',
+    'modified',
+  ]);
+  assert.equal(result.data.files[4]?.additions, 0, 'a negative count is zero, not -1');
+  assert.equal(result.data.files[4]?.deletions, 0);
+  assert.equal(result.data.files[5]?.path, '');
+  assert.equal(result.data.truncated, false);
+});
+
+test('P24: pullTimeline merges reviews, review comments and issue comments in time order', async () => {
+  const h = client([
+    response(200, [
+      {
+        id: 1,
+        user: { login: 'connorp' },
+        submitted_at: '2026-11-18T02:00:00Z',
+        state: 'APPROVED',
+        body: 'Looks good',
+      },
+      {
+        id: 2,
+        user: { login: 'meganr' },
+        submitted_at: '2026-11-18T01:00:00Z',
+        state: 'CHANGES_REQUESTED',
+        body: '',
+      },
+    ]),
+    response(200, [
+      { id: 3, user: { login: 'connorp' }, created_at: '2026-11-18T00:30:00Z', body: 'nested', path: 'src/a.ts' },
+    ]),
+    response(200, [
+      { id: 4, user: { login: 'TrygerZ' }, created_at: '2026-11-18T00:00:00Z', body: 'opened' },
+    ]),
+  ]);
+  const result = await h.gh.pullTimeline('o', 'r', 150);
+  assert.deepEqual(
+    result.data.items.map((item) => [item.kind, item.id]),
+    [
+      ['comment', 4],
+      ['reviewComment', 3],
+      ['review', 2],
+      ['review', 1],
+    ],
+  );
+});
+
+test('P24: a 404 on the detail maps to NOT_FOUND', async () => {
+  const h = client([response(404, { message: 'Not Found' })]);
+  await assert.rejects(() => h.gh.pullRequest('o', 'r', 999), (err: unknown) => {
+    assert.ok(err instanceof GitHubError);
+    assert.equal(err.code, 'NOT_FOUND');
+    return true;
+  });
+});
+
+test('P24: an open breaker serves the cached detail rather than failing', async () => {
+  const h = client([response(200, pullDetailBody()), response(500, {})]);
+  await h.gh.pullRequest('o', 'r', 150);
+  for (let i = 0; i < 5; i += 1) await h.gh.pullRequest('o', `x${i}`, 150).catch(() => undefined);
+  assert.equal(h.gh.circuitOpen, true);
+  const stale = await h.gh.pullRequest('o', 'r', 150);
+  assert.equal(stale.cached, true);
+  assert.equal(stale.data.number, 150);
+});

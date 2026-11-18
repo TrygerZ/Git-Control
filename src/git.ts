@@ -237,6 +237,59 @@ export class GitRunner {
   }
 
   /**
+   * The best common ancestor of two commits, or `null` when they share none.
+   *
+   * This is what the pull request Files tab diffs against. Diffing a head
+   * against its first parent would only show the last commit of a multi-commit
+   * branch, so the panel needs the fork point instead.
+   *
+   * Both sides must be full hashes, never ref names: the panel pairs the two
+   * commit ids the pull request named, and a ref would move under it between
+   * the list request and the diff request. Exit 1 means no common ancestor
+   * (unrelated roots); 128 means one of the objects is not in this clone, which
+   * is a stale or shallow checkout the caller renders as "not here" rather than
+   * a failed request.
+   */
+  async mergeBase(a: string, b: string): Promise<string | null> {
+    if (!validateFullHash(a)) {
+      throw new GitError({ code: 'VALIDATION_ERROR', message: `Invalid hash: ${a}` });
+    }
+    if (!validateFullHash(b)) {
+      throw new GitError({ code: 'VALIDATION_ERROR', message: `Invalid hash: ${b}` });
+    }
+    const { stdout, code } = await this.run(
+      ['merge-base', '--', sanitizeRefArg(a), sanitizeRefArg(b)],
+      { allowedExitCodes: [0, 1, 128] },
+    );
+    if (code !== 0) return null;
+    const base = stdout.trim();
+    // Never hand a caller anything it could feed back into an argv as a ref.
+    return validateFullHash(base) ? base : null;
+  }
+
+  /**
+   * True when `hash` names an object present in this clone.
+   *
+   * The pull request panel checks the base commit before asking for a diff: a
+   * clone that was fetched shallowly, or one where the base branch predates a
+   * prune, can be missing the object entirely, and `merge-base` would fail in
+   * a way that reads as a broken request. `cat-file -e` answers without reading
+   * the object, so a present but enormous blob costs nothing here.
+   *
+   * A full hash only: the caller is asking about a specific commit id, and a
+   * ref name would answer a different question than the one the panel shows.
+   */
+  async hasObject(hash: string): Promise<boolean> {
+    if (!validateFullHash(hash)) {
+      throw new GitError({ code: 'VALIDATION_ERROR', message: `Invalid hash: ${hash}` });
+    }
+    const { code } = await this.run(['cat-file', '-e', sanitizeRefArg(hash)], {
+      allowedExitCodes: [0, 1, 128],
+    });
+    return code === 0;
+  }
+
+  /**
    * True when `commitish` may already be on a remote, i.e. rewriting it could
    * need a force push.
    *

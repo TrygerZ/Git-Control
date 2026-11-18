@@ -4044,3 +4044,90 @@ test('P23: checking out a fork pull request marks its branch read only', async (
   if (push.ok) return;
   assert.equal(push.error.code, 'FORBIDDEN');
 });
+
+// ------------------------------------------------- P24 pull request detail reads
+
+/**
+ * The four detail reads share one payload and one shape: validate, refuse a
+ * host that has no method with 503, otherwise pass the payload through. The
+ * validation arms are what keep an untrusted number out of a URL path segment.
+ */
+test('P24: each pull detail read validates its payload before reaching the host', async (t) => {
+  const h = harness(null);
+  t.after(() => h.bridge.dispose());
+
+  for (const kind of ['github/pullDetail', 'github/pullCommits', 'github/pullFiles', 'github/pullTimeline']) {
+    for (const payload of [
+      { owner: '', repo: 'r', number: 1 },
+      { owner: 'o', repo: '..', number: 1 },
+      { owner: 'o', repo: 'r', number: 0 },
+      { owner: 'o', repo: 'r', number: '1' },
+      { owner: 'o', repo: 'r' },
+    ]) {
+      const response = await h.webview.send(req(kind, payload));
+      assert.equal(response.ok, false, `${kind} ${JSON.stringify(payload)}`);
+      if (response.ok) return;
+      assert.equal(response.error.status, 400);
+      assert.equal(response.error.code, 'VALIDATION_ERROR');
+    }
+  }
+});
+
+test('P24: a pull detail read fails 503 when the host has no method', async (t) => {
+  const h = harness(null);
+  t.after(() => h.bridge.dispose());
+  const response = await h.webview.send(req('github/pullDetail', { owner: 'o', repo: 'r', number: 1 }));
+  assert.equal(response.ok, false);
+  if (response.ok) return;
+  assert.equal(response.error.status, 503);
+  assert.equal(response.error.code, 'UNAVAILABLE');
+});
+
+test('P24: a valid pull detail read reaches the host unchanged', async (t) => {
+  const seen: unknown[] = [];
+  const h = harness(null, {
+    githubPullDetail: (payload) => {
+      seen.push(payload);
+      return Promise.resolve({
+        detail: {} as never,
+        rateLimit: { limit: null, remaining: null, resetAt: null, cached: false, offline: false },
+      });
+    },
+  });
+  t.after(() => h.bridge.dispose());
+  const response = await h.webview.send(req('github/pullDetail', { owner: 'o', repo: 'r', number: 150 }));
+  assert.equal(response.ok, true);
+  assert.deepEqual(seen, [{ owner: 'o', repo: 'r', number: 150 }]);
+});
+
+test('P24: actions/openPullRequest refuses an extra field and passes a bare number', async (t) => {
+  const opened: unknown[] = [];
+  const h = harness(null, {
+    openPullRequest: (payload) => {
+      opened.push(payload);
+      return Promise.resolve(true);
+    },
+  });
+  t.after(() => h.bridge.dispose());
+
+  const extra = await h.webview.send(req('actions/openPullRequest', { number: 150, path: '/etc/passwd' }));
+  assert.equal(extra.ok, false);
+  if (extra.ok) return;
+  assert.equal(extra.error.status, 400);
+
+  const bad = await h.webview.send(req('actions/openPullRequest', { number: 0 }));
+  assert.equal(bad.ok, false);
+
+  const good = await h.webview.send(req('actions/openPullRequest', { number: 150 }));
+  assert.equal(good.ok, true);
+  assert.deepEqual(opened, [{ number: 150 }]);
+});
+
+test('P24: actions/openPullRequest answers opened false without a host method', async (t) => {
+  const h = harness(null);
+  t.after(() => h.bridge.dispose());
+  const response = await h.webview.send(req('actions/openPullRequest', { number: 150 }));
+  assert.equal(response.ok, true);
+  if (!response.ok) return;
+  assert.deepEqual(response.data, { opened: false });
+});

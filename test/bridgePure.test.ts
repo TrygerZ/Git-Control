@@ -15,8 +15,10 @@ import {
   validateCommitPullRequestsPayload,
   validateCreatePullRequestPayload,
   validateEmptyPayload,
+  validateOpenPullRequestPayload,
   validatePrPreparePayload,
   validatePrReviewersPayload,
+  validatePullDetailPayload,
   type Outcome,
 } from '../src/bridgePure';
 import type { ErrorCode, Request } from '../src/messages';
@@ -493,4 +495,64 @@ test('validatePrPreparePayload and validatePrReviewersPayload check the slug pai
 
   assert.equal(detailOf(() => validatePrReviewersPayload({ owner: 'o', repo: 'r' }, invalid)), 'accepted');
   assert.equal(detailOf(() => validatePrReviewersPayload({ owner: 'o', repo: '..' }, invalid)), 'owner/repo');
+});
+
+/**
+ * `github/pullDetail`, `github/pullCommits`, `github/pullFiles` and
+ * `github/pullTimeline` share one payload: the slug pair plus the number. The
+ * number names a path segment of every URL, so it is held to the same 32-bit
+ * integer rule the checkout refspec uses.
+ */
+test('validatePullDetailPayload holds the slug pair and the pull number', () => {
+  const detailOf = (fn: () => void): string => {
+    try {
+      fn();
+      return 'accepted';
+    } catch (err) {
+      return (err as Error).message;
+    }
+  };
+  const invalid = (detail: string): never => {
+    throw new Error(detail);
+  };
+
+  assert.equal(detailOf(() => validatePullDetailPayload({ owner: 'o', repo: 'r', number: 150 }, invalid)), 'accepted');
+  assert.equal(
+    detailOf(() => validatePullDetailPayload({ owner: 'o', repo: 'r', number: 2_147_483_647 }, invalid)),
+    'accepted',
+  );
+  assert.equal(detailOf(() => validatePullDetailPayload({ owner: '', repo: 'r', number: 150 }, invalid)), 'owner/repo');
+  assert.equal(detailOf(() => validatePullDetailPayload({ owner: 'o', repo: '..', number: 150 }, invalid)), 'owner/repo');
+  for (const number of [0, -1, 1.5, '150', 2_147_483_648, NaN]) {
+    assert.equal(
+      detailOf(() => validatePullDetailPayload({ owner: 'o', repo: 'r', number }, invalid)),
+      'number',
+      String(number),
+    );
+  }
+});
+
+test('validateOpenPullRequestPayload checks the number alone', () => {
+  const detailOf = (fn: () => void): string => {
+    try {
+      fn();
+      return 'accepted';
+    } catch (err) {
+      return (err as Error).message;
+    }
+  };
+  const invalid = (detail: string): never => {
+    throw new Error(detail);
+  };
+
+  assert.equal(detailOf(() => validateOpenPullRequestPayload({ number: 150 }, invalid)), 'accepted');
+  for (const number of [0, -1, 1.5, '150', 2_147_483_648]) {
+    assert.equal(detailOf(() => validateOpenPullRequestPayload({ number }, invalid)), 'number', String(number));
+  }
+  // Extra fields never reach the host: `actions/openPullRequest` takes a number and
+  // nothing else, so a payload that carries more is a bug in the caller.
+  assert.equal(
+    detailOf(() => validateOpenPullRequestPayload({ number: 1, path: '/etc/passwd' }, invalid)),
+    'payload',
+  );
 });
