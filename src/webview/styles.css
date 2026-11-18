@@ -511,7 +511,10 @@ h3 {
  * same, so it keeps only its hover and opts out of the pressed fill below.
  */
 .gc-toolbar__panel-toggle {
+  /* Wrapped rows put it on a row of its own sometimes; the margin keeps it at
+     the right end of whichever row it lands on, so it never clips. */
   flex: 0 0 auto;
+  margin-left: auto;
   background: transparent;
 }
 
@@ -996,12 +999,12 @@ h3 {
 }
 
 .gc-explorer__aside {
-  flex: 0 0 320px;
+  flex: 0 1 320px;
+  min-width: 260px;
   display: flex;
   flex-direction: column;
   gap: var(--gc-space-3);
   min-height: 0;
-  min-width: 0;
   padding-left: var(--gc-space-3);
   border-left: 1px solid var(--gc-border);
   background: var(--gc-surface-1);
@@ -1063,34 +1066,6 @@ h3 {
   flex: 0 0 auto;
 }
 
-/*
- * Narrow panel or 200 % text zoom: stack instead of squeezing. A 340 px aside
- * beside a graph inside a 600 px sidebar leaves neither readable, and the sidebar
- * is where this view usually lives. The breakpoint is 1100 px rather than 900 px
- * because the aside (340 px) and the minimap column (260 px) together leave the
- * canvas under 400 px well before 900 px.
- */
-@media (max-width: 1100px) {
-  .gc-explorer__split {
-    flex-direction: column;
-  }
-
-  .gc-explorer__graph {
-    flex: 1 1 300px;
-    min-height: 240px;
-  }
-
-  .gc-explorer__aside {
-    flex: 0 1 50vh;
-    max-height: 50vh;
-    min-height: 120px;
-    padding-left: 0;
-    padding-top: var(--gc-space-3);
-    border-left: none;
-    border-top: 1px solid var(--gc-border);
-  }
-}
-
 .gc-progress__log {
   max-height: 12em;
   overflow: auto;
@@ -1126,6 +1101,7 @@ h3 {
   flex-wrap: nowrap;
   align-items: center;
   gap: var(--gc-space-2);
+  row-gap: var(--gc-space-2);
   /* Frame 01 (`9:45`) is 44 px tall; --gc-space-7 is 32, so the frame wins. */
   min-height: 44px;
   padding: var(--gc-space-3);
@@ -1368,6 +1344,51 @@ h3 {
 
 .gc-toolbar__clear {
   margin-left: auto;
+}
+
+/*
+ * Narrow panel or 200 % text zoom: stack instead of squeezing. A 340 px aside
+ * beside a graph inside a 600 px sidebar leaves neither readable, and the sidebar
+ * is where this view usually lives. The breakpoint is 1100 px rather than 900 px
+ * because the aside (340 px) and the minimap column (260 px) together leave the
+ * canvas under 400 px well before 900 px. The toolbar loses the frame's
+ * one-row shape at the same point: the search takes its own row, the frame
+ * labels collapse, and the controls share the next row with the panel toggle
+ * pinned right. A clipped control is worse than a second row.
+ */
+@media (max-width: 1100px) {
+  .gc-explorer__split {
+    flex-direction: column;
+  }
+
+  .gc-explorer__graph {
+    flex: 1 1 300px;
+    min-height: 240px;
+  }
+
+  .gc-explorer__aside {
+    flex: 0 1 50vh;
+    max-height: 50vh;
+    min-height: 120px;
+    padding-left: 0;
+    padding-top: var(--gc-space-3);
+    border-left: none;
+    border-top: 1px solid var(--gc-border);
+  }
+
+  .gc-toolbar--filters {
+    flex-wrap: wrap;
+    min-height: 44px;
+  }
+
+  .gc-toolbar__label {
+    display: none;
+    white-space: nowrap;
+  }
+
+  .gc-toolbar__search-wrap {
+    flex: 1 1 100%;
+  }
 }
 
 .gc-zoom__value {
@@ -2037,6 +2058,13 @@ h3 {
   border-radius: var(--gc-radius);
   background: var(--vscode-editor-background);
   user-select: none;
+  /*
+   * Floating chrome above me (minimap, legend, zoom bar) must clear the
+   * horizontal scrollbar and the corner box I reserve when both bars show.
+   * Measured 19 px / 18 px on Windows; declare the band once, here, and let the
+   * floating rules offset past it. A local layout variable, not a design token.
+   */
+  --gc-scrollbar-band: 20px;
 }
 
 /*
@@ -2050,8 +2078,8 @@ h3 {
  */
 .gc-canvas__controls {
   position: absolute;
-  right: var(--gc-space-5);
-  bottom: var(--gc-space-4);
+  right: calc(var(--gc-scrollbar-band) + var(--gc-space-2));
+  bottom: calc(var(--gc-scrollbar-band) + var(--gc-space-2));
   z-index: 10;
   display: flex;
   flex-direction: row;
@@ -2728,7 +2756,7 @@ h3 {
 .gc-canvas__bottom-row {
   position: absolute;
   left: calc(var(--gc-gutter-width) + var(--gc-space-4));
-  bottom: var(--gc-space-4);
+  bottom: calc(var(--gc-scrollbar-band) + var(--gc-space-2));
   z-index: 9;
   display: flex;
   align-items: flex-end;
