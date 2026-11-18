@@ -55,7 +55,7 @@ import type {
   WorktreeInfo,
 } from '../messages';
 import { failingDot, firstFailedJob } from './actionsModel';
-import { normalizeReviewers } from '../pullRequestDraft';
+import { normalizeLabels, normalizeReviewers } from '../pullRequestDraft';
 import type { BranchesSectionKey, BranchSort } from './branchesModel';
 import { clampZoom, COLUMN_WIDTH, LANE_HEIGHT, partitionUnrequestedHashes } from './viewport';
 
@@ -339,8 +339,6 @@ export interface ChangesState {
   toggleFolder(node: TreeNode): void;
   toggleCollapsed(prefix: string): void;
   toggleSection(section: ChangeSection): void;
-  selectAll(): void;
-  clear(): void;
   setCommitMessage(message: string): void;
   setPushAfterCommit(value: boolean): void;
   setAmend(on: boolean): Promise<void>;
@@ -519,17 +517,6 @@ export const useChangesStore = create<ChangesState>((set, get) => ({
     else collapsedSections.add(section);
     set({ collapsedSections });
     saveState({ collapsedSections: [...collapsedSections] });
-  },
-
-  selectAll() {
-    const selection = new Set(get().changes.map((c) => c.path));
-    set({ selection });
-    saveState({ selectedPaths: [...selection] });
-  },
-
-  clear() {
-    set({ selection: new Set<string>() });
-    saveState({ selectedPaths: [] });
   },
 
   setCommitMessage(message) {
@@ -2258,6 +2245,9 @@ export interface PrDraftState {
   body: string;
   draft: boolean;
   reviewers: string[];
+  labels: string[];
+  /** The issue this pull request closes, or `null` when none is linked. */
+  linkedIssue: number | null;
   onRemote: boolean;
   ahead: number;
   files: number;
@@ -2268,7 +2258,13 @@ export interface PrDraftState {
   collaboratorsAvailable: boolean;
   /** The key one dialog open reuses; `null` while closed. */
   key: string | null;
-  created: { number: number; url: string; published: boolean; reviewersFailed: string[] } | null;
+  created: {
+    number: number;
+    url: string;
+    published: boolean;
+    reviewersFailed: string[];
+    labelsFailed: string[];
+  } | null;
   error: ErrorBody | null;
 
   open(owner: string, repo: string): Promise<void>;
@@ -2277,7 +2273,14 @@ export interface PrDraftState {
   setDraft(value: boolean): void;
   addReviewer(login: string): void;
   removeReviewer(login: string): void;
-  submit(): Promise<void>;
+  addLabel(label: string): void;
+  removeLabel(label: string): void;
+  setLinkedIssue(value: number | null): void;
+  /**
+   * Send the create. `asDraft` forces the draft flag for this one submission, so
+   * the footer's Create draft button does not have to move the switch.
+   */
+  submit(asDraft?: boolean): Promise<void>;
 }
 
 /**
@@ -2294,7 +2297,16 @@ let prDraftSubmitted = false;
 
 function closedPrDraft(): Omit<
   PrDraftState,
-  'open' | 'close' | 'setField' | 'setDraft' | 'addReviewer' | 'removeReviewer' | 'submit'
+  | 'open'
+  | 'close'
+  | 'setField'
+  | 'setDraft'
+  | 'addReviewer'
+  | 'removeReviewer'
+  | 'addLabel'
+  | 'removeLabel'
+  | 'setLinkedIssue'
+  | 'submit'
 > {
   return {
     status: 'closed',
@@ -2306,6 +2318,8 @@ function closedPrDraft(): Omit<
     body: '',
     draft: false,
     reviewers: [],
+    labels: [],
+    linkedIssue: null,
     onRemote: false,
     ahead: 0,
     files: 0,
@@ -2381,7 +2395,21 @@ export const usePrDraftStore = create<PrDraftState>((set, get) => ({
     set({ reviewers: get().reviewers.filter((entry) => entry !== login) });
   },
 
-  async submit() {
+  addLabel(label) {
+    // Same fold the validator and the host apply, so a label the API would refuse
+    // never reaches the chip row.
+    set({ labels: normalizeLabels([...get().labels, label]) });
+  },
+
+  removeLabel(label) {
+    set({ labels: get().labels.filter((entry) => entry !== label) });
+  },
+
+  setLinkedIssue(value) {
+    set({ linkedIssue: value });
+  },
+
+  async submit(asDraft) {
     const state = get();
     // `error` is only retryable when it came from a submit; a failed prepare has
     // no branch data to send and the dialog offers reload instead.
@@ -2389,7 +2417,10 @@ export const usePrDraftStore = create<PrDraftState>((set, get) => ({
     if (state.key === null || prDraftTarget === null) return;
     prDraftSubmitted = true;
     const { owner, repo } = prDraftTarget;
-    const { key, head, base, title, body, draft, reviewers, onRemote } = state;
+    const { key, head, base, title, body, draft, reviewers, labels, linkedIssue, onRemote } = state;
+    // The footer's Create draft button forces the flag for its own submit; the
+    // switch itself is left where the user put it.
+    const draftFlag = asDraft === true ? true : draft;
     // Both transitions land before the await so a subscriber sees the push phase
     // and the create phase separately.
     if (!onRemote) set({ status: 'publishing' });
@@ -2402,8 +2433,10 @@ export const usePrDraftStore = create<PrDraftState>((set, get) => ({
         head,
         title,
         body,
-        draft,
+        draft: draftFlag,
         reviewers,
+        ...(labels.length === 0 ? {} : { labels }),
+        ...(linkedIssue === null ? {} : { linkedIssue }),
         publish: !onRemote,
         idempotencyKey: key,
         // Unconditional: the dialog's submit button IS the level 1 confirmation
@@ -2419,6 +2452,7 @@ export const usePrDraftStore = create<PrDraftState>((set, get) => ({
           url: result.url,
           published: result.published,
           reviewersFailed: result.reviewersFailed,
+          labelsFailed: result.labelsFailed ?? [],
         },
       });
     } catch (err) {

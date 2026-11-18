@@ -34,9 +34,52 @@ export interface DraftInput {
   base: string;
   head: string;
   reviewers: readonly string[];
+  /** Optional: a pull request without labels is still valid. */
+  labels?: readonly string[];
+  /** Optional: a pull request with no linked issue is still valid. */
+  linkedIssue?: number | null;
 }
 
-export type DraftField = 'title' | 'body' | 'base' | 'head' | 'reviewers';
+export type DraftField = 'title' | 'body' | 'base' | 'head' | 'reviewers' | 'labels' | 'linkedIssue';
+
+export const LABELS_MAX = 20;
+
+/**
+ * Fold a label list to what the API accepts.
+ *
+ * A label is one line of text, so a newline or any control character drops the
+ * entry rather than mangling the chip row. Dedupe is exact-equal and case-sensitive:
+ * GitHub treats `Graph` and `graph` as different labels, so folding them together
+ * would silently rename one of them. The cap mirrors the API's own limit.
+ */
+export function normalizeLabels(raw: readonly string[]): string[] {
+  const out: string[] = [];
+  for (const entry of raw) {
+    if (typeof entry !== 'string') continue;
+    const label = entry.trim();
+    if (label.length === 0 || CONTROL_CHARS.test(label) || out.includes(label)) continue;
+    out.push(label);
+    if (out.length === LABELS_MAX) break;
+  }
+  return out;
+}
+
+/**
+ * Read a linked issue reference: `97`, `#97`, and `  #97  ` all mean 97.
+ *
+ * Returns `null` for anything that is not a positive 32-bit integer, which is what
+ * the API accepts as an issue number. `0`, a negative, a fraction, and a number too
+ * large for int32 are all rejected rather than clamped: a wrong issue link is worse
+ * than none.
+ */
+export function normalizeLinkedIssue(raw: string): number | null {
+  if (typeof raw !== 'string') return null;
+  const text = raw.trim().replace(/^#/, '').trim();
+  if (!/^\d+$/.test(text)) return null;
+  const value = Number(text);
+  if (!Number.isInteger(value) || value < 1 || value > 2_147_483_647) return null;
+  return value;
+}
 
 /**
  * Turns `feat/graph-ribbons` into `Graph ribbons`. Only the last segment is used
@@ -123,6 +166,25 @@ export function validatePullRequestInput(
   }
   for (const login of reviewers) {
     if (typeof login !== 'string' || !LOGIN.test(login)) return { ok: false, field: 'reviewers' };
+  }
+  // Both fields are additive: an omitted one is valid. A supplied one has to
+  // survive the same fold the store applies, so the dialog can name the field
+  // that is wrong instead of dropping the value on the floor.
+  const { labels, linkedIssue } = input;
+  if (labels !== undefined) {
+    if (!Array.isArray(labels)) return { ok: false, field: 'labels' };
+    if (labels.some((label) => typeof label !== 'string')) return { ok: false, field: 'labels' };
+    if (normalizeLabels(labels).length !== labels.length) return { ok: false, field: 'labels' };
+  }
+  if (linkedIssue !== undefined && linkedIssue !== null) {
+    if (
+      typeof linkedIssue !== 'number' ||
+      !Number.isInteger(linkedIssue) ||
+      linkedIssue < 1 ||
+      linkedIssue > 2_147_483_647
+    ) {
+      return { ok: false, field: 'linkedIssue' };
+    }
   }
   return { ok: true };
 }

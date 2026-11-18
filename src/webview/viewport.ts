@@ -13,7 +13,7 @@ export const MAX_ZOOM = 4;
 export const DEFAULT_OVERSCAN = 6;
 
 export const COLUMN_WIDTH = 96;
-export const LANE_HEIGHT = 88;
+export const LANE_HEIGHT = 150;
 export const NODE_RADIUS = 14;
 export const DAY_GAP = 48;
 export const RULER_HEIGHT = 32;
@@ -38,6 +38,25 @@ const ZOOM_STEPS = [0.35, 0.5, 0.75, 1, 1.25, 1.5, 2, 3, 4] as const;
 export function clampZoom(zoom: number): number {
   if (!Number.isFinite(zoom)) return 1;
   return Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, zoom));
+}
+
+/**
+ * Zoom that makes the whole world fit the visible width, clamped to the same
+ * 35 %–400 % window as every other zoom path.
+ *
+ * Clamped rather than returned raw: a one-commit repository would otherwise fit at
+ * 800 %, and a 10 000-commit one at 2 %, both outside what the canvas can draw.
+ * A zero or nonsense width falls back to 100 % instead of dividing by zero.
+ */
+export function fitZoom(
+  viewportWidth: number,
+  worldWidth: number,
+  min: number = MIN_ZOOM,
+  max: number = MAX_ZOOM,
+): number {
+  if (!Number.isFinite(viewportWidth) || !Number.isFinite(worldWidth)) return 1;
+  if (viewportWidth <= 0 || worldWidth <= 0) return 1;
+  return Math.min(max, Math.max(min, viewportWidth / worldWidth));
 }
 
 /** Check if target node/column is currently outside the visible scroll view. */
@@ -241,6 +260,27 @@ export function edgeIntersectsBand(
 }
 
 /**
+ * SVG path for one graph edge between two world x positions.
+ *
+ * Same-lane edges draw straight; a lane transition bends through the midpoint so
+ * the curve never crosses a node it does not own. Deterministic: identical inputs
+ * yield an identical string.
+ */
+export function edgePath(
+  edge: { fromLane: number; toLane: number },
+  fromX: number,
+  toX: number,
+  laneHeight: number = LANE_HEIGHT,
+  rulerHeight: number = RULER_HEIGHT,
+): string {
+  const y1 = laneY(edge.fromLane, laneHeight, rulerHeight);
+  const y2 = laneY(edge.toLane, laneHeight, rulerHeight);
+  if (y1 === y2) return `M${fromX} ${y1}L${toX} ${y2}`;
+  const mid = (fromX + toX) / 2;
+  return `M${fromX} ${y1}C${mid} ${y1} ${mid} ${y2} ${toX} ${y2}`;
+}
+
+/**
  * A ribbon segment or horizontal band overlaps the visible viewport world band.
  */
 export function segmentIntersectsBand(
@@ -314,6 +354,39 @@ export interface MinimapGeometry {
   rectLeft: number;
   /** Width of the viewport rectangle, in minimap px (never below 4 px). */
   rectWidth: number;
+}
+
+/** One branch lane in the minimap: a horizontal line from its first to its last commit. */
+export interface MinimapLaneRow {
+  lane: number;
+  startX: number;
+  endX: number;
+}
+
+/**
+ * Lane rows for the minimap, one per lane the graph actually occupies.
+ *
+ * Frame 01 (`10:178`) draws the minimap as a few coloured horizontal lines, one
+ * per branch, not as one tick per commit. `startX`/`endX` are world units, so the
+ * caller scales them by the same factor as the viewport rectangle.
+ */
+export function minimapLaneRows(
+  nodes: ReadonlyArray<{ lane: number; x: number }>,
+  laneCount: number,
+): MinimapLaneRow[] {
+  const span = new Map<number, { startX: number; endX: number }>();
+  for (const node of nodes) {
+    if (node.lane < 0 || node.lane >= laneCount) continue;
+    const current = span.get(node.lane);
+    if (current === undefined) span.set(node.lane, { startX: node.x, endX: node.x });
+    else {
+      current.startX = Math.min(current.startX, node.x);
+      current.endX = Math.max(current.endX, node.x);
+    }
+  }
+  return [...span]
+    .sort((a, b) => a[0] - b[0])
+    .map(([lane, s]) => ({ lane, startX: s.startX, endX: s.endX }));
 }
 
 /** Geometry for the minimap's draggable viewport rectangle (horizontal). */

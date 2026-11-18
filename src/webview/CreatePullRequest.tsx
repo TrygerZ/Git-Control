@@ -14,6 +14,8 @@ import { useEffect, useId, useRef, useState, type FormEvent, type JSX } from 're
 import {
   BODY_MAX,
   TITLE_MAX,
+  normalizeLabels,
+  normalizeLinkedIssue,
   normalizeReviewers,
   validatePullRequestInput,
 } from '../pullRequestDraft';
@@ -46,6 +48,8 @@ export function CreatePullRequest({
     body,
     draft,
     reviewers,
+    labels,
+    linkedIssue,
     onRemote,
     ahead,
     files,
@@ -59,6 +63,9 @@ export function CreatePullRequest({
     setDraft,
     addReviewer,
     removeReviewer,
+    addLabel,
+    removeLabel,
+    setLinkedIssue,
     submit,
     close,
   } = usePrDraftStore();
@@ -77,6 +84,10 @@ export function CreatePullRequest({
   const returnFocus = useRef<Element | null>(null);
   /** The half-typed reviewer. Local, because a rejected login leaves no trace. */
   const [reviewerText, setReviewerText] = useState('');
+  /** The half-typed label, same contract: a dropped one leaves no trace. */
+  const [labelText, setLabelText] = useState('');
+  /** The issue field's raw text, so a half-typed `#` is not thrown away. */
+  const [issueText, setIssueText] = useState('');
 
   const cancel = (): void => {
     // Escape and the close button are the same door: neither may fire mid-flight.
@@ -116,7 +127,29 @@ export function CreatePullRequest({
     setReviewerText('');
   };
 
-  const valid = validatePullRequestInput({ title, body, base, head, reviewers }).ok;
+  // `normalizeLabels` is the same fold the store and the validator apply.
+  const commitLabel = (): void => {
+    const next = normalizeLabels([labelText]);
+    const label = next[0];
+    if (label !== undefined) addLabel(label);
+    setLabelText('');
+  };
+
+  // A half-typed value is reported, not silently cleared: the field says what is
+  // wrong and the create stays blocked while it does.
+  const issueProblem =
+    issueText.trim().length > 0 && normalizeLinkedIssue(issueText) === null;
+
+  const valid =
+    validatePullRequestInput({
+      title,
+      body,
+      base,
+      head,
+      reviewers,
+      ...(labels.length === 0 ? {} : { labels }),
+      ...(linkedIssue === null ? {} : { linkedIssue }),
+    }).ok && !issueProblem;
   const disabled = !valid || !connected || canWrite === 'no' || busy || exists;
 
   const primaryLabel = busy
@@ -275,50 +308,118 @@ export function CreatePullRequest({
           />
         </label>
 
-        <div className="gc-field gc-create-pr__reviewers">
-          <span className="gc-field__label">{strings.createPr.reviewers}</span>
-          <div className="gc-create-pr__chips">
-            {reviewers.map((login) => {
-              const name = sanitizeGitText(login);
-              return (
-                <span key={login} className="gc-chip">
-                  {name}
-                  <button
-                    type="button"
-                    className="gc-icon-button gc-create-pr__chip-remove"
-                    aria-label={`${name}, ${strings.createPr.reviewers}`}
-                    title={`${name}, ${strings.createPr.reviewers}`}
-                    disabled={locked}
-                    onClick={() => removeReviewer(login)}
-                  >
-                    <Icon name="close" />
-                  </button>
-                </span>
-              );
-            })}
-            <label className="gc-field gc-create-pr__add">
-              <span className="gc-field__label">{strings.createPr.add}</span>
-              <input
-                type="text"
-                value={reviewerText}
-                maxLength={39}
-                spellCheck={false}
-                autoComplete="off"
-                disabled={locked || !collaboratorsAvailable}
-                onChange={(event) => setReviewerText(event.target.value)}
-                onKeyDown={(event) => {
-                  // Enter adds and stays in the field: a reviewer list is typed in
-                  // one go, and a form submit here would create the pull request.
-                  if (event.key !== 'Enter') return;
-                  event.preventDefault();
-                  commitReviewer();
-                }}
-              />
-            </label>
+        {/*
+          Frame 07 (`72:62`): one metadata row, Reviewers then Labels then Linked
+          issue. Each is the same shape: a named field with a chip or input.
+        */}
+        <div className="gc-create-pr__meta">
+          <div className="gc-field gc-create-pr__reviewers">
+            <span className="gc-field__label">{strings.createPr.reviewers}</span>
+            <div className="gc-create-pr__chips">
+              {reviewers.map((login) => {
+                const name = sanitizeGitText(login);
+                return (
+                  <span key={login} className="gc-chip">
+                    {name}
+                    <button
+                      type="button"
+                      className="gc-icon-button gc-create-pr__chip-remove"
+                      aria-label={`${name}, ${strings.createPr.reviewers}`}
+                      title={`${name}, ${strings.createPr.reviewers}`}
+                      disabled={locked}
+                      onClick={() => removeReviewer(login)}
+                    >
+                      <Icon name="close" />
+                    </button>
+                  </span>
+                );
+              })}
+              <label className="gc-field gc-create-pr__add">
+                <span className="gc-field__label">{strings.createPr.add}</span>
+                <input
+                  type="text"
+                  value={reviewerText}
+                  maxLength={39}
+                  spellCheck={false}
+                  autoComplete="off"
+                  disabled={locked || !collaboratorsAvailable}
+                  onChange={(event) => setReviewerText(event.target.value)}
+                  onKeyDown={(event) => {
+                    // Enter adds and stays in the field: a reviewer list is typed in
+                    // one go, and a form submit here would create the pull request.
+                    if (event.key !== 'Enter') return;
+                    event.preventDefault();
+                    commitReviewer();
+                  }}
+                />
+              </label>
+            </div>
+            {!collaboratorsAvailable && (
+              <span className="gc-field__hint">{strings.createPr.reviewersUnavailable}</span>
+            )}
           </div>
-          {!collaboratorsAvailable && (
-            <span className="gc-field__hint">{strings.createPr.reviewersUnavailable}</span>
-          )}
+
+          <div className="gc-field gc-create-pr__labels">
+            <span className="gc-field__label">{strings.createPr.labels}</span>
+            <div className="gc-create-pr__chips">
+              {labels.map((label) => {
+                const name = sanitizeGitText(label);
+                return (
+                  <span key={label} className="gc-chip">
+                    {name}
+                    <button
+                      type="button"
+                      className="gc-icon-button gc-create-pr__chip-remove"
+                      aria-label={`${name}, ${strings.createPr.labels}`}
+                      title={`${name}, ${strings.createPr.labels}`}
+                      disabled={locked}
+                      onClick={() => removeLabel(label)}
+                    >
+                      <Icon name="close" />
+                    </button>
+                  </span>
+                );
+              })}
+              <label className="gc-field gc-create-pr__add">
+                <span className="gc-field__label">{strings.createPr.addLabel}</span>
+                <input
+                  type="text"
+                  value={labelText}
+                  maxLength={50}
+                  spellCheck={false}
+                  autoComplete="off"
+                  disabled={locked}
+                  onChange={(event) => setLabelText(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (event.key !== 'Enter') return;
+                    event.preventDefault();
+                    commitLabel();
+                  }}
+                />
+              </label>
+            </div>
+          </div>
+
+          <label className="gc-field gc-create-pr__issue">
+            <span className="gc-field__label">{strings.createPr.linkedIssue}</span>
+            <input
+              type="text"
+              inputMode="numeric"
+              value={issueText}
+              maxLength={12}
+              spellCheck={false}
+              autoComplete="off"
+              disabled={locked}
+              aria-invalid={issueProblem ? true : undefined}
+              onChange={(event) => {
+                setIssueText(event.target.value);
+                setLinkedIssue(normalizeLinkedIssue(event.target.value));
+              }}
+            />
+            <span className="gc-field__hint">
+              {issueProblem ? strings.createPr.linkedIssueInvalid : strings.createPr.linkedIssueHint}
+            </span>
+          </label>
         </div>
 
         {exists && (
@@ -422,16 +523,19 @@ export function CreatePullRequest({
             {strings.createPr.cancel}
           </button>
           <div className="gc-create-pr__footer-end">
-            {draft && (
-              <button
-                type="button"
-                className="gc-button gc-button--action"
-                disabled={disabled}
-                onClick={() => void submit()}
-              >
-                {strings.createPr.submitDraft}
-              </button>
-            )}
+            {/*
+              Frame 07 (`72:112`) draws all three unconditionally. Create draft
+              forces the flag for its own submit, so one press creates a draft even
+              when the switch was left off; the switch itself does not move.
+            */}
+            <button
+              type="button"
+              className="gc-button gc-button--action"
+              disabled={disabled}
+              onClick={() => void submit(true)}
+            >
+              {strings.createPr.submitDraft}
+            </button>
             <button
               type="submit"
               className="gc-button gc-button--primary"

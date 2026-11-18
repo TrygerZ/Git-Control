@@ -23,7 +23,7 @@ import type {
   StashEntry,
 } from '../messages';
 import type { IconName } from './icons';
-import { t, type Lang } from './i18n';
+import { activeLang, t, type Lang } from './i18n';
 
 // --------------------------------------------------------------------- hashes
 
@@ -195,6 +195,26 @@ const JUST_NOW_MS = 10 * SECOND_MS;
  * exactly 60 s reads `1m ago` / `1 menit lalu` and exactly 24 h reads `1d ago` / `1 hari lalu`.
  * A timestamp in the future is clamped to `just now` rather than going negative.
  */
+/**
+ * The graph label's age token: `12m`, `5h`, `3d`, `1mo`, `1y`, `now`.
+ *
+ * Frame 01 (`10:29`) prints `Julia G. · 3d`. The long sentence `relativeTime`
+ * returns is right for a tooltip and a screen reader, and too wide for a 88 px
+ * label, where the extra words pushed the author's own name out.
+ */
+export function compactAge(iso: string, now: number = Date.now()): string {
+  const strings = t(activeLang()).format;
+  const at = Date.parse(iso);
+  if (Number.isNaN(at)) return strings.compactUnknown;
+  const delta = now - at;
+  if (delta < MINUTE_MS) return strings.compactNow;
+  if (delta < HOUR_MS) return `${Math.floor(delta / MINUTE_MS)}m`;
+  if (delta < DAY_MS) return `${Math.floor(delta / HOUR_MS)}h`;
+  if (delta < MONTH_MS) return `${Math.floor(delta / DAY_MS)}d`;
+  if (delta < YEAR_MS) return `${Math.floor(delta / MONTH_MS)}mo`;
+  return `${Math.floor(delta / YEAR_MS)}y`;
+}
+
 export function relativeTime(iso: string, now: number = Date.now(), lang: Lang = 'en'): string {
   const at = Date.parse(iso);
   const strings = t(lang).format;
@@ -429,6 +449,18 @@ export function displayPath(entry: ChangeEntry): string {
 export function baseName(path: string): string {
   const parts = sanitizeGitText(path).split('/');
   return parts[parts.length - 1] ?? path;
+}
+
+/**
+ * Directory part of a repository path, for the file row's second cell.
+ *
+ * Frame 01 (`9:142`) prints `src/webview` beside the file name it already shows,
+ * so a root-level file gets an empty string rather than repeating its own name.
+ */
+export function dirOf(path: string): string {
+  const safe = sanitizeGitText(path);
+  const at = safe.lastIndexOf('/');
+  return at <= 0 ? '' : safe.slice(0, at);
 }
 
 // ------------------------------------------------------------------ breadcrumb

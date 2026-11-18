@@ -1,4 +1,8 @@
-import { validatePullRequestInput } from './pullRequestDraft';
+import {
+  normalizeLabels,
+  normalizeLinkedIssue,
+  validatePullRequestInput,
+} from './pullRequestDraft';
 import type { ErrorCode, GitActionPayload, IssueListFilter, IssueStateFilter, Request, RequestKind } from './messages';
 import { validateBranchName, validateHash, validatePullRequestNumber, validateRemoteName, validateRepoRelativePath, validateStashIndex } from './validation';
 
@@ -227,6 +231,8 @@ export function validateCreatePullRequestPayload(
     body: unknown;
     draft: unknown;
     reviewers: unknown;
+    labels?: unknown;
+    linkedIssue?: unknown;
     publish: unknown;
     remote?: unknown;
   },
@@ -236,6 +242,16 @@ export function validateCreatePullRequestPayload(
   if (!validateBranchName(payload.base)) fail('base');
   if (!validateBranchName(payload.head)) fail('head');
   if (payload.head === payload.base) fail('head');
+  // Labels and the linked issue ride the same payload. Both are optional, and
+  // both are folded through the shared helpers so the host never sees a value the
+  // dialog would have refused.
+  if (payload.labels !== undefined && !Array.isArray(payload.labels)) fail('labels');
+  if (payload.linkedIssue !== undefined) {
+    if (typeof payload.linkedIssue !== 'number') fail('linkedIssue');
+    if (normalizeLinkedIssue(String(payload.linkedIssue)) !== payload.linkedIssue) {
+      fail('linkedIssue');
+    }
+  }
   // Title, body, and reviewer rules live in one place. The casts are honest:
   // `validatePullRequestInput` re-checks every type itself and never coerces.
   const verdict = validatePullRequestInput({
@@ -244,6 +260,8 @@ export function validateCreatePullRequestPayload(
     base: payload.base as string,
     head: payload.head as string,
     reviewers: payload.reviewers as readonly string[],
+    ...(payload.labels === undefined ? {} : { labels: normalizeLabels(payload.labels as string[]) }),
+    ...(payload.linkedIssue === undefined ? {} : { linkedIssue: payload.linkedIssue as number }),
   });
   // Reviewers are reported last, after the three fields this payload adds, so
   // the dialog focuses them in the order it draws them.

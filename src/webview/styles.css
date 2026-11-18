@@ -92,8 +92,7 @@
   --gc-ease-spring: cubic-bezier(0.34, 1.3, 0.64, 1);
 
   /*
-   * Radius ladder. `xs` is for insets smaller than a control (legend ribbon
-   * swatches); `sm` is the control step itself and aliases the base token so
+   * Radius ladder. `xs` is for insets smaller than a control (legend swatches); `sm` is the control step itself and aliases the base token so
    * callers that mean "one control radius" stay correct if the base changes.
    */
   --gc-radius-xs: 2px;
@@ -281,14 +280,22 @@ h3 {
 
 /* --------------------------------------------------------------- a11y basics */
 
+/*
+ * The helper used `position: absolute`, which with no positioned ancestor
+ * resolves against the viewport. A hidden span inside a scroller therefore
+ * escaped that scroller's clip and landed at its document offset, stretching
+ * the page: measured at 380x622 and 380x1000, `document.scrollHeight` was 1112
+ * at both heights and `window.scrollTo(0, 400)` moved 112 px. Removing the
+ * absolute position dropped it to 1000. The 1 px clipped box keeps the text
+ * available to screen readers and takes no visible space.
+ */
 .gc-visually-hidden {
-  position: absolute;
   width: 1px;
   height: 1px;
   margin: -1px;
   padding: 0;
   overflow: hidden;
-  clip: rect(0 0 0 0);
+  clip-path: inset(50%);
   white-space: nowrap;
   border: 0;
 }
@@ -500,11 +507,23 @@ h3 {
 }
 
 /*
+ * Frame 01 (`9:45`) draws the panel toggle as a quiet glyph: on and off look the
+ * same, so it keeps only its hover and opts out of the pressed fill below.
+ */
+.gc-toolbar__panel-toggle {
+  /* Wrapped rows put it on a row of its own sometimes; the margin keeps it at
+     the right end of whichever row it lands on, so it never clips. */
+  flex: 0 0 auto;
+  margin-left: auto;
+  background: transparent;
+}
+
+/*
  * An expanded toggle (the legend launcher, etc.) keeps the hover fill
  * plus the same inset rule `.gc-button--danger` uses, so "this is on" survives a
  * theme where two backgrounds are nearly identical.
  */
-.gc-icon-button[aria-expanded='true']:not(.gc-explorer__aside-toggle) {
+.gc-icon-button[aria-expanded='true']:not(.gc-explorer__aside-toggle):not(.gc-toolbar__panel-toggle) {
   background: var(--vscode-toolbar-hoverBackground, var(--vscode-list-hoverBackground));
   box-shadow: inset 0 0 0 1px var(--vscode-focusBorder);
 }
@@ -885,9 +904,9 @@ h3 {
 }
 
 /*
- * Frame 01 top bar: the crumbs take the width, the two icon buttons keep theirs.
- * The container exists because `ContextBar` is null until the first status, and
- * the actions must not disappear with it.
+ * Frame 01 top bar: one 48 px row. The crumbs take the width, the two icon
+ * buttons keep theirs. The container exists because `ContextBar` is null until
+ * the first status, and the actions must not disappear with it.
  */
 .gc-explorer__top {
   display: flex;
@@ -895,17 +914,12 @@ h3 {
   align-items: center;
   justify-content: flex-end;
   gap: var(--gc-space-2);
+  min-height: var(--gc-space-8);
+  padding: 0 var(--gc-space-3);
   /* The rule and the fill belong to the whole bar, not to the crumbs alone:
      inside the row the bar no longer owns the full width. */
   border-bottom: 1px solid var(--gc-border);
   background: var(--gc-surface-1);
-}
-
-.gc-explorer__top .gc-context {
-  flex: 1 1 auto;
-  min-width: 0;
-  border-bottom: 0;
-  background: transparent;
 }
 
 .gc-explorer__actions {
@@ -985,16 +999,21 @@ h3 {
 }
 
 .gc-explorer__aside {
-  flex: 0 0 320px;
+  flex: 0 1 320px;
+  min-width: 260px;
   display: flex;
   flex-direction: column;
   gap: var(--gc-space-3);
   min-height: 0;
-  min-width: 0;
   padding-left: var(--gc-space-3);
   border-left: 1px solid var(--gc-border);
   background: var(--gc-surface-1);
-  overflow: auto;
+  /*
+   * The aside itself does not scroll: the actions bar is its footer and has to
+   * stay on screen. `overflow: hidden` would clip the bar at 200 % text zoom, so
+   * the scroller is the body below instead.
+   */
+  overflow: hidden;
   /* Lock the gutter so the dropdown chevron does not drift when the list scrolls. */
   scrollbar-gutter: stable;
 }
@@ -1032,38 +1051,19 @@ h3 {
   font-size: var(--gc-fs-sm);
 }
 
+/* The one scroller in the aside; the actions bar sits below it, outside this box. */
 .gc-explorer__aside-content {
   display: flex;
   flex-direction: column;
+  flex: 1 1 auto;
   gap: var(--gc-space-4);
+  min-height: 0;
+  overflow: auto;
 }
 
-/*
- * Narrow panel or 200 % text zoom: stack instead of squeezing. A 340 px aside
- * beside a graph inside a 600 px sidebar leaves neither readable, and the sidebar
- * is where this view usually lives. The breakpoint is 1100 px rather than 900 px
- * because the aside (340 px) and the minimap column (260 px) together leave the
- * canvas under 400 px well before 900 px.
- */
-@media (max-width: 1100px) {
-  .gc-explorer__split {
-    flex-direction: column;
-  }
-
-  .gc-explorer__graph {
-    flex: 1 1 300px;
-    min-height: 240px;
-  }
-
-  .gc-explorer__aside {
-    flex: 0 1 50vh;
-    max-height: 50vh;
-    min-height: 120px;
-    padding-left: 0;
-    padding-top: var(--gc-space-3);
-    border-left: none;
-    border-top: 1px solid var(--gc-border);
-  }
+/* The aside footer: never scrolls, never squeezes, always at the bottom. */
+.gc-explorer__aside-actions {
+  flex: 0 0 auto;
 }
 
 .gc-progress__log {
@@ -1085,8 +1085,7 @@ h3 {
 
 /* ------------------------------------------------------------------- toolbar */
 
-.gc-toolbar,
-.gc-pending__bar {
+.gc-toolbar {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
@@ -1094,17 +1093,70 @@ h3 {
 }
 
 /*
- * The filter row above the graph. Clean, unified one-line strip.
+ * The filter row above the graph. Frame 01 (`9:45`) draws ONE 44 px strip, so
+ * it never wraps: only the search field absorbs spare width.
  */
 .gc-toolbar--filters {
   display: flex;
-  align-items: flex-end;
-  gap: var(--gc-space-3);
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: var(--gc-space-2);
+  row-gap: var(--gc-space-2);
+  /*
+   * Never shrink. `.gc-graph` is a flex column, so a wrapped toolbar was squeezed
+   * back to its 44 px floor and its second row was cut off by the graph below it
+   * (measured: toolbar clientHeight 43, scrollHeight 64). The stage takes the
+   * shrink instead; it has `min-height: 0` for exactly that.
+   */
+  flex: 0 0 auto;
+  /* Frame 01 (`9:45`) is 44 px tall; --gc-space-7 is 32, so the frame wins. */
+  min-height: 44px;
   padding: var(--gc-space-3);
   border: none;
   border-bottom: 1px solid var(--gc-border);
   border-radius: 0;
   background: var(--gc-surface-1);
+}
+
+/* A labelled control: visible frame word plus the control it names. */
+.gc-toolbar__group {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: var(--gc-space-2);
+  min-width: 0;
+}
+
+.gc-toolbar__label {
+  color: var(--gc-text-muted);
+  font-size: var(--gc-fs-2xs);
+  white-space: nowrap;
+}
+
+.gc-toolbar__divider {
+  flex: 0 0 auto;
+  width: 1px;
+  height: var(--gc-space-5);
+  background: var(--gc-border);
+}
+
+/*
+ * Frame 01 (`9:45`): the count ends the filter group, so it no longer pushes
+ * itself right. The live region is the count itself, so the search box's
+ * `aria-describedby` still lands.
+ */
+.gc-toolbar__count {
+  flex: 0 0 auto;
+  /* A paragraph carries the user agent's 1em block margins, which made a 44 px
+     strip 59 px tall. The row owns the spacing. */
+  margin: 0;
+  color: var(--gc-text-muted);
+  font-size: var(--gc-fs-2xs);
+  white-space: nowrap;
+}
+
+.gc-toolbar__load-older {
+  flex: 0 0 auto;
 }
 
 .gc-toolbar__search-wrap {
@@ -1156,6 +1208,14 @@ h3 {
   max-width: 100%;
   /* The width cap moved onto the inner select wrapper; this row only lays out. */
   min-height: var(--gc-hit);
+}
+
+/*
+ * Inside a labelled group the wrap shrinks instead of growing: a long branch
+ * list must not push the panel toggle off the one-row toolbar.
+ */
+.gc-toolbar__group .gc-toolbar__branch-wrap {
+  max-width: 18em;
 }
 
 .gc-toolbar__field {
@@ -1236,180 +1296,48 @@ h3 {
 }
 
 /*
- * The action row on the pending panel. Primary pair, secondary helpers, count
- * and refresh. Visually quiet: no heavy frame of its own, just vertical
- * breathing room and a bottom hairline separating it from the list.
+ * Narrow panel or 200 % text zoom: stack instead of squeezing. A 340 px aside
+ * beside a graph inside a 600 px sidebar leaves neither readable, and the sidebar
+ * is where this view usually lives. The breakpoint is 1100 px rather than 900 px
+ * because the aside (340 px) and the minimap column (260 px) together leave the
+ * canvas under 400 px well before 900 px. The toolbar loses the frame's
+ * one-row shape at the same point: the search takes its own row, the frame
+ * labels collapse, and the controls share the next row with the panel toggle
+ * pinned right. A clipped control is worse than a second row.
  */
-.gc-toolbar--actions {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--gc-space-2) var(--gc-space-3);
-  padding: var(--gc-space-2) 0;
-  border-bottom: 1px solid var(--gc-border);
-  background: var(--gc-surface-1);
-}
+@media (max-width: 1100px) {
+  .gc-explorer__split {
+    flex-direction: column;
+  }
 
-/*
- * The pending panel bar stacks its children as full-width rows (VS Code SCM
- * idiom): the branch selector gets one row, the Select all / Clear pair the
- * next, so every control shares the same left and right edge. Scoped to the
- * pending bar only; the explorer graph toolbar keeps its horizontal flow.
- */
-.gc-pending__bar.gc-toolbar--actions {
-  flex-direction: column;
-  align-items: stretch;
-}
+  .gc-explorer__graph {
+    flex: 1 1 300px;
+    min-height: 240px;
+  }
 
-/*
- * In a stretch column a trailing `margin-left: auto` no longer pushes the end
- * group right, so align it explicitly on the cross axis instead.
- */
-.gc-pending__bar.gc-toolbar--actions .gc-toolbar__end {
-  align-self: flex-end;
-}
+  .gc-explorer__aside {
+    flex: 0 1 50vh;
+    max-height: 50vh;
+    min-height: 120px;
+    padding-left: 0;
+    padding-top: var(--gc-space-3);
+    border-left: none;
+    border-top: 1px solid var(--gc-border);
+  }
 
-/*
- * Two buttons that always act on the same selection, drawn as one control: the outer
- * corners round, the inner pair meets on a single shared rule. `margin-left: -1px`
- * is what collapses the two adjacent borders into that one rule, and `position` plus
- * the raised `z-index` on `:focus-visible` keeps the focus ring from being clipped by
- * the neighbour it overlaps.
- */
-.gc-segmented {
-  display: inline-flex;
-  align-items: stretch;
-  gap: 0;
-}
+  .gc-toolbar--filters {
+    flex-wrap: wrap;
+    min-height: 44px;
+  }
 
-.gc-segmented .gc-button {
-  border-radius: 0;
-  position: relative;
-}
+  .gc-toolbar__label {
+    display: none;
+    white-space: nowrap;
+  }
 
-.gc-segmented .gc-button:first-child {
-  border-top-left-radius: var(--gc-radius);
-  border-bottom-left-radius: var(--gc-radius);
-}
-
-.gc-segmented .gc-button:last-child {
-  border-top-right-radius: var(--gc-radius);
-  border-bottom-right-radius: var(--gc-radius);
-}
-
-.gc-segmented .gc-button + .gc-button {
-  margin-left: -1px;
-}
-
-.gc-segmented .gc-button:focus-visible {
-  z-index: 2;
-}
-
-/*
- * Within the pair, `Stage` leads. Both stay in tier two - promoting `Stage` to a fill
- * would put two primary buttons on a panel that already has `Commit` - so the lead is
- * carried by an inset accent rule and a heavier weight. Two channels, neither of them
- * colour, and the inset rule is the same idiom `.gc-button--danger` already uses.
- *
- * `forced-colors` drops the shadow, but the weight survives and the arrows still point
- * in opposite directions, so the pair does not collapse into two identical buttons.
- *
- * Resting surface: both buttons carry a real fill from the theme's secondary/background
- * stack, not transparent, so the control reads as a designed object at rest rather than
- * only on hover. Commit stays louder by its filled primary background and font weight,
- * which this pair never uses.
- *
- * The pair is framed as one machined control: a single outer border with a single
- * internal divider, outer corners rounded, inner corners square. Padding rhythm
- * (4px vertical, 12px horizontal) and a 4px gap between icon and label are
- * deliberate; icon is 14px optically aligned to the cap height.
- */
-/* Quiet segmented pair (Select all / Clear) â€” same join idiom as Stage/Unstage
- * but quieter: hairline `--gc-border` frame, no accent inset, so it never competes
- * with the action tier. The join reads as "one control, two choices". */
-.gc-segmented--quiet {
-  border: 1px solid var(--gc-border);
-  border-radius: var(--gc-radius);
-}
-
-.gc-segmented--quiet .gc-button {
-  border-color: transparent;
-  background: transparent;
-  /* Equal split: both buttons always share the full row 50/50, so the pair keeps
-   * one width across EN and ID without a hard-coded floor that could overflow a
-   * narrow sidebar. min-width: 0 lets flex:1 1 0 do the sizing. */
-  flex: 1 1 0;
-  min-width: 0;
-  justify-content: center;
-}
-
-.gc-segmented--quiet .gc-button + .gc-button {
-  border-left: 1px solid var(--gc-border);
-  margin-left: 0;
-}
-
-.gc-segmented--quiet .gc-button:hover:not(:disabled) {
-  background: var(--vscode-list-hoverBackground);
-}
-
-.gc-segmented--quiet .gc-button:focus-visible {
-  z-index: 2;
-}
-
-/* The pair leads with small glyphs; labels sit one step below the button font. */
-.gc-segmented--quiet .gc-button {
-  font-size: var(--gc-fs-sm);
-}
-
-.gc-segmented--quiet .gc-button .gc-icon {
-  font-size: var(--gc-fs-sm);
-}
-
-/* Selection count is data, not an action, so it is muted and tabular. The group
- * stretches to its column row and wraps: the segmented pair takes the full width
- * on one line and the count drops beneath it right-aligned, sharing the same right
- * edge as the buttons rather than floating mid-row. */
-.gc-selection-group {
-  display: flex;
-  flex: 1 1 auto;
-  align-items: center;
-  gap: var(--gc-space-2);
-  min-width: 0;
-  flex-wrap: wrap;
-}
-
-/* The segmented pair fills the row; its two buttons split that width equally. */
-.gc-selection-group .gc-segmented--quiet {
-  flex: 1 1 auto;
-  display: flex;
-}
-
-.gc-selection-group .gc-pending__count {
-  flex-basis: 100%;
-  text-align: right;
-  color: var(--gc-muted);
-  font-size: var(--gc-fs-xs);
-  font-variant-numeric: tabular-nums;
-  white-space: nowrap;
-}
-
-.gc-toolbar__end {
-  display: flex;
-  align-items: center;
-  gap: var(--gc-space-3);
-  margin-left: auto;
-  min-width: 0;
-}
-
-.gc-lang-toggle {
-  width: var(--gc-hit);
-  min-width: var(--gc-hit);
-  padding-left: 0;
-  padding-right: 0;
-  font-weight: 600;
-  font-size: var(--gc-fs-xs);
-  letter-spacing: 0.05em;
-  text-align: center;
+  .gc-toolbar__search-wrap {
+    flex: 1 1 100%;
+  }
 }
 
 .gc-zoom__value {
@@ -1422,25 +1350,34 @@ h3 {
 /* ---------------------------------------------------------------- context bar */
 
 /*
- * Which repository, which branch, how it stands against the remote. Quiet by
- * construction â€” a bottom rule and muted text â€” because it is the answer to a
- * question the user only asks when something looks wrong.
+ * Which repository, which branch, how it stands against the remote, on one line.
+ * Quiet by construction, because it is the answer to a question the user only
+ * asks when something looks wrong.
  */
 .gc-context {
   display: flex;
-  flex-direction: column;
-  gap: var(--gc-space-1);
-  padding: var(--gc-space-3) 0;
-  border-bottom: 1px solid var(--gc-border);
-  background: var(--gc-surface-1);
-}
-
-.gc-context__crumbs {
-  display: flex;
-  flex-wrap: wrap;
+  flex: 1 1 auto;
+  flex-direction: row;
+  flex-wrap: nowrap;
   align-items: center;
   gap: var(--gc-space-2);
   min-width: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+
+/* The frame's 24 px tile: the branch glyph, washed in the accent hue. */
+.gc-context__logo {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  width: var(--gc-space-6);
+  height: var(--gc-space-6);
+  border-radius: var(--gc-radius);
+  background: var(--gc-accent-subtle);
+  color: var(--gc-accent);
 }
 
 /* The repository is the loudest crumb: it is the thing everything else is inside. */
@@ -1463,56 +1400,27 @@ h3 {
   font-size: var(--gc-fs-2xs);
 }
 
-/* Last commit subject: one line, ellipsised, full text in `title`. */
-.gc-context__subject {
-  margin: 0;
-  overflow: hidden;
-  color: var(--gc-muted);
-  font-size: var(--gc-fs-xs);
-  text-overflow: ellipsis;
-  white-space: nowrap;
+.gc-context__divider {
+  flex: 0 0 auto;
+  width: 1px;
+  height: var(--gc-space-5);
+  background: var(--gc-border);
 }
 
-.gc-context__sync {
-  display: flex;
-  align-items: center;
-  gap: var(--gc-space-2);
-  margin: 0;
-  color: var(--gc-muted);
-  font-size: var(--gc-fs-xs);
+.gc-context__dot {
+  flex: 0 0 auto;
+  width: 6px;
+  height: 6px;
+  border-radius: var(--gc-radius-pill);
+  background: var(--gc-accent-solid);
 }
 
-.gc-context__sync-visual {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--gc-space-2);
-  min-width: 0;
-}
-
-/*
- * Ahead/behind arrows restate the numbers in `syncSummary` with tone colour so
- * "mine to push" and "waiting for me" separate at a glance; the words beside
- * them carry the same fact, so colour is never the only channel.
- */
-.gc-context__sync-part {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--gc-space-1);
-  font-variant-numeric: tabular-nums;
-  font-weight: var(--gc-weight-strong);
-}
-
-.gc-context__sync-part--ahead {
-  color: var(--gc-tone-added);
-}
-
-.gc-context__sync-part--behind {
-  color: var(--gc-tone-changed);
-}
-
-.gc-context__sync-text {
+/* The standing sentence: one line, ellipsised, full text in `title`. */
+.gc-context__standing {
   min-width: 0;
   overflow: hidden;
+  color: var(--gc-muted);
+  font-size: var(--gc-fs-2xs);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -1537,6 +1445,39 @@ h3 {
   gap: var(--gc-space-3);
   margin: calc(-1 * var(--gc-space-2)) calc(-1 * var(--gc-space-2)) 0;
   padding: var(--gc-space-4) var(--gc-space-4) var(--gc-space-3);
+}
+
+/*
+ * Frames 05, 08, 09, 11: every destination except Changes draws one 24 px title
+ * row. The base padding stays the source of the 12 px inset and the 8 px foot,
+ * so 12 + 24 + 8 is the 44 px header; only the extra rows and the stack gap go.
+ */
+.gc-sidebar-header--compact {
+  gap: 0;
+}
+
+.gc-sidebar-header--compact .gc-sidebar-header__row {
+  min-height: var(--gc-space-6);
+}
+
+/* Name and slug sit together at the left; the buttons stay right-aligned. */
+.gc-sidebar-header--compact .gc-sidebar-header__title {
+  flex: 0 1 auto;
+}
+
+.gc-sidebar-header--compact .gc-sidebar-header__actions {
+  margin-left: auto;
+}
+
+/* The parsed remote, muted and clipped, so a long name cannot push the buttons out. */
+.gc-sidebar-header__slug {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--gc-text-muted);
+  font-size: var(--gc-fs-xs);
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* Title row gap is 2 px in the frame; the branch row overrides it to 6 px. */
@@ -1945,11 +1886,124 @@ h3 {
  * wrapper does not scroll, so `position: absolute` inside it stays put.
  */
 .gc-graph__stage {
+  /*
+   * The gutter width, declared once here because the stage is the containing
+   * block for the absolutely positioned bottom row, which must offset past the
+   * gutter to reach the canvas edge. A local layout variable, not a design token.
+   */
+  --gc-gutter-width: 150px;
+  /*
+   * The scrollbar band the canvas loses to its own scrollbars (measured 19 px /
+   * 18 px on Windows). Declared here, not on `.gc-canvas`: the floating chrome
+   * is absolutely positioned against this stage, so the variable has to live on
+   * the ancestor that positions them or `calc()` resolves to nothing and the
+   * minimap flies to the top. A local layout variable, not a design token.
+   */
+  --gc-scrollbar-band: 20px;
   position: relative;
   display: flex;
   flex: 1 1 auto;
   min-width: 0;
   min-height: 0;
+}
+
+/*
+ * Lane gutter (frame 01, node 10:127): the fixed 150 px column naming each lane.
+ *
+ * It is a sibling of `.gc-canvas`, not a child, so the graph pans horizontally
+ * while the column stays put. Rows are positioned by `laneRowTop`, which subtracts
+ * the scroller's `scrollTop` itself, so nothing here scrolls.
+ *
+ * `overflow: hidden` clips the rows above the ruler and below the fold instead of
+ * letting them paint over the toolbar.
+ */
+.gc-gutter {
+  position: relative;
+  flex: 0 0 var(--gc-gutter-width);
+  width: var(--gc-gutter-width);
+  overflow: hidden;
+  border: 1px solid var(--gc-border);
+  border-right: none;
+  border-radius: var(--gc-radius) 0 0 var(--gc-radius);
+  background: var(--gc-bg-sidebar);
+}
+
+/* Ruler slot: the same 32 px band the canvas ruler occupies, so rows line up. */
+.gc-gutter__head {
+  position: absolute;
+  top: 0;
+  right: 0;
+  left: 0;
+  display: flex;
+  align-items: center;
+  height: 32px;
+  padding: 0 var(--gc-space-3);
+  border-bottom: 1px solid var(--gc-border);
+  color: var(--gc-muted);
+  font-size: var(--gc-fs-2xs);
+  font-weight: var(--gc-weight-strong);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.gc-gutter__row {
+  position: absolute;
+  right: 0;
+  left: 0;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  grid-template-areas:
+    'dot name'
+    '. meta';
+  /*
+   * The row is a full lane band, so the grid would otherwise split that height
+   * between its two lines and drift the name and its status far apart. `min-content`
+   * rows packed to the centre keep the label one tight block, as the frame draws it.
+   */
+  align-content: center;
+  align-items: center;
+  grid-auto-rows: min-content;
+  column-gap: var(--gc-space-2);
+  row-gap: var(--gc-space-1);
+  padding: 0 var(--gc-space-3);
+  box-sizing: border-box;
+  color: var(--gc-text-primary);
+  font-size: var(--gc-fs-2xs);
+}
+
+/* The lane colour comes from the layout payload as an inline background. */
+.gc-gutter__dot {
+  grid-area: dot;
+  width: var(--gc-space-3);
+  height: var(--gc-space-3);
+  border-radius: 50%;
+}
+
+.gc-gutter__name {
+  grid-area: name;
+  display: flex;
+  gap: var(--gc-space-2);
+  align-items: baseline;
+  min-width: 0;
+  overflow: hidden;
+  font-weight: var(--gc-weight-strong);
+  white-space: nowrap;
+}
+
+/* The name is the identity, so it takes the row's free space and ellipsises. */
+.gc-gutter__label {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.gc-gutter__meta {
+  grid-area: meta;
+  overflow: hidden;
+  color: var(--gc-text-muted);
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .gc-canvas {
@@ -1966,21 +2020,20 @@ h3 {
 /*
  * Floating zoom / home controls, bottom right, as in the Unity reference.
  *
- * A column rather than a row: in a 300 px sidebar a horizontal strip would cover the
- * commit subjects it sits on top of. `right`/`bottom` are one step off the edge so
- * the group never overlaps the scrollbar gutter.
+ * A row rather than a column: frame 01 (`10:158`) draws one bar. `right`/`bottom`
+ * are one step off the edge so the bar never overlaps the scrollbar gutter.
  *
- * `align-items: flex-end` anchors every child to the right axis so square icon
- * buttons do not stretch to the wider checkbox label when translations change.
+ * `align-items: center` keeps the square icon buttons and the readout on one
+ * baseline when translations change.
  */
 .gc-canvas__controls {
   position: absolute;
-  right: var(--gc-space-5);
-  bottom: var(--gc-space-4);
+  right: calc(var(--gc-scrollbar-band) + var(--gc-space-2));
+  bottom: calc(var(--gc-scrollbar-band) + var(--gc-space-2));
   z-index: 10;
   display: flex;
-  flex-direction: column;
-  align-items: flex-end;
+  flex-direction: row;
+  align-items: center;
   gap: var(--gc-space-2);
 }
 
@@ -2009,6 +2062,59 @@ h3 {
 
 .gc-control-card--zoom .gc-icon-button {
   font-size: var(--gc-fs-sm);
+}
+
+/* Frame 01 (`10:158`): the divider before maximize and crosshair. */
+.gc-zoom__divider {
+  align-self: center;
+  width: 1px;
+  height: var(--gc-space-5);
+  margin: 0 var(--gc-space-1);
+  background: var(--gc-border);
+}
+
+/*
+ * Frame 01 (`10:184`): the legend as a pill in place, beside the minimap on the
+ * canvas bottom edge. The two are flex items of `.gc-canvas__bottom-row`, so
+ * neither can drift from the other. The two states differ by shape as well as
+ * colour: pushed is a filled dot, local only is hollow.
+ */
+.gc-legend-pill {
+  display: flex;
+  align-items: center;
+  gap: var(--gc-space-3);
+  padding: var(--gc-space-1) var(--gc-space-3);
+  border: 1px solid var(--gc-border);
+  border-radius: calc(var(--gc-radius) * 4);
+  background: var(--gc-surface-2);
+  color: var(--gc-text-muted);
+  font-size: var(--gc-fs-2xs);
+  pointer-events: none;
+}
+
+.gc-legend-pill__item {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--gc-space-1);
+  white-space: nowrap;
+}
+
+.gc-legend-pill__dot {
+  width: var(--gc-space-3);
+  height: var(--gc-space-3);
+  border-radius: 50%;
+  box-sizing: border-box;
+}
+
+/* A commit that reached the remote: filled, like the node it describes. */
+.gc-legend-pill__dot--pushed {
+  background: var(--gc-accent-solid);
+}
+
+/* Not pushed: hollow, so the two read apart in forced colours and for a colour-blind eye. */
+.gc-legend-pill__dot--local {
+  border: 1.5px solid var(--gc-accent-solid);
+  background: transparent;
 }
 
 /*
@@ -2070,6 +2176,14 @@ h3 {
   stroke-width: 2.6;
   stroke-dasharray: none;
   stroke-linejoin: round;
+}
+
+/*
+ * An edge into a lane that has not landed on the current line yet. The dash is the
+ * channel, not a colour, so it needs no token: solid means merged, dashed means not.
+ */
+.gc-edge--dashed {
+  stroke-dasharray: 4 4;
 }
 
 /*
@@ -2172,10 +2286,36 @@ h3 {
   }
 }
 
-.gc-node__merge-ring {
+.gc-node__halo {
   fill: none;
-  stroke-width: 1;
-  opacity: 0.7;
+  stroke: var(--vscode-focusBorder);
+  stroke-width: 1.5;
+}
+
+/* The HEAD tag above the circle: typography on the group, fill on the text. */
+.gc-node__head-tag {
+  font-family: var(--vscode-font-family);
+  /* The node scale: the tag sits on a commit mark, so it shares that size step. */
+  font-size: var(--gc-fs-node);
+  font-weight: var(--gc-weight-strong);
+  letter-spacing: 0.04em;
+  pointer-events: none;
+  user-select: none;
+}
+
+.gc-node__head-tag rect {
+  fill: var(--gc-accent-solid);
+}
+
+.gc-node__head-tag text {
+  fill: var(--vscode-button-foreground, var(--vscode-editor-background));
+}
+
+.gc-node__merge-glyph {
+  fill: none;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  pointer-events: none;
 }
 
 .gc-node--selected .gc-node__dot {
@@ -2287,7 +2427,7 @@ h3 {
 
 /*
  * Resting subject is clamped to 1 line: cards on neighbouring lanes are offset from their
- * node centre and a lane is only 88 px tall, so a second line makes an `above` card and a
+ * node centre and a lane is only one pitch tall, so a second line makes an `above` card and a
  * `below` card meet. Hover expands to 2 lines because a hovered card is on top of the stack.
  */
 .gc-row__subject {
@@ -2334,27 +2474,6 @@ h3 {
 /*
  * Branch pill positioned above lane / node.
  */
-/* ----------------------------------------------------------- branch ribbon */
-
-.gc-branch-ribbon {
-  pointer-events: none;
-  opacity: 1;
-  transition: opacity var(--gc-dur-fast) var(--gc-ease);
-}
-
-.gc-branch-ribbon--hidden {
-  opacity: 0;
-}
-
-.gc-branch-ribbon__track {
-  opacity: 0.28;
-}
-
-.gc-branch-ribbon__border {
-  stroke-width: 1;
-  opacity: 0.85;
-}
-
 .gc-pill {
   position: absolute;
   transform: translate(-50%, -100%);
@@ -2423,13 +2542,6 @@ h3 {
   font-weight: var(--gc-weight-strong);
 }
 
-/* Capsule icon button on the newly created branch node */
-.gc-node__capsule {
-  fill: var(--vscode-editorWidget-background, var(--vscode-editor-background));
-  stroke-width: 2;
-  transition: transform var(--gc-dur-fast) var(--gc-ease);
-}
-
 /* Date ruler sticky at top */
 .gc-ruler {
   position: sticky;
@@ -2462,9 +2574,12 @@ h3 {
   box-sizing: border-box;
 }
 
-.gc-canvas__day-band {
-  fill: var(--vscode-list-hoverBackground);
-  opacity: 0.4;
+/*
+ * Frame 01 `LaneBand` (10:2). The alternate lane stripe lives on the canvas, not
+ * the gutter, so the eye follows one band from the label to its nodes.
+ */
+.gc-canvas__lane-band {
+  fill: color-mix(in srgb, var(--gc-bg-hover) 55%, transparent);
 }
 
 .gc-canvas__day-line {
@@ -2573,15 +2688,33 @@ h3 {
 /* ------------------------------------------------------------------- minimap */
 
 /*
- * Minimap wrapper: absolutely positioned at the bottom centre of the canvas stage.
- * Floats over canvas content with a z-index of 9 (above canvas content z-index 1..8,
- * below controls z-index 10 and menu/popover z-index 20+).
+ * Bottom row: the minimap and the legend pill, side by side and sharing one
+ * bottom edge, as frame 01 draws them. Absolutely positioned over the canvas,
+ * with a z-index of 9 (above canvas content z-index 1..8, below controls
+ * z-index 10 and menu/popover z-index 20+). The row owns the positioning so the
+ * two items cannot drift.
+ *
+ * The containing block is `.gc-graph__stage`, whose left edge is the gutter's,
+ * not the canvas's. `left` therefore clears the gutter first, so the row starts
+ * at the canvas's inner padding and never lands on the gutter column.
+ */
+.gc-canvas__bottom-row {
+  position: absolute;
+  left: calc(var(--gc-gutter-width) + var(--gc-space-4));
+  bottom: calc(var(--gc-scrollbar-band) + var(--gc-space-2));
+  z-index: 9;
+  display: flex;
+  align-items: flex-end;
+  gap: var(--gc-space-4);
+  pointer-events: auto;
+}
+
+/*
+ * Minimap slot in the bottom row. A plain flex item: the row positions it.
+ * `z-index` stays because `test/a11y.test.ts` reads it from this rule to pin the
+ * stacking ladder (selected card < minimap row); it is inert on a static child.
  */
 .gc-minimap-wrap {
-  position: absolute;
-  left: 50%;
-  bottom: var(--gc-space-4);
-  transform: translateX(-50%);
   z-index: 9;
   display: flex;
   pointer-events: auto;
@@ -2597,10 +2730,9 @@ h3 {
   touch-action: none;
 }
 
-.gc-minimap__ticks {
-  stroke: var(--vscode-foreground);
-  stroke-width: 1;
-  opacity: 0.7;
+.gc-minimap__lane {
+  stroke-width: 2;
+  stroke-linecap: round;
 }
 
 /*
@@ -2765,18 +2897,6 @@ h3 {
   width: 15px;
   height: 15px;
   box-shadow: inset 0 0 0 1.5px var(--vscode-editor-background);
-}
-
-.gc-legend__swatch--ribbon {
-  width: 16px;
-  height: 8px;
-  border-radius: var(--gc-radius-xs);
-  border-top: 1.5px solid var(--vscode-focusBorder);
-  border-bottom: 1.5px solid var(--vscode-focusBorder);
-  border-left: none;
-  border-right: none;
-  background: var(--vscode-focusBorder);
-  opacity: 0.5;
 }
 
 .gc-legend__lanes {
@@ -2995,15 +3115,19 @@ h3 {
   color: var(--gc-danger);
 }
 
-.gc-menu__hint {
-  color: var(--gc-muted);
+/*
+ * Frame 03's single hint box (`15:91`): a footer band under the last group that
+ * explains the row the pointer or the cursor is on. It replaces the per-row
+ * sub-line, so the menu keeps one height no matter which row is hovered.
+ */
+.gc-menu__focus-hint {
+  margin-top: var(--gc-space-2);
+  padding: var(--gc-space-2) var(--gc-space-3);
+  border-top: 1px solid var(--gc-border);
+  color: var(--gc-text-muted);
   font-size: var(--gc-fs-xs);
+  line-height: 1.4;
   white-space: normal;
-}
-
-.gc-menu__item:hover .gc-menu__hint,
-.gc-menu__item:focus-visible .gc-menu__hint {
-  color: inherit;
 }
 
 /* --------------------------------------------------------------------- modal */
@@ -3242,6 +3366,9 @@ h3 {
 .gc-pending__notifications {
   display: flex;
   flex-direction: column;
+  flex: 0 1 auto;
+  min-height: 0;
+  overflow-y: auto;
   gap: var(--gc-space-3);
 }
 
@@ -3271,24 +3398,27 @@ h3 {
 .gc-pending__panel {
   display: flex;
   flex-direction: column;
-  flex: 1 1 auto;
-  min-height: 0;
-  gap: var(--gc-space-2);
   /*
-   * The panel shrinks to `min-height: 0` when the footer and the fixed chrome
+   * Zero basis, not `auto`. With `auto` the basis is the panel's content height,
+   * so it competes with the notification slot for the leftover space and both
+   * shrink: the slot came out 193.8 px against a 227.3 px card, clipping the
+   * checklist while the panel still had 392 px of unused room. A zero basis makes
+   * the panel absorb exactly what is left after the slot takes its natural height.
+   */
+  flex: 1 1 0;
+  min-height: 96px;
+  gap: var(--gc-space-2);
+  /* Frame 6:2 draws a hairline between the notification slot and the search
+   * row; the removed pending bar used to draw it as a bottom border. */
+  border-top: 1px solid var(--gc-border);
+  /*
+   * The panel shrinks to `min-height: 96px` when the footer and the fixed chrome
    * above it outgrow a short panel, so its children would keep their own
    * minimums (search row, selection row, 64 px list floor) and paint into the
    * footer behind its transparent body. Clipping at the panel box keeps the
    * bleed invisible; the footer, as the later sibling, stays interactive.
    */
   overflow: hidden;
-}
-
-.gc-pending__count {
-  align-self: center;
-  color: var(--gc-muted);
-  font-size: var(--gc-fs-xs);
-  font-variant-numeric: tabular-nums;
 }
 
 /*
@@ -3304,7 +3434,7 @@ h3 {
   position: relative;
   display: flex;
   flex-direction: column;
-  flex: 0 0 auto;
+  flex: 0 1 auto;
   max-height: 50%;
   margin: calc(-1 * var(--gc-space-2));
   border-top: 1px solid var(--gc-border);
@@ -3404,31 +3534,21 @@ h3 {
   color: var(--gc-muted);
 }
 
-/*
- * Select all, clear, and the count live in the list bar, not the toolbar: they
- * act on file paths only, so they appear only in the Changes sub-tab. Wrapping
- * keeps the count reachable at the panel's narrow 300 px width.
- */
-.gc-listbar__selection {
-  display: flex;
-  align-items: center;
-  gap: var(--gc-space-2);
-  flex-wrap: wrap;
-}
-
 /* ------------------------------------------------------- get started */
 
 /*
  * Onboarding card (P16, frames 103 and 104). It sits inside `.gc-pending`, a
- * flex column with `overflow: hidden`, so it takes its natural height and caps
- * itself: a long step list scrolls rather than pushing the file list off screen.
+ * flex column with `overflow: hidden`, so it caps itself against the viewport
+ * and yields height to the list before the list does: a long step list scrolls
+ * rather than pushing the file list off screen.
  *
  * The inline margin is what puts the card on the same 12 px gutter as the
  * sub-tabs above it: `.gc-pending` already insets 4 px, and the segmented
  * control adds 8 px of its own (frame 103 draws both at x=12).
  */
 .gc-started {
-  flex: 0 0 auto;
+  flex: 0 1 auto;
+  min-height: 0;
   display: flex;
   flex-direction: column;
   gap: var(--gc-space-3);
@@ -3437,7 +3557,7 @@ h3 {
   border: 1px solid var(--gc-border-subtle);
   border-radius: var(--gc-radius-lg);
   background: var(--gc-bg-surface);
-  max-height: 45%;
+  max-height: 45vh;
   overflow-y: auto;
   box-sizing: border-box;
 }
@@ -3558,7 +3678,7 @@ h3 {
   min-height: 0;
   gap: var(--gc-space-2);
   padding: var(--gc-space-3);
-  overflow-y: auto;
+  overflow: hidden;
   box-sizing: border-box;
 }
 
@@ -3637,12 +3757,25 @@ h3 {
   color: var(--gc-text-secondary);
 }
 
-.gc-help__body {
+/* The row's text stack, beside the icon. */
+.gc-help__row-body {
   display: flex;
   flex-direction: column;
   gap: var(--gc-space-1);
   flex: 1 1 auto;
   min-width: 0;
+}
+
+/* The one scroller between the tabs and the footer: the section is the clip, so
+ * the footer is a flex sibling the column pins to the bottom edge. A sticky
+ * footer could not work here, since the section itself used to scroll. */
+.gc-help__body {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
+  gap: var(--gc-space-2);
+  overflow-y: auto;
 }
 
 .gc-help__desc {
@@ -4555,12 +4688,13 @@ h3 {
 
 .gc-inspector__identity .gc-avatar {
   /*
-   * Optically center avatar with the first line of the subject title.
-   * Subject is --gc-fs-xl (1.2em) with line-height 1.25 -> first line height ~19.5px.
-   * Avatar is 28px. Slight negative top margin pulls avatar up ~2px so its
-   * center line aligns with the first line cap-height, stable across 1, 2, or 3 lines.
+   * Top-align the face with the first title line, matching the row's own
+   * `align-items`, and keep it there when the subject wraps. A negative top
+   * offset lifted the circle 2 px above `.gc-explorer__aside-content`, whose
+   * `overflow: auto` then clipped the top of the face. `align-self` cannot
+   * leave the box.
    */
-  margin-top: calc(-1 * var(--gc-space-1));
+  align-self: flex-start;
 }
 
 .gc-inspector__titles {
@@ -4612,6 +4746,41 @@ h3 {
 .gc-inspector__block:last-child {
   padding-bottom: 0;
   border-bottom: none;
+}
+
+/*
+ * Actions bar (frame 01, `9:179`): the panel's footer, one row of two primary
+ * buttons with the overflow pinned to the end. The rule above it is the frame's
+ * separator from the file list, so the last block keeps its own bottom border
+ * removed only while the bar is absent.
+ */
+.gc-inspector__actions {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--gc-space-2);
+  padding: var(--gc-space-2) 0;
+  border-top: 1px solid var(--gc-border);
+}
+
+/* The overflow sits at the far end, away from the two commit actions. */
+.gc-inspector__more {
+  margin-left: auto;
+}
+
+/*
+ * The last block keeps its own rule out of the way of the bar: the bar is the
+ * aside's footer now, so a second line 12 px above it would read as a double rule.
+ */
+.gc-explorer__aside-content .gc-inspector__block--files:last-child {
+  border-bottom: none;
+}
+
+/* Both primary buttons share the row and never squeeze the glyph off the label. */
+.gc-inspector__actions .gc-button {
+  gap: var(--gc-space-1);
+  white-space: nowrap;
 }
 
 /*
@@ -4761,7 +4930,6 @@ h3 {
   font-variant-numeric: tabular-nums;
 }
 
-.gc-inspector__parents,
 .gc-inspector__refs {
   display: flex;
   flex-wrap: wrap;
@@ -4827,6 +4995,35 @@ h3 {
   font-size: var(--gc-fs-2xs);
 }
 
+/* State pill: the word stays the carrier, the tone is decoration. */
+.gc-inspector__pr-state {
+  display: inline-flex;
+  align-items: center;
+  padding: 0 var(--gc-space-2);
+  border-radius: var(--gc-radius-pill);
+  background: var(--gc-surface-3);
+  color: var(--gc-text-secondary);
+  font-size: var(--gc-fs-2xs);
+  font-weight: var(--gc-weight-strong);
+}
+
+.gc-inspector__pr-state--merged { background: var(--gc-state-merged-subtle); color: var(--gc-state-merged); }
+.gc-inspector__pr-state--open { background: var(--gc-status-added-subtle); color: var(--gc-status-added); }
+.gc-inspector__pr-state--closed { background: var(--gc-surface-3); color: var(--gc-text-muted); }
+.gc-inspector__pr-state--draft { background: var(--gc-surface-3); color: var(--gc-text-muted); }
+
+/* Compact parent picker: the label lives on the control, not above it. */
+.gc-inspector__parent-select {
+  min-height: var(--gc-hit);
+  padding: 0 var(--gc-space-2);
+  border: 1px solid var(--gc-border);
+  border-radius: var(--gc-radius);
+  background: var(--vscode-input-background);
+  color: var(--vscode-input-foreground);
+  font: inherit;
+  font-size: var(--gc-fs-xs);
+}
+
 .gc-inspector__pr-none,
 .gc-inspector__pr-none-hint {
   margin: 0;
@@ -4841,21 +5038,41 @@ h3 {
   color: var(--gc-text-muted);
 }
 
+/*
+ * The panel scrolls, the message does not: the frame reads the description as
+ * part of one column, and a nested scroller hides the changed files behind a
+ * second scrollbar.
+ */
 .gc-inspector__body {
-  max-height: 14em;
-  overflow: auto;
   margin: 0;
-  padding: var(--gc-space-3);
-  border-radius: var(--gc-radius);
-  background: var(--vscode-textCodeBlock-background, var(--vscode-editor-background));
   white-space: pre-wrap;
 }
 
-.gc-inspector__totals {
-  margin: 0;
-  color: var(--gc-muted);
-  font-size: var(--gc-fs-xs);
+/* Heading, file count, and churn share one baseline, as in the frame. */
+.gc-inspector__heading-row {
+  display: flex;
+  align-items: baseline;
+  gap: var(--gc-space-2);
+  flex-wrap: wrap;
+}
+
+.gc-inspector__count {
+  color: var(--gc-text-muted);
+  font-size: var(--gc-fs-2xs);
   font-variant-numeric: tabular-nums;
+}
+
+/* Parent hash chip in the hash row. Same box as a button, muted like metadata. */
+.gc-inspector__parent {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--gc-space-1);
+  padding: 0 var(--gc-space-2);
+  min-height: var(--gc-hit);
+  border: 1px solid var(--gc-border-subtle);
+  border-radius: var(--gc-radius);
+  color: var(--gc-text-muted);
+  font-size: var(--gc-fs-2xs);
 }
 
 .gc-filelist {
@@ -4895,6 +5112,9 @@ h3 {
 
 .gc-filelist__name {
   flex: 0 1 auto;
+  /* The name yields before the directory does: `dir` is the longer fact and the
+     one the frame truncates, so a 320 px panel still shows the churn column. */
+  min-width: 3em;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -5261,6 +5481,7 @@ h3 {
   flex-wrap: wrap;
   gap: var(--gc-space-2);
   flex: 0 0 auto;
+  margin-top: auto;
   padding-top: var(--gc-space-2);
   border-top: 1px solid var(--gc-border-subtle);
   color: var(--gc-text-muted);
@@ -5941,9 +6162,7 @@ h3 {
 }
 
 .gc-actions__log-body {
-  max-height: 240px;
   margin: 0;
-  overflow: auto;
   color: var(--gc-text-primary);
   font-family: var(--vscode-editor-font-family, monospace);
   font-size: var(--gc-fs-2xs);
@@ -5988,6 +6207,7 @@ h3 {
   flex-wrap: wrap;
   gap: var(--gc-space-2);
   flex: 0 0 auto;
+  margin-top: auto;
   padding-top: var(--gc-space-2);
   border-top: 1px solid var(--gc-border-subtle);
   color: var(--gc-text-muted);
@@ -6061,16 +6281,14 @@ h3 {
     border: 2px solid ButtonBorder;
   }
 
-  /* Inspector copy pair and quiet segmented pair â€” the single container border
-   * and internal divider must remain visible when colours are discarded,
-   * otherwise the "one control" reading is lost. */
-  .gc-inspector__copy-group,
-  .gc-segmented--quiet {
+  /* Inspector copy pair - the single container border and internal divider must
+   * remain visible when colours are discarded, otherwise the "one control"
+   * reading is lost. */
+  .gc-inspector__copy-group {
     border: 1px solid ButtonBorder;
   }
 
-  .gc-inspector__copy-group .gc-icon-button + .gc-icon-button,
-  .gc-segmented--quiet .gc-button + .gc-button {
+  .gc-inspector__copy-group .gc-icon-button + .gc-icon-button {
     border-left: 1px solid ButtonBorder;
   }
 
@@ -6187,7 +6405,7 @@ h3 {
     bottom: var(--gc-space-3);
   }
 
-  .gc-minimap-wrap {
+  .gc-canvas__bottom-row {
     bottom: var(--gc-space-3);
   }
 
@@ -6546,6 +6764,7 @@ h3 {
   flex-wrap: wrap;
   gap: var(--gc-space-2);
   flex: 0 0 auto;
+  margin-top: auto;
   padding-top: var(--gc-space-2);
   border-top: 1px solid var(--gc-border-subtle);
   color: var(--gc-text-muted);
@@ -6733,6 +6952,7 @@ h3 {
   align-items: center;
   gap: var(--gc-space-3);
   flex: 0 0 auto;
+  margin-top: auto;
   padding-top: var(--gc-space-2);
   border-top: 1px solid var(--gc-border);
 }
@@ -6962,18 +7182,29 @@ h3 {
   box-shadow: var(--gc-shadow-lg);
 }
 
+/*
+ * Frame 07: the header and the footer stay put and only the form body scrolls.
+ * Scrolling the whole dialog would carry Cancel and the submit button off screen
+ * exactly when the body is long, which is when a user needs them.
+ */
 .gc-create-pr--modal {
   width: min(35em, 100%);
   max-height: 90vh;
-  overflow: auto;
+  overflow: hidden;
   animation: gc-modal-in var(--gc-dur-med) var(--gc-ease-spring);
 }
 
 .gc-create-pr--sidebar {
   flex: 1 1 auto;
   min-height: 0;
-  overflow: auto;
+  overflow: hidden;
   box-shadow: none;
+}
+
+.gc-create-pr__body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
 }
 
 .gc-create-pr__head {
@@ -7126,6 +7357,23 @@ h3 {
   min-width: 0;
 }
 
+/*
+ * Frame 07 (`72:62`): Reviewers, Labels, and Linked issue in one row. Three
+ * columns on a wide panel, stacked once the dialog is the width of the sidebar,
+ * because a 100 px column cannot hold a chip and a remove button.
+ */
+.gc-create-pr__meta {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(11em, 1fr));
+  gap: var(--gc-space-3);
+  align-items: start;
+}
+
+/* The issue field stays narrow: an issue number is a few digits. */
+.gc-create-pr__issue {
+  min-width: 0;
+}
+
 .gc-create-pr__add .gc-field__label {
   justify-content: flex-start;
 }
@@ -7232,13 +7480,24 @@ h3 {
 
 /* ------------------------------------------------------------------ footer */
 
+/*
+ * The footer is the last child of the scrolling body, so it sticks to the bottom
+ * of the scrollport: frame 07 keeps Cancel, Create draft, and the submit visible
+ * while the fields above scroll. The fill is required, or the last field shows
+ * through the band.
+ */
 .gc-create-pr__footer {
+  position: sticky;
+  bottom: calc(-1 * var(--gc-space-5));
+  z-index: 1;
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: var(--gc-space-3);
-  padding-top: var(--gc-space-4);
+  margin-top: auto;
+  padding: var(--gc-space-4) 0 var(--gc-space-5);
   border-top: 1px solid var(--gc-border-subtle);
+  background: var(--gc-bg-surface);
 }
 
 .gc-create-pr__footer-end {

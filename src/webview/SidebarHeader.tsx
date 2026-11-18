@@ -1,11 +1,27 @@
 /**
- * Sidebar header (Pending Changes): title row, branch row with sync chip, upstream row.
+ * Sidebar header: three rows on Changes (frame 20), one compact row elsewhere
+ * (frames 05, 08, 09, 11).
  *
- * Sidebar only. The Explorer keeps `ContextBar`. Owns no state: it reads the repo
- * stores and renders `headerModel`. Buttons land with their features (R2), so the
- * title row is a flex row that later phases append to.
+ * Sidebar only. The Explorer keeps `ContextBar`. Owns no state beyond the More
+ * menu: it reads the repo stores and renders `headerModel`. The compact row is a
+ * class on the same element, not a second component, so the route decides the
+ * shape and the branch, sync, and upstream rows simply unmount.
+ *
+ * The quick-create button belongs to the destination: Pull requests and Branches
+ * raise a focus target their view already consumes, while Issues and Actions open
+ * the GitHub page until P26 and P27 ship a form in the extension. The More menu
+ * reuses the Explorer's `.gc-menu` keyboard pattern, copied rather than imported
+ * so the two roots stay independent.
  */
-import type { JSX } from 'react';
+import {
+  useEffect,
+  useId,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type JSX,
+  type KeyboardEvent,
+} from 'react';
 import { BranchSelector } from './BranchLegend';
 import { bridge } from './bridge';
 import { formatCount, headerModel, sanitizeGitText, type SyncBadge } from './format';
@@ -30,6 +46,13 @@ const SYNC_ICON: Record<SyncBadge, IconName> = {
   diverged: 'merge',
 };
 
+/** One More menu row: a label and the store call it runs. Rows never reach git. */
+interface HeaderMenuRow {
+  id: string;
+  label: string;
+  run: () => void;
+}
+
 export function SidebarHeader(): JSX.Element | null {
   const strings = useT();
   const language = useSettingsStore((s) => s.language);
@@ -42,17 +65,71 @@ export function SidebarHeader(): JSX.Element | null {
   const busy = useChangesStore((s) => s.busy);
   const pushToast = useOperationStore((s) => s.pushToast);
   const loadPullRequests = useGitHubStore((s) => s.loadPullRequests);
+  const linkage = useGitHubStore((s) => s.linkage);
+  const auth = useGitHubStore((s) => s.auth);
   const route = useRouteStore((s) => s.route);
+
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [active, setActive] = useState(0);
+  const [placed, setPlaced] = useState({ x: 0, y: 0 });
+  const moreRef = useRef<HTMLButtonElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+  const menuId = useId();
+
+  // Anchor under the trigger, clamped to the viewport like the Explorer menu, and
+  // put focus on the first row so the keyboard path starts where the eye is.
+  useLayoutEffect(() => {
+    if (!menuOpen) return;
+    const trigger = moreRef.current;
+    const menu = menuRef.current;
+    if (trigger === null || menu === null) return;
+    const anchor = trigger.getBoundingClientRect();
+    const box = menu.getBoundingClientRect();
+    const margin = 8;
+    const x = Math.max(
+      margin,
+      Math.min(anchor.right - box.width, window.innerWidth - box.width - margin),
+    );
+    const y = Math.max(
+      margin,
+      Math.min(anchor.bottom + 4, window.innerHeight - box.height - margin),
+    );
+    setPlaced({ x, y });
+    setActive(0);
+    menu.querySelector<HTMLElement>('[role="menuitem"]')?.focus();
+  }, [menuOpen]);
+
+  // Any outside click closes; pointerdown beats the trigger's own click.
+  useEffect(() => {
+    if (!menuOpen) return;
+    const onPointerDown = (event: PointerEvent): void => {
+      const target = event.target as Node;
+      if (menuRef.current?.contains(target) === true) return;
+      if (moreRef.current?.contains(target) === true) return;
+      setMenuOpen(false);
+    };
+    document.addEventListener('pointerdown', onPointerDown, true);
+    return () => document.removeEventListener('pointerdown', onPointerDown, true);
+  }, [menuOpen]);
 
   const model = headerModel(status, language);
   if (status === null || model === null) return null;
   const shell = strings.shell;
+  const compact = route.id !== 'changes';
+
+  // Frame 05, 08, 09, 11: the repository slug sits beside the name, and a remote
+  // the parser could not read leaves it out rather than drawing a bare slash.
+  const slug =
+    linkage?.owner != null && linkage?.repo != null
+      ? `${linkage.owner}/${linkage.repo}`
+      : null;
+  const webUrl = linkage?.webUrl ?? null;
 
   /**
-   * The header reload is the only Reload the user has (the "..." menu is still
-   * deferred), so it covers whichever list is on screen. On `prs` it asks the
-   * host to revalidate with `If-None-Match`, which costs one conditional request
-   * instead of a full payload and does not consume primary quota on a 304.
+   * The header reload is the only Reload the user has, so it covers whichever
+   * list is on screen. On `prs` it asks the host to revalidate with
+   * `If-None-Match`, which costs one conditional request instead of a full
+   * payload and does not consume primary quota on a 304.
    */
   const refresh = (): void => {
     void load();
@@ -85,6 +162,97 @@ export function SidebarHeader(): JSX.Element | null {
     }
   };
 
+  // Same shape as the Explorer's copy handler: success is information, a refused
+  // clipboard is a warning the user can still retry by hand.
+  const copyUrl = (url: string): void => {
+    void navigator.clipboard
+      .writeText(url)
+      .then(() => pushToast({ level: 'info', message: strings.shell.menuCopied }))
+      .catch(() => pushToast({ level: 'warning', message: strings.explorer.toastCopyFailed }));
+  };
+
+  const openUrl = (url: string): void => {
+    void useGitHubStore.getState().openUrl(url);
+  };
+
+  const menuRows: HeaderMenuRow[] = [
+    { id: 'reload', label: strings.shell.menuReload, run: refresh },
+  ];
+  if (webUrl !== null) {
+    menuRows.push(
+      { id: 'open-repo', label: strings.shell.menuOpenRepo, run: () => openUrl(webUrl) },
+      { id: 'copy-url', label: strings.shell.menuCopyUrl, run: () => copyUrl(webUrl) },
+    );
+  }
+  menuRows.push(
+    auth?.connected === true
+      ? {
+          id: 'disconnect',
+          label: strings.explorerMenu.disconnectGithub,
+          run: () => void useGitHubStore.getState().disconnect(),
+        }
+      : {
+          id: 'connect',
+          label: strings.explorerMenu.connectGithub,
+          run: () => void useGitHubStore.getState().connect(),
+        },
+  );
+
+  const closeMenu = (returnFocus: boolean): void => {
+    setMenuOpen(false);
+    if (returnFocus) moreRef.current?.focus();
+  };
+
+  const menuItems = (): HTMLElement[] =>
+    Array.from(menuRef.current?.querySelectorAll<HTMLElement>('[role="menuitem"]') ?? []);
+
+  const move = (delta: number): void => {
+    const items = menuItems();
+    if (items.length === 0) return;
+    const index = items.findIndex((item) => item === document.activeElement);
+    const next = (index + delta + items.length) % items.length;
+    setActive(next);
+    items[next]?.focus();
+  };
+
+  const jump = (to: 'first' | 'last'): void => {
+    const items = menuItems();
+    const index = to === 'first' ? 0 : items.length - 1;
+    setActive(index);
+    items[index]?.focus();
+  };
+
+  const onMenuKeyDown = (event: KeyboardEvent<HTMLDivElement>): void => {
+    switch (event.key) {
+      case 'Escape':
+        event.preventDefault();
+        closeMenu(true);
+        return;
+      case 'ArrowDown':
+        event.preventDefault();
+        move(1);
+        return;
+      case 'ArrowUp':
+        event.preventDefault();
+        move(-1);
+        return;
+      case 'Home':
+        event.preventDefault();
+        jump('first');
+        return;
+      case 'End':
+        event.preventDefault();
+        jump('last');
+        return;
+      case 'Tab':
+        // A menu is not part of the tab ring: close, hand focus to the trigger,
+        // and let the browser's default move on from there.
+        closeMenu(true);
+        return;
+      default:
+    }
+  };
+
   const syncLabel: Record<SyncBadge, string> = {
     local: shell.syncLocal,
     synced: shell.syncSynced,
@@ -95,14 +263,73 @@ export function SidebarHeader(): JSX.Element | null {
 
   return (
     <header
-      className={model.detached ? 'gc-sidebar-header gc-sidebar-header--detached' : 'gc-sidebar-header'}
+      className={
+        compact
+          ? 'gc-sidebar-header gc-sidebar-header--compact'
+          : `gc-sidebar-header${model.detached ? ' gc-sidebar-header--detached' : ''}`
+      }
       aria-label={shell.headerAria}
     >
       <div className="gc-sidebar-header__row">
         <span className="gc-sidebar-header__title" title={sanitizeGitText(status.repoRoot)}>
           {sanitizeGitText(model.title)}
         </span>
+        {compact && slug !== null && <span className="gc-sidebar-header__slug">{slug}</span>}
         <div className="gc-sidebar-header__actions" role="group" aria-label={shell.titleRowAria}>
+          {/*
+            One quick-create control per destination. Pull requests and Branches
+            raise a focus target their view already honors; Issues and Actions
+            open the GitHub page, because no in-extension form exists yet (P26,
+            P27). Each hides when the action cannot be performed.
+          */}
+          {route.id === 'prs' && slug !== null && (
+            <button
+              type="button"
+              className="gc-icon-button"
+              aria-label={strings.shell.addPr}
+              title={strings.shell.addPr}
+              onClick={() =>
+                useRouteStore.getState().navigateWithFocus({ id: 'prs' }, 'create-pr')
+              }
+            >
+              <Icon name="pr" />
+            </button>
+          )}
+          {route.id === 'issues' && slug !== null && (
+            <button
+              type="button"
+              className="gc-icon-button"
+              aria-label={strings.shell.addIssue}
+              title={strings.shell.addIssue}
+              onClick={() => openUrl(`https://github.com/${slug}/issues/new`)}
+            >
+              <Icon name="issue" />
+            </button>
+          )}
+          {route.id === 'actions' && slug !== null && (
+            <button
+              type="button"
+              className="gc-icon-button"
+              aria-label={strings.shell.addWorkflow}
+              title={strings.shell.addWorkflow}
+              onClick={() => openUrl(`https://github.com/${slug}/actions`)}
+            >
+              <Icon name="play" />
+            </button>
+          )}
+          {route.id === 'branches' && (
+            <button
+              type="button"
+              className="gc-icon-button"
+              aria-label={strings.shell.addBranch}
+              title={strings.shell.addBranch}
+              onClick={() =>
+                useRouteStore.getState().navigateWithFocus({ id: 'branches', sub: 'local' }, 'new-branch')
+              }
+            >
+              <Icon name="branch-add" />
+            </button>
+          )}
           <button
             type="button"
             className="gc-icon-button"
@@ -113,6 +340,17 @@ export function SidebarHeader(): JSX.Element | null {
           >
             <Icon name="refresh" />
           </button>
+          {!compact && (
+            <button
+              type="button"
+              className="gc-icon-button"
+              aria-label={strings.pending.openGraphAria}
+              title={strings.pending.openGraphAria}
+              onClick={() => void openExplorer()}
+            >
+              <Icon name="graph" />
+            </button>
+          )}
           <button
             type="button"
             className="gc-icon-button"
@@ -133,52 +371,90 @@ export function SidebarHeader(): JSX.Element | null {
             <Icon name="info" />
           </button>
           <button
+            ref={moreRef}
             type="button"
             className="gc-icon-button"
-            aria-label={strings.pending.openGraphAria}
-            title={strings.pending.openGraphAria}
-            onClick={() => void openExplorer()}
+            aria-label={strings.shell.moreAria}
+            title={strings.shell.moreTitle}
+            aria-haspopup="menu"
+            aria-expanded={menuOpen}
+            aria-controls={menuId}
+            onClick={() => setMenuOpen(!menuOpen)}
           >
-            <Icon name="graph" />
+            <Icon name="ellipsis" />
           </button>
         </div>
       </div>
 
-      <div className="gc-sidebar-header__row gc-sidebar-header__branch">
-        <BranchSelector
-          currentBranch={status.branch}
-          refs={graph?.refs ?? []}
-          busy={busy || status.operation !== 'idle'}
-        />
-        <span
-          className={`gc-chip gc-sidebar-header__sync gc-sidebar-header__sync--${model.syncBadge}`}
-          title={model.syncBadge === 'local' ? shell.syncLocalTitle : model.upstreamLine}
-        >
-          <Icon name={SYNC_ICON[model.syncBadge]} />
-          <span>{syncLabel[model.syncBadge]}</span>
-        </span>
-      </div>
+      {!compact && (
+        <>
+          <div className="gc-sidebar-header__row gc-sidebar-header__branch">
+            <BranchSelector
+              currentBranch={status.branch}
+              refs={graph?.refs ?? []}
+              busy={busy || status.operation !== 'idle'}
+            />
+            <span
+              className={`gc-chip gc-sidebar-header__sync gc-sidebar-header__sync--${model.syncBadge}`}
+              title={model.syncBadge === 'local' ? shell.syncLocalTitle : model.upstreamLine}
+            >
+              <Icon name={SYNC_ICON[model.syncBadge]} />
+              <span>{syncLabel[model.syncBadge]}</span>
+            </span>
+          </div>
 
-      {/*
-        The visible text is short; the full sentence and the "branch" wording stay in
-        the visually hidden fallback so a screen reader hears the counts and the kind
-        of name, as `ContextBar` did.
-      */}
-      <p className="gc-sidebar-header__upstream" title={model.upstreamLine}>
-        <span className="gc-sidebar-header__upstream-visual" aria-hidden="true">
-          <span className="gc-sidebar-header__upstream-text">{model.upstream ?? shell.notPublished}</span>
-          {model.hash !== null && (
-            <>
-              <span className="gc-sidebar-header__dot">·</span>
-              <code className="gc-sidebar-header__hash">{model.hash}</code>
-            </>
-          )}
-        </span>
-        <span className="gc-visually-hidden">
-          {strings.ui.branchLabel(model.branchLabel)}. {model.upstreamLine}
-          {model.hash !== null && ` ${strings.ui.headAtCommit(model.hash)}`}
-        </span>
-      </p>
+          {/*
+            The visible text is short; the full sentence and the "branch" wording stay in
+            the visually hidden fallback so a screen reader hears the counts and the kind
+            of name, as `ContextBar` did.
+          */}
+          <p className="gc-sidebar-header__upstream" title={model.upstreamLine}>
+            <span className="gc-sidebar-header__upstream-visual" aria-hidden="true">
+              <span className="gc-sidebar-header__upstream-text">{model.upstream ?? shell.notPublished}</span>
+              {model.hash !== null && (
+                <>
+                  <span className="gc-sidebar-header__dot">·</span>
+                  <code className="gc-sidebar-header__hash">{model.hash}</code>
+                </>
+              )}
+            </span>
+            <span className="gc-visually-hidden">
+              {strings.ui.branchLabel(model.branchLabel)}. {model.upstreamLine}
+              {model.hash !== null && ` ${strings.ui.headAtCommit(model.hash)}`}
+            </span>
+          </p>
+        </>
+      )}
+
+      {menuOpen && (
+        <div
+          id={menuId}
+          ref={menuRef}
+          className="gc-menu"
+          role="menu"
+          aria-orientation="vertical"
+          aria-label={strings.shell.moreTitle}
+          style={{ left: `${placed.x}px`, top: `${placed.y}px` }}
+          onKeyDown={onMenuKeyDown}
+        >
+          {menuRows.map((row, index) => (
+            <button
+              key={row.id}
+              type="button"
+              role="menuitem"
+              className="gc-menu__item"
+              tabIndex={index === active ? 0 : -1}
+              onFocus={() => setActive(index)}
+              onClick={() => {
+                row.run();
+                closeMenu(true);
+              }}
+            >
+              <span className="gc-menu__label">{row.label}</span>
+            </button>
+          ))}
+        </div>
+      )}
     </header>
   );
 }

@@ -125,6 +125,16 @@ export function BranchesView(): JSX.Element {
     void load();
   }, [route.id, load]);
 
+  // The compact header's New branch button raises this target instead of opening
+  // the prompt itself. The target is taken either way: one left pending would be
+  // claimed by an unrelated view later.
+  const pendingFocus = useRouteStore((s) => s.pendingFocus);
+  useEffect(() => {
+    if (pendingFocus !== 'new-branch') return;
+    useRouteStore.getState().takeFocus();
+    setCreateOpen(true);
+  }, [pendingFocus]);
+
   const currentBranch = status?.branch ?? null;
 
   const locals = useMemo(() => refs.filter((ref) => ref.kind === 'local'), [refs]);

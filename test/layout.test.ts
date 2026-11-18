@@ -353,7 +353,7 @@ test('computeStaggerMap assigns alternating placement to same-lane x-neighbours'
     hash,
     shortHash: hash.slice(0, 7),
     x,
-    y: lane * 88,
+    y: lane * LANE_HEIGHT,
     lane,
     index: 0,
     isHead: false,
@@ -506,110 +506,30 @@ test('ref with other/stash kind does not create branch ribbon attribution', () =
   assert.equal(res.nodes[1]!.branchName, null);
 });
 
-test('branch ribbon geometry follows first-parent continuity across lane transitions', () => {
-  // Scenario: commit A on lane 1 has first parent B on lane 0 under same branch 'feature'.
-  // This occurs when a branch transitions between lanes.
-  const { computeBranchRibbons, RIBBON_HALF_HEIGHT } = require('../src/webview/GraphCanvas');
-
-  const nodes: LayoutNode[] = [
-    {
-      hash: B,
-      x: 100,
-      y: 0,
-      lane: 0,
-      index: 0,
-      isHead: false,
-      isMerge: false,
-      local: false,
-      branchName: 'feature',
-      branchColor: '#00ffff',
-    },
-    {
-      hash: A,
-      x: 200,
-      y: 88,
-      lane: 1,
-      index: 1,
-      isHead: true,
-      isMerge: false,
-      local: false,
-      branchName: 'feature',
-      branchColor: '#00ffff',
-    },
-  ];
-
-  const edges = [
-    { from: A, to: B, fromLane: 1, toLane: 0, kind: 'direct' as const },
-  ];
-
-  const band = { left: 0, right: 1000 };
-  const ribbons = computeBranchRibbons(nodes, edges, band, 88, 40);
-
-  // Assert link segment exists between A and B
-  const linkSegment = ribbons.find((r: any) => r.key.includes('link'));
-  assert.ok(linkSegment, 'Link segment between nodes must exist');
-  assert.equal(linkSegment.startX, 100);
-  assert.equal(linkSegment.endX, 200);
-
-  // Assert link geometry uses cubic bezier transition curve across lane 0 (y=84) and lane 1 (y=172)
-  // Lane 0 centre = 40 + 0*88 + 44 = 84. y - RIBBON_HALF_HEIGHT, y + RIBBON_HALF_HEIGHT
-  // Lane 1 centre = 40 + 1*88 + 44 = 172. y - RIBBON_HALF_HEIGHT, y + RIBBON_HALF_HEIGHT
-  const y0 = 84;
-  const y1 = 172;
-  const rh = RIBBON_HALF_HEIGHT ?? 4;
-  assert.ok(linkSegment.topD.includes(`C150 ${y0 - rh} 150 ${y1 - rh} 200 ${y1 - rh}`), 'Top curve must interpolate lane transition smoothly');
-  assert.ok(linkSegment.bottomD.includes(`C150 ${y0 + rh} 150 ${y1 + rh} 200 ${y1 + rh}`), 'Bottom curve must interpolate lane transition smoothly');
-
-  // Verify tip and root end caps exist
-  const tipSegment = ribbons.find((r: any) => r.key.includes(`tip-${A}`));
-  const rootSegment = ribbons.find((r: any) => r.key.includes(`root-${B}`));
-  assert.ok(tipSegment, 'Tip end cap on commit A must exist');
-  assert.ok(rootSegment, 'Root end cap on commit B must exist');
-});
-
-test('branch ribbon correctly handles merge topology without bleeding onto merged branch', () => {
-  const { computeBranchRibbons } = require('../src/webview/GraphCanvas');
-  const res = layoutGraph(forked, { laneHeight: 88, columnWidth: 100, gutterX: 0 });
-  const band = { left: 0, right: 1000 };
-  const ribbons = computeBranchRibbons(res.nodes, res.edges, band, 88, 40);
-
-  // Main branch: A (merge, lane 0) -> B (lane 0) -> D (lane 0)
-  // Feature branch: C (lane 1)
-  // A has merge edge to C (edge.kind === 'merge'), which should NOT form a first-parent ribbon link between main and feature
-  const mainFeatureLink = ribbons.find((r: any) => r.key.includes(`${A}-${C}`) || r.key.includes(`${C}-${A}`));
-  assert.equal(mainFeatureLink, undefined, 'Merge edge must not form ribbon connection between distinct branches');
-
-  // Main has direct chain A -> B -> D
-  const linkAB = ribbons.find((r: any) => r.key.includes(`${B}-${A}`) || r.key.includes(`${A}-${B}`));
-  const linkBD = ribbons.find((r: any) => r.key.includes(`${D}-${B}`) || r.key.includes(`${B}-${D}`));
-  assert.ok(linkAB, 'Direct first-parent link A-B on main must exist');
-  assert.ok(linkBD, 'Direct first-parent link B-D on main must exist');
-
-  // Feature node C is single node on feature branch
-  const featureRibbon = ribbons.filter((r: any) => r.key.startsWith('feature'));
-  assert.ok(featureRibbon.length > 0, 'Feature branch ribbon must exist');
-  assert.ok(featureRibbon.every((r: any) => !r.key.includes('link')), 'Feature branch with single commit has no intra-branch links');
-});
-
 test('edgePath produces deterministic SVG path strings without NaN or undefined', () => {
+  // Expected Y values are derived from the lane pitch so a pitch change does not
+  // restate the constant here as a magic number.
+  const ruler = 40;
+  const lane0 = ruler + LANE_HEIGHT / 2;
+  const lane1 = ruler + LANE_HEIGHT + LANE_HEIGHT / 2;
   // Straight lane (fromLane === toLane)
   const straightEdge = { from: A, to: B, fromLane: 0, toLane: 0, kind: 'direct' as const };
-  const straightPath = edgePath(straightEdge, 100, 200, 88, 40);
-  assert.equal(straightPath, 'M100 84L200 84');
+  const straightPath = edgePath(straightEdge, 100, 200, LANE_HEIGHT, ruler);
+  assert.equal(straightPath, `M100 ${lane0}L200 ${lane0}`);
   assert.equal(straightPath.includes('NaN'), false);
   assert.equal(straightPath.includes('undefined'), false);
 
   // Lane transition (fromLane !== toLane)
   const transitionEdge = { from: A, to: B, fromLane: 0, toLane: 1, kind: 'direct' as const };
-  const transitionPath = edgePath(transitionEdge, 100, 200, 88, 40);
-  assert.equal(transitionPath, 'M100 84C150 84 150 172 200 172');
+  const transitionPath = edgePath(transitionEdge, 100, 200, LANE_HEIGHT, ruler);
+  assert.equal(transitionPath, `M100 ${lane0}C150 ${lane0} 150 ${lane1} 200 ${lane1}`);
   assert.equal(transitionPath.includes('NaN'), false);
   assert.equal(transitionPath.includes('undefined'), false);
 
   // Degenerate same-point (fromX === toX)
   const degenerateEdge = { from: A, to: B, fromLane: 1, toLane: 1, kind: 'direct' as const };
-  const degeneratePath = edgePath(degenerateEdge, 150, 150, 88, 40);
-  assert.equal(degeneratePath, 'M150 172L150 172');
+  const degeneratePath = edgePath(degenerateEdge, 150, 150, LANE_HEIGHT, ruler);
+  assert.equal(degeneratePath, `M150 ${lane1}L150 ${lane1}`);
   assert.equal(degeneratePath.includes('NaN'), false);
   assert.equal(degeneratePath.includes('undefined'), false);
 });

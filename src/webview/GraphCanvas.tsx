@@ -34,25 +34,25 @@ import {
   type MouseEvent as ReactMouseEvent,
   type PointerEvent as ReactPointerEvent,
 } from 'react';
-import { BranchLegend, BranchSelector } from './BranchLegend';
 import { GraphMinimap } from './GraphMinimap';
+import { LaneGutterView } from './LaneGutterView';
+import { edgeDashed, laneTips, mergedLanes } from './laneGutter';
 import { NodeContextMenu, type MenuAnchor, type MenuItem } from './NodeContextMenu';
 import { EmptyState, GraphSkeleton, Icon, InfoBanner, Spinner, type IconName } from './ui';
-import { loadState, saveState } from './bridge';
 import {
   authorInitials,
+  compactAge,
   formatCount,
   isSafeImageSrc,
-  relativeTime,
   rowLabel,
   sanitizeGitText,
   shortHash,
   truncate,
 } from './format';
 import { useT } from './useT';
+import { BranchSelector } from './BranchLegend';
 import { useGitHubStore, useRepoStore, useSettingsStore } from './store';
 import { chipsFor, computeStaggerMap, lanesForFilter, matchesSearch } from './graphQuery';
-import { computeBranchRibbons, edgePath, RIBBON_HALF_HEIGHT } from './ribbon';
 import {
   COLUMN_WIDTH,
   DAY_GAP,
@@ -65,6 +65,8 @@ import {
   RULER_HEIGHT,
   TEXT_MIN_ZOOM,
   clampZoom,
+  edgePath,
+  fitZoom,
   edgeIntersectsBand,
   laneY,
   columnX,
@@ -80,8 +82,10 @@ import {
 } from './viewport';
 import type { DateBucket, GraphEdge, GraphNode, RefInfo, RepoGraph, RepoStatus } from '../messages';
 export { chipsFor, computeStaggerMap, lanesForFilter, matchesSearch } from './graphQuery';
-export { computeBranchRibbons, edgePath, RIBBON_HALF_HEIGHT } from './ribbon';
-const MINIMAP_HEIGHT = 160;
+export { edgePath } from './viewport';
+/** Frame 01 (`10:178`): the minimap is 220 x 68 at the canvas left edge. */
+const MINIMAP_WIDTH = 220;
+const MINIMAP_HEIGHT = 68;
 
 /**
  * `range` is recomputed on every `scrollLeft` change, so without a pause one continuous
@@ -95,13 +99,16 @@ const AVATAR_REQUEST_DEBOUNCE_MS = 150;
  * `NODE_RADIUS + 1` (6 px) is the smallest circle that can hold a legible letter at
  * 100 % zoom; a merge node stays one pixel larger than that, exactly as before, so
  * the "merge nodes are bigger" channel the legend describes is unchanged. Lanes are
- * `LANE_HEIGHT` (88 px) apart, so nothing here brings two nodes closer than the merge
+ * one `LANE_HEIGHT` pitch apart, so nothing here brings two nodes closer than the merge
  * ring already did.
  *
  * Presentation-only, so it stays here rather than in `viewport.ts`, which owns the
  * layout maths the host and the tests agree on.
  */
 const AVATAR_RADIUS = NODE_RADIUS + 1;
+
+/** HEAD is one size up from a plain node, as the frame draws 34 px against 28 px. */
+const HEAD_RADIUS = NODE_RADIUS + 3;
 
 interface Props {
   graph: RepoGraph | null;
@@ -111,6 +118,9 @@ interface Props {
   githubUrl: string | null;
   onMenuCommand(item: MenuItem, node: GraphNode): void;
   onOpenInspector(hash: string): void;
+  /** The aside is open. The toolbar owns the toggle; `ExplorerApp` owns the state. */
+  inspectorOpen: boolean;
+  onToggleInspector(): void;
 }
 
 /**
@@ -121,6 +131,156 @@ interface Props {
  */
 export { rowLabel };
 
+/**
+ * Filter bar above the canvas (frame 01, node `9:45`).
+ *
+ * One row, never wrapping: search, a labelled Checkout group, a labelled Show
+ * group, a divider, the count with Load older, then the panel toggle.
+ * The two labels are frame words, not form labels: `gc-toolbar__label` is the
+ * quiet inline style, and each control keeps its own accessible name.
+ */
+function Toolbar({
+  search,
+  branchFilter,
+  currentBranch,
+  busy,
+  refs,
+  countId,
+  countText,
+  canLoadOlder,
+  paging,
+  inspectorOpen,
+  onSearch,
+  onBranchFilter,
+  onLoadOlder,
+  onToggleInspector,
+}: {
+  search: string;
+  branchFilter: string;
+  currentBranch: string | null;
+  busy: boolean;
+  refs: readonly RefInfo[];
+  countId: string;
+  countText: string;
+  canLoadOlder: boolean;
+  paging: boolean;
+  inspectorOpen: boolean;
+  onSearch(value: string): void;
+  onBranchFilter(value: string): void;
+  onLoadOlder(): void;
+  onToggleInspector(): void;
+}): JSX.Element {
+  const strings = useT();
+  const branches = refs.filter((r) => r.kind === 'local' || r.kind === 'remote');
+  return (
+    <div
+      className="gc-toolbar gc-toolbar--filters"
+      role="toolbar"
+      aria-label={strings.graph.toolbarAria}
+      aria-orientation="horizontal"
+    >
+      <div className="gc-toolbar__search-wrap">
+        <span className="gc-toolbar__search-input-wrap">
+          <span className="gc-toolbar__search-icon" aria-hidden="true">
+            <Icon name="search" />
+          </span>
+          <input
+            type="search"
+            className="gc-toolbar__search-input"
+            value={search}
+            maxLength={100}
+            placeholder={strings.graph.searchPlaceholder}
+            aria-label={strings.graph.searchAria}
+            aria-describedby={countId}
+            onChange={(e) => onSearch(e.target.value)}
+          />
+        </span>
+      </div>
+
+      {/*
+        One checkout control, shared with the sidebar; the unlabelled variant, so
+        the visible `Checkout` word sits beside it and the accessible name stays.
+      */}
+      <div className="gc-toolbar__group">
+        <span className="gc-toolbar__label">{strings.graph.checkoutBranchLabel}</span>
+        <BranchSelector
+          currentBranch={currentBranch}
+          refs={refs}
+          busy={busy}
+          aria-label={strings.graph.checkoutBranchAria}
+        />
+      </div>
+
+      <div className="gc-toolbar__group">
+        <span className="gc-toolbar__label">{strings.graph.showLabel}</span>
+        <div className="gc-toolbar__branch-wrap">
+          <select
+            className="gc-toolbar__branch-select"
+            aria-label={strings.graph.branchFilterAria}
+            value={branchFilter}
+            onChange={(e) => onBranchFilter(e.target.value)}
+          >
+            <option value="">{strings.graph.branchFilterAll}</option>
+            {branches.map((ref) => (
+              <option key={ref.refName} value={ref.shortName}>
+                {ref.kind === 'remote'
+                  ? strings.graph.branchFilterRemotePrefix(sanitizeGitText(ref.shortName))
+                  : sanitizeGitText(ref.shortName)}
+              </option>
+            ))}
+          </select>
+        </div>
+      </div>
+
+      <span className="gc-toolbar__divider" aria-hidden="true" />
+
+      {/* The count moved up from the paragraph above the canvas; still the live region. */}
+      <p className="gc-toolbar__count" id={countId} role="status" aria-live="polite">
+        {countText}
+      </p>
+      {canLoadOlder && (
+        <button
+          type="button"
+          className="gc-button gc-button--quiet gc-toolbar__load-older"
+          title={strings.graph.moreButtonTitle}
+          disabled={paging}
+          onClick={onLoadOlder}
+        >
+          {strings.graph.moreButton}
+        </button>
+      )}
+      {paging && <Spinner label={strings.graph.moreLoadingSpinner} />}
+
+      {(search.length > 0 || branchFilter.length > 0) && (
+        <button
+          type="button"
+          className="gc-button gc-button--quiet gc-toolbar__clear"
+          onClick={() => {
+            onSearch('');
+            onBranchFilter('');
+          }}
+        >
+          {strings.graph.resetFilter}
+        </button>
+      )}
+
+      {/* The frame draws a hairline before the toggle, with or without the switch. */}
+      <span className="gc-toolbar__divider" aria-hidden="true" />
+
+      <button
+        type="button"
+        className="gc-icon-button gc-toolbar__panel-toggle"
+        aria-label={strings.graph.panelToggleAria}
+        title={strings.graph.panelToggleTitle}
+        aria-expanded={inspectorOpen}
+        onClick={onToggleInspector}
+      >
+        <Icon name="panel-right" />
+      </button>
+    </div>
+  );
+}
+
 export function GraphCanvas({
   graph,
   status,
@@ -129,6 +289,8 @@ export function GraphCanvas({
   githubUrl,
   onMenuCommand,
   onOpenInspector,
+  inspectorOpen,
+  onToggleInspector,
 }: Props): JSX.Element {
   const strings = useT();
   const language = useSettingsStore((s) => s.language);
@@ -146,12 +308,10 @@ export function GraphCanvas({
   const loadCommitAuthors = useGitHubStore((s) => s.loadCommitAuthors);
 
   const scrollRef = useRef<HTMLDivElement>(null);
-  const legendButtonRef = useRef<HTMLButtonElement>(null);
-  const legendPanelRef = useRef<HTMLDivElement>(null);
   const [scrollLeft, setScrollLeft] = useState(0);
+  /** The gutter is fixed, so it needs the vertical offset the scroller owns. */
+  const [scrollTop, setScrollTop] = useState(0);
   const [viewportWidthState, setViewportWidthState] = useState(800);
-  const [showLegend, setShowLegend] = useState(false);
-  const [showRibbons, setShowRibbons] = useState(() => loadState().showRibbons);
   const [menu, setMenu] = useState<{ node: GraphNode; anchor: MenuAnchor } | null>(null);
   const [focusRow, setFocusRow] = useState(0);
   const [pendingFocusRow, setPendingFocusRow] = useState<number | null>(null);
@@ -209,28 +369,9 @@ export function GraphCanvas({
   const spaceHeld = useRef(false);
   const panFrom = useRef<{ x: number; y: number; left: number; top: number } | null>(null);
   const now = useMemo(() => Date.now(), [graph]);
-  // Ids for the grid's description, search result count, and legend popover.
+  // Ids for the grid's description and the search result count.
   const helpId = useId();
   const countId = useId();
-  const legendId = useId();
-
-  // Close legend popover on outside click or focus loss
-  useEffect(() => {
-    if (!showLegend) return undefined;
-    const onPointerDown = (event: PointerEvent): void => {
-      const target = event.target as Node;
-      if (
-        legendPanelRef.current !== null &&
-        !legendPanelRef.current.contains(target) &&
-        legendButtonRef.current !== null &&
-        !legendButtonRef.current.contains(target)
-      ) {
-        setShowLegend(false);
-      }
-    };
-    document.addEventListener('pointerdown', onPointerDown, true);
-    return () => document.removeEventListener('pointerdown', onPointerDown, true);
-  }, [showLegend]);
 
   // Track viewport width so horizontal column culling matches reality after resize or initial layout.
   useLayoutEffect(() => {
@@ -319,12 +460,6 @@ export function GraphCanvas({
     return maxLane + 1;
   }, [graph, rows]);
 
-  const visibleLanes = useMemo(() => {
-    if (graph === null) return [];
-    const usedLanes = new Set(rows.map((n) => n.lane));
-    return graph.lanes.filter((l) => usedLanes.has(l.index));
-  }, [graph, rows]);
-
   const maxNodeX = useMemo(() => {
     return rows.reduce((max, n) => Math.max(max, n.x), 0);
   }, [rows]);
@@ -356,16 +491,17 @@ export function GraphCanvas({
     return out;
   }, [graph, rows, band.left, band.right]);
 
-  // Compute branch ribbons per branch name following first-parent branch chains
-  const visibleRibbons = useMemo(() => {
-    if (graph === null || rows.length === 0) return [];
-    return computeBranchRibbons(rows, graph.edges, band, {
-      laneHeight: LANE_HEIGHT,
-      rulerHeight: RULER_HEIGHT,
-      capPad: COLUMN_WIDTH / 2,
-      halfHeight: RIBBON_HALF_HEIGHT,
-    });
-  }, [graph, rows, band.left, band.right]);
+  /**
+   * Lanes that have landed: merged into another tip, or carrying HEAD. An edge
+   * into one of these is solid; anything else is dashed, since the branch it
+   * points at is not in your current line yet.
+   */
+  const mergedLaneSet = useMemo(() => {
+    const merged = mergedLanes(laneTips(graph?.nodes ?? []), graph?.edges ?? []);
+    const head = graph?.nodes.find((n) => n.isHead);
+    if (head !== undefined) merged.add(head.lane);
+    return merged;
+  }, [graph]);
 
   const laneColor = useCallback(
     (lane: number): string => graph?.lanes[lane]?.color ?? 'currentColor',
@@ -651,20 +787,19 @@ export function GraphCanvas({
         busy={status !== null && status.operation !== 'idle'}
         refs={graph?.refs ?? []}
         countId={countId}
+        countText={
+          search.length === 0 && branchFilter.length === 0
+            ? strings.graph.countAll(formatCount(rows.length, language))
+            : strings.graph.countMatched(formatCount(matchCount, language), formatCount(rows.length, language))
+        }
+        canLoadOlder={graph !== null && graph.nextCursor !== null && graph.truncated === false}
+        paging={paging}
+        inspectorOpen={inspectorOpen}
         onSearch={setSearch}
         onBranchFilter={setBranchFilter}
+        onLoadOlder={() => void loadMore()}
+        onToggleInspector={onToggleInspector}
       />
-
-      {/*
-        The only live region on this surface. It announces the filtered total after
-        the user stops typing rather than on every keystroke, because `polite`
-        queues and a per-frame update would leave a screen reader minutes behind.
-      */}
-      <p className="gc-help-text" id={countId} role="status" aria-live="polite">
-        {search.length === 0 && branchFilter.length === 0
-          ? strings.graph.countAll(formatCount(rows.length, language))
-          : strings.graph.countMatched(formatCount(matchCount, language), formatCount(rows.length, language))}
-      </p>
 
       {graph?.stale === true && (
         <InfoBanner tone="warning" glyph="watch">
@@ -701,6 +836,14 @@ export function GraphCanvas({
           scroller drifts away with the content.
         */}
         <div className="gc-graph__stage">
+          {graph !== null && (
+            <LaneGutterView
+              graph={graph}
+              zoom={zoom}
+              scrollTop={scrollTop}
+              scrollLeft={scrollLeft}
+            />
+          )}
           {/*
             One tab stop for the whole grid. Tab lands on the container, which
             immediately hands focus to the cursor row (`onFocus` below) so the row's
@@ -730,6 +873,7 @@ export function GraphCanvas({
             onScroll={(event) => {
               clearHoverImmediate();
               setScrollLeft(event.currentTarget.scrollLeft);
+              setScrollTop(event.currentTarget.scrollTop);
             }}
             onPointerLeave={() => clearHoverImmediate()}
             onKeyDown={onKeyDown}
@@ -782,19 +926,25 @@ export function GraphCanvas({
                 focusable="false"
               >
                 <g transform={`scale(${zoom})`}>
-                  {/* Alternating day backgrounds & separator lines aligned with band geometry */}
+                  {Array.from({ length: laneCount }, (_, lane) =>
+                    lane % 2 === 1 ? (
+                      <rect
+                        key={`lane-band-${lane}`}
+                        className="gc-canvas__lane-band"
+                        x={0}
+                        y={RULER_HEIGHT + lane * LANE_HEIGHT}
+                        width={totalWorldW}
+                        height={LANE_HEIGHT}
+                      />
+                    ) : null,
+                  )}
+                  {/* Odd lanes (lane % 2 === 1) take the band above. It sits under the day
+                      lines and the edges, which are painted after it. */}
+
+                  {/* Day separator lines aligned with band geometry */}
                   {dateBuckets.map((bucket) => {
                     return (
                       <g key={`day-bg-${bucket.timestamp}`}>
-                        {bucket.index % 2 === 1 && (
-                          <rect
-                            className="gc-canvas__day-band"
-                            x={bucket.bandStartX}
-                            y={RULER_HEIGHT}
-                            width={bucket.bandWidth}
-                            height={totalWorldH - RULER_HEIGHT}
-                          />
-                        )}
                         <line
                           className="gc-canvas__day-line"
                           x1={bucket.bandStartX + bucket.bandWidth}
@@ -806,46 +956,16 @@ export function GraphCanvas({
                     );
                   })}
 
-                  {/*
-                    Branch Ribbons (placed between day background and edges/nodes).
-                    Kept mounted when showRibbons is false to enable smooth CSS opacity transitions without layout pops.
-                  */}
-                  {visibleRibbons.map((ribbon) => {
-                    return (
-                      <g
-                        key={`ribbon-${ribbon.key}`}
-                        className={`gc-branch-ribbon${showRibbons ? '' : ' gc-branch-ribbon--hidden'}`}
-                      >
-                        {/* Semi-transparent track */}
-                        <path
-                          className="gc-branch-ribbon__track"
-                          d={ribbon.trackD}
-                          fill={ribbon.color}
-                        />
-                        {/* Top boundary line */}
-                        <path
-                          className="gc-branch-ribbon__border"
-                          d={ribbon.topD}
-                          fill="none"
-                          stroke={ribbon.color}
-                        />
-                        {/* Bottom boundary line */}
-                        <path
-                          className="gc-branch-ribbon__border"
-                          d={ribbon.bottomD}
-                          fill="none"
-                          stroke={ribbon.color}
-                        />
-                      </g>
-                    );
-                  })}
-
                   {/* Edges */}
                   {visibleEdges.map(({ edge, fromX, toX }) => (
                     <path
                       key={`${edge.from}->${edge.to}`}
                       className={
-                        edge.kind === 'merge' ? 'gc-edge gc-edge--merge' : 'gc-edge gc-edge--direct'
+                        edge.kind === 'merge'
+                          ? 'gc-edge gc-edge--merge'
+                          : edgeDashed(edge.toLane, mergedLaneSet)
+                            ? 'gc-edge gc-edge--direct gc-edge--dashed'
+                            : 'gc-edge gc-edge--direct'
                       }
                       d={edgePath(edge, fromX, toX, LANE_HEIGHT, RULER_HEIGHT)}
                       stroke={laneColor(edge.kind === 'merge' ? edge.toLane : edge.fromLane)}
@@ -882,6 +1002,9 @@ export function GraphCanvas({
               {rows.slice(range.start, range.end).map((node) => {
                 const chips = chipsFor(node.refNames, currentBranch);
                 if (chips.length === 0) return null;
+                // Frame 01 marks HEAD with its own tag and draws no pill on that node: the
+                // pill for the current branch sits on the branch tip, a different commit.
+                if (node.isHead) return null;
                 const branchChip = chips[0];
                 if (!branchChip) return null;
 
@@ -974,67 +1097,61 @@ export function GraphCanvas({
           </div>
 
           {/*
-            Floating Minimap: placed horizontally centred at the bottom of the canvas stage.
-            Hidden when viewport width < 220px to prevent colliding with bottom-right floating controls stack.
-            Width scales dynamically between 120px and 360px (~45% of stage width), never exceeding 60% of stage width.
+            Frame 01 bottom row: the minimap at the canvas left edge, the legend
+            pill beside it, sharing one bottom edge (minimap 220 x 68 at x 166,
+            pill x 401-565, both end at y 882). It is a sibling of the scroller, not
+            a child, so it never scrolls with the content. Its containing block is
+            `.gc-graph__stage`, which starts at the gutter's left edge, so `left` is
+            the gutter width plus the canvas padding: measured from the canvas edge,
+            never on top of the gutter. The row owns the absolute positioning, so
+            neither item can drift away from the other. Hidden below 220 px, where
+            the frame draws neither and the bottom-right controls stack would
+            collide.
           */}
           {viewportWidthState >= 220 && (
-            <div className="gc-minimap-wrap">
-              <GraphMinimap
-                nodes={rows}
-                laneCount={laneCount}
-                scrollLeft={scrollLeft}
-                viewportWidth={viewportWidthState}
-                zoom={zoom}
-                totalWorldWidth={totalWorldW}
-                width={Math.max(120, Math.min(360, Math.round(viewportWidthState * 0.45)))}
-                onScroll={(left) => {
-                  const node = scrollRef.current;
-                  if (node !== null) node.scrollLeft = left;
-                }}
-              />
+            <div className="gc-canvas__bottom-row">
+              <div className="gc-minimap-wrap">
+                <GraphMinimap
+                  nodes={rows}
+                  laneCount={laneCount}
+                  colors={graph?.lanes.map((lane) => lane.color) ?? []}
+                  scrollLeft={scrollLeft}
+                  viewportWidth={viewportWidthState}
+                  zoom={zoom}
+                  totalWorldWidth={totalWorldW}
+                  width={MINIMAP_WIDTH}
+                  height={MINIMAP_HEIGHT}
+                  onScroll={(left) => {
+                    const node = scrollRef.current;
+                    if (node !== null) node.scrollLeft = left;
+                  }}
+                />
+              </div>
+
+              {/*
+                Frame 01 (`10:184`): the legend is a pill in place, not a launcher. It
+                names the two node states where the graph is, and the hollow swatch
+                keeps them apart without relying on colour.
+              */}
+              <div className="gc-legend-pill">
+                <span className="gc-legend-pill__item">
+                  <span className="gc-legend-pill__dot gc-legend-pill__dot--pushed" aria-hidden="true" />
+                  {strings.graph.legendPushed}
+                </span>
+                <span className="gc-legend-pill__item">
+                  <span className="gc-legend-pill__dot gc-legend-pill__dot--local" aria-hidden="true" />
+                  {strings.graph.legendNotPushed}
+                </span>
+              </div>
             </div>
           )}
 
           {/*
-            Floating canvas controls, bottom right, as in the Unity reference:
-            Panduan simbol popover launcher, go to HEAD, then zoom.
+            Floating canvas controls, bottom right. Frame 01 (`10:158`) draws one
+            bar: out, a readout that doubles as the reset, in, then the two frame
+            actions behind a divider: fit the whole history, or centre HEAD.
           */}
           <div className="gc-canvas__controls" role="group" aria-label={strings.graph.controlsAria}>
-            {/*
-              Navigation card: the legend launcher and the go-to-HEAD button.
-              Grouped apart from zoom because they answer "where am I" rather
-              than "how big is it".
-            */}
-            <div className="gc-control-card">
-              <button
-                ref={legendButtonRef}
-                type="button"
-                className="gc-icon-button"
-                aria-label={strings.graph.legendButtonAria}
-                aria-expanded={showLegend}
-                aria-controls={showLegend ? legendId : undefined}
-                onClick={() => setShowLegend(!showLegend)}
-              >
-                <Icon name="info" />
-              </button>
-              <button
-                type="button"
-                className="gc-icon-button"
-                aria-label={strings.graph.jumpHeadAria}
-                disabled={headRow === undefined}
-                onClick={() => {
-                  if (headRow !== undefined) goToRow(headRow);
-                }}
-              >
-                <Icon name="home" />
-              </button>
-            </div>
-            {/*
-              Zoom card: out, a readout that doubles as the reset, in. The
-              readout stays a button so one control answers both "how far in
-              am I" and "put me back".
-            */}
             <div className="gc-control-card gc-control-card--zoom">
               <button
                 type="button"
@@ -1071,62 +1188,32 @@ export function GraphCanvas({
               >
                 <Icon name="add" />
               </button>
-            </div>
-            <label
-              className="gc-checkbox gc-checkbox--float"
-              title={strings.graph.toggleRibbonsTitle}
-            >
-              <input
-                type="checkbox"
-                className="gc-checkbox__input"
-                checked={showRibbons}
-                aria-label={strings.graph.toggleRibbonsAria}
-                onChange={(e) => {
-                  const next = e.target.checked;
-                  setShowRibbons(next);
-                  saveState({ showRibbons: next });
-                }}
-              />
-              <span className="gc-checkbox__text">
-                {strings.graph.toggleRibbonsLabel}
-              </span>
-            </label>
-
-            {/* Floating popover for BranchLegend, anchored directly above the controls stack */}
-            {showLegend && (
-              <div
-                ref={legendPanelRef}
-                className="gc-legend-popover"
-                style={{ ['--gc-canvas-width' as string]: `${viewportWidthState}px` }}
+              <span className="gc-zoom__divider" aria-hidden="true" />
+              <button
+                type="button"
+                className="gc-icon-button"
+                aria-label={strings.graph.zoomFitAria}
+                title={strings.graph.zoomFitTitle}
+                onClick={() => setZoom(fitZoom(viewportWidthState, totalWorldW))}
               >
-                <BranchLegend
-                  id={legendId}
-                  lanes={visibleLanes}
-                  onClose={() => {
-                    setShowLegend(false);
-                    legendButtonRef.current?.focus();
-                  }}
-                />
-              </div>
-            )}
+                <Icon name="maximize" />
+              </button>
+              <button
+                type="button"
+                className="gc-icon-button"
+                aria-label={strings.graph.zoomHeadAria}
+                title={strings.graph.zoomHeadTitle}
+                disabled={headRow === undefined}
+                onClick={() => {
+                  if (headRow !== undefined) goToRow(headRow);
+                }}
+              >
+                <Icon name="crosshair" />
+              </button>
+            </div>
           </div>
         </div>
       </div>
-
-      {graph !== null && graph.nextCursor !== null && graph.truncated === false && (
-        <div className="gc-graph__more">
-          <button
-            type="button"
-            className="gc-button"
-            title={strings.graph.moreButtonTitle}
-            disabled={paging}
-            onClick={() => void loadMore()}
-          >
-            {strings.graph.moreButton}
-          </button>
-          {paging && <Spinner label={strings.graph.moreLoadingSpinner} />}
-        </div>
-      )}
 
       {menu !== null && (
         <NodeContextMenu
@@ -1169,9 +1256,10 @@ function NodeMark({
   onHoverChange(hovered: boolean): void;
 }): JSX.Element {
   const [imgFailed, setImgFailed] = useState(false);
+  const strings = useT();
   const x = node.x;
-  // Merge nodes keep their extra pixel, so "bigger circle = merge" still holds.
-  const r = node.isMerge ? NODE_RADIUS + 2 : AVATAR_RADIUS;
+  // HEAD and merge both grow the circle; a merge at HEAD takes the larger of the two.
+  const r = Math.max(AVATAR_RADIUS, node.isHead ? HEAD_RADIUS : 0, node.isMerge ? NODE_RADIUS + 2 : 0);
   // 2 px inside the dot, not flush with it: the selection ring is a 2.5 px stroke centred on
   // the dot's path, so 1.25 px of it falls inside the radius and a flush avatar would cover
   // the half that says "this commit is selected".
@@ -1189,11 +1277,8 @@ function NodeMark({
   const clipId = `clip-${node.hash}`;
   // Hit circle world radius: ensures rendered pixel radius is max(NODE_RADIUS * zoom, 14) px,
   // clamped so it cannot exceed half of min(COLUMN_WIDTH, LANE_HEIGHT).
-  const maxHitRadius = Math.min(COLUMN_WIDTH, LANE_HEIGHT) / 2; // 44 world px (half lane height, targets never overlap in world space)
+  const maxHitRadius = Math.min(COLUMN_WIDTH, LANE_HEIGHT) / 2; // 48 world px (half COLUMN_WIDTH, targets never overlap in world space)
   const hitRadius = Math.min(maxHitRadius, zoom < 1 ? Math.max(r, 14 / zoom) : r);
-
-  // If node is a HEAD commit or tip branch with special trail marker
-  const isCapsule = node.isHead;
 
   return (
     <g className={classes.join(' ')}>
@@ -1216,38 +1301,27 @@ function NodeMark({
           </clipPath>
         </defs>
       )}
-      {isCapsule ? (
-        <g className="gc-node__capsule-wrap">
-          {/* Capsule outline node matching new_branch_trail.png visual reference */}
-          <rect
-            className="gc-node__capsule"
-            x={x - 20}
-            y={y - 9}
-            width={40}
-            height={18}
-            rx={9}
-            stroke={color}
-          />
-          {/* Centered home icon outline inside capsule */}
-          <g transform={`translate(${x - 7}, ${y - 7})`} stroke={color} fill="none">
-            <path
-              d="M2 6.5L7 2.5l5 4V11.5a1 1 0 0 1-1 1h-2.5V8.5H5.5v4H3a1 1 0 0 1-1-1V6.5z"
-              strokeWidth="1.3"
-              strokeLinejoin="round"
-            />
-          </g>
+      {/* Selection ring behind the dot: frame 01 `10:81` is 46 px against a 28 px node. */}
+      {selected && <circle className="gc-node__halo" cx={x} cy={y} r={r + 9} />}
+      <circle
+        className="gc-node__dot"
+        cx={x}
+        cy={y}
+        r={r}
+        stroke={color}
+        fill={node.local ? 'var(--vscode-editor-background)' : color}
+      />
+      {/*
+        HEAD tag above the circle (frame 01 `151:6`, 39 x 16). Text needs the same
+        zoom threshold as the initial, or it turns into a smudge.
+      */}
+      {node.isHead && showContent && (
+        <g className="gc-node__head-tag">
+          <rect x={x - 19.5} y={y - r - 26} width={39} height={16} rx={4} />
+          <text x={x} y={y - r - 15} textAnchor="middle">{strings.graph.headTag}</text>
         </g>
-      ) : (
-        <circle
-          className="gc-node__dot"
-          cx={x}
-          cy={y}
-          r={r}
-          stroke={color}
-          fill={node.local ? 'var(--vscode-editor-background)' : color}
-        />
       )}
-      {hasAvatar && !isCapsule && isSafeImageSrc(avatarUrl) && (
+      {hasAvatar && isSafeImageSrc(avatarUrl) && (
         <image
           className="gc-node__avatar"
           href={avatarUrl}
@@ -1276,7 +1350,7 @@ function NodeMark({
         filled dot needs the editor background to stay legible against it. Both are
         theme tokens or lane data, never a literal.
       */}
-      {showContent && !hasAvatar && !isCapsule && (
+      {showContent && !hasAvatar && (
         <text
           className="gc-node__initial"
           x={x}
@@ -1288,12 +1362,27 @@ function NodeMark({
         </text>
       )}
       {/*
+        Merge glyph inside the circle (frame 01 `10:51`): two arcs joining into one
+        stem, in the contrast colour of the dot's fill. A fallback for a node with
+        no picture, like the author initial: laid over an avatar it reads as a dark
+        squiggle across the face (owner report). Zoom-gated with the avatar it
+        replaces, so a low zoom shows the plain dot.
+      */}
+      {node.isMerge && showContent && !hasAvatar && (
+        <path
+          className="gc-node__merge-glyph"
+          d={`M${x - 4},${y - 5} v2 a3,3 0 0 0 3,3 h2 M${x + 4},${y - 5} v2 a3,3 0 0 1 -3,3 h-2`}
+          stroke={node.local ? color : 'var(--vscode-editor-background)'}
+          strokeWidth={1.6}
+          fill="none"
+        />
+      )}
+      {/*
         Rings last so they sit above the avatar. `r + 3`, not `r + 4`: at lane 0 the centre
-        sits at `RULER_HEIGHT + LANE_HEIGHT / 2`, and a merge head-ring at `r + 4` plus a 1.5
+        sits at `RULER_HEIGHT + LANE_HEIGHT / 2`, and a head ring at `r + 4` plus a 1.5
         stroke reaches a quarter pixel from the SVG edge, which rounds to a clipped ring.
       */}
-      {node.isHead && !isCapsule && <circle className="gc-node__head-ring" cx={x} cy={y} r={r + 3} stroke={color} />}
-      {node.isMerge && !isCapsule && <circle className="gc-node__merge-ring" cx={x} cy={y} r={r + 2} stroke={color} />}
+      {node.isHead && <circle className="gc-node__head-ring" cx={x} cy={y} r={r + 3} stroke={color} />}
       {/*
         Hover halo, drawn last so it sits above every other ring. The stroke is
         CSS-owned (`--vscode-focusBorder`): it is chrome feedback, not lane data,
@@ -1352,7 +1441,6 @@ function Row({
   // visible text cannot disagree.
   const subject = sanitizeGitText(node.subject);
   const author = sanitizeGitText(node.authorName);
-  const time = relativeTime(node.authoredAt, now, lang);
 
   // Position row below or above node center depending on stagger placement
   const nodeCenterY = laneY(node.lane, LANE_HEIGHT, RULER_HEIGHT);
@@ -1393,7 +1481,7 @@ function Row({
         <span className="gc-row__meta" aria-hidden="true">
           <span className="gc-row__author" title={author}>{author}</span>
           <span className="gc-row__dot">·</span>
-          <span className="gc-row__time">{time}</span>
+          <span className="gc-row__time">{compactAge(node.authoredAt, now)}</span>
         </span>
       </span>
     </div>
@@ -1415,104 +1503,3 @@ function Highlight({ text, needle }: { text: string; needle: string }): JSX.Elem
   );
 }
 
-/**
- * Filter bar above the canvas.
- *
- * Zoom used to live here; it now floats over the canvas instead, which leaves this
- * row with one job — narrowing what is drawn — announced by the label the reference
- * puts in front of its own filter row. Two fields, both labelled in words, so the
- * row reads as "Saring: nama / branch" rather than as three unrelated widgets.
- */
-function Toolbar({
-  search,
-  branchFilter,
-  currentBranch,
-  busy,
-  refs,
-  countId,
-  onSearch,
-  onBranchFilter,
-}: {
-  search: string;
-  branchFilter: string;
-  currentBranch: string | null;
-  busy: boolean;
-  refs: readonly RefInfo[];
-  /** Id of the result-count live region, so the search box points at its own output. */
-  countId: string;
-  onSearch(value: string): void;
-  onBranchFilter(value: string): void;
-}): JSX.Element {
-  const strings = useT();
-  const branches = refs.filter((r) => r.kind === 'local' || r.kind === 'remote');
-  return (
-    <div
-      className="gc-toolbar gc-toolbar--filters"
-      role="toolbar"
-      aria-label={strings.graph.toolbarAria}
-      aria-orientation="horizontal"
-    >
-      <div className="gc-toolbar__search-wrap">
-        <label className="gc-field gc-toolbar__field">
-          <span className="gc-field__label">{strings.graph.searchLabel}</span>
-          <span className="gc-toolbar__search-input-wrap">
-            <span className="gc-toolbar__search-icon" aria-hidden="true">
-              <Icon name="search" />
-            </span>
-            <input
-              type="search"
-              className="gc-toolbar__search-input"
-              value={search}
-              maxLength={100}
-              placeholder={strings.graph.searchPlaceholder}
-              aria-describedby={countId}
-              onChange={(e) => onSearch(e.target.value)}
-            />
-          </span>
-        </label>
-      </div>
-
-      <BranchSelector
-        currentBranch={currentBranch}
-        refs={refs}
-        busy={busy}
-        showLabel
-      />
-
-      <div className="gc-toolbar__branch-wrap">
-        <label className="gc-field gc-toolbar__field">
-          <span className="gc-field__label">{strings.graph.branchFilterLabel}</span>
-          <select
-            className="gc-toolbar__branch-select"
-            value={branchFilter}
-            onChange={(e) => onBranchFilter(e.target.value)}
-          >
-            <option value="">{strings.graph.branchFilterAll}</option>
-            {branches.map((ref) => (
-              // `value` stays raw: it is compared against lane refs host-side.
-              // Only the label is sanitised.
-              <option key={ref.refName} value={ref.shortName}>
-                {ref.kind === 'remote'
-                  ? strings.graph.branchFilterRemotePrefix(sanitizeGitText(ref.shortName))
-                  : sanitizeGitText(ref.shortName)}
-              </option>
-            ))}
-          </select>
-        </label>
-      </div>
-
-      {(search.length > 0 || branchFilter.length > 0) && (
-        <button
-          type="button"
-          className="gc-button gc-button--quiet gc-toolbar__clear"
-          onClick={() => {
-            onSearch('');
-            onBranchFilter('');
-          }}
-        >
-          {strings.graph.resetFilter}
-        </button>
-      )}
-    </div>
-  );
-}

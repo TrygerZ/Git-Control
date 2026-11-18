@@ -1,25 +1,29 @@
 /**
- * Node context menu (FEAT-03).
+ * Node context menu (FEAT-03, frame 03 `15:2`).
  *
  * Opens on right-click and from the keyboard (`ContextMenu` / `Shift+F10`).
  * Availability is derived from `status` + the selected node, so an invalid
  * action is never shown — this is cheaper to understand than a disabled list.
  *
- * Destructive items carry a risk glyph AND the word `berisiko`, never colour
- * alone. Force push is not offered here or anywhere else.
+ * Destructive items carry a risk glyph AND the word `risky`, never colour alone.
+ * Force push is not offered here or anywhere else.
  *
- * Two groups, not one list
- * ------------------------
+ * Three groups, in the frame order
+ * --------------------------------
  * A flat list of git verbs is the most frightening thing in this extension: nothing
  * on it says which entries only LOOK at the commit and which rewrite the working
- * folder. So the items are split into `jelajah` (read-only: open the diff, copy the
- * hash, open GitHub) and `ubah` (anything that touches the repository), each in its
- * own `role="group"` with a heading. A user who only wants to read a commit never has
- * to hover over `Reset hard` to find out what it does.
+ * folder. So the items are filed as `inspect` (read-only: open the diff, copy the
+ * hash, open GitHub), `branch` (move a branch to this commit), and `rewrite`
+ * (rewrite history), each in its own `role="group"` with a heading. A user who only
+ * wants to read a commit never has to hover over `Reset hard` to find out what it
+ * does, and the read-only group can never run git.
  *
- * Items with non-obvious or destructive consequences carry a short single-line
- * `hint` (e.g. detached HEAD, permanence, fast-forward requirement). Self-explanatory
- * items omit hints to keep the menu compact.
+ * One focus hint, not a sub-line per row
+ * --------------------------------------
+ * The frame draws a single hint box under the last group (`15:91`, 286x46) that
+ * explains whichever row the pointer or the keyboard cursor is on. `focusHintFor`
+ * owns those sentences, so every item says something and the risky ones name the
+ * risk in words rather than relying on the glyph.
  */
 import { useEffect, useLayoutEffect, useRef, useState, type JSX, type KeyboardEvent } from 'react';
 import { sanitizeGitText, shortHash } from './format';
@@ -43,14 +47,14 @@ export type MenuCommand =
   | { kind: 'mergeInto'; source: string; targets: readonly string[] };
 
 /**
- * Which half of the menu an item belongs to.
+ * Which of the frame's three groups an item belongs to.
  *
- * `jelajah` items cannot change anything — the worst case is a wasted click.
- * `ubah` items run git against the repository. The split is the whole reason the
- * grouping exists, so it is a required field: a new item has to declare which side
- * it is on rather than defaulting into the harmless half.
+ * `inspect` items cannot change anything — the worst case is a wasted click.
+ * `branch` items move a branch or a ref. `rewrite` items rewrite history. The
+ * split is the whole reason the grouping exists, so it is a required field: a new
+ * item has to declare where it goes rather than defaulting into the harmless group.
  */
-export type MenuGroup = 'jelajah' | 'ubah';
+export type MenuGroup = 'inspect' | 'branch' | 'rewrite';
 
 export function menuGroupLabel(group: MenuGroup, lang: Lang = 'en'): string {
   return t(lang).menu.groupLabels[group];
@@ -85,19 +89,50 @@ function menuItemIcon(item: MenuItem): IconName | null {
   return MENU_ITEM_ICONS[item.id] ?? null;
 }
 
-/** Groups in display order: read-only first, because it is the safe half. */
-const MENU_GROUP_ORDER: readonly MenuGroup[] = ['jelajah', 'ubah'] as const;
+/** Groups in display order, as frame 03 draws them: read-only first. */
+const MENU_GROUP_ORDER: readonly MenuGroup[] = ['inspect', 'branch', 'rewrite'] as const;
 
 export interface MenuItem {
   id: string;
   label: string;
   command: MenuCommand;
-  /** Which half of the menu this belongs to; see {@link MenuGroup}. */
+  /** Which group of the menu this belongs to; see {@link MenuGroup}. */
   group: MenuGroup;
-  /** `true` marks the item as destructive; the UI adds a glyph + `berisiko`. */
+  /** `true` marks the item as destructive; the UI adds a glyph + `risky`. */
   risky?: boolean;
-  /** Extra explanation shown under the label for teaching purposes. */
+  /** Extra explanation, kept for the accessible name of a risky row. */
   hint?: string;
+}
+
+/**
+ * The sentence the frame 03 footer box shows for one item.
+ *
+ * One line each, so the box never grows into a paragraph. Items that already
+ * carried a `hint` keep that text; the rest get a sentence of their own, because a
+ * box that repeats one generic line for every row would be worse than none. A
+ * risky item always names its risk: `permanent` for the resets, `detach` for the
+ * detached checkout, `discard` for the rewrites, `risky` as the fallback.
+ */
+export function focusHintFor(item: MenuItem, lang: Lang = 'en'): string {
+  const strings = t(lang).menu;
+  if (item.hint !== undefined) return item.hint;
+  switch (item.id) {
+    case 'view-diff':
+      return strings.hintViewDiff;
+    case 'copy-full':
+      return strings.hintCopyFull;
+    case 'copy-short':
+      return strings.hintCopyShort;
+    case 'open-github':
+      return strings.hintOpenGitHub;
+    case 'create-branch':
+      return strings.hintCreateBranch;
+    case 'merge':
+      return strings.hintMerge;
+    default:
+      if (item.id.startsWith('checkout-')) return strings.hintCheckoutBranch;
+      return item.risky === true ? strings.hintRisky : strings.hintPlain;
+  }
 }
 
 interface Props {
@@ -153,7 +188,7 @@ export function menuItemsFor(
     items.push({
       id: `checkout-${ref.shortName}`,
       label: strings.checkoutBranch(sanitizeGitText(ref.shortName)),
-      group: 'ubah',
+      group: 'branch',
       command: { kind: 'action', request: { action: 'checkout-branch', branch: ref.shortName } },
     });
   }
@@ -162,7 +197,7 @@ export function menuItemsFor(
     items.push({
       id: 'checkout-commit',
       label: strings.checkoutCommit(node.shortHash),
-      group: 'ubah',
+      group: 'branch',
       hint: strings.checkoutCommitHint,
       risky: true,
       command: { kind: 'action', request: { action: 'checkout-commit', hash: node.hash } },
@@ -173,7 +208,7 @@ export function menuItemsFor(
     items.push({
       id: 'create-branch',
       label: strings.createBranch,
-      group: 'ubah',
+      group: 'branch',
       command: { kind: 'createBranch', startPoint: node.hash },
     });
   }
@@ -183,7 +218,7 @@ export function menuItemsFor(
     items.push({
       id: 'merge',
       label: strings.merge(sanitizeGitText(mergeable.shortName), sanitizeGitText(currentBranch)),
-      group: 'ubah',
+      group: 'branch',
       command: { kind: 'action', request: { action: 'merge', branch: mergeable.shortName } },
     });
   }
@@ -201,7 +236,7 @@ export function menuItemsFor(
     items.push({
       id: 'merge-into',
       label: strings.mergeInto,
-      group: 'ubah',
+      group: 'branch',
       hint: strings.mergeIntoHint,
       risky: true,
       command: { kind: 'mergeInto', source, targets: localBranches },
@@ -212,7 +247,7 @@ export function menuItemsFor(
     items.push({
       id: 'cherry-pick',
       label: strings.cherryPick,
-      group: 'ubah',
+      group: 'rewrite',
       hint: strings.cherryPickHint,
       risky: true,
       command: { kind: 'action', request: { action: 'cherry-pick', hash: node.hash } },
@@ -220,7 +255,7 @@ export function menuItemsFor(
     items.push({
       id: 'revert',
       label: strings.revert,
-      group: 'ubah',
+      group: 'rewrite',
       hint: strings.revertHint,
       risky: true,
       command: { kind: 'action', request: { action: 'revert', hash: node.hash } },
@@ -228,7 +263,7 @@ export function menuItemsFor(
     items.push({
       id: 'reset-soft',
       label: strings.resetSoft,
-      group: 'ubah',
+      group: 'rewrite',
       hint: strings.resetSoftHint,
       risky: true,
       command: { kind: 'action', request: { action: 'reset-soft', hash: node.hash } },
@@ -236,7 +271,7 @@ export function menuItemsFor(
     items.push({
       id: 'reset-hard',
       label: strings.resetHard,
-      group: 'ubah',
+      group: 'rewrite',
       hint: strings.resetHardHint,
       risky: true,
       command: { kind: 'action', request: { action: 'reset-hard', hash: node.hash } },
@@ -248,7 +283,7 @@ export function menuItemsFor(
     items.push({
       id: 'push-up-to',
       label: strings.pushUpTo,
-      group: 'ubah',
+      group: 'branch',
       hint: strings.pushUpToHint,
       risky: true,
       command: {
@@ -261,19 +296,19 @@ export function menuItemsFor(
   items.push({
     id: 'view-diff',
     label: strings.viewDiff,
-    group: 'jelajah',
+    group: 'inspect',
     command: { kind: 'viewDiff', hash: node.hash },
   });
   items.push({
     id: 'copy-full',
     label: strings.copyFull,
-    group: 'jelajah',
+    group: 'inspect',
     command: { kind: 'copy', text: node.hash, toast: strings.toastHashCopied },
   });
   items.push({
     id: 'copy-short',
     label: strings.copyShort(shortHash(node.hash)),
-    group: 'jelajah',
+    group: 'inspect',
     command: { kind: 'copy', text: shortHash(node.hash), toast: strings.toastHashCopied },
   });
 
@@ -281,7 +316,7 @@ export function menuItemsFor(
     items.push({
       id: 'open-github',
       label: strings.openGitHub,
-      group: 'jelajah',
+      group: 'inspect',
       command: { kind: 'openGitHub', url: `${githubUrl}/commit/${node.hash}` },
     });
   }
@@ -442,6 +477,9 @@ export function NodeContextMenu({
    * differently. Deriving both from one call keeps them from drifting.
    */
   const groups = groupedMenuItems(items);
+  /** The flat render order, which is what `active` indexes and the hint box reads. */
+  const flat = groups.flatMap((group) => group.items);
+  const activeItem = flat[active] ?? flat[0];
   let flatIndex = -1;
 
   return (
@@ -498,6 +536,7 @@ export function NodeContextMenu({
                   item.risky === true ? 'gc-menu__item gc-menu__item--risky' : 'gc-menu__item'
                 }
                 onFocus={() => setActive(index)}
+                onPointerEnter={() => setActive(index)}
                 onClick={() => {
                   onSelect(item);
                   onClose();
@@ -518,13 +557,22 @@ export function NodeContextMenu({
                     <span>{item.label}</span>
                     {item.risky === true && <span className="gc-menu__risk-word">{strings.menu.riskyWord}</span>}
                   </span>
-                  {item.hint !== undefined && <span className="gc-menu__hint">{item.hint}</span>}
                 </span>
               </button>
             );
           })}
         </div>
       ))}
+      {/*
+        Frame 03's single hint box (`15:91`), after the last group. It names the row
+        the pointer or the keyboard cursor is on, so it is a live region rather than
+        decoration: a menu is one AT context and a menuitem cannot reliably own a
+        description. `activeItem` falls back to the first row, which is where focus
+        lands on open.
+      */}
+      <div className="gc-menu__focus-hint" aria-live="polite" aria-label={strings.menu.focusHintAria}>
+        {activeItem === undefined ? '' : focusHintFor(activeItem, language)}
+      </div>
     </div>
   );
 }

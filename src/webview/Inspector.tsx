@@ -18,6 +18,7 @@ import {
   checkLabel,
   checkNamesLabel,
   checkTone,
+  dirOf,
   formatCount,
   isSafeImageSrc,
   pullRequestState,
@@ -27,15 +28,37 @@ import {
 } from './format';
 import { useT } from './useT';
 import { bridge } from './bridge';
-import { toErrorBody, useGitHubStore, useOperationStore, useSettingsStore } from './store';
+import { toErrorBody, useGitHubStore, useOperationStore, useRepoStore, useSettingsStore } from './store';
 import { EmptyState, ErrorBanner, FileIcon, FileListSkeleton, Icon, InfoBanner, MetadataSkeleton, Spinner } from './ui';
 import type { CommitDetail, CommitFileChange, ErrorBody } from '../messages';
 
-interface Props {
-  hash: string | null;
+/**
+ * Classify a decorated ref for the inspector chip.
+ *
+ * `git log --decorate` hands the webview SHORT names (`feat/stash-pinned-footer`,
+ * `origin/main`), so a slash alone does not mean remote: a local branch may carry
+ * one. Only a known remote name before the first slash identifies a remote-tracking
+ * ref, which is why the caller passes the configured remote names.
+ */
+export function refChipKind(ref: string, remotes: ReadonlySet<string>): 'local' | 'remote' | 'tag' {
+  if (ref.startsWith('tag: ')) return 'tag';
+  if (ref.startsWith('refs/remotes/')) return 'remote';
+  if (ref.startsWith('refs/heads/')) return 'local';
+  const slash = ref.indexOf('/');
+  return slash > 0 && remotes.has(ref.slice(0, slash)) ? 'remote' : 'local';
 }
 
-export function Inspector({ hash }: Props): JSX.Element {
+interface Props {
+  hash: string | null;
+  /**
+   * Report the loaded commit, or `null` when the selection clears or the request
+   * fails. The aside's actions bar lives in `ExplorerApp` and needs the hash and
+   * short hash; handing them up keeps one fetch instead of a second request.
+   */
+  onDetailLoaded?: (detail: CommitDetail | null) => void;
+}
+
+export function Inspector({ hash, onDetailLoaded }: Props): JSX.Element {
   const strings = useT();
   const language = useSettingsStore((x) => x.language);
   const [detail, setDetail] = useState<CommitDetail | null>(null);
@@ -57,6 +80,10 @@ export function Inspector({ hash }: Props): JSX.Element {
   const loadCommitPullRequests = useGitHubStore((st) => st.loadCommitPullRequests);
   const loadChecks = useGitHubStore((st) => st.loadChecks);
   const openUrl = useGitHubStore((st) => st.openUrl);
+  const remotes = useRepoStore((st) => st.remotes);
+  // `null` while the remote list is unknown degrades to an empty set: no ref is
+  // then remote by the name rule, and full refs still classify by their prefix.
+  const remoteNames = useMemo(() => new Set((remotes ?? []).map((r) => r.name)), [remotes]);
   const [imgFailed, setImgFailed] = useState(false);
 
   const hashRef = useRef(hash);
@@ -89,6 +116,7 @@ export function Inspector({ hash }: Props): JSX.Element {
     if (hash === null) {
       setDetail(null);
       setError(null);
+      onDetailLoaded?.(null);
       return;
     }
     let cancelled = false;
@@ -101,6 +129,9 @@ export function Inspector({ hash }: Props): JSX.Element {
         setDetail(data);
         setParent(data.parents[0] ?? null);
         setLoading(false);
+        // The aside's actions bar reads this commit, so it learns about it here
+        // rather than asking the host a second time for the same detail.
+        onDetailLoaded?.(data);
         // Pull the author's GitHub face alongside the detail; a miss keeps the initial.
         void loadCommitAuthors([data.hash]);
         setImgFailed(false);
@@ -109,11 +140,14 @@ export function Inspector({ hash }: Props): JSX.Element {
         if (cancelled) return;
         setError(toErrorBody(err));
         setLoading(false);
+        // No detail means no actions: the bar would otherwise act on the previous
+        // commit, which is the one the user just navigated away from.
+        onDetailLoaded?.(null);
       });
     return () => {
       cancelled = true;
     };
-  }, [hash]);
+  }, [hash, onDetailLoaded]);
 
   const copy = async (text: string): Promise<void> => {
     try {
@@ -314,6 +348,16 @@ export function Inspector({ hash }: Props): JSX.Element {
               <Icon name="copy" />
             </button>
           </div>
+          {/*
+            The parent hash belongs beside the commit hash, not in Details: the
+            frame reads one row of identifiers before anything else, and a merge
+            commit shows one chip per parent without opening a key-value block.
+          */}
+          {detail.parents.map((p) => (
+            <code key={p} className="gc-inspector__parent">
+              {strings.inspector.parentChip(shortHash(p))}
+            </code>
+          ))}
           {linkage?.available === true && (
             // External leaves the app — not in the clipboard rhythm. Own button
             // with divider, icon-only for the same width reason as the copy pair.
@@ -330,49 +374,32 @@ export function Inspector({ hash }: Props): JSX.Element {
         </div>
       </header>
 
-      <section className="gc-inspector__block">
-        <h3 className="gc-inspector__heading">{strings.inspector.sectionDetails}</h3>
-        <dl className="gc-inspector__meta">
-          <dt>{strings.inspector.labelAuthor}</dt>
-          <dd>
-            {author} &lt;{sanitizeGitText(detail.authorEmail)}&gt;
-          </dd>
-          <dt>{strings.inspector.labelAuthored}</dt>
-          <dd>
-            {absoluteTime(detail.authoredAt, language)} · {relativeTime(detail.authoredAt, Date.now(), language)}
-          </dd>
-          <dt>{strings.inspector.labelCommitted}</dt>
-          <dd>
-            {absoluteTime(detail.committedAt, language)} · {relativeTime(detail.committedAt, Date.now(), language)}
-            {detail.committerName !== detail.authorName &&
-              strings.inspector.committedBy(sanitizeGitText(detail.committerName))}
-          </dd>
-          <dt>{strings.inspector.labelParents}</dt>
-          <dd>
-            {detail.parents.length === 0 ? (
-              strings.inspector.noParents
-            ) : (
-              <ul className="gc-inspector__parents">
-                {detail.parents.map((p) => (
-                  <li key={p}>
-                    <code className="gc-inspector__hash-value">{shortHash(p)}</code>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </dd>
-        </dl>
-      </section>
-
       {detail.refNames.length > 0 && (
         <section className="gc-inspector__block">
           <h3 className="gc-inspector__heading">{strings.inspector.sectionRefs}</h3>
           <ul className="gc-inspector__refs" aria-label={strings.inspector.refsAria}>
-            {detail.refNames.map((ref) => (
-              <li key={ref} className="gc-chip gc-chip--local">
-                {sanitizeGitText(ref)}
-              </li>
-            ))}
+            {detail.refNames.map((ref) => {
+              // Short names from `git log --decorate`, so the slash test alone
+              // would mislabel a local branch. The full name stays in `title`,
+              // the visible text drops only the tag prefix.
+              const kind = refChipKind(ref, remoteNames);
+              return (
+                <li
+                  key={ref}
+                  className={`gc-chip gc-chip--${kind}`}
+                  title={sanitizeGitText(ref)}
+                >
+                  {kind === 'tag' ? (
+                    <Icon name="tag" />
+                  ) : kind === 'remote' ? (
+                    <Icon name="cloud" />
+                  ) : (
+                    <Icon name="git-branch" />
+                  )}
+                  {sanitizeGitText(kind === 'tag' ? ref.slice(5) : ref)}
+                </li>
+              );
+            })}
           </ul>
         </section>
       )}
@@ -440,7 +467,10 @@ export function Inspector({ hash }: Props): JSX.Element {
                   #{pr.number} {sanitizeGitText(pr.title)}
                 </span>
                 <span className="gc-inspector__pr-meta">
-                  {pullRequestState(pr.state, language)} ·{' '}
+                  <span className={`gc-inspector__pr-state gc-inspector__pr-state--${pr.state}`}>
+                    {pullRequestState(pr.state, language)}
+                  </span>{' '}
+                  ·{' '}
                   {strings.inspector.intoBase(
                     sanitizeGitText(pr.baseRef),
                     relativeTime(pr.updatedAt, Date.now(), language),
@@ -507,36 +537,45 @@ export function Inspector({ hash }: Props): JSX.Element {
       )}
 
       <section className="gc-inspector__block gc-inspector__block--files">
-        <h3 className="gc-inspector__heading">{strings.inspector.sectionFiles}</h3>
+        {/* Count and churn ride the heading, as in the frame: one line, one place. */}
+        <div className="gc-inspector__heading-row">
+          <h3 className="gc-inspector__heading">{strings.inspector.sectionFiles}</h3>
+          <span className="gc-inspector__count">{formatCount(detail.files.length, language)}</span>
+          {totals !== null && (
+            <>
+              <span className="gc-stat gc-stat--add">+{formatCount(totals.additions, language)}</span>
+              <span className="gc-stat gc-stat--del">−{formatCount(totals.deletions, language)}</span>
+            </>
+          )}
+          {/*
+            Binary files carry no line churn, so without this the heading counts
+            fewer files than the list below it shows.
+          */}
+          {totals !== null && totals.binary > 0 && (
+            <span className="gc-inspector__count">
+              {strings.inspector.totalsBinary(formatCount(totals.binary, language))}
+            </span>
+          )}
+        </div>
 
         {detail.parents.length > 1 && (
-          <label className="gc-field">
-            <span className="gc-field__label">{strings.inspector.compareParentLabel}</span>
-            <select
-              value={parent ?? ''}
-              onChange={(e) => {
-                setParent(e.target.value);
-                // The host diffs against the first parent, so switching parents
-                // only changes what `actions/openDiff` is asked for.
-                setOpening(null);
-              }}
-            >
-              {detail.parents.map((p, i) => (
-                <option key={p} value={p}>
-                  {strings.inspector.parentOption(i + 1, shortHash(p))}
-                </option>
-              ))}
-            </select>
-          </label>
-        )}
-
-        {totals !== null && (
-          <p className="gc-inspector__totals">
-            {strings.inspector.totalsFiles(formatCount(totals.files, language))} ·{' '}
-            <span className="gc-stat gc-stat--add">+{formatCount(totals.additions, language)}</span>{' '}
-            <span className="gc-stat gc-stat--del">−{formatCount(totals.deletions, language)}</span>
-            {totals.binary > 0 && ` · ${strings.inspector.totalsBinary(formatCount(totals.binary, language))}`}
-          </p>
+          <select
+            className="gc-inspector__parent-select"
+            aria-label={strings.inspector.compareParentLabel}
+            value={parent ?? ''}
+            onChange={(e) => {
+              setParent(e.target.value);
+              // The host diffs against the first parent, so switching parents
+              // only changes what `actions/openDiff` is asked for.
+              setOpening(null);
+            }}
+          >
+            {detail.parents.map((p, i) => (
+              <option key={p} value={p}>
+                {strings.inspector.parentOption(i + 1, shortHash(p))}
+              </option>
+            ))}
+          </select>
         )}
 
         {detail.files.length === 0 ? (
@@ -572,9 +611,11 @@ export function Inspector({ hash }: Props): JSX.Element {
                         ? `${sanitizeGitText(file.origPath)} → ${baseName(file.path)}`
                         : baseName(file.path)}
                     </span>
-                    <span className="gc-filelist__dir" aria-hidden="true">
-                      {safePath}
-                    </span>
+                    {dirOf(safePath) !== '' && (
+                      <span className="gc-filelist__dir" aria-hidden="true">
+                        {dirOf(safePath)}
+                      </span>
+                    )}
                     {file.binary ? (
                       <span className="gc-filelist__binary" aria-hidden="true">
                         {strings.inspector.churnBinary}
@@ -608,6 +649,27 @@ export function Inspector({ hash }: Props): JSX.Element {
             {paging && <Spinner label={strings.inspector.loadingMore} />}
           </InfoBanner>
         )}
+      </section>
+
+      {/* Last, as the frame orders it: metadata closes the panel. */}
+      <section className="gc-inspector__block">
+        <h3 className="gc-inspector__heading">{strings.inspector.sectionDetails}</h3>
+        <dl className="gc-inspector__meta">
+          <dt>{strings.inspector.labelAuthor}</dt>
+          <dd>
+            {author} &lt;{sanitizeGitText(detail.authorEmail)}&gt;
+          </dd>
+          <dt>{strings.inspector.labelAuthored}</dt>
+          <dd>
+            {absoluteTime(detail.authoredAt, language)} · {relativeTime(detail.authoredAt, Date.now(), language)}
+          </dd>
+          <dt>{strings.inspector.labelCommitted}</dt>
+          <dd>
+            {absoluteTime(detail.committedAt, language)} · {relativeTime(detail.committedAt, Date.now(), language)}
+            {detail.committerName !== detail.authorName &&
+              strings.inspector.committedBy(sanitizeGitText(detail.committerName))}
+          </dd>
+        </dl>
       </section>
     </section>
   );

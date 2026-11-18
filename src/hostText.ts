@@ -41,6 +41,9 @@ const en = {
   },
   layout: {
     unknownDate: 'Unknown date',
+    weekdays: ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'],
+    months: ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'],
+    today: 'Today',
   },
   github: {
     invalidToken: 'Invalid GitHub token.',
@@ -159,6 +162,9 @@ const id: HostCatalog = {
   },
   layout: {
     unknownDate: 'Tanggal tidak diketahui',
+    weekdays: ['Min', 'Sen', 'Sel', 'Rab', 'Kam', 'Jum', 'Sab'],
+    months: ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des'],
+    today: 'Hari ini',
   },
   github: {
     invalidToken: 'Token GitHub tidak valid.',

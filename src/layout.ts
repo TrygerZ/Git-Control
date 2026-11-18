@@ -92,7 +92,7 @@ export interface LayoutResult {
 }
 
 export const COLUMN_WIDTH = 96;
-export const LANE_HEIGHT = 88;
+export const LANE_HEIGHT = 150;
 export const NODE_RADIUS = 14;
 export const DAY_GAP = 48;
 export const RULER_HEIGHT = 32;
@@ -123,11 +123,22 @@ const RANK_LOCAL = 2;
 const RANK_DETACHED_HEAD = 3;
 const RANK_TAG = 4;
 
-function formatDateLabel(timestamp: number, lang: Lang = 'en'): string {
-  if (timestamp <= 0) return hostText(lang).layout.unknownDate;
+/** `Thu 29 Oct`: local weekday, unpadded day, short month. */
+function dateLabelParts(timestamp: number, lang: Lang): string {
+  const text = hostText(lang).layout;
+  if (timestamp <= 0) return text.unknownDate;
   const d = new Date(timestamp);
-  const pad = (n: number): string => String(n).padStart(2, '0');
-  return `${pad(d.getDate())}/${pad(d.getMonth() + 1)}/${d.getFullYear()}`;
+  return `${text.weekdays[d.getDay()]} ${d.getDate()} ${text.months[d.getMonth()]}`;
+}
+
+export function formatDateLabel(timestamp: number, lang: Lang = 'en'): string {
+  return dateLabelParts(timestamp, lang);
+}
+
+export function formatDateLabelFor(timestamp: number, now: number, lang: Lang = 'en'): string {
+  const label = dateLabelParts(timestamp, lang);
+  if (timestamp <= 0) return label;
+  return dayKey(timestamp) === dayKey(now) ? `${hostText(lang).layout.today} · ${label}` : label;
 }
 
 function dayKey(timestamp: number): string {
@@ -290,7 +301,7 @@ export function layoutGraph(input: LayoutInput, options: LayoutOptions = {}): La
 
     const bucketWidth = count * columnWidth;
     rawBuckets.push({
-      label: formatDateLabel(bucket.timestamp, options.lang ?? 'en'),
+      label: formatDateLabelFor(bucket.timestamp, Date.now(), options.lang ?? 'en'),
       timestamp: bucket.timestamp,
       startX,
       width: bucketWidth,

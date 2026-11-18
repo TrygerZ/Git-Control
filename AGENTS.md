@@ -177,7 +177,8 @@ Encodes module purity boundaries (pure logic vs I/O) and execution trust boundar
 | `src/webview/format.ts` | Pure presentation helpers and formatting functions (strings sourced from i18n catalog) |
 | `src/webview/viewport.ts` | Pure viewport and virtualization maths for canvas (world vs screen coordinate spaces) |
 | `src/webview/graphQuery.ts` | Pure graph query helpers extracted from GraphCanvas (`computeStaggerMap`, `chipsFor`, `matchesSearch`, `lanesForFilter`) |
-| `src/webview/ribbon.ts` | Pure branch ribbon geometry and edge path generation (`computeBranchRibbons`, `edgePath`) consumed by GraphCanvas |
+| `src/webview/laneGutter.ts` | Pure lane gutter model: lane status classification (`mergedLanes`, `laneSummaries`) and row geometry (`laneRowTop`, `gutterRowHeight`) |
+| `src/webview/LaneGutterView.tsx` | Lane gutter column beside the canvas. Positions each row from `laneRowTop`, sizes it from `gutterRowHeight`, and tints odd lanes |
 | `src/webview/tree.ts` | Pure flat change paths to collapsible tree and tri-state selection maths |
 | `src/webview/hostGuards.ts` | Pure runtime type guards for host-to-webview events and responses |
 | `src/webview/route.ts` | Pure sidebar route model (`parseRoute`, `resolveInitialRoute`, `sameRoute`, `isFresh`, `changesSubOf`). `parseRoute` is the single gate for routes from host events, the pulled pending route, and webview `getState` |
