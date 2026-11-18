@@ -52,15 +52,21 @@ test('the commit count and Load older live in the toolbar, as frame 01 draws the
   );
 });
 
-test('the Ribbons switch is gone: the lane gutter already answers what it toggled', () => {
-  // The gutter names every lane in place, permanently, which is what the ribbon
-  // trail was for. Keeping both means two answers to one question, one of them a
-  // switch the user has to know about. Frame 01 draws no switch either.
+test('the Ribbons switch is a switch in the toolbar, as frame 01 draws it', () => {
+  // Frame 01 (`9:45`) ends the toolbar with a 28 x 16 switch and the word
+  // `Ribbons`. An earlier pass deleted the whole feature on the argument that the
+  // lane gutter answers the same question; the owner asked for the frame back, so
+  // the control and its persisted setting return while the ribbon drawing itself
+  // stays retired.
   const src = read(CANVAS);
-  assert.doesNotMatch(src, /toggleRibbons|showRibbons/, 'no switch, no state');
+  assert.match(src, /role="switch"/, 'a real switch');
+  assert.match(src, /showRibbons/, 'and its state');
+  assert.match(src, /saveState\(\{ showRibbons/, 'the choice persists');
+  assert.match(read('src/webview/bridge.ts'), /showRibbons/, 'the setting is in the webview state');
+  // The retired module stays retired: the switch quiets the lane bands, it does
+  // not resurrect the ribbon paths.
   assert.doesNotMatch(src, /gc-branch-ribbon|computeBranchRibbons/, 'no ribbon paths are drawn');
   assert.doesNotMatch(read('src/webview/styles.css'), /\.gc-branch-ribbon/, 'no ribbon styles remain');
-  assert.doesNotMatch(read('src/webview/bridge.ts'), /showRibbons/, 'no persisted setting remains');
 });
 
 test('the right-panel toggle is a toolbar button, not an aside header control', () => {

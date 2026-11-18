@@ -50,6 +50,7 @@ import {
   truncate,
 } from './format';
 import { useT } from './useT';
+import { loadState, saveState } from './bridge';
 import { BranchSelector } from './BranchLegend';
 import { useGitHubStore, useRepoStore, useSettingsStore } from './store';
 import { chipsFor, computeStaggerMap, lanesForFilter, matchesSearch } from './graphQuery';
@@ -135,7 +136,8 @@ export { rowLabel };
  * Filter bar above the canvas (frame 01, node `9:45`).
  *
  * One row, never wrapping: search, a labelled Checkout group, a labelled Show
- * group, the count with Load older, then the panel toggle behind a divider.
+ * group, the count with Load older, the Ribbons switch, then the panel toggle
+ * behind a divider.
  * The two labels are frame words, not form labels: `gc-toolbar__label` is the
  * quiet inline style, and each control keeps its own accessible name.
  */
@@ -150,10 +152,12 @@ function Toolbar({
   canLoadOlder,
   paging,
   inspectorOpen,
+  ribbons,
   onSearch,
   onBranchFilter,
   onLoadOlder,
   onToggleInspector,
+  onToggleRibbons,
 }: {
   search: string;
   branchFilter: string;
@@ -165,10 +169,12 @@ function Toolbar({
   canLoadOlder: boolean;
   paging: boolean;
   inspectorOpen: boolean;
+  ribbons: boolean;
   onSearch(value: string): void;
   onBranchFilter(value: string): void;
   onLoadOlder(): void;
   onToggleInspector(): void;
+  onToggleRibbons(next: boolean): void;
 }): JSX.Element {
   const strings = useT();
   const branches = refs.filter((r) => r.kind === 'local' || r.kind === 'remote');
@@ -251,6 +257,18 @@ function Toolbar({
       )}
       {paging && <Spinner label={strings.graph.moreLoadingSpinner} />}
 
+      <button
+        type="button"
+        role="switch"
+        aria-checked={ribbons}
+        className={ribbons ? 'gc-switch gc-switch--on' : 'gc-switch'}
+        title={strings.graph.toggleRibbonsAria}
+        onClick={() => onToggleRibbons(!ribbons)}
+      >
+        <span className="gc-switch__track" aria-hidden="true"><span className="gc-switch__knob" /></span>
+        <span className="gc-switch__label">{strings.graph.toggleRibbonsLabel}</span>
+      </button>
+
       <span className="gc-toolbar__divider" aria-hidden="true" />
 
       {(search.length > 0 || branchFilter.length > 0) && (
@@ -315,6 +333,7 @@ export function GraphCanvas({
   const [focusRow, setFocusRow] = useState(0);
   const [pendingFocusRow, setPendingFocusRow] = useState<number | null>(null);
   const [hoveredHash, setHoveredHash] = useState<string | null>(null);
+  const [showRibbons, setShowRibbons] = useState(() => loadState().showRibbons);
   // Hover region state: tracks active hash and clear timer to prevent flicker
   // when moving between node hit circle and expanded label
   const hoverTimer = useRef<number | null>(null);
@@ -794,10 +813,15 @@ export function GraphCanvas({
         canLoadOlder={graph !== null && graph.nextCursor !== null && graph.truncated === false}
         paging={paging}
         inspectorOpen={inspectorOpen}
+        ribbons={showRibbons}
         onSearch={setSearch}
         onBranchFilter={setBranchFilter}
         onLoadOlder={() => void loadMore()}
         onToggleInspector={onToggleInspector}
+        onToggleRibbons={(next) => {
+          setShowRibbons(next);
+          saveState({ showRibbons: next });
+        }}
       />
 
       {graph?.stale === true && (
@@ -929,7 +953,7 @@ export function GraphCanvas({
                     lane % 2 === 1 ? (
                       <rect
                         key={`lane-band-${lane}`}
-                        className="gc-canvas__lane-band"
+                        className={showRibbons ? 'gc-canvas__lane-band' : 'gc-canvas__lane-band gc-canvas__lane-band--quiet'}
                         x={0}
                         y={RULER_HEIGHT + lane * LANE_HEIGHT}
                         width={totalWorldW}
