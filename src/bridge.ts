@@ -38,8 +38,10 @@ import {
   validateCommitPullRequestsPayload,
   validateCreatePullRequestPayload,
   validateEmptyPayload as validateEmptyPayloadPure,
+  validateOpenPullRequestPayload,
   validatePrPreparePayload,
   validatePrReviewersPayload,
+  validatePullDetailPayload,
 } from './bridgePure';
 import type { RepositoryService } from './repository';
 import { parseRoute } from './webview/route';
@@ -87,6 +89,7 @@ import type {
   GitHubAuthState,
   GitHubLinkage,
   GitHubMutationMeta,
+  GitHubRateLimit,
   GitHubRepoInfo,
   GitHubRepoPayload,
   GraphPayload,
@@ -106,6 +109,10 @@ import type {
   PrPrepareResult,
   PrReviewersPayload,
   PrReviewersResult,
+  PullCommit,
+  PullDetail,
+  PullDetailPayload,
+  PullFile,
   PullRequestsPayload,
   PullRequestsResult,
   RefsResult,
@@ -124,6 +131,7 @@ import type {
   StashFile,
   StashShowPayload,
   StatusPayload,
+  TimelineItem,
   WorktreeInfo,
 } from './messages';
 
@@ -178,6 +186,23 @@ export interface BridgeHost {
   githubPullRequests?(payload: PullRequestsPayload): Promise<PullRequestsResult>;
   githubCommitPullRequests?(payload: CommitPullRequestsPayload): Promise<CommitPullRequestsResult>;
   githubCheckRuns?(payload: CheckRunsPayload): Promise<CheckRunsResult>;
+  /**
+   * P24 detail reads. Four separate methods because each hits a different route
+   * and the files read also needs a local merge-base lookup. Read-only: no guard,
+   * no idempotency key.
+   */
+  githubPullDetail?(payload: PullDetailPayload): Promise<{ detail: PullDetail; rateLimit: GitHubRateLimit }>;
+  githubPullCommits?(
+    payload: PullDetailPayload,
+  ): Promise<{ commits: PullCommit[]; truncated: boolean; rateLimit: GitHubRateLimit }>;
+  githubPullFiles?(
+    payload: PullDetailPayload,
+  ): Promise<{ files: PullFile[]; truncated: boolean; mergeBase: string | null; rateLimit: GitHubRateLimit }>;
+  githubPullTimeline?(
+    payload: PullDetailPayload,
+  ): Promise<{ items: TimelineItem[]; truncated: boolean; rateLimit: GitHubRateLimit }>;
+  /** Reveal the pull request detail panel. The number selects which panel. */
+  openPullRequest?(payload: { number: number }): Promise<boolean> | boolean;
   githubIssues?(payload: IssuesPayload): Promise<IssuesResult>;
   /** Workflow runs. Sign-in required, so the host also needs a token to answer. */
   githubActionsRuns?(payload: ActionsRunsPayload): Promise<ActionsRunsResult>;
@@ -426,6 +451,8 @@ export class MessageBridge {
         return this.handlePickRepository();
       case 'graph/revealCommit':
         return this.handleRevealCommit(request.payload as RevealCommitPayload);
+      case 'actions/openPullRequest':
+        return this.handleOpenPullRequest(request.payload as { number: number });
       case 'actions/openExternal':
         return this.handleOpenExternal(request.payload as OpenExternalPayload);
       case 'github/auth':
@@ -445,6 +472,14 @@ export class MessageBridge {
         return this.handleGitHubCommitPullRequests(request.payload as CommitPullRequestsPayload);
       case 'github/checkRuns':
         return this.handleGitHubCheckRuns(request.payload as CheckRunsPayload);
+      case 'github/pullDetail':
+        return this.handleGitHubPullDetail(request.payload as PullDetailPayload);
+      case 'github/pullCommits':
+        return this.handleGitHubPullCommits(request.payload as PullDetailPayload);
+      case 'github/pullFiles':
+        return this.handleGitHubPullFiles(request.payload as PullDetailPayload);
+      case 'github/pullTimeline':
+        return this.handleGitHubPullTimeline(request.payload as PullDetailPayload);
       case 'github/issues':
         return this.handleGitHubIssues(request.payload as IssuesPayload);
       case 'github/actionsRuns':
@@ -667,6 +702,21 @@ export class MessageBridge {
   }
 
   /**
+   * Reveal the pull request detail panel. Not a mutation and not guarded: it
+   * only opens a panel, so a missing host method answers `opened: false` rather
+   * than 503, mirroring `handleOpenExplorer`. The payload is passed through
+   * because the number selects which panel.
+   */
+  private async handleOpenPullRequest(payload: { number: number }): Promise<{ opened: boolean }> {
+    const invalid = (detail: string): never =>
+      fail(400, 'VALIDATION_ERROR', this.text().invalid, { detail });
+    validateOpenPullRequestPayload(payload, invalid);
+    const open = this.host.openPullRequest;
+    if (open === undefined) return { opened: false };
+    return { opened: (await open({ number: payload.number })) !== false };
+  }
+
+  /**
    * Open the Quick actions palette. Deliberately parameterless: there is no way
    * to express "run command X" through this kind, so it cannot become an
    * arbitrary command-execution channel for the webview. The empty payload is
@@ -857,6 +907,55 @@ export class MessageBridge {
     const runs = this.host.githubCheckRuns;
     if (runs === undefined) fail(503, 'UNAVAILABLE', this.text().githubPending);
     return runs(payload);
+  }
+
+  /**
+   * The four P24 detail reads. All share one payload and one shape: validate,
+   * refuse a host with no method with 503, pass the payload through. The
+   * validation is what keeps an untrusted number out of a URL path segment.
+   */
+  private async handleGitHubPullDetail(
+    payload: PullDetailPayload,
+  ): Promise<{ detail: PullDetail; rateLimit: GitHubRateLimit }> {
+    const invalid = (detail: string): never =>
+      fail(400, 'VALIDATION_ERROR', this.text().invalid, { detail });
+    validatePullDetailPayload(payload, invalid);
+    const detail = this.host.githubPullDetail;
+    if (detail === undefined) fail(503, 'UNAVAILABLE', this.text().githubPending);
+    return detail(payload);
+  }
+
+  private async handleGitHubPullCommits(
+    payload: PullDetailPayload,
+  ): Promise<{ commits: PullCommit[]; truncated: boolean; rateLimit: GitHubRateLimit }> {
+    const invalid = (detail: string): never =>
+      fail(400, 'VALIDATION_ERROR', this.text().invalid, { detail });
+    validatePullDetailPayload(payload, invalid);
+    const commits = this.host.githubPullCommits;
+    if (commits === undefined) fail(503, 'UNAVAILABLE', this.text().githubPending);
+    return commits(payload);
+  }
+
+  private async handleGitHubPullFiles(
+    payload: PullDetailPayload,
+  ): Promise<{ files: PullFile[]; truncated: boolean; mergeBase: string | null; rateLimit: GitHubRateLimit }> {
+    const invalid = (detail: string): never =>
+      fail(400, 'VALIDATION_ERROR', this.text().invalid, { detail });
+    validatePullDetailPayload(payload, invalid);
+    const files = this.host.githubPullFiles;
+    if (files === undefined) fail(503, 'UNAVAILABLE', this.text().githubPending);
+    return files(payload);
+  }
+
+  private async handleGitHubPullTimeline(
+    payload: PullDetailPayload,
+  ): Promise<{ items: TimelineItem[]; truncated: boolean; rateLimit: GitHubRateLimit }> {
+    const invalid = (detail: string): never =>
+      fail(400, 'VALIDATION_ERROR', this.text().invalid, { detail });
+    validatePullDetailPayload(payload, invalid);
+    const timeline = this.host.githubPullTimeline;
+    if (timeline === undefined) fail(503, 'UNAVAILABLE', this.text().githubPending);
+    return timeline(payload);
   }
 
   private async handleGitHubActionsRuns(payload: ActionsRunsPayload): Promise<ActionsRunsResult> {

@@ -1123,6 +1123,11 @@ export interface RequestMap {
    * Reveal a commit in the Git Control explorer canvas and select it.
    */
   'graph/revealCommit': { payload: RevealCommitPayload; response: { revealed: boolean } };
+  /**
+   * Reveal the pull request detail panel for one number. Not a mutation and not
+   * guarded: it only opens a panel, and the number selects which one.
+   */
+  'actions/openPullRequest': { payload: { number: number }; response: { opened: boolean } };
   /** Open a URL in the system browser. Host-side only; the webview cannot navigate. */
   'actions/openExternal': { payload: OpenExternalPayload; response: { opened: boolean } };
   'github/auth': { payload: Record<string, never>; response: GitHubAuthState };
@@ -1137,6 +1142,34 @@ export interface RequestMap {
   };
   /** Check runs for one commit SHA, with the collapsed summary the badges read. */
   'github/checkRuns': { payload: CheckRunsPayload; response: CheckRunsResult };
+  /** One pull request as the detail panel draws it. Read-only, no idempotency key. */
+  'github/pullDetail': {
+    payload: PullDetailPayload;
+    response: { detail: PullDetail; rateLimit: GitHubRateLimit };
+  };
+  /** The pull request commit list, capped by the host at its page bound. */
+  'github/pullCommits': {
+    payload: PullDetailPayload;
+    response: { commits: PullCommit[]; truncated: boolean; rateLimit: GitHubRateLimit };
+  };
+  /**
+   * The changed files and the local merge base. The host returns `mergeBase`
+   * already looked up; the bridge passes it through untouched.
+   */
+  'github/pullFiles': {
+    payload: PullDetailPayload;
+    response: {
+      files: PullFile[];
+      truncated: boolean;
+      mergeBase: string | null;
+      rateLimit: GitHubRateLimit;
+    };
+  };
+  /** Reviews and comments as one time-ordered list. */
+  'github/pullTimeline': {
+    payload: PullDetailPayload;
+    response: { items: TimelineItem[]; truncated: boolean; rateLimit: GitHubRateLimit };
+  };
   /** Issues assigned to, created by, or mentioning the viewer. Sign-in required. */
   'github/issues': { payload: IssuesPayload; response: IssuesResult };
   /**
