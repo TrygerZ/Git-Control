@@ -1853,6 +1853,12 @@ h3 {
  * wrapper does not scroll, so `position: absolute` inside it stays put.
  */
 .gc-graph__stage {
+  /*
+   * The gutter width, declared once here because the stage is the containing
+   * block for the absolutely positioned bottom row, which must offset past the
+   * gutter to reach the canvas edge. A local layout variable, not a design token.
+   */
+  --gc-gutter-width: 150px;
   position: relative;
   display: flex;
   flex: 1 1 auto;
@@ -1872,8 +1878,8 @@ h3 {
  */
 .gc-gutter {
   position: relative;
-  flex: 0 0 150px;
-  width: 150px;
+  flex: 0 0 var(--gc-gutter-width);
+  width: var(--gc-gutter-width);
   overflow: hidden;
   border: 1px solid var(--gc-border);
   border-right: none;
@@ -2642,14 +2648,18 @@ h3 {
 
 /*
  * Bottom row: the minimap and the legend pill, side by side and sharing one
- * bottom edge, as frame 01 draws them. Absolutely positioned at the bottom left
- * of the canvas stage, over canvas content, with a z-index of 9 (above canvas
- * content z-index 1..8, below controls z-index 10 and menu/popover z-index 20+).
- * The row owns the positioning so the two items cannot drift.
+ * bottom edge, as frame 01 draws them. Absolutely positioned over the canvas,
+ * with a z-index of 9 (above canvas content z-index 1..8, below controls
+ * z-index 10 and menu/popover z-index 20+). The row owns the positioning so the
+ * two items cannot drift.
+ *
+ * The containing block is `.gc-graph__stage`, whose left edge is the gutter's,
+ * not the canvas's. `left` therefore clears the gutter first, so the row starts
+ * at the canvas's inner padding and never lands on the gutter column.
  */
 .gc-canvas__bottom-row {
   position: absolute;
-  left: var(--gc-space-4);
+  left: calc(var(--gc-gutter-width) + var(--gc-space-4));
   bottom: var(--gc-space-4);
   z-index: 9;
   display: flex;
@@ -2679,10 +2689,9 @@ h3 {
   touch-action: none;
 }
 
-.gc-minimap__ticks {
-  stroke: var(--vscode-foreground);
-  stroke-width: 1;
-  opacity: 0.7;
+.gc-minimap__lane {
+  stroke-width: 2;
+  stroke-linecap: round;
 }
 
 /*

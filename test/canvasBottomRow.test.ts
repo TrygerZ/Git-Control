@@ -26,9 +26,16 @@ test('the bottom row starts at the canvas left edge, not centred', () => {
   const css = read(CSS);
   const row = css.match(/\.gc-canvas__bottom-row\s*\{([^}]*)\}/)?.[1] ?? '';
   assert.ok(row.length > 0, 'the row has a rule');
-  assert.match(row, /left:\s*var\(--gc-space-/, 'it is anchored to the left padding');
   assert.doesNotMatch(row, /left:\s*50%/, 'not centred');
   assert.doesNotMatch(row, /translateX/, 'and no centring transform');
+  // The containing block is `.gc-graph__stage`, whose left edge is the gutter's,
+  // so the offset has to clear the gutter first. `left: var(--gc-space-4)` alone
+  // put the row at x 16, on top of the 150 px gutter column.
+  assert.match(row, /left:\s*calc\(var\(--gc-gutter-width\)/, 'it clears the gutter');
+  const stage = css.match(/\.gc-graph__stage\s*\{([^}]*)\}/)?.[1] ?? '';
+  assert.match(stage, /--gc-gutter-width:\s*\d+px/, 'the gutter width is declared on the stage');
+  const gutter = css.match(/\.gc-gutter\s*\{([^}]*)\}/)?.[1] ?? '';
+  assert.match(gutter, /width:\s*var\(--gc-gutter-width\)/, 'and the column consumes it');
 });
 
 test('the minimap is the frame size, not a share of the stage width', () => {

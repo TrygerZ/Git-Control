@@ -356,6 +356,39 @@ export interface MinimapGeometry {
   rectWidth: number;
 }
 
+/** One branch lane in the minimap: a horizontal line from its first to its last commit. */
+export interface MinimapLaneRow {
+  lane: number;
+  startX: number;
+  endX: number;
+}
+
+/**
+ * Lane rows for the minimap, one per lane the graph actually occupies.
+ *
+ * Frame 01 (`10:178`) draws the minimap as a few coloured horizontal lines, one
+ * per branch, not as one tick per commit. `startX`/`endX` are world units, so the
+ * caller scales them by the same factor as the viewport rectangle.
+ */
+export function minimapLaneRows(
+  nodes: ReadonlyArray<{ lane: number; x: number }>,
+  laneCount: number,
+): MinimapLaneRow[] {
+  const span = new Map<number, { startX: number; endX: number }>();
+  for (const node of nodes) {
+    if (node.lane < 0 || node.lane >= laneCount) continue;
+    const current = span.get(node.lane);
+    if (current === undefined) span.set(node.lane, { startX: node.x, endX: node.x });
+    else {
+      current.startX = Math.min(current.startX, node.x);
+      current.endX = Math.max(current.endX, node.x);
+    }
+  }
+  return [...span]
+    .sort((a, b) => a[0] - b[0])
+    .map(([lane, s]) => ({ lane, startX: s.startX, endX: s.endX }));
+}
+
 /** Geometry for the minimap's draggable viewport rectangle (horizontal). */
 export function minimapGeometry(
   scrollLeft: number,

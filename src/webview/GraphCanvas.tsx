@@ -1098,10 +1098,14 @@ export function GraphCanvas({
           {/*
             Frame 01 bottom row: the minimap at the canvas left edge, the legend
             pill beside it, sharing one bottom edge (minimap 220 x 68 at x 166,
-            pill x 401-565, both end at y 882). The row owns the absolute
-            positioning, so neither item can drift away from the other. Hidden
-            below 220 px, where the frame draws neither and the bottom-right
-            controls stack would collide.
+            pill x 401-565, both end at y 882). It is a sibling of the scroller, not
+            a child, so it never scrolls with the content. Its containing block is
+            `.gc-graph__stage`, which starts at the gutter's left edge, so `left` is
+            the gutter width plus the canvas padding: measured from the canvas edge,
+            never on top of the gutter. The row owns the absolute positioning, so
+            neither item can drift away from the other. Hidden below 220 px, where
+            the frame draws neither and the bottom-right controls stack would
+            collide.
           */}
           {viewportWidthState >= 220 && (
             <div className="gc-canvas__bottom-row">
@@ -1109,6 +1113,7 @@ export function GraphCanvas({
                 <GraphMinimap
                   nodes={rows}
                   laneCount={laneCount}
+                  colors={graph?.lanes.map((lane) => lane.color) ?? []}
                   scrollLeft={scrollLeft}
                   viewportWidth={viewportWidthState}
                   zoom={zoom}

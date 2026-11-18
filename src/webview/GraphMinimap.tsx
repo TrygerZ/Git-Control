@@ -1,7 +1,8 @@
 /**
  * Minimap: a condensed overview of the whole loaded history with a draggable
- * viewport rectangle. Every commit becomes one 1 px tick, so even 10 000 rows
- * stay cheap — the ticks are drawn as a single path, not per-node elements.
+ * viewport rectangle. Frame 01 (`10:178`) draws one coloured horizontal line per
+ * branch lane, from its first commit to its last, so a lane stays readable at a
+ * glance and the cost is bounded by lane count rather than commit count.
  *
  * Accessibility: `role="slider"` over the row index, with `aria-valuetext` so the
  * announcement is "commit 120 dari 3.400" rather than a bare number. Home, End,
@@ -9,13 +10,15 @@
  * a pointer even though the visual affordance is a drag.
  */
 import { useCallback, useRef, type JSX, type PointerEvent } from 'react';
-import { minimapGeometry, minimapScrollFor, COLUMN_WIDTH } from './viewport';
+import { minimapGeometry, minimapLaneRows, minimapScrollFor, COLUMN_WIDTH } from './viewport';
 import { useT } from './useT';
 import type { GraphNode } from '../messages';
 
 interface Props {
   nodes: readonly GraphNode[];
   laneCount: number;
+  /** Lane colours, indexed by lane number. */
+  colors: readonly string[];
   scrollLeft: number;
   viewportWidth: number;
   zoom: number;
@@ -27,12 +30,11 @@ interface Props {
 }
 
 const HEIGHT = 48;
-/** Ticks are sampled so a huge history does not produce a huge path string. */
-const MAX_TICKS = 600;
 
 export function GraphMinimap({
   nodes,
   laneCount,
+  colors,
   scrollLeft,
   viewportWidth,
   zoom,
@@ -59,17 +61,10 @@ export function GraphMinimap({
   if (nodes.length === 0) return null;
 
   const geometry = minimapGeometry(scrollLeft, viewportWidth, zoom, totalWorldWidth, width);
-  const laneSpan = Math.max(1, laneCount);
-  const step = Math.max(1, Math.ceil(nodes.length / MAX_TICKS));
-  const colScale = totalWorldWidth > 0 ? width / totalWorldWidth : 0;
-
-  const ticks: string[] = [];
-  for (let i = 0; i < nodes.length; i += step) {
-    const node = nodes[i] as GraphNode;
-    const x = node.x * colScale;
-    const y = 4 + (node.lane / laneSpan) * (height - 8);
-    ticks.push(`M${x.toFixed(1)} ${y.toFixed(1)}v3`);
-  }
+  const rows = minimapLaneRows(nodes, laneCount);
+  /** First lane at 6 px, last at `height - 6`, evenly spaced between. */
+  const rowTop = (lane: number): number =>
+    6 + (lane / Math.max(1, laneCount - 1)) * (height - 12);
 
   const onPointerDown = (event: PointerEvent<SVGSVGElement>): void => {
     event.stopPropagation();
@@ -152,7 +147,23 @@ export function GraphMinimap({
         }
       }}
     >
-      <path className="gc-minimap__ticks" d={ticks.join('')} />
+      {rows.map((row) => {
+        const y = rowTop(row.lane);
+        const x1 = row.startX * geometry.scale;
+        // A single-commit lane is a point; the minimum length keeps it visible.
+        const x2 = Math.max(row.endX * geometry.scale, x1 + 2);
+        return (
+          <line
+            key={row.lane}
+            className="gc-minimap__lane"
+            x1={x1}
+            x2={x2}
+            y1={y}
+            y2={y}
+            stroke={colors[row.lane] ?? 'currentColor'}
+          />
+        );
+      })}
       <rect
         className="gc-minimap__viewport"
         x={geometry.rectLeft}
