@@ -601,6 +601,80 @@ export interface PullRequestsResult {
   rateLimit: GitHubRateLimit;
 }
 
+// ------------------------------------------------------ pull request detail (P24)
+
+export interface PullDetailPayload {
+  owner: string;
+  repo: string;
+  number: number;
+}
+
+/** `mergeable_state` narrowed to the values the panel states a sentence for. */
+export type PullMergeableState = 'clean' | 'dirty' | 'blocked' | 'behind' | 'unstable' | 'unknown';
+
+export interface PullDetail {
+  number: number;
+  title: string;
+  state: 'open' | 'closed' | 'merged';
+  draft: boolean;
+  author: string;
+  /** `https://avatars.githubusercontent.com` only; `null` falls back to initials. */
+  authorAvatarUrl: string | null;
+  headRef: string;
+  baseRef: string;
+  headSha: string;
+  /** Base branch tip from the API; the input to the local merge-base lookup. */
+  baseSha: string;
+  commits: number;
+  additions: number;
+  deletions: number;
+  changedFiles: number;
+  mergeableState: PullMergeableState;
+  /** `html_url`, https only, opened through `actions/openExternal`. */
+  htmlUrl: string;
+  /** Plain text, clamped. Never rendered as HTML. */
+  body: string;
+  createdAt: string;
+  updatedAt: string;
+  mergedAt: string | null;
+  /** Logins with a pending review request. */
+  reviewers: string[];
+  /** Logins whose latest review approves. */
+  approvedBy: string[];
+  /** Logins whose latest review requests changes. */
+  changesRequestedBy: string[];
+  labels: Array<{ name: string }>;
+}
+
+export interface PullCommit {
+  hash: string;
+  shortHash: string;
+  subject: string;
+  author: string;
+  committedAt: string;
+}
+
+export type PullFileStatus = 'added' | 'modified' | 'removed' | 'renamed';
+
+export interface PullFile {
+  path: string;
+  status: PullFileStatus;
+  additions: number;
+  deletions: number;
+}
+
+export type TimelineItem =
+  | { kind: 'comment'; id: number; author: string; at: string; body: string }
+  | {
+      kind: 'review';
+      id: number;
+      author: string;
+      at: string;
+      state: 'approved' | 'changes_requested' | 'commented';
+      body: string;
+    }
+  | { kind: 'reviewComment'; id: number; author: string; at: string; path: string; body: string };
+
 // ------------------------------------------------------------- checks (P21)
 
 /**
@@ -632,6 +706,11 @@ export interface CheckRunInfo {
   conclusion: CheckConclusion;
   /** `html_url`. Opened through `actions/openExternal` only, never an `href`. */
   url: string;
+  /**
+   * App that produced the run, e.g. `GitHub Actions` or `CodeQL`. Empty when the
+   * API sent no app; the Checks tab groups by it and keeps the empty group.
+   */
+  app: string;
   startedAt: string | null;
   completedAt: string | null;
 }
