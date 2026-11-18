@@ -28,9 +28,25 @@ import {
 } from './format';
 import { useT } from './useT';
 import { bridge } from './bridge';
-import { toErrorBody, useGitHubStore, useOperationStore, useSettingsStore } from './store';
+import { toErrorBody, useGitHubStore, useOperationStore, useRepoStore, useSettingsStore } from './store';
 import { EmptyState, ErrorBanner, FileIcon, FileListSkeleton, Icon, InfoBanner, MetadataSkeleton, Spinner } from './ui';
 import type { CommitDetail, CommitFileChange, ErrorBody } from '../messages';
+
+/**
+ * Classify a decorated ref for the inspector chip.
+ *
+ * `git log --decorate` hands the webview SHORT names (`feat/stash-pinned-footer`,
+ * `origin/main`), so a slash alone does not mean remote: a local branch may carry
+ * one. Only a known remote name before the first slash identifies a remote-tracking
+ * ref, which is why the caller passes the configured remote names.
+ */
+export function refChipKind(ref: string, remotes: ReadonlySet<string>): 'local' | 'remote' | 'tag' {
+  if (ref.startsWith('tag: ')) return 'tag';
+  if (ref.startsWith('refs/remotes/')) return 'remote';
+  if (ref.startsWith('refs/heads/')) return 'local';
+  const slash = ref.indexOf('/');
+  return slash > 0 && remotes.has(ref.slice(0, slash)) ? 'remote' : 'local';
+}
 
 interface Props {
   hash: string | null;
@@ -64,6 +80,10 @@ export function Inspector({ hash, onDetailLoaded }: Props): JSX.Element {
   const loadCommitPullRequests = useGitHubStore((st) => st.loadCommitPullRequests);
   const loadChecks = useGitHubStore((st) => st.loadChecks);
   const openUrl = useGitHubStore((st) => st.openUrl);
+  const remotes = useRepoStore((st) => st.remotes);
+  // `null` while the remote list is unknown degrades to an empty set: no ref is
+  // then remote by the name rule, and full refs still classify by their prefix.
+  const remoteNames = useMemo(() => new Set((remotes ?? []).map((r) => r.name)), [remotes]);
   const [imgFailed, setImgFailed] = useState(false);
 
   const hashRef = useRef(hash);
@@ -359,25 +379,24 @@ export function Inspector({ hash, onDetailLoaded }: Props): JSX.Element {
           <h3 className="gc-inspector__heading">{strings.inspector.sectionRefs}</h3>
           <ul className="gc-inspector__refs" aria-label={strings.inspector.refsAria}>
             {detail.refNames.map((ref) => {
-              // `tag: v1` is a tag; anything with a slash that is not a local
-              // branch is a remote; the rest is a local branch. The full name
-              // stays in `title`, the visible text drops only the tag prefix.
-              const isTag = ref.startsWith('tag: ');
-              const isRemote = !isTag && ref.includes('/') && !ref.startsWith('refs/heads/');
+              // Short names from `git log --decorate`, so the slash test alone
+              // would mislabel a local branch. The full name stays in `title`,
+              // the visible text drops only the tag prefix.
+              const kind = refChipKind(ref, remoteNames);
               return (
                 <li
                   key={ref}
-                  className={`gc-chip gc-chip--${isTag ? 'tag' : isRemote ? 'remote' : 'local'}`}
+                  className={`gc-chip gc-chip--${kind}`}
                   title={sanitizeGitText(ref)}
                 >
-                  {isTag ? (
+                  {kind === 'tag' ? (
                     <Icon name="tag" />
-                  ) : isRemote ? (
+                  ) : kind === 'remote' ? (
                     <Icon name="cloud" />
                   ) : (
                     <Icon name="git-branch" />
                   )}
-                  {sanitizeGitText(isTag ? ref.slice(5) : ref)}
+                  {sanitizeGitText(kind === 'tag' ? ref.slice(5) : ref)}
                 </li>
               );
             })}
