@@ -23,10 +23,17 @@ const read = (relative: string): string => {
 const CSS = 'src/webview/styles.css';
 
 test('the canvas reserves its scrollbar band once, as a local variable', () => {
+  // It must sit on `.gc-graph__stage`, not `.gc-canvas`: the floating chrome is
+  // absolutely positioned against the stage, so a variable declared on the canvas
+  // child never reaches them and `calc()` collapses to `bottom: auto`. Measured
+  // in the browser after putting it on the canvas: the minimap rendered at the
+  // stage's top edge instead of its bottom.
   const css = read(CSS);
+  const stage = css.match(/^\.gc-graph__stage\s*\{([^}]*)\}/m)?.[1] ?? '';
+  assert.ok(stage.length > 0, 'the stage has a rule');
+  assert.match(stage, /--gc-scrollbar-band:\s*\d+px/, 'the band is a named width');
   const canvas = css.match(/^\.gc-canvas\s*\{([^}]*)\}/m)?.[1] ?? '';
-  assert.ok(canvas.length > 0, 'the canvas has a rule');
-  assert.match(canvas, /--gc-scrollbar-band:\s*\d+px/, 'the band is a named width');
+  assert.doesNotMatch(canvas, /--gc-scrollbar-band/, 'not on the scroll container');
 });
 
 test('both floating groups clear the band above the scrollbar', () => {

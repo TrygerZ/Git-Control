@@ -1102,6 +1102,13 @@ h3 {
   align-items: center;
   gap: var(--gc-space-2);
   row-gap: var(--gc-space-2);
+  /*
+   * Never shrink. `.gc-graph` is a flex column, so a wrapped toolbar was squeezed
+   * back to its 44 px floor and its second row was cut off by the graph below it
+   * (measured: toolbar clientHeight 43, scrollHeight 64). The stage takes the
+   * shrink instead; it has `min-height: 0` for exactly that.
+   */
+  flex: 0 0 auto;
   /* Frame 01 (`9:45`) is 44 px tall; --gc-space-7 is 32, so the frame wins. */
   min-height: 44px;
   padding: var(--gc-space-3);
@@ -1885,6 +1892,14 @@ h3 {
    * gutter to reach the canvas edge. A local layout variable, not a design token.
    */
   --gc-gutter-width: 150px;
+  /*
+   * The scrollbar band the canvas loses to its own scrollbars (measured 19 px /
+   * 18 px on Windows). Declared here, not on `.gc-canvas`: the floating chrome
+   * is absolutely positioned against this stage, so the variable has to live on
+   * the ancestor that positions them or `calc()` resolves to nothing and the
+   * minimap flies to the top. A local layout variable, not a design token.
+   */
+  --gc-scrollbar-band: 20px;
   position: relative;
   display: flex;
   flex: 1 1 auto;
@@ -2000,13 +2015,6 @@ h3 {
   border-radius: var(--gc-radius);
   background: var(--vscode-editor-background);
   user-select: none;
-  /*
-   * Floating chrome above me (minimap, legend, zoom bar) must clear the
-   * horizontal scrollbar and the corner box I reserve when both bars show.
-   * Measured 19 px / 18 px on Windows; declare the band once, here, and let the
-   * floating rules offset past it. A local layout variable, not a design token.
-   */
-  --gc-scrollbar-band: 20px;
 }
 
 /*
