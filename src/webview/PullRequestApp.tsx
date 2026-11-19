@@ -10,7 +10,7 @@
  * Untrusted text is rendered as text nodes only. Bodies keep their line breaks
  * through `white-space: pre-wrap`, never through markup.
  */
-import { useEffect, useMemo, useState, type JSX, type ReactNode } from 'react';
+import { useEffect, useId, useMemo, useRef, useState, type JSX, type ReactNode } from 'react';
 import { bridge } from './bridge';
 import { formatDuration } from './actionsModel';
 import { summarizeChecks } from '../checkSummary';
@@ -33,7 +33,10 @@ import {
   type PullTab,
   type StatusTone,
 } from './pullView';
-import { initialPullTab, usePullStore } from './pullStore';
+import { initialPullTab, usePullStore, type PullMergeState } from './pullStore';
+import { mergeBlockReason, type BlockReason } from './pullMerge';
+import { MergePullDialog } from './MergePullDialog';
+import { ReviewDialog } from './ReviewDialog';
 import { Tablist, type TabDef } from './Tablist';
 import { GuardDialog } from './GuardDialog';
 import { ToastRegion } from './Toast';
@@ -55,6 +58,8 @@ import type {
   Lang,
   OpenDiffPayload,
   PullCommit,
+  ErrorBody,
+  MergePullResult,
   PullDetail,
   PullFile,
   PullFileStatus,
@@ -64,11 +69,10 @@ import type {
 const INT_MAX = 2_147_483_647;
 
 /**
- * The merge box's three options, drawn disabled until P25 wires the mutation.
- * Deliberately not in the catalogs: this build cannot perform any of them, and a
- * translated string would suggest otherwise. P25 adds the keys with the control.
+ * The merge box's two methods live in `MergePullDialog` over `METHODS` in
+ * `pullMerge.ts`. Rebase is absent by construction (D-08): no list here ever
+ * offered it, and no payload can carry it.
  */
-const MERGE_OPTIONS = ['Merge commit', 'Squash and merge', 'Rebase and merge'] as const;
 
 /**
  * `data-pr` is untrusted: it arrives as an attribute, so `Number.parseInt('12x')`
@@ -206,8 +210,7 @@ function mergeRows(
         id: line.id,
         tone: line.tone,
         title: strings.prDetail.noConflicts,
-        // The box is a placeholder, so the second line says when merging arrives.
-        detail: strings.prDetail.mergeLater,
+        detail: null,
       });
     }
   }
@@ -251,6 +254,19 @@ export function PullRequestApp(): JSX.Element {
   const load = usePullStore((s) => s.load);
   const setTab = usePullStore((s) => s.setTab);
   const loadTab = usePullStore((s) => s.loadTab);
+  const mergeState = usePullStore((s) => s.mergeState);
+  const mergeError = usePullStore((s) => s.mergeError);
+  const mergeResult = usePullStore((s) => s.mergeResult);
+  const openMerge = usePullStore((s) => s.openMerge);
+  const cancelMerge = usePullStore((s) => s.cancelMerge);
+  const retryMerge = usePullStore((s) => s.retryMerge);
+  const mergeNow = usePullStore((s) => s.merge);
+  const review = usePullStore((s) => s.review);
+  const reply = usePullStore((s) => s.reply);
+  const closePr = usePullStore((s) => s.close);
+  const reviewState = usePullStore((s) => s.reviewState);
+  const reviewError = usePullStore((s) => s.reviewError);
+  const [reviewOpen, setReviewOpen] = useState(false);
 
   const number = useMemo(pullNumberFromBody, []);
   const owner = linkage?.available === true ? linkage.owner : null;
@@ -402,6 +418,18 @@ export function PullRequestApp(): JSX.Element {
   const alreadyCheckedOut = checkoutRef !== null && currentBranch === checkoutRef;
   const listed = pullRequests.find((pr) => pr.number === detail.number);
   const isFork = listed?.isFork === true;
+  // The panel reads the same rule the store applies, so the box and the button
+  // cannot disagree about whether a merge is possible.
+  const emptyChecks: CheckSummary = {
+    state: 'none',
+    total: 0,
+    passed: 0,
+    failing: 0,
+    pending: 0,
+    failingNames: [],
+  };
+  const block = mergeBlockReason(detail, checks ?? emptyChecks);
+  const mergedAlready = detail.state === 'merged';
   const counts = tabCounts(detail, checks);
   const withCount = (label: string, count: number | null): string =>
     count === null ? label : `${label}, ${formatCount(count, language)}`;
@@ -471,20 +499,15 @@ export function PullRequestApp(): JSX.Element {
               <Icon name="git-branch" />
               {strings.prDetail.checkoutBranch}
             </button>
-            {/*
-              Frame 06 has three buttons; review submission is P25, so this one is
-              a placeholder. No catalog key added (section 7 fixes the key set), and
-              no handler: the `title` says why it is inert.
-            */}
+            {/* Frame 06: the review form, and frame 53: the More menu. */}
             <button
               type="button"
               className="gc-button gc-button--quiet"
-              disabled
-              aria-label={strings.prDetail.mergeDisabledAria}
-              title={strings.prDetail.mergeDisabledAria}
+              disabled={detail.state !== 'open'}
+              onClick={() => setReviewOpen(true)}
             >
               <Icon name="check" />
-              Review changes
+              {strings.prMerge.reviewButton}
             </button>
             <button
               type="button"
@@ -495,15 +518,14 @@ export function PullRequestApp(): JSX.Element {
               <Icon name="external" />
               {strings.prDetail.openOnGitHub}
             </button>
-            <button
-              type="button"
-              className="gc-icon-button"
-              disabled
-              aria-label={strings.prDetail.tooltipMoreUnavailable}
-              title={strings.prDetail.tooltipMoreUnavailable}
-            >
-              <Icon name="ellipsis" />
-            </button>
+            <PullMoreMenu
+              detail={detail}
+              strings={strings}
+              onCopy={() => void copy(detail.htmlUrl)}
+              onOpen={() => void openUrl(detail.htmlUrl)}
+              onRefresh={retry}
+              onClose={() => void closePr()}
+            />
           </div>
         </div>
         <div className="gc-prdetail__branchline">
@@ -567,6 +589,16 @@ export function PullRequestApp(): JSX.Element {
               now={now}
               strings={strings}
               language={language}
+              block={block}
+              merged={mergedAlready}
+              mergeState={mergeState}
+              mergeError={mergeError}
+              mergeResult={mergeResult}
+              onOpenMerge={() => openMerge()}
+              onCancelMerge={() => cancelMerge()}
+              onRetryMerge={() => void retryMerge()}
+              onRevealMerge={(hash) => void revealInGraph(hash)}
+              onReply={(id, body) => void reply(id, body)}
             />
           )}
           {tab === 'commits' && (
@@ -624,6 +656,26 @@ export function PullRequestApp(): JSX.Element {
         </aside>
       </div>
 
+      {mergeState === 'confirm' && (
+        <MergePullDialog
+          detail={detail}
+          owner={owner}
+          repo={repo}
+          onConfirm={(options) => void mergeNow(options)}
+          onCancel={() => cancelMerge()}
+        />
+      )}
+      {reviewOpen && (
+        <ReviewDialog
+          number={detail.number}
+          headRef={sanitizeGitText(detail.headRef)}
+          onConfirm={(input) => {
+            setReviewOpen(false);
+            void review(input);
+          }}
+          onCancel={() => setReviewOpen(false)}
+        />
+      )}
       <GuardDialog />
       <ToastRegion />
     </div>
@@ -640,6 +692,16 @@ function ConversationTab({
   now,
   strings,
   language,
+  block,
+  merged,
+  mergeState,
+  mergeError,
+  mergeResult,
+  onOpenMerge,
+  onCancelMerge,
+  onRetryMerge,
+  onRevealMerge,
+  onReply,
 }: {
   detail: PullDetail;
   timeline: TimelineItem[] | null;
@@ -648,6 +710,16 @@ function ConversationTab({
   now: number;
   strings: Catalog;
   language: Lang;
+  block: BlockReason | null;
+  merged: boolean;
+  mergeState: PullMergeState;
+  mergeError: ErrorBody | null;
+  mergeResult: MergePullResult | null;
+  onOpenMerge(): void;
+  onCancelMerge(): void;
+  onRetryMerge(): void;
+  onRevealMerge(hash: string): void;
+  onReply(commentId: number, body: string): void;
 }): JSX.Element {
   const rows = mergeRows(detail, checks, strings, language);
   const tone = mergeTone(rows);
@@ -692,9 +764,10 @@ function ConversationTab({
         </InfoBanner>
       )}
 
-      {/*
-        Disabled by construction: there is no click handler in this box and no
-        merge request kind in this build. P25 replaces it with the real control.
+            {/*
+        Frame 06: the status rows, then the merge control. The rows state what
+        GitHub reports; `mergeBlockReason` decides whether the button is live and
+        which sentence explains a dead one. The host re-checks and is authoritative.
       */}
       <section
         className={
@@ -702,7 +775,7 @@ function ConversationTab({
             ? 'gc-prdetail__merge'
             : `gc-prdetail__merge gc-prdetail__merge--${tone}`
         }
-        aria-label={strings.prDetail.mergeDisabledAria}
+        aria-label={strings.prMerge.mergeDisabledAria}
       >
         <ul className="gc-prdetail__statuses">
           {rows.map((row) => (
@@ -720,19 +793,25 @@ function ConversationTab({
             </li>
           ))}
         </ul>
-        <div
-          className="gc-segmented gc-prdetail__merge-options"
-          role="group"
-          aria-label={strings.prDetail.mergeDisabledAria}
-          aria-disabled="true"
-        >
-          {MERGE_OPTIONS.map((option) => (
-            <button key={option} type="button" className="gc-button" aria-disabled="true" disabled>
-              {option}
-            </button>
-          ))}
-        </div>
-        <p className="gc-prdetail__merge-caption">{strings.prDetail.mergeLater}</p>
+        {merged ? (
+          <MergedCard
+            detail={detail}
+            result={mergeResult}
+            strings={strings}
+            onReveal={onRevealMerge}
+          />
+        ) : (
+          <MergeControl
+            detail={detail}
+            block={block}
+            mergeState={mergeState}
+            mergeError={mergeError}
+            strings={strings}
+            onOpen={onOpenMerge}
+            onRetry={onRetryMerge}
+            onCancel={onCancelMerge}
+          />
+        )}
       </section>
     </>
   );
@@ -972,5 +1051,239 @@ function FilesTab({
         </InfoBanner>
       )}
     </>
+  );
+}
+
+/**
+ * The merge control inside the merge box (frame 06).
+ *
+ * Absent when there is no block and no merged state: the box draws the button
+ * that opens the confirmation dialog. A blocked box says which reason in words
+ * and offers nothing to press, because a disabled button with no stated reason
+ * is worse than no button. While merging, the button holds its place and says so
+ * in a polite live region.
+ */
+function MergeControl({
+  detail,
+  block,
+  mergeState,
+  mergeError,
+  strings,
+  onOpen,
+  onRetry,
+  onCancel,
+}: {
+  detail: PullDetail;
+  block: BlockReason | null;
+  mergeState: PullMergeState;
+  mergeError: ErrorBody | null;
+  strings: Catalog;
+  onOpen(): void;
+  onRetry(): void;
+  onCancel(): void;
+}): JSX.Element {
+  if (mergeState === 'merging') {
+    return (
+      <p className="gc-prmerge__progress" role="status" aria-live="polite">
+        <Spinner label={strings.prMerge.merging} />
+      </p>
+    );
+  }
+  if (mergeState === 'failed' && mergeError !== null) {
+    return (
+      <div className="gc-prdetail__merge-options">
+        <button type="button" className="gc-button gc-button--primary" onClick={onRetry}>
+          {strings.prMerge.retry}
+        </button>
+        <button type="button" className="gc-button gc-button--quiet" onClick={onCancel}>
+          {strings.prMerge.cancel}
+        </button>
+        <p className="gc-prmerge__blocked" role="alert">
+          {sanitizeGitText(mergeError.message)}
+        </p>
+      </div>
+    );
+  }
+  if (block !== null) {
+    return (
+      <p className="gc-prmerge__blocked" title={strings.prMerge.mergeDisabledAria}>
+        {strings.prMerge.blocked[block]}
+      </p>
+    );
+  }
+  return (
+    <div className="gc-prdetail__merge-options">
+      <button
+        type="button"
+        className="gc-button gc-button--primary gc-prmerge__submit"
+        aria-label={strings.prMerge.dialogTitle(strings.prMerge.methodSquash, String(detail.number))}
+        onClick={onOpen}
+      >
+        <Icon name="merge" />
+        {strings.prMerge.methodSquash}
+      </button>
+      <p className="gc-prdetail__merge-caption">{strings.prMerge.runsOnGitHub}</p>
+    </div>
+  );
+}
+
+/**
+ * The merged card (frame 52). States the merge, the deletion outcome, and offers
+ * the one useful exit: revealing the merge commit in the graph.
+ */
+function MergedCard({
+  detail,
+  result,
+  strings,
+  onReveal,
+}: {
+  detail: PullDetail;
+  result: MergePullResult | null;
+  strings: Catalog;
+  onReveal(hash: string): void;
+}): JSX.Element {
+  const mergeSha = result?.mergeSha ?? null;
+  return (
+    <div className="gc-prmerge__done">
+      <Icon name="merge" />
+      <span className="gc-prmerge__done-body">
+        <strong className="gc-prmerge__done-title">{strings.prMerge.mergedTitle}</strong>
+        <span className="gc-prmerge__done-detail">
+          {strings.prMerge.mergedSentence(sanitizeGitText(detail.headRef), sanitizeGitText(detail.baseRef))}
+        </span>
+        {result !== null && result.branchDeleted.local === true && result.branchDeleted.remote === true && (
+          <span className="gc-prmerge__done-detail">
+            {strings.prMerge.branchDeletedSentence(sanitizeGitText(detail.headRef))}
+          </span>
+        )}
+        {result !== null && (result.warnings.includes('branch-local') || result.warnings.includes('branch-remote')) && (
+          <span className="gc-prmerge__warning">
+            {strings.prMerge.branchDeleteWarning(sanitizeGitText(detail.headRef))}
+          </span>
+        )}
+      </span>
+      {mergeSha !== null && (
+        <button
+          type="button"
+          className="gc-button gc-button--quiet"
+          onClick={() => onReveal(mergeSha)}
+        >
+          <Icon name="graph" />
+          {strings.prMerge.showInGraph}
+        </button>
+      )}
+    </div>
+  );
+}
+
+/**
+ * The panel's More menu (frame 53).
+ *
+ * Rows navigate, copy, refresh, or close. The close row names itself and the host
+ * asks for the level 1 confirmation; nothing here can run a git mutation. Escape
+ * and Tab close it and hand focus back to the trigger.
+ */
+function PullMoreMenu({
+  detail,
+  strings,
+  onCopy,
+  onOpen,
+  onRefresh,
+  onClose,
+}: {
+  detail: PullDetail;
+  strings: Catalog;
+  onCopy(): void;
+  onOpen(): void;
+  onRefresh(): void;
+  onClose(): void;
+}): JSX.Element {
+  const [open, setOpen] = useState(false);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+  const menuId = useId();
+
+  useEffect(() => {
+    if (!open) return;
+    const onPointerDown = (event: PointerEvent): void => {
+      const target = event.target as Node;
+      if (menuRef.current?.contains(target) === true) return;
+      if (triggerRef.current?.contains(target) === true) return;
+      setOpen(false);
+    };
+    document.addEventListener('pointerdown', onPointerDown, true);
+    return () => document.removeEventListener('pointerdown', onPointerDown, true);
+  }, [open]);
+
+  const close = (returnFocus: boolean): void => {
+    setOpen(false);
+    if (returnFocus) triggerRef.current?.focus();
+  };
+
+  const run = (action: () => void): void => {
+    action();
+    close(true);
+  };
+
+  return (
+    <span className="gc-explorer__actions">
+      <button
+        ref={triggerRef}
+        type="button"
+        className="gc-icon-button"
+        aria-label={strings.prMerge.moreAria}
+        title={strings.prMerge.moreAria}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        aria-controls={menuId}
+        onClick={() => setOpen(!open)}
+      >
+        <Icon name="ellipsis" />
+      </button>
+      {open && (
+        <div
+          id={menuId}
+          ref={menuRef}
+          className="gc-menu"
+          role="menu"
+          aria-orientation="vertical"
+          aria-label={strings.prMerge.moreAria}
+          onKeyDown={(event) => {
+            if (event.key === 'Escape') {
+              event.preventDefault();
+              close(true);
+            } else if (event.key === 'Tab') {
+              close(true);
+            }
+          }}
+        >
+          <button type="button" role="menuitem" className="gc-menu__item" onClick={() => run(onCopy)}>
+            <span className="gc-menu__label">{strings.prMerge.copyLink}</span>
+          </button>
+          <button
+            type="button"
+            role="menuitem"
+            className="gc-menu__item"
+            disabled={detail.htmlUrl.length === 0}
+            onClick={() => run(onOpen)}
+          >
+            <span className="gc-menu__label">{strings.prMerge.openOnGitHub}</span>
+          </button>
+          <button type="button" role="menuitem" className="gc-menu__item" onClick={() => run(onRefresh)}>
+            <span className="gc-menu__label">{strings.prMerge.refresh}</span>
+          </button>
+          <span className="gc-menu__separator" aria-hidden="true" />
+          <button
+            type="button"
+            role="menuitem"
+            className="gc-menu__item"
+            disabled={detail.state !== 'open'}
+            onClick={() => run(onClose)}
+          >
+            <span className="gc-menu__label">{strings.prMerge.closePr}</span>
+          </button>
+        </div>
+      )}
+    </span>
   );
 }

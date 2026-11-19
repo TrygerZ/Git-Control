@@ -49,11 +49,16 @@ test('the panel never renders untrusted text as markup', () => {
   assert.doesNotMatch(code, /<a\s[^>]*href=/);
 });
 
-test('the pane owns no mutation request', () => {
+test('the pane sends its mutations through the store, never as its own request literal', () => {
   const code = source('src/webview/PullRequestApp.tsx');
+  // The panel may not hand-roll a request for an action the store already owns.
+  // Every P25 write lives in `pullStore.ts`, where the state machine and the
+  // idempotency key are; the panel only calls the store actions.
   assert.doesNotMatch(code, /'github\/createPullRequest'|'actions\/commit'|'actions\/git'/);
-  // The merge controls are placeholders until P25: the caption states it.
-  assert.match(code, /mergeLater|mergeDisabledAria/);
+  assert.doesNotMatch(code, /'github\/mergePullRequest'|'github\/submitReview'|'github\/closePullRequest'/);
+  // P25 replaced the placeholder box with the real control, which names itself.
+  assert.match(code, /prMerge\.mergeDisabledAria/);
+  assert.match(code, /MergePullDialog/);
 });
 
 test('the icon-theme pull and the host events are wired for the pr root', () => {

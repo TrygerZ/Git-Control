@@ -900,7 +900,6 @@ const en = {
     checkoutBranch: 'Checkout branch',
     openOnGitHub: 'Open on GitHub',
     openPanelAria: (n: string) => `Open pull request #${n}`,
-    mergeLater: 'Merging is available in a later version.',
     noConflicts: 'No conflicts with base branch',
     checksRunning: 'Checks are running',
     allChecksPassed: 'All checks have passed',
@@ -927,7 +926,6 @@ const en = {
     mergeDisabledAria: 'Merge controls are not available yet',
     openCommitInGraph: 'Show in graph',
     copyHash: 'Copy commit hash',
-    tooltipMoreUnavailable: 'More actions are not available yet',
   },
 
   /**
@@ -972,6 +970,7 @@ const en = {
     },
     headMoved: 'The branch changed since you opened this. Refresh and try again.',
     needScope: 'Your token cannot merge. Reconnect with pull request write access.',
+    reviewButton: 'Review changes',
     reviewTitle: (n: string) => `Review changes #${n}`,
     reviewRunsOnGitHub: 'Posted to GitHub under your account. Local history is not changed.',
     reviewNote: 'Comment and Request changes need a message. Approve can be sent empty.',

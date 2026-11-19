@@ -20,6 +20,7 @@ import { activeLang, t } from './i18n';
 import { toErrorBody, useGitHubStore, useOperationStore } from './store';
 import type {
   CheckRunInfo,
+  MergePullResult,
   CheckSummary,
   ErrorBody,
   PullCommit,
@@ -29,6 +30,9 @@ import type {
   ReviewEvent,
   TimelineItem,
 } from '../messages';
+
+/** The merge state machine. A refusal is a state the panel explains. */
+export type PullMergeState = 'idle' | 'confirm' | 'merging' | 'merged' | 'failed';
 
 export interface PullState {
   detail: PullDetail | null;
@@ -44,8 +48,10 @@ export interface PullState {
   error: ErrorBody | null;
   truncated: { commits: boolean; files: boolean; timeline: boolean };
   /** P25 merge state machine. A refusal is a state the panel explains, not a toast. */
-  mergeState: 'idle' | 'confirm' | 'merging' | 'merged' | 'failed';
+  mergeState: PullMergeState;
   mergeError: ErrorBody | null;
+  /** The successful result, so the merged card can name the sha and the deletions. */
+  mergeResult: MergePullResult | null;
   /** P25 review submit state. The dialog owns the text, so none is kept here. */
   reviewState: 'idle' | 'sending' | 'failed';
   reviewError: ErrorBody | null;
@@ -194,6 +200,7 @@ export const usePullStore = create<PullState>((set, get) => ({
   truncated: { commits: false, files: false, timeline: false },
   mergeState: 'idle',
   mergeError: null,
+  mergeResult: null,
   reviewState: 'idle',
   reviewError: null,
 
@@ -353,7 +360,7 @@ export const usePullStore = create<PullState>((set, get) => ({
     mergeOptions = options;
     set({ mergeState: 'merging', mergeError: null });
     try {
-      await bridge.request('github/mergePullRequest', {
+      const outcome = await bridge.request('github/mergePullRequest', {
         owner: repo.owner,
         repo: repo.repo,
         number: detail.number,
@@ -370,7 +377,7 @@ export const usePullStore = create<PullState>((set, get) => ({
       // forget the options so a stray retry has nothing to resend.
       mergeKey = null;
       mergeOptions = null;
-      set({ mergeState: 'merged' });
+      set({ mergeState: 'merged', mergeResult: outcome });
       await get().load({ owner: repo.owner, repo: repo.repo, number: detail.number });
       // The list row now says merged; re-read auth, linkage, and the list.
       void useGitHubStore.getState().load();

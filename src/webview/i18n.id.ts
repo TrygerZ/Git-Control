@@ -892,7 +892,6 @@ const id: Catalog = {
     checkoutBranch: 'Checkout branch',
     openOnGitHub: 'Buka di GitHub',
     openPanelAria: (n: string) => `Buka pull request #${n}`,
-    mergeLater: 'Penggabungan tersedia di versi berikutnya.',
     noConflicts: 'Tidak ada konflik dengan branch dasar',
     checksRunning: 'Pemeriksaan sedang berjalan',
     allChecksPassed: 'Semua pemeriksaan lulus',
@@ -919,7 +918,6 @@ const id: Catalog = {
     mergeDisabledAria: 'Kontrol penggabungan belum tersedia',
     openCommitInGraph: 'Tampilkan di grafik',
     copyHash: 'Salin hash commit',
-    tooltipMoreUnavailable: 'Aksi lain belum tersedia',
   },
 
   /** P25 merge dan review. Kunci yang sama dengan katalog en. */
@@ -960,6 +958,7 @@ const id: Catalog = {
     },
     headMoved: 'Branch berubah sejak kamu membukanya. Muat ulang lalu coba lagi.',
     needScope: 'Token kamu tidak bisa merge. Sambungkan ulang dengan akses tulis pull request.',
+    reviewButton: 'Tinjau perubahan',
     reviewTitle: (n: string) => `Review perubahan #${n}`,
     reviewRunsOnGitHub: 'Dikirim ke GitHub atas nama akunmu. Riwayat lokal tidak diubah.',
     reviewNote: 'Comment dan Request changes perlu pesan. Approve boleh dikirim kosong.',
