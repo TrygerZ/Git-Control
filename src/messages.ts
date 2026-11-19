@@ -675,6 +675,78 @@ export type TimelineItem =
     }
   | { kind: 'reviewComment'; id: number; author: string; at: string; path: string; body: string };
 
+// --------------------------------------------------- merge and review (P25)
+
+/**
+ * How a pull request merges.
+ *
+ * `rebase` is absent on purpose (D-08). It is the one method GitHub implements by
+ * rewriting the base branch's history, which no local-git tool can keep up with,
+ * and the phase file hides it permanently. `validateMergeMethod` is the runtime
+ * half of that decision.
+ */
+export type MergeMethod = 'merge' | 'squash';
+
+/** The three review events GitHub documents. A dismissal is not one of them. */
+export type ReviewEvent = 'APPROVE' | 'REQUEST_CHANGES' | 'COMMENT';
+
+export interface MergePullPayload extends GitHubMutationMeta {
+  owner: string;
+  repo: string;
+  number: number;
+  method: MergeMethod;
+  /**
+   * Head SHA the user saw. The host sends it as `sha`, so GitHub answers 409 if
+   * the head moved and a confirm click cannot merge unreviewed commits.
+   */
+  expectedHeadSha: string;
+  /** Squash and merge only. Omitted means GitHub's default title. */
+  commitTitle?: string;
+  commitMessage?: string;
+  /** Delete the head branch locally and on origin after the merge. */
+  deleteBranch?: boolean;
+  /** Remote the head branch is deleted from. Defaults to origin host-side. */
+  remote?: string;
+}
+
+export interface MergePullResult {
+  merged: boolean;
+  /** The merge commit GitHub created, or `null` when it reports none. */
+  mergeSha: string | null;
+  /**
+   * `null` means the deletion was not attempted, `true` means it succeeded, and
+   * `false` means git refused. A refused delete is a warning, never an error:
+   * the merge already landed on GitHub and cannot be undone from here.
+   */
+  branchDeleted: { remote: boolean | null; local: boolean | null };
+  /** Stable ids for the warnings the panel renders, never free text from GitHub. */
+  warnings: string[];
+}
+
+export interface ClosePullPayload extends GitHubMutationMeta {
+  owner: string;
+  repo: string;
+  number: number;
+}
+
+export interface SubmitReviewPayload extends GitHubMutationMeta {
+  owner: string;
+  repo: string;
+  number: number;
+  event: ReviewEvent;
+  /** Required for REQUEST_CHANGES and COMMENT; ignored for APPROVE. */
+  body: string;
+  expectedHeadSha: string;
+}
+
+export interface ReplyReviewPayload extends GitHubMutationMeta {
+  owner: string;
+  repo: string;
+  number: number;
+  commentId: number;
+  body: string;
+}
+
 // ------------------------------------------------------------- checks (P21)
 
 /**
@@ -1212,6 +1284,20 @@ export interface RequestMap {
   };
   /** Reviewer login suggestions. Read-only. */
   'github/prReviewers': { payload: PrReviewersPayload; response: PrReviewersResult };
+  /**
+   * Merge a pull request on GitHub at the pinned head. Level 1 confirmation; the
+   * host re-reads the pull request and re-checks mergeability before it writes.
+   */
+  'github/mergePullRequest': { payload: MergePullPayload; response: MergePullResult };
+  /** Close a pull request without merging. Level 1 confirmation. */
+  'github/closePullRequest': { payload: ClosePullPayload; response: { closed: boolean } };
+  /**
+   * Submit one review. No confirmation: the review form is the act, and every
+   * frame that shows it shows a Submit button, not a confirm step.
+   */
+  'github/submitReview': { payload: SubmitReviewPayload; response: { reviewId: number } };
+  /** Reply inside an existing review thread. Additive, so no confirmation. */
+  'github/replyReviewComment': { payload: ReplyReviewPayload; response: { commentId: number } };
   'settings/get': { payload: SettingsGetPayload; response: SettingsSnapshot };
   'settings/set': { payload: SettingsSetPayload; response: SettingsSnapshot };
   /**

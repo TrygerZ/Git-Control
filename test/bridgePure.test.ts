@@ -19,6 +19,12 @@ import {
   validatePrPreparePayload,
   validatePrReviewersPayload,
   validatePullDetailPayload,
+  validateMergePullPayload,
+  validateClosePullPayload,
+  validateSubmitReviewPayload,
+  validateReplyReviewCommentPayload,
+  GITHUB_MUTATION_KINDS,
+  MUTATION_KINDS,
   type Outcome,
 } from '../src/bridgePure';
 import type { ErrorCode, Request } from '../src/messages';
@@ -555,4 +561,252 @@ test('validateOpenPullRequestPayload checks the number alone', () => {
     detailOf(() => validateOpenPullRequestPayload({ number: 1, path: '/etc/passwd' }, invalid)),
     'payload',
   );
+});
+
+// --------------------------------------------------- P25 merge and review (P25)
+
+/**
+ * Four payloads share one shape: the slug pair, the number, and the fields the
+ * endpoint needs. The slug pair and the number name path segments of every URL,
+ * so they are held to the same rules as every other GitHub read. The merge and
+ * review payloads pin the head sha the user saw, and a missing sha is refused
+ * rather than defaulted: a merge with no pin is exactly the merge this phase
+ * exists to prevent.
+ */
+test('validateMergePullPayload accepts the full shape and refuses a missing pin', () => {
+  const invalid = (detail: string): never => {
+    throw new Error(detail);
+  };
+  const detailOf = (fn: () => void): string => {
+    try {
+      fn();
+      return 'accepted';
+    } catch (err) {
+      return (err as Error).message;
+    }
+  };
+  const base = {
+    owner: 'o',
+    repo: 'r',
+    number: 150,
+    method: 'merge' as const,
+    expectedHeadSha: 'a'.repeat(40),
+    idempotencyKey: 'k',
+    confirm: true,
+  };
+
+  assert.equal(detailOf(() => validateMergePullPayload(base, invalid)), 'accepted');
+  assert.equal(
+    detailOf(() =>
+      validateMergePullPayload(
+        {
+          ...base,
+          method: 'squash',
+          commitTitle: 'fix: a title',
+          commitMessage: 'A body.',
+          deleteBranch: true,
+        },
+        invalid,
+      ),
+    ),
+    'accepted',
+  );
+
+  for (const method of ['rebase', 'MERGE', '', null]) {
+    assert.equal(detailOf(() => validateMergePullPayload({ ...base, method }, invalid)), 'method', String(method));
+  }
+  for (const sha of ['', 'abc', 'a'.repeat(39), 'g'.repeat(40), 7, null]) {
+    assert.equal(
+      detailOf(() => validateMergePullPayload({ ...base, expectedHeadSha: sha }, invalid)),
+      'expectedHeadSha',
+      String(sha),
+    );
+  }
+  assert.equal(
+    detailOf(() => validateMergePullPayload({ ...base, number: 0 }, invalid)),
+    'number',
+  );
+  assert.equal(
+    detailOf(() => validateMergePullPayload({ ...base, owner: '..' }, invalid)),
+    'owner/repo',
+  );
+  // A squash title that is not a string, or is blank, is refused when present.
+  assert.equal(
+    detailOf(() => validateMergePullPayload({ ...base, commitTitle: '   ' }, invalid)),
+    'commitTitle',
+  );
+  assert.equal(
+    detailOf(() => validateMergePullPayload({ ...base, commitMessage: 7 }, invalid)),
+    'commitMessage',
+  );
+  assert.equal(
+    detailOf(() => validateMergePullPayload({ ...base, deleteBranch: 'yes' }, invalid)),
+    'deleteBranch',
+  );
+  // An extra field is a caller bug, and is refused rather than ignored.
+  assert.equal(
+    detailOf(() => validateMergePullPayload({ ...base, path: '/etc/passwd' }, invalid)),
+    'payload',
+  );
+});
+
+test('validateClosePullPayload admits only the slug pair, the number, and the write meta', () => {
+  const invalid = (detail: string): never => {
+    throw new Error(detail);
+  };
+  const detailOf = (fn: () => void): string => {
+    try {
+      fn();
+      return 'accepted';
+    } catch (err) {
+      return (err as Error).message;
+    }
+  };
+  assert.equal(
+    detailOf(() => validateClosePullPayload({ owner: 'o', repo: 'r', number: 150, idempotencyKey: 'k' }, invalid)),
+    'accepted',
+  );
+  assert.equal(
+    detailOf(() => validateClosePullPayload({ owner: 'o', repo: 'r', number: 0, idempotencyKey: 'k' }, invalid)),
+    'number',
+  );
+  assert.equal(
+    detailOf(() =>
+      validateClosePullPayload({ owner: 'o', repo: 'r', number: 1, idempotencyKey: 'k', extra: true }, invalid),
+    ),
+    'payload',
+  );
+});
+
+test('validateSubmitReviewPayload holds the event, the body rule, and the pin', () => {
+  const invalid = (detail: string): never => {
+    throw new Error(detail);
+  };
+  const detailOf = (fn: () => void): string => {
+    try {
+      fn();
+      return 'accepted';
+    } catch (err) {
+      return (err as Error).message;
+    }
+  };
+  const base = {
+    owner: 'o',
+    repo: 'r',
+    number: 150,
+    event: 'APPROVE' as const,
+    body: '',
+    expectedHeadSha: 'a'.repeat(40),
+    idempotencyKey: 'k',
+  };
+
+  assert.equal(detailOf(() => validateSubmitReviewPayload(base, invalid)), 'accepted');
+  assert.equal(
+    detailOf(() => validateSubmitReviewPayload({ ...base, event: 'REQUEST_CHANGES', body: 'Please fix.' }, invalid)),
+    'accepted',
+  );
+  assert.equal(
+    detailOf(() => validateSubmitReviewPayload({ ...base, event: 'COMMENT', body: 'A note.' }, invalid)),
+    'accepted',
+  );
+  // Request changes and comment need text; approve does not.
+  assert.equal(
+    detailOf(() => validateSubmitReviewPayload({ ...base, event: 'REQUEST_CHANGES', body: '   ' }, invalid)),
+    'body',
+  );
+  assert.equal(
+    detailOf(() => validateSubmitReviewPayload({ ...base, event: 'COMMENT', body: '' }, invalid)),
+    'body',
+  );
+  assert.equal(detailOf(() => validateSubmitReviewPayload({ ...base, event: 'DISMISS' }, invalid)), 'event');
+  assert.equal(detailOf(() => validateSubmitReviewPayload({ ...base, event: 'approve' }, invalid)), 'event');
+  assert.equal(
+    detailOf(() => validateSubmitReviewPayload({ ...base, expectedHeadSha: 'nope' }, invalid)),
+    'expectedHeadSha',
+  );
+  assert.equal(
+    detailOf(() => validateSubmitReviewPayload({ ...base, body: 'a'.repeat(65_537) }, invalid)),
+    'body',
+  );
+});
+
+test('validateReplyReviewCommentPayload holds the comment id and the body', () => {
+  const invalid = (detail: string): never => {
+    throw new Error(detail);
+  };
+  const detailOf = (fn: () => void): string => {
+    try {
+      fn();
+      return 'accepted';
+    } catch (err) {
+      return (err as Error).message;
+    }
+  };
+  const base = {
+    owner: 'o',
+    repo: 'r',
+    number: 150,
+    commentId: 44,
+    body: 'Agreed.',
+    idempotencyKey: 'k',
+  };
+  assert.equal(detailOf(() => validateReplyReviewCommentPayload(base, invalid)), 'accepted');
+  for (const commentId of [0, -1, 1.5, '44', null]) {
+    assert.equal(
+      detailOf(() => validateReplyReviewCommentPayload({ ...base, commentId }, invalid)),
+      'commentId',
+      String(commentId),
+    );
+  }
+  assert.equal(
+    detailOf(() => validateReplyReviewCommentPayload({ ...base, body: '  ' }, invalid)),
+    'body',
+  );
+});
+
+test('the four P25 kinds join the GitHub mutation registry, and stay disjoint from git', () => {
+  for (const kind of [
+    'github/mergePullRequest',
+    'github/closePullRequest',
+    'github/submitReview',
+    'github/replyReviewComment',
+  ]) {
+    assert.ok(GITHUB_MUTATION_KINDS.has(kind), kind);
+    assert.ok(!MUTATION_KINDS.has(kind), `${kind} is not a git mutation`);
+  }
+  for (const kind of ['github/pullDetail', 'github/pullCommits', 'github/pullFiles', 'github/pullTimeline']) {
+    assert.ok(!GITHUB_MUTATION_KINDS.has(kind), `${kind} is a read and is never replayed`);
+  }
+});
+
+test('a merge, close, review, or reply with a key is replayable', () => {
+  for (const kind of [
+    'github/mergePullRequest',
+    'github/closePullRequest',
+    'github/submitReview',
+    'github/replyReviewComment',
+  ]) {
+    assert.equal(
+      idempotencyKeyOf({
+        id: 'r1',
+        kind,
+        payload: { owner: 'o', repo: 'r', number: 1, idempotencyKey: 'k1' },
+      } as unknown as Request),
+      `${kind}:k1`,
+      kind,
+    );
+  }
+});
+
+/**
+ * A confirmation retry has to survive the replay store.
+ *
+ * `shouldRemember` decides what the bridge keeps. A `CONFIRMATION_REQUIRED`
+ * outcome is deliberately not remembered: the retry carries `confirm: true` and
+ * is a DIFFERENT request that must actually run, not a replay of the refusal.
+ */
+test('a confirmation refusal is not remembered, so the confirmed retry runs', () => {
+  assert.equal(shouldRemember({ ok: false, error: { code: 'CONFIRMATION_REQUIRED' } }), false);
+  assert.equal(shouldRemember({ ok: true, data: { merged: true } }), true);
+  assert.equal(shouldRemember({ ok: false, error: { code: 'CONFLICT' } }), true);
 });
