@@ -2058,3 +2058,18 @@ test('P25: every review and reply write is one attempt', async () => {
   await assert.rejects(() => reply.gh.replyToReviewComment('o', 'r', 1, 2, 'x'));
   assert.equal(reply.calls.length, 1);
 });
+
+test('P25 fix: pullRequest can bypass the 60 s cache for the merge pre-check', async () => {
+  // The merge handler calls this read to decide whether the head moved. A cached
+  // answer would compare the webview's sha against itself, so the pre-check must
+  // be able to force a network read; the panel's ordinary read stays cached.
+  const h = client([response(200, pullDetailBody()), response(200, pullDetailBody())]);
+  await h.gh.pullRequest('o', 'r', 150);
+  const cached = await h.gh.pullRequest('o', 'r', 150);
+  assert.equal(cached.cached, true);
+  assert.equal(h.calls.length, 1);
+
+  const refreshed = await h.gh.pullRequest('o', 'r', 150, { refresh: true });
+  assert.equal(refreshed.cached, false, 'refresh bypasses the cache');
+  assert.equal(h.calls.length, 2);
+});

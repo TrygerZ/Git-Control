@@ -247,3 +247,53 @@ test('P25: a merge is refused in the store before any request when a blocker exi
   assert.equal(usePullStore.getState().mergeState, 'failed');
   assert.equal(usePullStore.getState().mergeError?.code, 'CONFLICT');
 });
+
+/**
+ * QA fix: a failed review must not vanish with the dialog.
+ *
+ * The dialog closes before `review()` runs, and the typed text lived in the
+ * dialog's own state. A failure that only lands in `reviewError` with nothing
+ * rendering it loses the review and tells the user nothing. The store keeps the
+ * text so the panel can reopen the dialog with it; the panel shows the error.
+ */
+test('QA: a failed review keeps the text so the panel can offer it again', async (t) => {
+  load();
+  const s = stub(() => {
+    throw Object.assign(new Error('nope'), {
+      body: { status: 503, code: 'UNAVAILABLE', message: 'GitHub is unreachable.' },
+    });
+  });
+  t.after(() => s.restore());
+
+  await usePullStore.getState().review({ event: 'REQUEST_CHANGES', body: 'Please fix the inset.' });
+  const state = usePullStore.getState();
+  assert.equal(state.reviewState, 'failed');
+  assert.equal(state.reviewError?.code, 'UNAVAILABLE');
+  assert.equal(state.reviewDraft?.body, 'Please fix the inset.', 'the text survives the dialog');
+  assert.equal(state.reviewDraft?.event, 'REQUEST_CHANGES');
+
+  // Opening the review form again starts from the failed text, not a blank box.
+  usePullStore.getState().openReview();
+  assert.equal(usePullStore.getState().reviewOpen, true);
+  assert.equal(usePullStore.getState().reviewDraft?.body, 'Please fix the inset.');
+});
+
+test('QA: a successful review clears the draft, and closing the form clears the open flag', async (t) => {
+  load();
+  const s = stub((kind) => {
+    if (kind === 'github/submitReview') return { reviewId: 7 };
+    if (kind === 'github/pullTimeline') return { items: [], truncated: false, rateLimit: RATE };
+    return RATE;
+  });
+  t.after(() => s.restore());
+
+  usePullStore.getState().openReview();
+  await usePullStore.getState().review({ event: 'APPROVE', body: '' });
+  assert.equal(usePullStore.getState().reviewState, 'idle');
+  assert.equal(usePullStore.getState().reviewDraft, null);
+  assert.equal(usePullStore.getState().reviewOpen, false, 'a successful submit closes the form');
+
+  usePullStore.getState().openReview();
+  usePullStore.getState().closeReview();
+  assert.equal(usePullStore.getState().reviewOpen, false);
+});

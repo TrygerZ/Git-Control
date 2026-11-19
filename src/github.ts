@@ -701,10 +701,19 @@ export class GitHubClient {
 
   // ------------------------------------------------- pull request detail (P24)
 
-  async pullRequest(owner: string, repo: string, number: number): Promise<Fetched<PullDetail>> {
+  async pullRequest(
+    owner: string,
+    repo: string,
+    number: number,
+    opts: { refresh?: boolean } = {},
+  ): Promise<Fetched<PullDetail>> {
     const path = `/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/pulls/${number}`;
-    return this.get<PullDetail>(path, `pull:${owner}/${repo}:${number}`, PR_TTL_MS, (body) =>
-      toPullDetail(body),
+    return this.get<PullDetail>(
+      path,
+      `pull:${owner}/${repo}:${number}`,
+      PR_TTL_MS,
+      (body) => toPullDetail(body),
+      opts.refresh === true ? { refresh: true } : undefined,
     );
   }
 

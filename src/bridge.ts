@@ -201,7 +201,9 @@ export interface BridgeHost {
    * and the files read also needs a local merge-base lookup. Read-only: no guard,
    * no idempotency key.
    */
-  githubPullDetail?(payload: PullDetailPayload): Promise<{ detail: PullDetail; rateLimit: GitHubRateLimit }>;
+  githubPullDetail?(
+    payload: PullDetailPayload & { refresh?: boolean },
+  ): Promise<{ detail: PullDetail; rateLimit: GitHubRateLimit }>;
   githubPullCommits?(
     payload: PullDetailPayload,
   ): Promise<{ commits: PullCommit[]; truncated: boolean; rateLimit: GitHubRateLimit }>;
@@ -1162,12 +1164,14 @@ export class MessageBridge {
   /**
    * Merge a pull request, then delete its head branch when asked.
    *
-   * The re-read is authoritative. `mergeableState`, `draft`, and the head sha all
-   * describe a pull request at a moment in time, and the payload's copy came from
-   * a panel that may have been open for minutes. Refusing on the live detail
-   * rather than trusting the webview is what makes the pin meaningful: a head
-   * that moved is caught here, with the same sentence the panel uses for a stale
-   * read, instead of surfacing as a bare GitHub 409.
+   * The re-read is authoritative only because it bypasses the cache: the panel's
+   * `pull:` read populated that cache, so an ordinary re-read within the 60 s TTL
+   * would compare the webview's sha against its own snapshot. `mergeableState`,
+   * `draft`, and the head sha all describe a pull request at a moment in time,
+   * and the payload's copy came from a panel that may have been open for minutes.
+   * Refusing on the live detail rather than trusting the webview is what makes
+   * the pin meaningful: a head that moved is caught here, with the same sentence
+   * the panel uses for a stale read, instead of surfacing as a bare GitHub 409.
    *
    * The deletion is a courtesy, not part of the merge. Once the merge lands on
    * GitHub it cannot be undone from here, so a refused `git branch -d` or
@@ -1183,7 +1187,12 @@ export class MessageBridge {
 
     const read = this.host.githubPullDetail;
     if (read === undefined) fail(503, 'UNAVAILABLE', this.text().githubPending);
-    const { detail } = await read({ owner: payload.owner, repo: payload.repo, number: payload.number });
+    const { detail } = await read({
+      owner: payload.owner,
+      repo: payload.repo,
+      number: payload.number,
+      refresh: true,
+    });
     const lang = this.host.settings().language ?? 'en';
     if (detail.state !== 'open') {
       fail(409, 'CONFLICT', this.text().invalid, { detail: 'closed' });
@@ -1263,7 +1272,8 @@ export class MessageBridge {
    *
    * The same pin as the merge: the review carries `commit_id`, and a review
    * approved against a head that has since moved attaches to work nobody saw.
-   * The re-read catches it here, before the POST.
+   * The re-read catches it here, before the POST, and bypasses the cache for the
+   * same reason as the merge handler: a cached copy is the panel's own snapshot.
    */
   private async handleSubmitReview(payload: SubmitReviewPayload): Promise<{ reviewId: number }> {
     const invalid = (detail: string): never =>
@@ -1273,7 +1283,12 @@ export class MessageBridge {
 
     const read = this.host.githubPullDetail;
     if (read === undefined) fail(503, 'UNAVAILABLE', this.text().githubPending);
-    const { detail } = await read({ owner: payload.owner, repo: payload.repo, number: payload.number });
+    const { detail } = await read({
+      owner: payload.owner,
+      repo: payload.repo,
+      number: payload.number,
+      refresh: true,
+    });
     if (detail.headSha !== payload.expectedHeadSha) {
       const lang = this.host.settings().language ?? 'en';
       fail(409, 'CONFLICT', hostText(lang).github.headMoved, { detail: 'head' });

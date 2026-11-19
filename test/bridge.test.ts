@@ -4709,3 +4709,50 @@ test('P25: a missing-scope refusal is attempted again after reconnecting', async
   const second = await h.webview.send(req('github/closePullRequest', payload));
   assert.equal(second.ok, true, 'the refusal was not replayed: the gate ran again');
 });
+
+/**
+ * The merge and review pre-check must not read the same cached detail the
+ * webview read. Within the 60 s TTL a cached re-read returns the webview's own
+ * snapshot, so the pin would compare a value against itself and a head that moved
+ * would be invisible until GitHub refused it. The host asks for a refresh.
+ */
+test('P25 fix: the merge pre-check asks the host for a fresh detail read', async (t) => {
+  const refresh: unknown[] = [];
+  const h = harness(null, writeHost({
+    githubPullDetail: (payload) => {
+      refresh.push(payload);
+      return Promise.resolve({ detail: pullDetail(), rateLimit: RATE_LIMIT });
+    },
+    githubMergePullRequest: () => Promise.resolve(MERGED),
+  }));
+  t.after(() => h.bridge.dispose());
+  const response = await h.webview.send(req('github/mergePullRequest', mergePayload()));
+  assert.equal(response.ok, true);
+  assert.equal(refresh.length, 1);
+  assert.equal((refresh[0] as { refresh?: boolean }).refresh, true, 'the merge read must bypass the cache');
+});
+
+test('P25 fix: the review pre-check asks the host for a fresh detail read', async (t) => {
+  const refresh: unknown[] = [];
+  const h = harness(null, writeHost({
+    githubPullDetail: (payload) => {
+      refresh.push(payload);
+      return Promise.resolve({ detail: pullDetail(), rateLimit: RATE_LIMIT });
+    },
+    githubSubmitReview: () => Promise.resolve({ reviewId: 7 }),
+  }));
+  t.after(() => h.bridge.dispose());
+  await h.webview.send(
+    req('github/submitReview', {
+      owner: 'o',
+      repo: 'r',
+      number: 150,
+      event: 'APPROVE',
+      body: '',
+      expectedHeadSha: 'a'.repeat(40),
+      idempotencyKey: 'rev-fresh',
+    }),
+  );
+  assert.equal(refresh.length, 1);
+  assert.equal((refresh[0] as { refresh?: boolean }).refresh, true);
+});

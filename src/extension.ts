@@ -1354,10 +1354,12 @@ class Controller implements vscode.Disposable {
   // --------------------------------------------------- pull request detail (P24)
 
   private async githubPullDetail(
-    payload: PullDetailPayload,
+    payload: PullDetailPayload & { refresh?: boolean },
   ): Promise<{ detail: PullDetail; rateLimit: GitHubRateLimit }> {
     const { client } = await this.githubClient();
-    const result = await client.pullRequest(payload.owner, payload.repo, payload.number);
+    const result = await client.pullRequest(payload.owner, payload.repo, payload.number, {
+      refresh: payload.refresh === true,
+    });
     return { detail: result.data, rateLimit: client.rateLimit(result.cached) };
   }
 
