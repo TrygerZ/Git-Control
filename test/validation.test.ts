@@ -17,6 +17,10 @@ import {
   validateStashIndex,
   validateStashMessage,
   validateEmail,
+  validateMergeMethod,
+  validateReviewEvent,
+  validateCommitTitle,
+  validateCommentBody,
 } from '../src/validation';
 
 test('PRD mandated self-check asserts', () => {
@@ -357,3 +361,55 @@ test('validateDeletableBranch keeps every branch-name rule', () => {
 });
 
 
+
+/**
+ * P25: the pull request merge and review inputs.
+ *
+ * `validateMergeMethod` is the allowlist that keeps `rebase` out of the request
+ * entirely (D-08): a UI that never draws the option is not the guarantee, the
+ * validator is. `validateCommentBody` is a length and NUL bound, not a content
+ * policy: GitHub renders the body as Markdown, and this extension never renders
+ * it at all.
+ */
+test('validateMergeMethod admits exactly merge and squash', () => {
+  assert.equal(validateMergeMethod('merge'), true);
+  assert.equal(validateMergeMethod('squash'), true);
+  for (const value of ['rebase', 'MERGE', 'Squash', '', ' merge', null, undefined, 1, {}, []]) {
+    assert.equal(validateMergeMethod(value), false, String(value));
+  }
+});
+
+test('validateReviewEvent admits exactly the three review events', () => {
+  for (const value of ['APPROVE', 'REQUEST_CHANGES', 'COMMENT']) {
+    assert.equal(validateReviewEvent(value), true, value);
+  }
+  for (const value of ['approve', 'request_changes', 'DISMISS', 'PENDING', '', null, undefined, 3, {}]) {
+    assert.equal(validateReviewEvent(value), false, String(value));
+  }
+});
+
+test('validateCommitTitle bounds a squash title and refuses NUL', () => {
+  assert.equal(validateCommitTitle('fix(webview): rebalance inset (#150)'), true);
+  assert.equal(validateCommitTitle('a'.repeat(256)), true, 'a long title is still a title');
+  assert.equal(validateCommitTitle(''), false, 'empty');
+  assert.equal(validateCommitTitle('   '), false, 'whitespace only');
+  assert.equal(validateCommitTitle('a'.repeat(257)), false, 'past the bound');
+  assert.equal(validateCommitTitle('has\u0000nul'), false, 'NUL');
+  assert.equal(validateCommitTitle('has\nnewline'), false, 'a title is one line');
+  for (const value of [null, undefined, 7, {}]) assert.equal(validateCommitTitle(value), false, String(value));
+});
+
+test('validateCommentBody requires text and bounds it', () => {
+  assert.equal(validateCommentBody('Looks good.'), true);
+  assert.equal(validateCommentBody('a'.repeat(65_536)), true, 'the max is inclusive');
+  assert.equal(validateCommentBody('a'.repeat(65_537)), false, 'past the max');
+  assert.equal(validateCommentBody(''), false, 'empty');
+  assert.equal(validateCommentBody('\n\t  '), false, 'whitespace only');
+  assert.equal(validateCommentBody('has\u0000nul'), false, 'NUL');
+  assert.equal(validateCommentBody('line\nbreak is fine'), true, 'multi-line bodies are comment text');
+  for (const value of [null, undefined, 7, {}]) assert.equal(validateCommentBody(value), false, String(value));
+
+  // A caller with a tighter budget passes it in rather than re-implementing the rule.
+  assert.equal(validateCommentBody('a'.repeat(11), 10), false);
+  assert.equal(validateCommentBody('a'.repeat(10), 10), true);
+});
