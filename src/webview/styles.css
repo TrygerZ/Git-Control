@@ -8161,3 +8161,141 @@ h3 {
     border: 1px solid ButtonBorder;
   }
 }
+
+/*
+ * P25 merge and review. Every colour comes from a `--gc-*` or `--vscode-*` token;
+ * the merge box tints its edge by the worst status row and the words inside say
+ * the same thing, so a forced-colours theme loses no meaning.
+ */
+.gc-prmerge {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gc-space-3);
+}
+
+.gc-prmerge__blocked {
+  margin: 0;
+  color: var(--gc-text-secondary);
+  font-size: var(--gc-fs-xs);
+}
+
+.gc-prmerge__methods {
+  flex-wrap: wrap;
+}
+
+/* The primary merge button follows the selected method's label (frame 06). */
+.gc-prmerge__submit {
+  align-self: flex-start;
+}
+
+.gc-prmerge__delete {
+  align-self: flex-start;
+}
+
+.gc-prmerge__progress {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--gc-space-2);
+  color: var(--gc-text-secondary);
+  font-size: var(--gc-fs-sm);
+}
+
+/* The merged card (frame 52): one success-tinted box with the sentence and an exit. */
+.gc-prmerge__done {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--gc-space-3);
+  margin-top: var(--gc-space-5);
+  padding: var(--gc-space-4);
+  border: 1px solid var(--gc-state-merged);
+  border-radius: var(--gc-radius-lg);
+}
+
+.gc-prmerge__done-body {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: var(--gc-space-1);
+  min-width: 0;
+}
+
+.gc-prmerge__done-title {
+  color: var(--gc-text-primary);
+  font-size: var(--gc-fs-sm);
+  font-weight: var(--gc-weight-strong);
+}
+
+.gc-prmerge__done-detail {
+  color: var(--gc-text-secondary);
+  font-size: var(--gc-fs-xs);
+  overflow-wrap: anywhere;
+}
+
+.gc-prmerge__warning {
+  color: var(--gc-tone-pending);
+  font-size: var(--gc-fs-xs);
+}
+
+/* The dialog's command list is the same reading surface as the guard's. */
+.gc-prmerge__commands {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gc-space-1);
+  margin: 0;
+  padding: var(--gc-space-3);
+  border: 1px solid var(--gc-border-subtle);
+  border-radius: var(--gc-radius);
+  background: var(--vscode-textCodeBlock-background, var(--vscode-editor-background));
+  color: var(--gc-text-primary);
+  font-family: var(--vscode-editor-font-family);
+  font-size: var(--gc-fs-xs);
+  overflow-wrap: anywhere;
+}
+
+.gc-prmerge__commands-heading {
+  color: var(--gc-text-muted);
+  font-family: var(--vscode-font-family);
+  font-size: var(--gc-fs-2xs);
+}
+
+/* The risk word is text, never colour alone. */
+.gc-prmerge__risk {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--gc-space-1);
+  color: var(--gc-tone-pending);
+}
+
+.gc-prmerge__review-actions {
+  flex-wrap: wrap;
+}
+
+.gc-prmerge__field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gc-space-1);
+}
+
+.gc-prmerge__field textarea {
+  min-height: 96px;
+  resize: vertical;
+  font-family: inherit;
+}
+
+/* The reply box under a review thread (frame 06). */
+.gc-prmerge__reply {
+  display: flex;
+  gap: var(--gc-space-2);
+  margin-top: var(--gc-space-2);
+}
+
+.gc-prmerge__reply input {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+@media (forced-colors: active) {
+  .gc-prmerge__done {
+    border: 1px solid ButtonBorder;
+  }
+}
