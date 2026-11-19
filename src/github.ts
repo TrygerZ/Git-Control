@@ -188,6 +188,14 @@ export interface MutateOptions<T> {
    * tells the user what to do next.
    */
   invalid?(body: unknown): GitHubError;
+  /**
+   * Error to raise for a status the shared table would call an outage. The merge
+   * route answers 405 and 409 for a refusal, and GitHub's body `message` is the
+   * sentence the user needs; `toError` reads headers only, so the endpoint that
+   * knows the status supplies it here. Returning `undefined` falls through to
+   * the shared mapping, so every other status is unchanged.
+   */
+  refuse?(status: number, body: unknown): GitHubError | undefined;
   map(body: unknown, headers: { get(name: string): string | null }): T;
 }
 
@@ -538,6 +546,157 @@ export class GitHubClient {
       (body) => toPullRequests(body),
     );
     return result.data[0] ?? null;
+  }
+
+  // -------------------------------------------------- pull request writes (P25)
+
+  /**
+   * Merge a pull request at the head the user reviewed.
+   *
+   * `sha` is the pin: if the head moved, GitHub answers 409 and nothing merges,
+   * so a confirm click cannot land on commits the user never saw. One attempt
+   * only, because a retried merge is the one write that can merge twice. The
+   * dropped prefixes are exactly the reads a merge changes: the list and the
+   * detail, its commits, files, reviews, and comments, the commit-to-PR lookup
+   * the graph uses, and the check badge on the merged head. The squash fields
+   * are sent only when the input carries them, so a merge commit never inherits
+   * squash text.
+   */
+  async mergePullRequest(
+    owner: string,
+    repo: string,
+    number: number,
+    input: { method: 'merge' | 'squash'; sha: string; commitTitle?: string; commitMessage?: string },
+  ): Promise<{ data: { merged: boolean; mergeSha: string | null }; rateLimit: GitHubRateLimit }> {
+    return this.mutate<{ merged: boolean; mergeSha: string | null }>({
+      method: 'PUT',
+      path: `/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/pulls/${number}/merge`,
+      body: {
+        merge_method: input.method,
+        sha: input.sha,
+        ...(input.commitTitle === undefined ? {} : { commit_title: input.commitTitle }),
+        ...(input.commitMessage === undefined ? {} : { commit_message: input.commitMessage }),
+      },
+      invalidate: [
+        'pulls:',
+        'pull:',
+        'pullCommits:',
+        'pullFiles:',
+        'commitPulls:',
+        'pullReviews:',
+        'pullComments:',
+        'checks:',
+      ],
+      // 405 and 409 are refusals, not outages: the branch cannot merge or the
+      // head moved. Both map to CONFLICT at 409 so the panel offers a reload,
+      // and GitHub's own sentence rides along as the detail.
+      refuse: (status, body) => {
+        if (status !== 405 && status !== 409) return undefined;
+        const detail = bodyMessage(body);
+        return new GitHubError({
+          status: 409,
+          code: 'CONFLICT',
+          message: status === 405 ? this.text().notMergeable : this.text().headMoved,
+          ...(detail === undefined ? {} : { detail }),
+        });
+      },
+      map: (body) => {
+        const json = body as { merged?: unknown; sha?: unknown };
+        const sha = fullHashOrEmpty(json.sha);
+        return { merged: json.merged === true, mergeSha: sha.length === 0 ? null : sha };
+      },
+    });
+  }
+
+  /**
+   * Close a pull request without merging it.
+   *
+   * One attempt through `mutate`, so a double click cannot race a second PATCH.
+   * Only the list and the detail are dropped: closing changes the state GitHub
+   * reports, not the commits or the conversation already loaded. `closed: true`
+   * is not optimism: `mutate` throws on every non-2xx, so reaching `map` means
+   * GitHub accepted the state change.
+   */
+  async closePullRequest(
+    owner: string,
+    repo: string,
+    number: number,
+  ): Promise<{ data: { closed: boolean }; rateLimit: GitHubRateLimit }> {
+    return this.mutate<{ closed: boolean }>({
+      method: 'PATCH',
+      path: `/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/pulls/${number}`,
+      body: { state: 'closed' },
+      invalidate: ['pulls:', 'pull:'],
+      invalid: (body) => {
+        const detail = errorMessages(body).join('; ');
+        return new GitHubError({
+          status: 422,
+          code: 'VALIDATION_ERROR',
+          message: this.text().invalidWrite,
+          ...(detail.length === 0 ? {} : { detail }),
+        });
+      },
+      map: () => ({ closed: true }),
+    });
+  }
+
+  /**
+   * Post a review on the head the user read.
+   *
+   * `commit_id` pins the review to that commit, so an approval never attaches
+   * to work the reviewer did not see. One attempt: a retried POST posts the
+   * review twice. Both review-side lists are dropped, because a review can carry
+   * inline comments that appear in the thread list; the issue-comment list is a
+   * different resource a review never touches, so it stays cached.
+   */
+  async submitReview(
+    owner: string,
+    repo: string,
+    number: number,
+    input: { event: 'APPROVE' | 'REQUEST_CHANGES' | 'COMMENT'; body: string; commitId: string },
+  ): Promise<{ data: { reviewId: number }; rateLimit: GitHubRateLimit }> {
+    return this.mutate<{ reviewId: number }>({
+      method: 'POST',
+      path: `/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/pulls/${number}/reviews`,
+      body: { event: input.event, body: input.body, commit_id: input.commitId },
+      invalidate: ['pullReviews:', 'pullComments:'],
+      invalid: (body) => {
+        const detail = errorMessages(body).join('; ');
+        return new GitHubError({
+          status: 422,
+          code: 'VALIDATION_ERROR',
+          message: this.text().invalidWrite,
+          ...(detail.length === 0 ? {} : { detail }),
+        });
+      },
+      map: (body) => ({ reviewId: safeInt((body as { id?: unknown } | null)?.id) }),
+    });
+  }
+
+  /**
+   * Reply inside an existing review thread.
+   *
+   * The route takes the parent comment id, so the reply lands in its thread
+   * without any state to reconstruct. One attempt, because a retried POST
+   * duplicates the reply, and only the review-comment list is dropped: a reply
+   * adds one item and leaves every other cached read valid.
+   */
+  async replyToReviewComment(
+    owner: string,
+    repo: string,
+    number: number,
+    commentId: number,
+    body: string,
+  ): Promise<{ data: { commentId: number }; rateLimit: GitHubRateLimit }> {
+    return this.mutate<{ commentId: number }>({
+      method: 'POST',
+      path:
+        `/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}` +
+        `/pulls/${number}/comments/${commentId}/replies`,
+      body: { body },
+      invalidate: ['pullComments:'],
+      map: (body) => ({ commentId: safeInt((body as { id?: unknown } | null)?.id) }),
+    });
   }
 
   // ------------------------------------------------- pull request detail (P24)
@@ -1312,8 +1471,13 @@ export class GitHubClient {
     } else if (response.status === 403 && numberOf(response.headers.get('x-ratelimit-remaining')) !== 0) {
       error = new GitHubError({ status: 403, code: 'FORBIDDEN', message: this.text().missingScope('repo') });
     } else {
-      // Quota 403/429 and every other status keep the read mapping.
-      error = await this.toError(response);
+      // Quota 403/429 and every other status keep the read mapping, unless the
+      // endpoint knows this status is a refusal and supplies its own error.
+      const refusal =
+        options.refuse === undefined
+          ? undefined
+          : options.refuse(response.status, parseJson(await response.text()));
+      error = refusal ?? (await this.toError(response));
     }
     this.recordFailure(response.status >= 500 || response.status === 429);
     throw error;
@@ -2335,6 +2499,12 @@ function errorMessages(body: unknown): string[] {
   return errors
     .map((e) => (e as { message?: unknown } | null)?.message)
     .filter((m): m is string => typeof m === 'string' && m.length > 0);
+}
+
+/** The top-level `message` from an error body. Refusals put the sentence here. */
+function bodyMessage(body: unknown): string | undefined {
+  const message = (body as { message?: unknown } | null)?.message;
+  return typeof message === 'string' && message.length > 0 ? message : undefined;
 }
 
 function numberOf(value: string | null): number | null {

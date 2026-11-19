@@ -63,6 +63,8 @@ const en = {
     invalidWrite: 'GitHub refused the change. Check the values and try again.',
     prExists: 'A pull request already exists for this branch.',
     prCreateFailed: 'GitHub refused to create the pull request.',
+    headMoved: 'The branch changed since you opened this. Refresh and try again.',
+    notMergeable: 'GitHub refused the merge. Reload the pull request and check its status.',
   },
   quickActions: {
     placeholder: 'Type what you want to do',
@@ -184,6 +186,8 @@ const id: HostCatalog = {
     invalidWrite: 'GitHub menolak perubahan. Periksa nilainya lalu coba lagi.',
     prExists: 'Pull request untuk branch ini sudah ada.',
     prCreateFailed: 'GitHub menolak membuat pull request.',
+    headMoved: 'Branch berubah sejak kamu membukanya. Muat ulang lalu coba lagi.',
+    notMergeable: 'GitHub menolak merge. Muat ulang pull request lalu periksa statusnya.',
   },
   quickActions: {
     placeholder: 'Ketik tindakan yang diinginkan',
