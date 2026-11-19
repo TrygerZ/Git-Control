@@ -974,6 +974,7 @@ const en = {
     reviewTitle: (n: string) => `Review changes #${n}`,
     reviewRunsOnGitHub: 'Posted to GitHub under your account. Local history is not changed.',
     reviewNote: 'Comment and Request changes need a message. Approve can be sent empty.',
+    reviewMessage: 'Review message',
     approve: 'Approve',
     requestChanges: 'Request changes',
     comment: 'Comment',

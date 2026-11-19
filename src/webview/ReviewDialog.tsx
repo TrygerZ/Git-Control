@@ -6,18 +6,32 @@
  * (X-02). Request changes and comment require text; approve may be sent empty.
  *
  * The dialog decides nothing beyond that: it hands the event and the body to the
- * store, which owns the request. Nothing here executes.
+ * store, which owns the request and the draft. Nothing here executes.
+ *
+ * The draft and the failure arrive as props, so a submit that fails reopens the
+ * form over the text the user typed instead of an empty box.
  */
-import { useEffect, useId, useRef, useState, type FormEvent, type JSX } from 'react';
+import {
+  useEffect,
+  useId,
+  useRef,
+  useState,
+  type FormEvent,
+  type JSX,
+  type KeyboardEvent,
+} from 'react';
 import { sanitizeGitText } from './format';
 import { useDialogFocusTrap } from './useDialogFocusTrap';
 import type { Catalog } from './i18n';
-import type { ReviewEvent } from '../messages';
+import type { ErrorBody, ReviewEvent } from '../messages';
 import { useT } from './useT';
 
 export interface ReviewDialogProps {
   number: number;
   headRef: string;
+  /** The store's copy of the form, so a failed submit comes back with its text. */
+  draft?: { event: ReviewEvent; body: string };
+  error?: ErrorBody;
   onConfirm(input: { event: ReviewEvent; body: string }): void;
   onCancel(): void;
 }
@@ -36,10 +50,17 @@ function eventLabel(event: ReviewEvent, catalog: Catalog): string {
   }
 }
 
-export function ReviewDialog({ number, headRef, onConfirm, onCancel }: ReviewDialogProps): JSX.Element {
+export function ReviewDialog({
+  number,
+  headRef,
+  draft,
+  error,
+  onConfirm,
+  onCancel,
+}: ReviewDialogProps): JSX.Element {
   const strings = useT();
-  const [event, setEvent] = useState<ReviewEvent>('APPROVE');
-  const [body, setBody] = useState('');
+  const [event, setEvent] = useState<ReviewEvent>(() => draft?.event ?? 'APPROVE');
+  const [body, setBody] = useState(() => draft?.body ?? '');
   const { dialogRef, onKeyDown } = useDialogFocusTrap(onCancel);
   const submitRef = useRef<HTMLButtonElement>(null);
   const returnFocus = useRef<Element | null>(null);
@@ -67,6 +88,22 @@ export function ReviewDialog({ number, headRef, onConfirm, onCancel }: ReviewDia
     onConfirm({ event, body: body.trim() });
   };
 
+  /**
+   * A radiogroup moves with the arrow keys and keeps one tab stop (WAI-ARIA),
+   * the same model `MergePullDialog` uses. The ends do NOT wrap: a wrap hides
+   * which end the user is on.
+   */
+  const onEventKeyDown = (keyboard: KeyboardEvent<HTMLDivElement>): void => {
+    const index = EVENTS.indexOf(event);
+    if (keyboard.key === 'ArrowRight' || keyboard.key === 'ArrowDown') {
+      keyboard.preventDefault();
+      setEvent(EVENTS[Math.min(index + 1, EVENTS.length - 1)] ?? event);
+    } else if (keyboard.key === 'ArrowLeft' || keyboard.key === 'ArrowUp') {
+      keyboard.preventDefault();
+      setEvent(EVENTS[Math.max(index - 1, 0)] ?? event);
+    }
+  };
+
   return (
     <div className="gc-modal-backdrop">
       <div
@@ -87,7 +124,19 @@ export function ReviewDialog({ number, headRef, onConfirm, onCancel }: ReviewDia
             {strings.prMerge.reviewRunsOnGitHub}
           </p>
 
-          <div className="gc-prmerge__review-actions" role="radiogroup" aria-labelledby={noteId}>
+          {/* The store's failure, stated inside the form that caused it. */}
+          {error !== undefined && (
+            <p className="gc-prmerge__blocked" role="alert">
+              {sanitizeGitText(error.message)}
+            </p>
+          )}
+
+          <div
+            className="gc-prmerge__review-actions"
+            role="radiogroup"
+            aria-labelledby={noteId}
+            onKeyDown={onEventKeyDown}
+          >
             {EVENTS.map((value) => (
               <button
                 key={value}
@@ -104,7 +153,7 @@ export function ReviewDialog({ number, headRef, onConfirm, onCancel }: ReviewDia
           </div>
 
           <label className="gc-prmerge__field">
-            <span className="gc-field__label">{strings.prMerge.commitMessage}</span>
+            <span className="gc-field__label">{strings.prMerge.reviewMessage}</span>
             <textarea
               value={body}
               placeholder={strings.prMerge.replyPlaceholder}

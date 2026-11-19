@@ -962,6 +962,7 @@ const id: Catalog = {
     reviewTitle: (n: string) => `Review perubahan #${n}`,
     reviewRunsOnGitHub: 'Dikirim ke GitHub atas nama akunmu. Riwayat lokal tidak diubah.',
     reviewNote: 'Comment dan Request changes perlu pesan. Approve boleh dikirim kosong.',
+    reviewMessage: 'Pesan review',
     approve: 'Setujui',
     requestChanges: 'Minta perubahan',
     comment: 'Komentar',

@@ -266,7 +266,10 @@ export function PullRequestApp(): JSX.Element {
   const closePr = usePullStore((s) => s.close);
   const reviewState = usePullStore((s) => s.reviewState);
   const reviewError = usePullStore((s) => s.reviewError);
-  const [reviewOpen, setReviewOpen] = useState(false);
+  const reviewOpen = usePullStore((s) => s.reviewOpen);
+  const reviewDraft = usePullStore((s) => s.reviewDraft);
+  const openReview = usePullStore((s) => s.openReview);
+  const closeReview = usePullStore((s) => s.closeReview);
 
   const number = useMemo(pullNumberFromBody, []);
   const owner = linkage?.available === true ? linkage.owner : null;
@@ -504,7 +507,7 @@ export function PullRequestApp(): JSX.Element {
               type="button"
               className="gc-button gc-button--quiet"
               disabled={detail.state !== 'open'}
-              onClick={() => setReviewOpen(true)}
+              onClick={() => openReview()}
             >
               <Icon name="check" />
               {strings.prMerge.reviewButton}
@@ -528,6 +531,15 @@ export function PullRequestApp(): JSX.Element {
             />
           </div>
         </div>
+        {/*
+          A failed review outlives its dialog: the alert sits under the actions
+          whether the form is open or was dismissed, so the reason is never lost.
+        */}
+        {reviewState === 'failed' && reviewError !== null && (
+          <p className="gc-prmerge__blocked" role="alert">
+            {sanitizeGitText(reviewError.message)}
+          </p>
+        )}
         <div className="gc-prdetail__branchline">
           <span className={`gc-prdetail__state gc-prdetail__state--${detail.state}`}>
             {pullRequestState(detail.state, language)}
@@ -669,11 +681,10 @@ export function PullRequestApp(): JSX.Element {
         <ReviewDialog
           number={detail.number}
           headRef={sanitizeGitText(detail.headRef)}
-          onConfirm={(input) => {
-            setReviewOpen(false);
-            void review(input);
-          }}
-          onCancel={() => setReviewOpen(false)}
+          draft={reviewDraft ?? undefined}
+          error={reviewError ?? undefined}
+          onConfirm={(input) => void review(input)}
+          onCancel={() => closeReview()}
         />
       )}
       <GuardDialog />

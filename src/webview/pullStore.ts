@@ -52,9 +52,15 @@ export interface PullState {
   mergeError: ErrorBody | null;
   /** The successful result, so the merged card can name the sha and the deletions. */
   mergeResult: MergePullResult | null;
-  /** P25 review submit state. The dialog owns the text, so none is kept here. */
+  /** P25 review submit state. A failure stays a state the panel explains. */
   reviewState: 'idle' | 'sending' | 'failed';
   reviewError: ErrorBody | null;
+  /**
+   * The review form's open flag and its text. Both live here, not in the
+   * dialog, so a failed submit keeps the typed text and the reason to show it.
+   */
+  reviewOpen: boolean;
+  reviewDraft: { event: ReviewEvent; body: string } | null;
   load(payload: PullDetailPayload): Promise<void>;
   setTab(tab: PullTab): void;
   loadTab(tab: PullTab): Promise<void>;
@@ -65,6 +71,9 @@ export interface PullState {
   /** Repeat the failed attempt with the same key, so the host replays it. */
   retryMerge(): Promise<void>;
   review(input: { event: ReviewEvent; body: string }): Promise<void>;
+  /** Open the review form. Never clears the draft, so a failed text comes back. */
+  openReview(): void;
+  closeReview(): void;
   reply(commentId: number, body: string): Promise<void>;
   close(): Promise<void>;
 }
@@ -203,6 +212,8 @@ export const usePullStore = create<PullState>((set, get) => ({
   mergeResult: null,
   reviewState: 'idle',
   reviewError: null,
+  reviewOpen: false,
+  reviewDraft: null,
 
   async load(payload) {
     const mine = ++generation;
@@ -394,15 +405,21 @@ export const usePullStore = create<PullState>((set, get) => ({
   },
 
   async review(input) {
+    // The store owns the text, not the dialog: a failure must leave it on
+    // screen, so it is recorded before anything can go wrong.
+    set({ reviewDraft: input });
     const detail = get().detail;
-    if (detail === null) return;
-    const repo = repoOf();
-    if (repo === null) {
-      set({ reviewState: 'failed', reviewError: unavailableBody() });
+    if (detail === null) {
+      set({ reviewState: 'failed', reviewError: unavailableBody(), reviewOpen: true });
       return;
     }
-    // Only once there is something to send: a return above must not leave the
-    // button saying `sending` with no request behind it.
+    const repo = repoOf();
+    if (repo === null) {
+      set({ reviewState: 'failed', reviewError: unavailableBody(), reviewOpen: true });
+      return;
+    }
+    // Only once there is something to send: the returns above state a failure
+    // instead of leaving the button saying `sending` with no request behind it.
     set({ reviewState: 'sending', reviewError: null });
     pointTarget({ owner: repo.owner, repo: repo.repo, number: detail.number });
     try {
@@ -417,11 +434,22 @@ export const usePullStore = create<PullState>((set, get) => ({
         // each submit is a distinct review, not a retry of the previous one.
         idempotencyKey: crypto.randomUUID(),
       });
-      set({ reviewState: 'idle', reviewError: null });
+      // Landed: the form has nothing left to show, so it closes over the text.
+      set({ reviewState: 'idle', reviewError: null, reviewDraft: null, reviewOpen: false });
       await refreshConversation(get, set);
     } catch (err) {
-      set({ reviewState: 'failed', reviewError: asErrorBody(err) });
+      // Keep the draft and the open flag: the dialog stays over the typed text.
+      set({ reviewState: 'failed', reviewError: asErrorBody(err), reviewOpen: true });
     }
+  },
+
+  openReview() {
+    // Never clears `reviewDraft`: a failed submit's text comes back here.
+    set({ reviewOpen: true });
+  },
+
+  closeReview() {
+    set({ reviewOpen: false });
   },
 
   async reply(commentId, body) {
