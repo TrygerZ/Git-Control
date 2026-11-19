@@ -45,6 +45,7 @@ import type {
   ActionsRunsResult,
   CheckRunsPayload,
   CheckRunsResult,
+  ClosePullPayload,
   CommitAuthorsPayload,
   CommitAuthorsResult,
   CommitPullRequestsPayload,
@@ -63,6 +64,7 @@ import type {
   IssuesPayload,
   IssuesResult,
   Lang,
+  MergePullPayload,
   OpenDiffPayload,
   OpenDiffResult,
   OpenStashDiffHostPayload,
@@ -76,7 +78,9 @@ import type {
   PullFile,
   PullRequestsPayload,
   PullRequestsResult,
+  ReplyReviewPayload,
   Route,
+  SubmitReviewPayload,
   TimelineItem,
   SettingsSetPayload,
   SettingsSnapshot,
@@ -987,6 +991,10 @@ class Controller implements vscode.Disposable {
       githubContributorIdentity: (payload) => this.githubContributorIdentity(payload),
       githubPrPrepare: (payload) => this.githubPrPrepare(payload),
       githubCreatePullRequest: (payload) => this.githubCreatePullRequest(payload),
+      githubMergePullRequest: (payload) => this.githubMergePullRequest(payload),
+      githubClosePullRequest: (payload) => this.githubClosePullRequest(payload),
+      githubSubmitReview: (payload) => this.githubSubmitReview(payload),
+      githubReplyReviewComment: (payload) => this.githubReplyReviewComment(payload),
       githubPrReviewers: (payload) => this.githubPrReviewers(payload),
       githubLinkage: () => this.githubLinkage(),
       takePendingRoute: () => this.takePendingRoute(),
@@ -1708,6 +1716,50 @@ class Controller implements vscode.Disposable {
       labelsFailed,
       rateLimit: client.rateLimit(false),
     };
+  }
+
+  // -------------------------------------------------- pull request writes (P25)
+
+  /**
+   * The four P25 writes. The bridge has already gated, re-read, and pinned each
+   * one, so these methods only talk to the API and drop `rateLimit` where the
+   * response shape has no field for it. A thrown `GitHubError` travels to the
+   * bridge, which maps it through `toErrorBody`.
+   */
+  private async githubMergePullRequest(
+    payload: MergePullPayload,
+  ): Promise<{ merged: boolean; mergeSha: string | null; rateLimit: GitHubRateLimit }> {
+    const { client } = await this.githubClient();
+    const result = await client.mergePullRequest(payload.owner, payload.repo, payload.number, {
+      method: payload.method,
+      sha: payload.expectedHeadSha,
+      ...(payload.commitTitle === undefined ? {} : { commitTitle: payload.commitTitle }),
+      ...(payload.commitMessage === undefined ? {} : { commitMessage: payload.commitMessage }),
+    });
+    return { merged: result.data.merged, mergeSha: result.data.mergeSha, rateLimit: client.rateLimit(false) };
+  }
+
+  private async githubClosePullRequest(payload: ClosePullPayload): Promise<{ closed: boolean }> {
+    const { client } = await this.githubClient();
+    return (await client.closePullRequest(payload.owner, payload.repo, payload.number)).data;
+  }
+
+  private async githubSubmitReview(payload: SubmitReviewPayload): Promise<{ reviewId: number }> {
+    const { client } = await this.githubClient();
+    return (
+      await client.submitReview(payload.owner, payload.repo, payload.number, {
+        event: payload.event,
+        body: payload.body,
+        commitId: payload.expectedHeadSha,
+      })
+    ).data;
+  }
+
+  private async githubReplyReviewComment(payload: ReplyReviewPayload): Promise<{ commentId: number }> {
+    const { client } = await this.githubClient();
+    return (
+      await client.replyToReviewComment(payload.owner, payload.repo, payload.number, payload.commentId, payload.body)
+    ).data;
   }
 
   /**
