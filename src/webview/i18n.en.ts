@@ -930,6 +930,68 @@ const en = {
     tooltipMoreUnavailable: 'More actions are not available yet',
   },
 
+  /**
+   * P25 merge and review. Every key here is read by a control this build ships;
+   * `blocked` is indexed by `BlockReason` from `pullMerge.ts`, so a missing
+   * reason is a compile error rather than a blank line.
+   */
+  prMerge: {
+    methodMerge: 'Merge commit',
+    methodSquash: 'Squash and merge',
+    dialogTitle: (method: string, n: string) => `${method} #${n}`,
+    runsOnGitHub: 'Runs on GitHub. Your local history is not rewritten.',
+    target: 'Target',
+    method: 'Method',
+    commitMessage: 'Commit message',
+    riskLevel: 'Risk level',
+    risky: 'risky',
+    deleteBranch: 'Delete branch after merge (local + origin)',
+    deleteBranchNote: 'Uses git branch -d locally. Unmerged work is never removed.',
+    commandsHeading: 'Command that will run',
+    cancel: 'Cancel',
+    merging: 'Merging',
+    mergeFailed: 'The merge did not happen.',
+    retry: 'Try again',
+    mergedTitle: 'Pull request successfully merged and closed',
+    mergedSentence: (head: string, base: string) => `${head} was merged into ${base}.`,
+    branchDeletedSentence: (head: string) => `${head} was deleted locally and on origin.`,
+    mergedToast: (n: string, base: string) => `Merged #${n} into ${base}`,
+    branchDeletedToast: (head: string) => `Deleted ${head} locally and on origin`,
+    branchDeleteWarning: (head: string) => `The merge succeeded, but ${head} could not be deleted.`,
+    showInGraph: 'Show in graph',
+    mergeDisabledAria: 'Merge is not available',
+    blocked: {
+      draft: 'This pull request is a draft.',
+      conflicts: 'Resolve conflicts with the base branch first.',
+      'checks-failing': 'Some checks are failing.',
+      'checks-pending': 'Checks are still running.',
+      'review-required': 'A review is required.',
+      behind: 'The branch is behind the base branch.',
+      unknown: 'GitHub is still computing mergeability. Refresh in a moment.',
+      closed: 'This pull request is closed.',
+    },
+    headMoved: 'The branch changed since you opened this. Refresh and try again.',
+    needScope: 'Your token cannot merge. Reconnect with pull request write access.',
+    reviewTitle: (n: string) => `Review changes #${n}`,
+    reviewRunsOnGitHub: 'Posted to GitHub under your account. Local history is not changed.',
+    reviewNote: 'Comment and Request changes need a message. Approve can be sent empty.',
+    approve: 'Approve',
+    requestChanges: 'Request changes',
+    comment: 'Comment',
+    submitReview: 'Submit review',
+    reviewSubmittedToast: 'Review submitted',
+    replyPlaceholder: 'Write a reply...',
+    replySend: 'Send reply',
+    replyToast: 'Reply sent',
+    closePr: 'Close pull request',
+    copyLink: 'Copy pull request link',
+    openOnGitHub: 'Open on GitHub',
+    refresh: 'Refresh',
+    moreAria: 'More pull request actions',
+    deletedNote: 'The branch was deleted after the merge.',
+  },
+
+
   // Check badges (P21). A count carries the state, so the strings read as
   // sentences on their own for a screen reader.
   checks: {

@@ -653,3 +653,49 @@ test('the checks namespace exists in both catalogs with the same shape', () => {
   assert.equal(enInspector.openPullRequestAria('7'), 'Open pull request #7 on GitHub');
   assert.equal(idInspector.openPullRequestAria('7'), 'Buka pull request #7 di GitHub');
 });
+
+// ------------------------------------------------------- merge and review (P25)
+
+/**
+ * The `prMerge` namespace is indexed by `BlockReason`, so the eight reason
+ * sentences are a closed set. Writing them as a table here means a new reason in
+ * `pullMerge.ts` without a sentence fails this test rather than rendering blank.
+ */
+test('P25: every block reason has a sentence in both languages', () => {
+  const reasons = ['draft', 'conflicts', 'checks-failing', 'checks-pending', 'review-required', 'behind', 'unknown', 'closed'] as const;
+  for (const lang of ['en', 'id'] as const) {
+    for (const reason of reasons) {
+      const sentence = t(lang).prMerge.blocked[reason];
+      assert.equal(typeof sentence, 'string', `${lang}.${reason}`);
+      assert.ok(sentence.length > 0, `${lang}.${reason}`);
+    }
+  }
+});
+
+test('P25: the merge method labels never mention rebase', () => {
+  for (const lang of ['en', 'id'] as const) {
+    const merged = t(lang).prMerge;
+    for (const value of [merged.methodMerge, merged.methodSquash]) {
+      assert.doesNotMatch(value, /rebase/i, `${lang}: ${value}`);
+    }
+  }
+});
+
+test('P25: the merge copy says local history is not rewritten, in both languages', () => {
+  assert.match(t('en').prMerge.runsOnGitHub, /not rewritten/i);
+  assert.match(t('id').prMerge.runsOnGitHub, /tidak ditulis ulang/i);
+});
+
+test('P25: the delete-branch note names git branch -d in both languages', () => {
+  assert.match(t('en').prMerge.deleteBranchNote, /git branch -d/);
+  assert.match(t('id').prMerge.deleteBranchNote, /git branch -d/);
+});
+
+test('P25: the parameterized merge strings keep their arguments', () => {
+  assert.equal(t('en').prMerge.dialogTitle('Squash and merge', '150'), 'Squash and merge #150');
+  assert.equal(t('en').prMerge.mergedToast('150', 'main'), 'Merged #150 into main');
+  assert.equal(t('id').prMerge.mergedToast('150', 'main'), '#150 digabung ke main');
+  assert.match(t('en').prMerge.branchDeleteWarning('fix/x'), /fix\/x/);
+  assert.match(t('en').prMerge.mergedSentence('fix/x', 'main'), /fix\/x/);
+  assert.match(t('en').prMerge.mergedSentence('fix/x', 'main'), /main/);
+});
