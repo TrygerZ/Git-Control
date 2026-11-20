@@ -2107,3 +2107,23 @@ test('P25: pullRequest carries isFork from head.repo and base.repo so closed and
   assert.equal((await h.gh.pullRequest('o', 'r', 153)).data.isFork, true, 'deleted head repo is treated as a fork');
   assert.equal((await h.gh.pullRequest('o', 'r', 154)).data.isFork, true, 'falls back to head.repo.fork when base.repo is omitted');
 });
+
+test('P25: submitReview drops cached pullRequest detail so mergeability reflects the review', async () => {
+  const h = writeClient([
+    response(200, pullDetailBody({ mergeable_state: 'blocked' })),
+    response(200, { id: 991, state: 'APPROVED' }),
+    response(200, pullDetailBody({ mergeable_state: 'clean' })),
+  ]);
+  const before = await h.gh.pullRequest('o', 'r', 150);
+  assert.equal(before.data.mergeableState, 'blocked');
+
+  await h.gh.submitReview('o', 'r', 150, {
+    event: 'APPROVE',
+    body: '',
+    commitId: MERGE_SHA,
+  });
+
+  const after = await h.gh.pullRequest('o', 'r', 150);
+  assert.equal(after.cached, false, 'pull detail cache must be evicted after review submission');
+  assert.equal(after.data.mergeableState, 'clean');
+});

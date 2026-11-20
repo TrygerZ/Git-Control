@@ -645,9 +645,11 @@ export class GitHubClient {
    *
    * `commit_id` pins the review to that commit, so an approval never attaches
    * to work the reviewer did not see. One attempt: a retried POST posts the
-   * review twice. Both review-side lists are dropped, because a review can carry
-   * inline comments that appear in the thread list; the issue-comment list is a
-   * different resource a review never touches, so it stays cached.
+   * review twice. The pull detail and both review-side lists are dropped,
+   * because a review verdict can change branch-protection `mergeableState`
+   * (such as `'blocked'` to `'clean'`) and carry inline comments into the
+   * thread list; the `issueComments` list is a separate resource a review never
+   * touches, so it stays cached.
    */
   async submitReview(
     owner: string,
@@ -659,7 +661,7 @@ export class GitHubClient {
       method: 'POST',
       path: `/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/pulls/${number}/reviews`,
       body: { event: input.event, body: input.body, commit_id: input.commitId },
-      invalidate: ['pullReviews:', 'pullComments:'],
+      invalidate: ['pull:', 'pullReviews:', 'pullComments:'],
       invalid: (body) => {
         const detail = errorMessages(body).join('; ');
         return new GitHubError({
