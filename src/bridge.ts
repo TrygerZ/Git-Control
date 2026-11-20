@@ -1221,36 +1221,49 @@ export class MessageBridge {
     const branchDeleted: MergePullResult['branchDeleted'] = { remote: null, local: null };
     const warnings: string[] = [];
     if (payload.deleteBranch === true && result.merged) {
-      const branch = detail.headRef;
-      const remote = payload.remote ?? 'origin';
-      // Local first, and the order is load-bearing: `git branch -d` proves the
-      // branch merged against its tracking ref, so deleting the remote first
-      // would remove the only proof and refuse the local half of a squash merge.
-      let repo: RepositoryService | null = null;
-      try {
-        repo = await this.repository();
-      } catch {
-        // Reported as warnings below: the merge already landed, a missing local
-        // repository cannot undo it.
-      }
-      if (repo === null) {
+      if (detail.isFork === true) {
+        // A fork PR's head branch lives in the fork, not the base repository.
+        // Deleting a same-named local or origin branch would remove unrelated work.
         branchDeleted.local = false;
         branchDeleted.remote = false;
         warnings.push('branch-local', 'branch-remote');
       } else {
+        const branch = detail.headRef;
+        const remote = payload.remote ?? 'origin';
+        const target = { owner: payload.owner, repo: payload.repo };
+        // Local first, and the order is load-bearing: `git branch -d` proves the
+        // branch merged against its tracking ref, so deleting the remote first
+        // would remove the only proof and refuse the local half of a squash merge.
+        let repo: RepositoryService | null = null;
         try {
-          await this.deleteBranch(repo, branch);
-          branchDeleted.local = true;
+          repo = await this.repository();
         } catch {
-          branchDeleted.local = false;
-          warnings.push('branch-local');
+          // Reported as warnings below: the merge already landed, a missing local
+          // repository cannot undo it.
         }
-        try {
-          await this.deleteRemoteBranch(repo, remote, branch);
-          branchDeleted.remote = true;
-        } catch {
+        if (repo === null) {
+          branchDeleted.local = false;
           branchDeleted.remote = false;
-          warnings.push('branch-remote');
+          warnings.push('branch-local', 'branch-remote');
+        } else {
+          try {
+            try {
+              await this.deleteBranch(repo, branch, target);
+              branchDeleted.local = true;
+            } catch {
+              branchDeleted.local = false;
+              warnings.push('branch-local');
+            }
+            try {
+              await this.deleteRemoteBranch(repo, remote, branch, target);
+              branchDeleted.remote = true;
+            } catch {
+              branchDeleted.remote = false;
+              warnings.push('branch-remote');
+            }
+          } finally {
+            repo.invalidate();
+          }
         }
       }
     }
@@ -1491,11 +1504,15 @@ export class MessageBridge {
    * request. Both refusals share one error shape: the standalone action reports
    * it, and the merge handler turns it into a warning.
    */
-  private async deleteBranch(repo: RepositoryService, branch: string): Promise<void> {
+  private async deleteBranch(
+    repo: RepositoryService,
+    branch: string,
+    target?: { owner: string; repo: string },
+  ): Promise<void> {
     const status = await repo.status();
     let defaultBranch: string | null = null;
     if (validateDeletableBranch(branch, status.branch)) {
-      defaultBranch = await this.githubDefaultBranch();
+      defaultBranch = await this.githubDefaultBranch(target);
     }
     if (!validateDeletableBranch(branch, status.branch, defaultBranch)) {
       fail(409, 'VALIDATION_ERROR', this.text().invalid, { detail: 'branch', remedies: ['cancel'] });
@@ -1506,21 +1523,25 @@ export class MessageBridge {
   /**
    * The repository's GitHub default branch, or `null` when it cannot be known.
    *
-   * A delete costs one `githubRepo` call only when the repository has GitHub
-   * linkage: no link, no request, no extra refusal. Read through the same
-   * `githubRepo` method the panel uses. Every failure answers `null` rather than
-   * throwing: a delete must still work offline, and a host with no GitHub wiring
-   * is a supported host.
+   * When `target` is supplied (as in `handleMergePullRequest`), reads that
+   * repository directly; otherwise asks `githubLinkage` (no link, no request).
+   * Read through the same `githubRepo` method the panel uses. Every failure
+   * answers `null` rather than throwing: a delete must still work offline, and
+   * a host with no GitHub wiring is a supported host.
    */
-  private async githubDefaultBranch(): Promise<string | null> {
+  private async githubDefaultBranch(target?: { owner: string; repo: string }): Promise<string | null> {
     const fetchRepo = this.host.githubRepo;
     if (fetchRepo === undefined) return null;
     try {
-      const linkage = this.host.githubLinkage;
-      if (linkage === undefined) return null;
-      const info = await linkage();
-      if (info.available !== true || info.owner === null || info.repo === null) return null;
-      const repoInfo = await fetchRepo({ owner: info.owner, repo: info.repo });
+      let resolved = target;
+      if (resolved === undefined) {
+        const linkage = this.host.githubLinkage;
+        if (linkage === undefined) return null;
+        const info = await linkage();
+        if (info.available !== true || info.owner === null || info.repo === null) return null;
+        resolved = { owner: info.owner, repo: info.repo };
+      }
+      const repoInfo = await fetchRepo(resolved);
       return repoInfo.defaultBranch.length > 0 ? repoInfo.defaultBranch : null;
     } catch {
       return null;
@@ -1528,11 +1549,19 @@ export class MessageBridge {
   }
 
   /**
-   * Delete a branch on a remote. The remote ref is confirmed to exist first, so a
-   * typo or an already-deleted branch reports a conflict instead of git's
-   * "remote ref does not exist" buried in a generic failure.
+   * Delete a branch on a remote. Validates the branch name, confirms the remote
+   * and tracking ref exist, and refuses to delete the repository's GitHub
+   * default branch.
    */
-  private async deleteRemoteBranch(repo: RepositoryService, remote: string, branch: string): Promise<void> {
+  private async deleteRemoteBranch(
+    repo: RepositoryService,
+    remote: string,
+    branch: string,
+    target?: { owner: string; repo: string },
+  ): Promise<void> {
+    if (!validateBranchName(branch)) {
+      fail(409, 'VALIDATION_ERROR', this.text().invalid, { detail: 'branch', remedies: ['cancel'] });
+    }
     const remotes = await repo.git.remotes();
     if (!remotes.some((r) => r.name === remote)) {
       fail(409, 'CONFLICT', this.text().notFound, { detail: 'remote' });
@@ -1541,6 +1570,10 @@ export class MessageBridge {
     const trackingRef = `refs/remotes/${remote}/${branch}`;
     if (!refs.some((r) => r.refName === trackingRef)) {
       fail(409, 'CONFLICT', this.text().notFound, { detail: 'remote-ref' });
+    }
+    const defaultBranch = await this.githubDefaultBranch(target);
+    if (defaultBranch !== null && branch === defaultBranch) {
+      fail(409, 'VALIDATION_ERROR', this.text().invalid, { detail: 'branch', remedies: ['cancel'] });
     }
     await repo.git.deleteRemoteBranch(remote, branch);
   }

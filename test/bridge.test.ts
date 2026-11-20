@@ -4871,3 +4871,146 @@ test('QA-04: the merge delete step refuses a head that is the default branch', a
     'feat/a survived',
   );
 });
+
+test('QA-05: branch-delete-remote refuses the default branch and keeps the remote ref', async (t) => {
+  const repo = await cleanupRepo();
+  t.after(() => cleanup(repo.folderPath));
+  const h = harness(repo, repoHost('feat/a'));
+  t.after(() => h.bridge.dispose());
+  const token = (await repo.status()).statusToken;
+
+  const response = await h.webview.send(
+    req('actions/git', {
+      action: 'branch-delete-remote',
+      remote: 'origin',
+      branch: 'feat/a',
+      statusToken: token,
+      idempotencyKey: 'bdr-default',
+      confirm: true,
+      forceAcknowledgement: true,
+    }),
+  );
+  assert.equal(response.ok, false);
+  if (response.ok) return;
+  assert.equal(response.error.code, 'VALIDATION_ERROR');
+  assert.deepEqual(response.error.remedies, ['cancel']);
+  const remote = await repo.git.run(['ls-remote', '--heads', 'origin']);
+  assert.match(remote.stdout, /refs\/heads\/feat\/a$/m, 'the default branch survived on origin');
+});
+
+test('QA-05: the merge delete step refuses both local and remote deletion for the default branch', async (t) => {
+  const repo = await cleanupRepo();
+  t.after(() => cleanup(repo.folderPath));
+  const h = harness(repo, {
+    ...writeHost({
+      githubPullDetail: () =>
+        Promise.resolve({ detail: pullDetail({ headRef: 'feat/a', isFork: false }), rateLimit: RATE_LIMIT }),
+      githubMergePullRequest: () => Promise.resolve(MERGED),
+    }),
+    ...repoHost('feat/a'),
+  });
+  t.after(() => h.bridge.dispose());
+
+  const response = await h.webview.send(
+    req('github/mergePullRequest', mergePayload({ deleteBranch: true, idempotencyKey: 'm-default-both' })),
+  );
+  assert.equal(response.ok, true, JSON.stringify(response));
+  if (!response.ok) return;
+  const data = response.data as {
+    merged: boolean;
+    branchDeleted: { local: boolean | null; remote: boolean | null };
+    warnings: string[];
+  };
+  assert.equal(data.merged, true);
+  assert.deepEqual(data.branchDeleted, { local: false, remote: false });
+  assert.ok(data.warnings.includes('branch-local'));
+  assert.ok(data.warnings.includes('branch-remote'));
+  assert.ok(
+    (await repo.git.refs()).some((r) => r.refName === 'refs/heads/feat/a'),
+    'feat/a survived locally',
+  );
+  const remote = await repo.git.run(['ls-remote', '--heads', 'origin']);
+  assert.match(remote.stdout, /refs\/heads\/feat\/a$/m, 'feat/a survived on origin');
+});
+
+test('P25: merge with deleteBranch removes local and origin branches and invalidates repo cache', async (t) => {
+  const repo = await cleanupRepo();
+  t.after(() => cleanup(repo.folderPath));
+  let invalidatedBeforeNotify = false;
+  let invalidated = 0;
+  const origInvalidate = repo.invalidate.bind(repo);
+  repo.invalidate = () => {
+    invalidated += 1;
+    origInvalidate();
+  };
+  const h = harness(repo, {
+    ...writeHost({
+      githubPullDetail: () =>
+        Promise.resolve({ detail: pullDetail({ headRef: 'feat/a', isFork: false }), rateLimit: RATE_LIMIT }),
+      githubMergePullRequest: () => Promise.resolve(MERGED),
+    }),
+    ...repoHost('main'),
+  });
+  t.after(() => h.bridge.dispose());
+  const origPost = h.webview.postMessage.bind(h.webview);
+  h.webview.postMessage = (msg) => {
+    if ('kind' in msg && msg.kind === 'event/repoChanged') invalidatedBeforeNotify = invalidated > 0;
+    return origPost(msg);
+  };
+
+  const response = await h.webview.send(
+    req('github/mergePullRequest', mergePayload({ deleteBranch: true, idempotencyKey: 'm-del-ok' })),
+  );
+  assert.equal(response.ok, true, JSON.stringify(response));
+  if (!response.ok) return;
+  const data = response.data as {
+    merged: boolean;
+    branchDeleted: { local: boolean | null; remote: boolean | null };
+    warnings: string[];
+  };
+  assert.equal(data.merged, true);
+  assert.deepEqual(data.branchDeleted, { local: true, remote: true });
+  assert.deepEqual(data.warnings, []);
+  assert.equal(invalidatedBeforeNotify, true, 'repo cache invalidated before event/repoChanged');
+  assert.ok(
+    !(await repo.git.refs()).some((r) => r.refName === 'refs/heads/feat/a'),
+    'feat/a deleted locally',
+  );
+  const remote = await repo.git.run(['ls-remote', '--heads', 'origin']);
+  assert.doesNotMatch(remote.stdout, /refs\/heads\/feat\/a$/m, 'feat/a deleted on origin');
+});
+
+test('P25: merge with deleteBranch on a fork pull request keeps base repo branches untouched', async (t) => {
+  const repo = await cleanupRepo();
+  t.after(() => cleanup(repo.folderPath));
+  const h = harness(repo, {
+    ...writeHost({
+      githubPullDetail: () =>
+        Promise.resolve({ detail: pullDetail({ headRef: 'feat/a', isFork: true }), rateLimit: RATE_LIMIT }),
+      githubMergePullRequest: () => Promise.resolve(MERGED),
+    }),
+    ...repoHost('main'),
+  });
+  t.after(() => h.bridge.dispose());
+
+  const response = await h.webview.send(
+    req('github/mergePullRequest', mergePayload({ deleteBranch: true, idempotencyKey: 'm-del-fork' })),
+  );
+  assert.equal(response.ok, true, JSON.stringify(response));
+  if (!response.ok) return;
+  const data = response.data as {
+    merged: boolean;
+    branchDeleted: { local: boolean | null; remote: boolean | null };
+    warnings: string[];
+  };
+  assert.equal(data.merged, true);
+  assert.deepEqual(data.branchDeleted, { local: false, remote: false });
+  assert.ok(data.warnings.includes('branch-local'));
+  assert.ok(data.warnings.includes('branch-remote'));
+  assert.ok(
+    (await repo.git.refs()).some((r) => r.refName === 'refs/heads/feat/a'),
+    'local branch with colliding name survived',
+  );
+  const remote = await repo.git.run(['ls-remote', '--heads', 'origin']);
+  assert.match(remote.stdout, /refs\/heads\/feat\/a$/m, 'origin branch with colliding name survived');
+});
