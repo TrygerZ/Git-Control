@@ -11,6 +11,7 @@ import type {
   IconThemeSnapshot,
   NavigateEvent,
   OperationProgressEvent,
+  PullRequestsChangedEvent,
   RepoChangedEvent,
   Response,
   SettingsSnapshot,
@@ -111,6 +112,21 @@ export function isValidCommitFocus(payload: unknown): payload is CommitFocusEven
   return typeof hash === 'string' && hash.length > 0;
 }
 
+/** Pure field-by-field validator for `event/pullRequestsChanged`. */
+export function isValidPullRequestsChanged(payload: unknown): payload is PullRequestsChangedEvent {
+  if (!isRecord(payload)) return false;
+  const { owner, repo, number } = payload;
+  return (
+    typeof owner === 'string' &&
+    owner.length > 0 &&
+    typeof repo === 'string' &&
+    repo.length > 0 &&
+    typeof number === 'number' &&
+    Number.isInteger(number) &&
+    number >= 1
+  );
+}
+
 /**
  * Validate and narrow an arbitrary host event message.
  * Returns the typed HostEvent if kind is known and payload matches its contract;
@@ -134,6 +150,10 @@ export function validateHostEvent(raw: unknown): HostEvent | null {
       return isValidIconTheme(payload) ? { kind, payload } : null;
     case 'event/commitFocus':
       return isValidCommitFocus(payload) ? { kind, payload } : null;
+    case 'event/pullRequestsChanged':
+      return isValidPullRequestsChanged(payload)
+        ? { kind, payload: { owner: payload.owner, repo: payload.repo, number: payload.number } }
+        : null;
     case 'event/navigate': {
       // Re-emit the parsed route, not the raw object, so extra keys never reach a listener.
       const route = isRecord(payload) ? parseRoute(payload.route) : null;

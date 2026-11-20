@@ -346,3 +346,26 @@ test('event/navigate keeps a known focus target and strips an unknown one', () =
   });
   assert.deepEqual(wrongType, { kind: 'event/navigate', payload: { route: { id: 'prs' } } });
 });
+
+test('validateHostEvent accepts valid event/pullRequestsChanged and rejects malformed payloads', () => {
+  const valid = validateHostEvent({
+    kind: 'event/pullRequestsChanged',
+    payload: { owner: 'TrygerZ', repo: 'git-control', number: 150 },
+  });
+  assert.deepEqual(valid, {
+    kind: 'event/pullRequestsChanged',
+    payload: { owner: 'TrygerZ', repo: 'git-control', number: 150 },
+  });
+
+  for (const bad of [
+    null,
+    {},
+    { owner: '', repo: 'r', number: 1 },
+    { owner: 'o', repo: '', number: 1 },
+    { owner: 'o', repo: 'r', number: 0 },
+    { owner: 'o', repo: 'r', number: 1.5 },
+    { owner: 'o', repo: 'r', number: '1' },
+  ]) {
+    assert.equal(validateHostEvent({ kind: 'event/pullRequestsChanged', payload: bad }), null, JSON.stringify(bad));
+  }
+});

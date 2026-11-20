@@ -1408,6 +1408,13 @@ export interface CommitFocusEvent {
   hash: string;
 }
 
+/** Pushed across all live webviews when a pull request changes state on GitHub. */
+export interface PullRequestsChangedEvent {
+  owner: string;
+  repo: string;
+  number: number;
+}
+
 export type RouteId = 'changes' | 'prs' | 'issues' | 'actions' | 'branches' | 'help';
 export type ChangesSub = 'changes' | 'stashes';
 export type BranchesSub = 'local' | 'remote' | 'tags';
@@ -1440,6 +1447,8 @@ export interface EventMap {
   'event/commitFocus': CommitFocusEvent;
   /** Select a sidebar route. The explorer ignores it. */
   'event/navigate': NavigateEvent;
+  /** Notify mounted webviews that a pull request changed state on GitHub. */
+  'event/pullRequestsChanged': PullRequestsChangedEvent;
 }
 
 export type EventKind = keyof EventMap;

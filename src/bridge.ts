@@ -121,6 +121,7 @@ import type {
   PullDetail,
   PullDetailPayload,
   PullFile,
+  PullRequestsChangedEvent,
   PullRequestsPayload,
   PullRequestsResult,
   RefsResult,
@@ -257,6 +258,10 @@ export interface BridgeHost {
    * when none is queued or it is stale. Takes no parameters, so it cannot run commands.
    */
   takePendingRoute?(): { route: Route; focus?: FocusTarget } | null;
+  /** Broadcast a repository change across every live webview, falling back to this bridge when omitted. */
+  broadcastRepoChanged?(reason: 'fs' | 'action' | 'manual'): Promise<void>;
+  /** Broadcast a pull request state change across every live webview, falling back to this bridge when omitted. */
+  broadcastPullRequestsChanged?(event: PullRequestsChangedEvent): void;
 }
 
 /**
@@ -359,6 +364,15 @@ export class MessageBridge {
       }
     }
     this.emit('event/repoChanged', { reason, statusToken });
+  }
+
+  /** Broadcast a pull request change across bridges, falling back to this webview alone. */
+  private notifyPullRequestsChanged(event: PullRequestsChangedEvent): void {
+    if (this.host.broadcastPullRequestsChanged !== undefined) {
+      this.host.broadcastPullRequestsChanged(event);
+    } else {
+      this.emit('event/pullRequestsChanged', event);
+    }
   }
 
   // ---------------------------------------------------------------- routing
@@ -1268,7 +1282,18 @@ export class MessageBridge {
       }
     }
 
-    await this.notifyRepoChanged('action');
+    if (this.host.broadcastRepoChanged !== undefined) {
+      await this.host.broadcastRepoChanged('action');
+    } else {
+      await this.notifyRepoChanged('action');
+    }
+    if (result.merged) {
+      this.notifyPullRequestsChanged({
+        owner: payload.owner,
+        repo: payload.repo,
+        number: payload.number,
+      });
+    }
     return { merged: result.merged, mergeSha: result.mergeSha, branchDeleted, warnings };
   }
 
@@ -1280,7 +1305,15 @@ export class MessageBridge {
     await this.gateGitHub({ action: 'close-pull-request' }, payload);
     const close = this.host.githubClosePullRequest;
     if (close === undefined) fail(503, 'UNAVAILABLE', this.text().githubPending);
-    return close(payload);
+    const outcome = await close(payload);
+    if (outcome.closed) {
+      this.notifyPullRequestsChanged({
+        owner: payload.owner,
+        repo: payload.repo,
+        number: payload.number,
+      });
+    }
+    return outcome;
   }
 
   /**

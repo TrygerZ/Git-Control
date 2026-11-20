@@ -5014,3 +5014,63 @@ test('P25: merge with deleteBranch on a fork pull request keeps base repo branch
   const remote = await repo.git.run(['ls-remote', '--heads', 'origin']);
   assert.match(remote.stdout, /refs\/heads\/feat\/a$/m, 'origin branch with colliding name survived');
 });
+
+test('QA-06: merge and close broadcast pullRequestsChanged and merge broadcasts repoChanged across webviews', async (t) => {
+  const repoBroadcasts: string[] = [];
+  const prBroadcasts: unknown[] = [];
+  const h = harness(null, {
+    ...writeHost({
+      githubMergePullRequest: () => Promise.resolve(MERGED),
+      githubClosePullRequest: () => Promise.resolve({ closed: true }),
+    }),
+    broadcastRepoChanged: async (reason) => {
+      repoBroadcasts.push(reason);
+    },
+    broadcastPullRequestsChanged: (event) => {
+      prBroadcasts.push(event);
+    },
+  });
+  t.after(() => h.bridge.dispose());
+
+  const merged = await h.webview.send(req('github/mergePullRequest', mergePayload({ idempotencyKey: 'bcast-m' })));
+  assert.equal(merged.ok, true);
+  assert.deepEqual(repoBroadcasts, ['action'], 'merge broadcasts repoChanged across all webviews');
+  assert.deepEqual(prBroadcasts, [{ owner: 'o', repo: 'r', number: 150 }]);
+
+  const closed = await h.webview.send(
+    req('github/closePullRequest', { owner: 'o', repo: 'r', number: 151, idempotencyKey: 'bcast-c', confirm: true }),
+  );
+  assert.equal(closed.ok, true);
+  assert.deepEqual(prBroadcasts, [
+    { owner: 'o', repo: 'r', number: 150 },
+    { owner: 'o', repo: 'r', number: 151 },
+  ]);
+});
+
+test('QA-06: failed close never broadcasts pullRequestsChanged, and local bridge emits fallback without host hook', async (t) => {
+  const h = harness(null, {
+    ...writeHost({
+      githubClosePullRequest: () => Promise.resolve({ closed: true }),
+    }),
+  });
+  t.after(() => h.bridge.dispose());
+
+  const refused = await h.webview.send(
+    req('github/closePullRequest', { owner: 'o', repo: 'r', number: 150, idempotencyKey: 'bcast-refuse' }),
+  );
+  assert.equal(refused.ok, false);
+  assert.equal(
+    h.webview.sent.some((m) => 'kind' in m && m.kind === 'event/pullRequestsChanged'),
+    false,
+    'refused close does not broadcast',
+  );
+
+  const ok = await h.webview.send(
+    req('github/closePullRequest', { owner: 'o', repo: 'r', number: 150, idempotencyKey: 'bcast-ok', confirm: true }),
+  );
+  assert.equal(ok.ok, true);
+  assert.ok(
+    h.webview.sent.some((m) => 'kind' in m && m.kind === 'event/pullRequestsChanged'),
+    'standalone bridge falls back to emitting on its own webview',
+  );
+});

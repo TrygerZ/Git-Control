@@ -76,6 +76,7 @@ import type {
   PullDetail,
   PullDetailPayload,
   PullFile,
+  PullRequestsChangedEvent,
   PullRequestsPayload,
   PullRequestsResult,
   ReplyReviewPayload,
@@ -998,11 +999,17 @@ class Controller implements vscode.Disposable {
       githubPrReviewers: (payload) => this.githubPrReviewers(payload),
       githubLinkage: () => this.githubLinkage(),
       takePendingRoute: () => this.takePendingRoute(),
+      broadcastRepoChanged: (reason) => this.broadcastRepoChanged(reason),
+      broadcastPullRequestsChanged: (event) => this.broadcastPullRequestsChanged(event),
     };
   }
 
   private async broadcastRepoChanged(reason: 'fs' | 'action' | 'manual'): Promise<void> {
     for (const bridge of this.bridges) await bridge.notifyRepoChanged(reason);
+  }
+
+  private broadcastPullRequestsChanged(event: PullRequestsChangedEvent): void {
+    for (const bridge of this.bridges) bridge.emit('event/pullRequestsChanged', event);
   }
 
   /**
