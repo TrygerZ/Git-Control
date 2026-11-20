@@ -4,14 +4,30 @@ import {
   validatePullRequestInput,
 } from './pullRequestDraft';
 import type { ErrorCode, GitActionPayload, IssueListFilter, IssueStateFilter, Request, RequestKind } from './messages';
-import { validateBranchName, validateCommentBody, validateCommitTitle, validateFullHash, validateHash, validateMergeMethod, validatePullRequestNumber, validateRemoteName, validateRepoRelativePath, validateReviewEvent, validateStashIndex } from './validation';
+import {
+  validateBranchName,
+  validateCommentBody,
+  validateCommitTitle,
+  validateFullHash,
+  validateHash,
+  validateIssueBody,
+  validateIssueNumber,
+  validateIssueTitle,
+  validateLabelList,
+  validateMergeMethod,
+  validatePullRequestNumber,
+  validateRemoteName,
+  validateRepoRelativePath,
+  validateReviewEvent,
+  validateStashIndex,
+} from './validation';
 
 export type Outcome = { ok: true; data: unknown } | { ok: false; error: { code: ErrorCode } };
 export const MUTATION_KINDS = new Set<string>(['actions/stage', 'actions/commit', 'actions/git']);
 /**
- * GitHub mutations. P22 registered the first one; P25 adds the four writes
- * (merge, close, review, reply) so `idempotencyKeyOf` keeps a single place to
- * consult.
+ * GitHub mutations. P22 registered the first one; P25 adds the four PR writes
+ * (merge, close, review, reply); P26 adds the three issue writes (comment,
+ * state toggle, create) so `idempotencyKeyOf` keeps a single place to consult.
  */
 export const GITHUB_MUTATION_KINDS = new Set<string>([
   'github/createPullRequest',
@@ -19,6 +35,9 @@ export const GITHUB_MUTATION_KINDS = new Set<string>([
   'github/closePullRequest',
   'github/submitReview',
   'github/replyReviewComment',
+  'github/commentIssue',
+  'github/setIssueState',
+  'github/createIssue',
 ]);
 const RETRYABLE_CODES = new Set<ErrorCode>([
   'CONFIRMATION_REQUIRED',
@@ -371,4 +390,63 @@ export function validateCreatePullRequestPayload(
   if (typeof payload.publish !== 'boolean') fail('publish');
   if (payload.remote !== undefined && !validateRemoteName(payload.remote)) fail('remote');
   if (!verdict.ok) fail(verdict.field);
+}
+
+/** `github/commentIssue`: owner, repo, issue number, and comment body. */
+export function validateCommentIssuePayload(
+  payload: {
+    owner: unknown;
+    repo: unknown;
+    number: unknown;
+    body: unknown;
+  } & Record<string, unknown>,
+  fail: (detail: string) => never,
+): void {
+  if (!onlyKeys(payload, ['owner', 'repo', 'number', 'body', 'idempotencyKey', 'confirm', 'forceAcknowledgement'])) fail('payload');
+  if (!isSlug(payload.owner) || !isSlug(payload.repo)) fail('owner/repo');
+  if (!validateIssueNumber(payload.number)) fail('number');
+  if (!validateCommentBody(payload.body)) fail('body');
+}
+
+/** `github/setIssueState`: owner, repo, issue number, and target state (`open` | `closed`). */
+export function validateSetIssueStatePayload(
+  payload: {
+    owner: unknown;
+    repo: unknown;
+    number: unknown;
+    state: unknown;
+  } & Record<string, unknown>,
+  fail: (detail: string) => never,
+): void {
+  if (!onlyKeys(payload, ['owner', 'repo', 'number', 'state', 'idempotencyKey', 'confirm', 'forceAcknowledgement'])) fail('payload');
+  if (!isSlug(payload.owner) || !isSlug(payload.repo)) fail('owner/repo');
+  if (!validateIssueNumber(payload.number)) fail('number');
+  if (!isIssueState(payload.state)) fail('state');
+}
+
+/** `github/createIssue`: owner, repo, title, description body, and up to 10 unique labels. */
+export function validateCreateIssuePayload(
+  payload: {
+    owner: unknown;
+    repo: unknown;
+    title: unknown;
+    body: unknown;
+    labels: unknown;
+  } & Record<string, unknown>,
+  fail: (detail: string) => never,
+): void {
+  if (!onlyKeys(payload, ['owner', 'repo', 'title', 'body', 'labels', 'idempotencyKey', 'confirm', 'forceAcknowledgement'])) fail('payload');
+  if (!isSlug(payload.owner) || !isSlug(payload.repo)) fail('owner/repo');
+  if (!validateIssueTitle(payload.title)) fail('title');
+  if (!validateIssueBody(payload.body)) fail('body');
+  if (!validateLabelList(payload.labels)) fail('labels');
+}
+
+/** `github/repoLabels`: read-only label catalog for `owner/repo`. */
+export function validateRepoLabelsPayload(
+  payload: { owner: unknown; repo: unknown } & Record<string, unknown>,
+  fail: (detail: string) => never,
+): void {
+  if (!onlyKeys(payload, ['owner', 'repo'])) fail('payload');
+  if (!isSlug(payload.owner) || !isSlug(payload.repo)) fail('owner/repo');
 }

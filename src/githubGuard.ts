@@ -26,6 +26,7 @@ export type GitHubWriteAction =
   | { action: 'comment' }
   | { action: 'close-pull-request' }
   | { action: 'close-issue' }
+  | { action: 'reopen-issue' }
   | { action: 'create-issue' }
   | { action: 'rerun-failed-jobs' }
   | { action: 'dispatch-workflow' }
@@ -48,13 +49,13 @@ export type GitHubGuardVerdict = GuardVerdict;
  * `submit-review` is deliberately absent (X-02, P25). It was a level 1 action in
  * P19, but frame 107 shows the review form with a Submit button and no confirm
  * step: the form the user fills in IS the explicit act, and a second dialog would
- * ask the same question twice. A plain comment already worked this way.
+ * ask the same question twice. `close-issue` is absent too (X-02, P26): frame 58
+ * closes without a dialog and offers Undo in the toast instead.
  */
 const CONFIRM_ACTIONS = new Set<GitHubWriteAction['action']>([
   'merge-pull-request',
   'create-release',
   'dispatch-workflow',
-  'close-issue',
   'close-pull-request',
 ]);
 
@@ -108,10 +109,10 @@ export function evaluateGitHubAction(
   // draft PR with publish is the same push, so draft is irrelevant here.
   const publishVerdict = action.action === 'create-pull-request' && action.publish === true;
   if (CONFIRM_ACTIONS.has(action.action) || publishVerdict) {
-    // Merging, releasing, dispatching, closing an issue or a pull request, and
-    // publishing change shared state. A review verdict and an additive comment
-    // do not: the form or the comment box is the act.
-    const low = action.action === 'close-issue' || action.action === 'close-pull-request';
+    // Merging, releasing, dispatching, closing a pull request, and publishing
+    // change shared state. A review verdict, an issue state toggle (reversible via
+    // Undo), and an additive comment do not.
+    const low = action.action === 'close-pull-request';
     return {
       allow: false,
       code: 'CONFIRMATION_REQUIRED',

@@ -5074,3 +5074,111 @@ test('QA-06: failed close never broadcasts pullRequestsChanged, and local bridge
     'standalone bridge falls back to emitting on its own webview',
   );
 });
+
+// --------------------------------------------------- P26 issue write actions
+
+test('P26: issue write and label endpoints validate payloads, enforce guard, replay by idempotency key, and report 503 when host method is absent', async (t) => {
+  let commentCalls = 0;
+  let stateCalls = 0;
+  let createCalls = 0;
+  let labelCalls = 0;
+
+  const h = harness(null, {
+    ...writeHost({}),
+    githubCommentIssue: async (p) => {
+      commentCalls += 1;
+      return { commentId: 100 + p.number, htmlUrl: `https://github.com/${p.owner}/${p.repo}/issues/${p.number}#issuecomment-1` };
+    },
+    githubSetIssueState: async (p) => {
+      stateCalls += 1;
+      return { number: p.number, state: p.state };
+    },
+    githubCreateIssue: async (p) => {
+      createCalls += 1;
+      return { number: 201, htmlUrl: `https://github.com/${p.owner}/${p.repo}/issues/201` };
+    },
+    githubRepoLabels: async () => {
+      labelCalls += 1;
+      return { labels: [{ name: 'bug', colorKey: 'red' }], rateLimit: RATE_LIMIT };
+    },
+  });
+  t.after(() => h.bridge.dispose());
+
+  // Validation rejections (bad owner, bad number, extra fields)
+  for (const bad of [
+    req('github/commentIssue', { owner: '../x', repo: 'r', number: 97, body: 'hi', idempotencyKey: 'val-1' }),
+    req('github/commentIssue', { owner: 'o', repo: 'r', number: 0, body: 'hi', idempotencyKey: 'val-2' }),
+    req('github/commentIssue', { owner: 'o', repo: 'r', number: 97, body: 'hi', extra: true, idempotencyKey: 'val-3' }),
+    req('github/setIssueState', { owner: 'o', repo: 'r', number: 97, state: 'invalid', idempotencyKey: 'val-4' }),
+    req('github/setIssueState', { owner: 'o', repo: 'r', number: 97, state: 'closed', extra: 1, idempotencyKey: 'val-5' }),
+    req('github/createIssue', { owner: 'o', repo: 'r', title: '  ', body: '', labels: [], idempotencyKey: 'val-6' }),
+    req('github/createIssue', { owner: 'o', repo: 'r', title: 'T', body: '', labels: ['dup', 'dup'], idempotencyKey: 'val-7' }),
+    req('github/createIssue', { owner: 'o', repo: 'r', title: 'T', body: '', labels: [], extra: 1, idempotencyKey: 'val-8' }),
+    req('github/repoLabels', { owner: 'o', repo: 'r', extra: 1 }),
+  ]) {
+    const res = await h.webview.send(bad);
+    assert.equal(res.ok, false);
+    if (!res.ok) assert.equal(res.error.code, 'VALIDATION_ERROR');
+  }
+  assert.equal(commentCalls + stateCalls + createCalls + labelCalls, 0, 'invalid payloads never reach host');
+
+  // Happy paths + idempotency replay
+  const c1 = await h.webview.send(
+    req('github/commentIssue', { owner: 'o', repo: 'r', number: 97, body: 'First comment', idempotencyKey: 'ci-1' }),
+  );
+  const c2 = await h.webview.send(
+    req('github/commentIssue', { owner: 'o', repo: 'r', number: 97, body: 'First comment', idempotencyKey: 'ci-1' }),
+  );
+  assert.equal(c1.ok, true);
+  assert.deepEqual(c1.ok ? c1.data : null, c2.ok ? c2.data : null);
+  assert.equal(commentCalls, 1, 'comment replayed on same idempotencyKey');
+
+  const s1 = await h.webview.send(
+    req('github/setIssueState', { owner: 'o', repo: 'r', number: 97, state: 'closed', idempotencyKey: 'si-1' }),
+  );
+  const s2 = await h.webview.send(
+    req('github/setIssueState', { owner: 'o', repo: 'r', number: 97, state: 'closed', idempotencyKey: 'si-1' }),
+  );
+  assert.equal(s1.ok, true);
+  assert.deepEqual(s1.ok ? s1.data : null, { number: 97, state: 'closed' });
+  assert.deepEqual(s2.ok ? s2.data : null, { number: 97, state: 'closed' });
+  assert.equal(stateCalls, 1, 'setIssueState replayed on same idempotencyKey');
+
+  const sOpen = await h.webview.send(
+    req('github/setIssueState', { owner: 'o', repo: 'r', number: 97, state: 'open', idempotencyKey: 'si-2' }),
+  );
+  assert.equal(sOpen.ok, true);
+  assert.deepEqual(sOpen.ok ? sOpen.data : null, { number: 97, state: 'open' });
+  assert.equal(stateCalls, 2);
+
+  const cr1 = await h.webview.send(
+    req('github/createIssue', { owner: 'o', repo: 'r', title: 'New bug', body: 'Desc', labels: ['bug'], idempotencyKey: 'cr-1' }),
+  );
+  const cr2 = await h.webview.send(
+    req('github/createIssue', { owner: 'o', repo: 'r', title: 'New bug', body: 'Desc', labels: ['bug'], idempotencyKey: 'cr-1' }),
+  );
+  assert.equal(cr1.ok, true);
+  assert.deepEqual(cr1.ok ? cr1.data : null, cr2.ok ? cr2.data : null);
+  assert.equal(createCalls, 1, 'createIssue replayed on same idempotencyKey');
+
+  const lb = await h.webview.send(req('github/repoLabels', { owner: 'o', repo: 'r' }));
+  assert.equal(lb.ok, true);
+  assert.equal(labelCalls, 1);
+
+  // 503 UNAVAILABLE when host method is missing
+  const noHost = harness(null, writeHost({}));
+  t.after(() => noHost.bridge.dispose());
+  for (const missing of [
+    req('github/commentIssue', { owner: 'o', repo: 'r', number: 97, body: 'hi', idempotencyKey: 'nh-1' }),
+    req('github/setIssueState', { owner: 'o', repo: 'r', number: 97, state: 'closed', idempotencyKey: 'nh-2' }),
+    req('github/createIssue', { owner: 'o', repo: 'r', title: 'T', body: '', labels: [], idempotencyKey: 'nh-3' }),
+    req('github/repoLabels', { owner: 'o', repo: 'r' }),
+  ]) {
+    const res = await noHost.webview.send(missing);
+    assert.equal(res.ok, false);
+    if (!res.ok) {
+      assert.equal(res.error.status, 503);
+      assert.equal(res.error.code, 'UNAVAILABLE');
+    }
+  }
+});
