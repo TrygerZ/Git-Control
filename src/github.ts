@@ -948,7 +948,7 @@ export class GitHubClient {
   async workflowRuns(
     owner: string,
     repo: string,
-    opts: { branch?: string; workflowId?: number; perPage?: number } = {},
+    opts: { branch?: string; workflowId?: number; perPage?: number; refresh?: boolean } = {},
   ): Promise<Fetched<WorkflowRunInfo[]>> {
     const perPage = clampPerPage(opts.perPage ?? 30);
     const base = `/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}`;
@@ -962,7 +962,13 @@ export class GitHubClient {
     // still going is stale in seconds, a finished one is history.
     const cached = this.readAny<WorkflowRunInfo[]>(key);
     const ttl = cached !== undefined && runsActive(cached) ? RUNS_ACTIVE_TTL_MS : RUNS_TTL_MS;
-    return this.get<WorkflowRunInfo[]>(path, key, ttl, (body) => toWorkflowRuns(body));
+    return this.get<WorkflowRunInfo[]>(
+      path,
+      key,
+      ttl,
+      (body) => toWorkflowRuns(body),
+      opts.refresh === true ? { refresh: true } : undefined,
+    );
   }
 
   async workflows(owner: string, repo: string): Promise<Fetched<WorkflowInfo[]>> {

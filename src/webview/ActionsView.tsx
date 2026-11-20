@@ -48,6 +48,7 @@ export function ActionsView(): JSX.Element {
   const closeDispatch = useActionsStore((s) => s.closeDispatch);
   const pendingStart = useActionsStore((s) => s.pendingStart);
   const pollBurstNonce = useActionsStore((s) => s.pollBurstNonce);
+  const pollBurstActive = useActionsStore((s) => s.pollBurstActive);
   const finishPollBurst = useActionsStore((s) => s.finishPollBurst);
 
   const route = useRouteStore((s) => s.route);
@@ -185,7 +186,7 @@ export function ActionsView(): JSX.Element {
     }
   }, [dispatchOpen]);
 
-  const burstActive = route.id === 'actions' && (pendingStart !== null || pollBurstNonce > 0);
+  const burstActive = route.id === 'actions' && (pendingStart !== null || pollBurstActive);
   useEffect(() => {
     if (!burstActive) return undefined;
 
@@ -203,9 +204,7 @@ export function ActionsView(): JSX.Element {
         offline: currentRl?.offline === true,
       });
       if (delay === null) {
-        if (useActionsStore.getState().pendingStart !== null) {
-          finishPollBurst();
-        }
+        finishPollBurst();
         return;
       }
       timer = setTimeout(async () => {
@@ -217,6 +216,7 @@ export function ActionsView(): JSX.Element {
           if (cancelled) return;
           const currentState = useActionsStore.getState();
           if (currentState.pendingStart === null && needsPolling(currentState.runs)) {
+            finishPollBurst();
             return;
           }
           scheduleNext();

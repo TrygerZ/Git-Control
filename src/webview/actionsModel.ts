@@ -244,12 +244,23 @@ export function dispatchCommand(
   branch: string,
   inputs?: Record<string, string>,
 ): string {
-  const file = workflowFile.split('/').pop() ?? workflowFile;
+  const file = sanitizeGitText(workflowFile.split('/').pop() ?? workflowFile);
+  const cleanBranch = sanitizeGitText(branch);
   const base = `POST /repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/actions/workflows/${encodeURIComponent(file)}/dispatches`;
+  let cleanInputs: Record<string, string> | undefined;
+  if (inputs !== undefined) {
+    const entries = Object.entries(inputs);
+    if (entries.length > 0) {
+      cleanInputs = {};
+      for (const [k, v] of entries) {
+        cleanInputs[sanitizeGitText(k)] = sanitizeGitText(v);
+      }
+    }
+  }
   const body =
-    inputs !== undefined && Object.keys(inputs).length > 0
-      ? { ref: branch, inputs }
-      : { ref: branch };
+    cleanInputs !== undefined
+      ? { ref: cleanBranch, inputs: cleanInputs }
+      : { ref: cleanBranch };
   return `${base} ${JSON.stringify(body)}`;
 }
 

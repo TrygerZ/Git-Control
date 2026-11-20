@@ -1502,6 +1502,7 @@ class Controller implements vscode.Disposable {
       ...(payload.branch === undefined ? {} : { branch: payload.branch }),
       ...(payload.workflowId === undefined ? {} : { workflowId: payload.workflowId }),
       ...(payload.perPage === undefined ? {} : { perPage: payload.perPage }),
+      ...(payload.refresh === undefined ? {} : { refresh: payload.refresh }),
     });
     const workflows =
       payload.branch === undefined && payload.workflowId === undefined
@@ -1579,17 +1580,15 @@ class Controller implements vscode.Disposable {
 
   private async githubWorkflowInputs(payload: WorkflowInputsPayload): Promise<WorkflowInputsResult> {
     const { client } = await this.githubClient();
-    const workflows = await client.workflows(payload.owner, payload.repo);
-    const workflow = workflows.data.find((item) => item.id === payload.workflowId);
-    const remote = await this.detectRemote();
-    const webUrl =
-      workflow === undefined
-        ? null
-        : workflowWebUrl(remote?.host ?? null, payload.owner, payload.repo, workflow.path);
-    if (workflow === undefined) {
-      return { inputs: [], parsed: false, webUrl: null, rateLimit: client.rateLimit(workflows.cached) };
-    }
+    let webUrl: string | null = null;
     try {
+      const workflows = await client.workflows(payload.owner, payload.repo);
+      const workflow = workflows.data.find((item) => item.id === payload.workflowId);
+      if (workflow === undefined) {
+        return { inputs: [], parsed: false, webUrl: null, rateLimit: client.rateLimit(workflows.cached) };
+      }
+      const remote = await this.detectRemote();
+      webUrl = workflowWebUrl(remote?.host ?? null, payload.owner, payload.repo, workflow.path);
       const file = await client.workflowFile(payload.owner, payload.repo, workflow.path, payload.ref);
       const parsed = parseDispatchInputs(file.data);
       if (parsed === null) {
@@ -1597,7 +1596,7 @@ class Controller implements vscode.Disposable {
       }
       return { inputs: parsed, parsed: true, webUrl, rateLimit: client.rateLimit(file.cached) };
     } catch {
-      return { inputs: [], parsed: false, webUrl, rateLimit: client.rateLimit(workflows.cached) };
+      return { inputs: [], parsed: false, webUrl, rateLimit: client.rateLimit(false) };
     }
   }
 

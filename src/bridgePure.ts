@@ -144,7 +144,14 @@ export function isRunId(value: unknown): boolean {
  * a path segment, so both are validated with the same rules the git argv uses.
  */
 export function validateActionsRunsPayload(
-  payload: { owner: unknown; repo: unknown; branch?: unknown; workflowId?: unknown; perPage?: unknown },
+  payload: {
+    owner: unknown;
+    repo: unknown;
+    branch?: unknown;
+    workflowId?: unknown;
+    perPage?: unknown;
+    refresh?: unknown;
+  },
   fail: (detail: string) => never,
 ): void {
   if (!isSlug(payload.owner) || !isSlug(payload.repo)) fail('owner/repo');
@@ -153,6 +160,7 @@ export function validateActionsRunsPayload(
   if (payload.perPage !== undefined && (!isPositiveInt(payload.perPage) || (payload.perPage as number) > 50)) {
     fail('perPage');
   }
+  if (payload.refresh !== undefined && typeof payload.refresh !== 'boolean') fail('refresh');
 }
 
 /** `github/actionsJobs`. The run id is the only variable part of the path. */

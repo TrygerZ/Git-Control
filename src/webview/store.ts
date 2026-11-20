@@ -2233,6 +2233,7 @@ export interface ActionsState {
   dispatchError: ErrorBody | null;
   pendingStart: PendingDispatch | null;
   pollBurstNonce: number;
+  pollBurstActive: boolean;
   load(opts: { branch?: string | null; workflowId?: number | null; force?: boolean }): Promise<void>;
   loadJobs(runId: number): Promise<void>;
   /** Idempotent per job id: a second call for a loaded tail sends nothing. */
@@ -2266,6 +2267,7 @@ let inFlightDot: Promise<void> | null = null;
 let actionsGeneration = 0;
 const latestLoadKeySeq = new Map<string, number>();
 let loadSeqCounter = 0;
+let inFlightInputsCount = 0;
 
 function actionsFilterKey(branch: string | null, workflowId: number | null): string {
   return `${branch ?? '*'}:${workflowId ?? '*'}`;
@@ -2296,6 +2298,7 @@ export const useActionsStore = create<ActionsState>((set, get) => {
     dispatchError: null,
     pendingStart: null,
     pollBurstNonce: 0,
+    pollBurstActive: false,
 
     async load(opts) {
       const branch = opts.branch === undefined ? get().branch : opts.branch;
@@ -2338,6 +2341,7 @@ export const useActionsStore = create<ActionsState>((set, get) => {
             ...(branch === null ? {} : { branch }),
             ...(workflowId === null ? {} : { workflowId }),
             perPage: ACTIONS_PAGE_SIZE,
+            ...(opts.force === true ? { refresh: true } : {}),
           });
           if (generation !== actionsGeneration || latestLoadKeySeq.get(key) !== seq) return;
           set((s) => {
@@ -2350,7 +2354,7 @@ export const useActionsStore = create<ActionsState>((set, get) => {
               loading: false,
               error: null,
               ...(stillSelected ? { runs: result.runs } : {}),
-              ...(matchedPending ? { pendingStart: null } : {}),
+              ...(matchedPending ? { pendingStart: null, pollBurstActive: false } : {}),
               // The workflow list only arrives on an unfiltered read; keep the last one.
               ...(result.workflows.length > 0 ? { workflows: result.workflows } : {}),
             };
@@ -2554,6 +2558,7 @@ export const useActionsStore = create<ActionsState>((set, get) => {
             jobsByRun: nextJobsByRun,
             jobsError: without(s.jobsError, runId),
             pollBurstNonce: s.pollBurstNonce + 1,
+            pollBurstActive: true,
           };
         });
         const strings = t(activeLang()).actionsWrite;
@@ -2611,6 +2616,7 @@ export const useActionsStore = create<ActionsState>((set, get) => {
       if (get().dispatchInputs[key] !== undefined) return;
 
       const generation = actionsGeneration;
+      inFlightInputsCount += 1;
       set({ dispatchInputsLoading: true });
       try {
         const result = await bridge.request('github/workflowInputs', {
@@ -2625,12 +2631,21 @@ export const useActionsStore = create<ActionsState>((set, get) => {
             ...s.dispatchInputs,
             [key]: { inputs: result.inputs, parsed: result.parsed, webUrl: result.webUrl },
           },
-          dispatchInputsLoading: false,
         }));
         useGitHubStore.setState({ rateLimit: result.rateLimit });
       } catch {
         if (generation !== actionsGeneration) return;
-        set({ dispatchInputsLoading: false });
+        set((s) => ({
+          dispatchInputs: {
+            ...s.dispatchInputs,
+            [key]: { inputs: [], parsed: false, webUrl: null },
+          },
+        }));
+      } finally {
+        if (generation === actionsGeneration) {
+          inFlightInputsCount = Math.max(0, inFlightInputsCount - 1);
+          set({ dispatchInputsLoading: inFlightInputsCount > 0 });
+        }
       }
     },
 
@@ -2672,6 +2687,7 @@ export const useActionsStore = create<ActionsState>((set, get) => {
             timedOut: false,
           },
           pollBurstNonce: s.pollBurstNonce + 1,
+          pollBurstActive: true,
         }));
 
         const strings = t(activeLang()).actionsWrite;
@@ -2716,15 +2732,17 @@ export const useActionsStore = create<ActionsState>((set, get) => {
 
     finishPollBurst() {
       const current = get().pendingStart;
-      if (current !== null) {
-        set({ pendingStart: { ...current, timedOut: true } });
-      }
+      set({
+        pollBurstActive: false,
+        ...(current === null ? {} : { pendingStart: { ...current, timedOut: true } }),
+      });
     },
 
     reset() {
       actionsGeneration += 1;
       inFlightActions.clear();
       latestLoadKeySeq.clear();
+      inFlightInputsCount = 0;
       inFlightJobs.clear();
       inFlightLogs.clear();
       inFlightDot = null;
@@ -2749,6 +2767,7 @@ export const useActionsStore = create<ActionsState>((set, get) => {
         dispatchError: null,
         pendingStart: null,
         pollBurstNonce: 0,
+        pollBurstActive: false,
       });
       useNavStore.getState().setFailing(false);
     },

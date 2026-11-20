@@ -977,6 +977,8 @@ export interface ActionsRunsPayload {
   workflowId?: number;
   /** 1..50, default 30. */
   perPage?: number;
+  /** Bypass the host TTL cache while still using any stored ETag validator. */
+  refresh?: boolean;
 }
 
 export interface ActionsRunsResult {

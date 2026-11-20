@@ -77,6 +77,8 @@ export function RunWorkflowDialog({ owner, repo, onCancel }: RunWorkflowDialogPr
   const seededKeyRef = useRef<string | null>(null);
   const lastWorkflowRef = useRef<number | null>(selectedWorkflowId);
   const dirtyKeysRef = useRef<Set<string>>(new Set());
+  const lastLookupWorkflowRef = useRef<number | undefined>(undefined);
+  const lastLookupBranchRef = useRef<string>(branch);
 
   const titleId = useId();
   const introId = useId();
@@ -119,8 +121,21 @@ export function RunWorkflowDialog({ owner, repo, onCancel }: RunWorkflowDialogPr
   const entry = entryKey !== null ? dispatchInputs[entryKey] : undefined;
 
   useEffect(() => {
-    if (selectedWorkflow === undefined || !branchValid) return;
-    void loadDispatchInputs(selectedWorkflow.id, branch);
+    if (selectedWorkflow === undefined || !branchValid) return undefined;
+    const workflowChanged = lastLookupWorkflowRef.current !== selectedWorkflow.id;
+    const branchChanged = lastLookupBranchRef.current !== branch;
+    lastLookupWorkflowRef.current = selectedWorkflow.id;
+    lastLookupBranchRef.current = branch;
+
+    if (workflowChanged || !branchChanged) {
+      void loadDispatchInputs(selectedWorkflow.id, branch);
+      return undefined;
+    }
+
+    const timer = setTimeout(() => {
+      void loadDispatchInputs(selectedWorkflow.id, branch);
+    }, 250);
+    return () => clearTimeout(timer);
   }, [selectedWorkflow, branch, branchValid, loadDispatchInputs]);
 
   useEffect(() => {
@@ -188,7 +203,6 @@ export function RunWorkflowDialog({ owner, repo, onCancel }: RunWorkflowDialogPr
     branchValid &&
     !dispatchInputsLoading &&
     entry !== undefined &&
-    missing.length === 0 &&
     !dispatching;
 
   const command = dispatchCommand(
@@ -207,7 +221,7 @@ export function RunWorkflowDialog({ owner, repo, onCancel }: RunWorkflowDialogPr
   const submit = async (event: FormEvent<HTMLFormElement>): Promise<void> => {
     event.preventDefault();
     setShowValidation(true);
-    if (!canSubmit || selectedWorkflow === undefined) return;
+    if (!canSubmit || missing.length > 0 || selectedWorkflow === undefined) return;
     await dispatch({
       workflowId: selectedWorkflow.id,
       branch,
@@ -278,7 +292,10 @@ export function RunWorkflowDialog({ owner, repo, onCancel }: RunWorkflowDialogPr
           )}
 
           <label className="gc-field">
-            <span className="gc-field__label">{strings.actionsWrite.fieldBranch}</span>
+            <span className="gc-field__label">
+              {strings.actionsWrite.fieldBranch}
+              <span aria-hidden="true"> *</span>
+            </span>
             <input
               ref={branchInputRef}
               type="text"
@@ -354,7 +371,10 @@ export function RunWorkflowDialog({ owner, repo, onCancel }: RunWorkflowDialogPr
                         setInputValue(input.name, event.target.checked ? 'true' : 'false')
                       }
                     />
-                    <span>{strings.actionsWrite.inputLabel(cleanName)}</span>
+                    <span>
+                      {strings.actionsWrite.inputLabel(cleanName)}
+                      {input.required && <span aria-hidden="true"> *</span>}
+                    </span>
                   </label>
                   {cleanDesc.length > 0 && (
                     <span className="gc-field__hint" id={descId}>
@@ -368,7 +388,10 @@ export function RunWorkflowDialog({ owner, repo, onCancel }: RunWorkflowDialogPr
             return (
               <div className="gc-field" key={input.name}>
                 <label className="gc-field">
-                  <span className="gc-field__label">{strings.actionsWrite.inputLabel(cleanName)}</span>
+                  <span className="gc-field__label">
+                    {strings.actionsWrite.inputLabel(cleanName)}
+                    {input.required && <span aria-hidden="true"> *</span>}
+                  </span>
                   {input.type === 'choice' ? (
                     <select
                       value={value}
