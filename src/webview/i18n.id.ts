@@ -1324,6 +1324,8 @@ const id: Catalog = {
     descriptionPlaceholder: 'Jelaskan masalah atau idenya...',
     fieldLabels: 'Label',
     addLabel: '+ Tambah',
+    removeLabel: (name: string) => `Hapus label ${name}`,
+    loadingLabels: 'Memuat label...',
     noLabels: 'Repositori ini belum punya label.',
     commandHeading: 'Perintah yang akan dijalankan',
     createIssue: 'Buat isu',

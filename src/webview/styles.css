@@ -6861,7 +6861,7 @@ h3 {
 
 .gc-issues__label-option:hover,
 .gc-issues__label-option[aria-selected="true"] {
-  background: var(--vscode-list-hoverBackground, var(--gc-bg-elevated));
+  background: var(--vscode-list-hoverBackground, var(--gc-bg-raised));
 }
 
 .gc-issues__label-option:focus-visible {

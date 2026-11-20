@@ -68,6 +68,7 @@ export function SidebarHeader(): JSX.Element | null {
   const loadPullRequests = useGitHubStore((s) => s.loadPullRequests);
   const linkage = useGitHubStore((s) => s.linkage);
   const auth = useGitHubStore((s) => s.auth);
+  const issuesDisabled = useIssuesStore((s) => s.issuesDisabled);
   const route = useRouteStore((s) => s.route);
 
   const [menuOpen, setMenuOpen] = useState(false);
@@ -300,19 +301,22 @@ export function SidebarHeader(): JSX.Element | null {
               <Icon name="pr" />
             </button>
           )}
-          {route.id === 'issues' && slug !== null && (
-            <button
-              type="button"
-              className="gc-icon-button"
-              aria-label={strings.shell.addIssue}
-              title={strings.shell.addIssue}
-              onClick={() =>
-                useRouteStore.getState().navigateWithFocus({ id: 'issues' }, 'new-issue')
-              }
-            >
-              <Icon name="issue" />
-            </button>
-          )}
+          {route.id === 'issues' &&
+            slug !== null &&
+            auth?.connected === true &&
+            !issuesDisabled && (
+              <button
+                type="button"
+                className="gc-icon-button"
+                aria-label={strings.shell.addIssue}
+                title={strings.shell.addIssue}
+                onClick={() =>
+                  useRouteStore.getState().navigateWithFocus({ id: 'issues' }, 'new-issue')
+                }
+              >
+                <Icon name="issue" />
+              </button>
+            )}
           {route.id === 'actions' && slug !== null && (
             <button
               type="button"

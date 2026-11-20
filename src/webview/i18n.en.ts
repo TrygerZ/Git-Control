@@ -1339,6 +1339,8 @@ const en = {
     descriptionPlaceholder: 'Describe the problem or idea...',
     fieldLabels: 'Labels',
     addLabel: '+ Add',
+    removeLabel: (name: string) => `Remove label ${name}`,
+    loadingLabels: 'Loading labels...',
     noLabels: 'This repository has no labels yet.',
     commandHeading: 'Command that will run',
     createIssue: 'Create issue',

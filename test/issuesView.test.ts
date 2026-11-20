@@ -158,6 +158,8 @@ test('P26: IssuesView wires Comment, Close, Reopen, inline comment box, and NewI
   for (const helper of ['canSubmitComment', 'NewIssueDialog', 'suggestBranchName']) {
     assert.match(src, new RegExp(`\\b${helper}\\b`), helper);
   }
+  assert.match(src, /gc-button gc-button--primary gc-issues__new-btn/);
+  assert.doesNotMatch(src, /\bgc-btn\b/, 'never uses non-existent gc-btn class');
   assert.match(src, /strings\.issueWrite\.commentPlaceholder/);
   assert.match(src, /strings\.issueWrite\.commentSubmit/);
   assert.match(src, /strings\.issueWrite\.closeIssue/);
@@ -165,6 +167,7 @@ test('P26: IssuesView wires Comment, Close, Reopen, inline comment box, and NewI
   assert.match(src, /strings\.issueWrite\.newIssue/);
   assert.match(src, /aria-describedby=/, 'comment textarea describes its character limit');
   assert.match(src, /pendingFocus !== 'new-issue'/, 'consumes the header quick-create focus target');
+  assert.match(src, /auth\?\.connected === true[\s\S]*?!issuesDisabled/, 'new-issue dialog requires connected auth and enabled issues');
   assert.match(src, /issuesDisabled/, 'hides write controls when issues are disabled on the repository');
   assert.doesNotMatch(src, /dangerouslySetInnerHTML|innerHTML/);
 });
@@ -187,7 +190,8 @@ test('P26: NewIssueDialog implements focus trap, multiselect listbox label picke
   assert.match(src, /aria-multiselectable="true"/);
   assert.match(src, /role="option"/);
   assert.match(src, /aria-selected=/);
-  assert.match(src, /Remove label \$\{/);
+  assert.match(src, /strings\.issueWrite\.removeLabel\(/);
+  assert.match(src, /strings\.issueWrite\.loadingLabels/);
   assert.doesNotMatch(src, /bridge\.request\(/, 'dialog acts only through store actions');
   assert.doesNotMatch(src, /dangerouslySetInnerHTML|innerHTML/);
 });

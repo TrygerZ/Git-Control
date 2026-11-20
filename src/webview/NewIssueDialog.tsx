@@ -46,6 +46,7 @@ export function NewIssueDialog({
   const strings = useT();
   const language = useSettingsStore((s) => s.language);
   const repoLabels = useIssuesStore((s) => s.labels);
+  const labelsLoading = useIssuesStore((s) => s.labelsLoading);
   const loadLabels = useIssuesStore((s) => s.loadLabels);
   const create = useIssuesStore((s) => s.create);
   const creating = useIssuesStore((s) => s.creating);
@@ -105,18 +106,19 @@ export function NewIssueDialog({
   const canSubmit = canCreateIssue({ title, body, labels: selectedLabels }) && !creating;
 
   const toggleLabel = (name: string): void => {
-    setSelectedLabels((prev) => {
-      if (prev.includes(name)) {
-        setLimitReached(false);
-        return prev.filter((item) => item !== name);
-      }
-      if (prev.length >= LABELS_MAX) {
-        setLimitReached(true);
-        return prev;
-      }
+    if (selectedLabels.includes(name)) {
       setLimitReached(false);
-      return [...prev, name];
-    });
+      setSelectedLabels((prev) => prev.filter((item) => item !== name));
+      return;
+    }
+    if (selectedLabels.length >= LABELS_MAX) {
+      setLimitReached(true);
+      return;
+    }
+    setLimitReached(false);
+    setSelectedLabels((prev) =>
+      prev.includes(name) || prev.length >= LABELS_MAX ? prev : [...prev, name],
+    );
   };
 
   const onPickerKeyDown = (event: KeyboardEvent<HTMLDivElement>): void => {
@@ -249,8 +251,8 @@ export function NewIssueDialog({
                     <button
                       type="button"
                       className="gc-issues__label-remove"
-                      aria-label={`Remove label ${cleanName}`}
-                      title={`Remove label ${cleanName}`}
+                      aria-label={strings.issueWrite.removeLabel(cleanName)}
+                      title={strings.issueWrite.removeLabel(cleanName)}
                       disabled={creating}
                       onClick={() => toggleLabel(name)}
                     >
@@ -281,7 +283,7 @@ export function NewIssueDialog({
             {pickerOpen && (
               repoLabels.length === 0 ? (
                 <div className="gc-issues__no-labels" role="status">
-                  {strings.issueWrite.noLabels}
+                  {labelsLoading ? strings.issueWrite.loadingLabels : strings.issueWrite.noLabels}
                 </div>
               ) : (
                 <div

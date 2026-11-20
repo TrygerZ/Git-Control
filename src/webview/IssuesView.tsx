@@ -130,10 +130,16 @@ export function IssuesView(): JSX.Element {
   useEffect(() => {
     if (pendingFocus !== 'new-issue') return;
     useRouteStore.getState().takeFocus();
-    if (!issuesDisabled && !rateLimited && linkage?.owner != null && linkage.repo != null) {
+    if (
+      auth?.connected === true &&
+      !issuesDisabled &&
+      !rateLimited &&
+      linkage?.owner != null &&
+      linkage.repo != null
+    ) {
       setNewIssueOpen(true);
     }
-  }, [pendingFocus, issuesDisabled, rateLimited, linkage]);
+  }, [pendingFocus, auth?.connected, issuesDisabled, rateLimited, linkage]);
 
   useEffect(() => {
     if (
@@ -569,7 +575,7 @@ export function IssuesView(): JSX.Element {
               {!issuesDisabled && linkage?.owner != null && linkage.repo != null && (
                 <button
                   type="button"
-                  className="gc-btn gc-btn--primary gc-btn--sm gc-issues__new-btn"
+                  className="gc-button gc-button--primary gc-issues__new-btn"
                   disabled={rateLimited}
                   title={rateLimited ? strings.prs.rateLimitedTitle : strings.issueWrite.newIssue}
                   aria-label={strings.issueWrite.newIssue}
@@ -824,8 +830,18 @@ export function IssuesView(): JSX.Element {
                                         disabled={isStateSending || rateLimited}
                                         title={rateLimited ? strings.prs.rateLimitedTitle : undefined}
                                         onClick={() => {
+                                          closeCommentBox(issue.number);
+                                          const hadClosed = expandedGroups.has('closed');
                                           setExpandedGroups((prev) => new Set(prev).add('closed'));
-                                          void closeIssue(issue.number);
+                                          void closeIssue(issue.number).then((ok) => {
+                                            if (!ok && !hadClosed) {
+                                              setExpandedGroups((prev) => {
+                                                const next = new Set(prev);
+                                                next.delete('closed');
+                                                return next;
+                                              });
+                                            }
+                                          });
                                         }}
                                       >
                                         {strings.issueWrite.closeIssue}
@@ -930,14 +946,18 @@ export function IssuesView(): JSX.Element {
         />
       )}
 
-      {newIssueOpen && linkage?.owner != null && linkage.repo != null && (
-        <NewIssueDialog
-          owner={linkage.owner}
-          repo={linkage.repo}
-          onCancel={() => setNewIssueOpen(false)}
-          onCreated={() => setNewIssueOpen(false)}
-        />
-      )}
+      {newIssueOpen &&
+        auth?.connected === true &&
+        !issuesDisabled &&
+        linkage?.owner != null &&
+        linkage.repo != null && (
+          <NewIssueDialog
+            owner={linkage.owner}
+            repo={linkage.repo}
+            onCancel={() => setNewIssueOpen(false)}
+            onCreated={() => setNewIssueOpen(false)}
+          />
+        )}
 
       <footer className="gc-issues__footer">
         <span>

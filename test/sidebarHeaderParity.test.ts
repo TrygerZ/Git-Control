@@ -50,8 +50,10 @@ test('the compact row carries one quick-create button per destination', () => {
   assert.match(src, /navigateWithFocus\(\{ id: 'prs' \}, 'create-pr'\)/);
   // Branches: the view owns the prompt, and consumes `new-branch` the same way.
   assert.match(src, /navigateWithFocus\(\{ id: 'branches', sub: 'local' \}, 'new-branch'\)/);
-  // Issues: P26 ships the in-extension NewIssueDialog, so the header raises `new-issue`.
+  // Issues: P26 ships the in-extension NewIssueDialog, so the header raises `new-issue`
+  // when signed in and issues are enabled.
   assert.match(src, /navigateWithFocus\(\{ id: 'issues' \}, 'new-issue'\)/, 'New issue opens the in-extension dialog');
+  assert.match(src, /route\.id === 'issues'[\s\S]*?auth\?\.connected === true[\s\S]*?!issuesDisabled/, 'header New issue button requires signed-in state and enabled issues');
   // Actions has no in-extension write flow until P27, so the button opens the GitHub page.
   assert.match(src, /\/actions/, 'Run workflow opens the GitHub Actions page');
   assert.match(src, /strings\.shell\.addPr/, 'the button is named in the catalog');
