@@ -74,12 +74,69 @@ test('the review dialog posts one event and reuses the shared focus trap', () =>
   }
 });
 
+/**
+ * QA-02: the form survives its request, so the store must refuse a repeat and
+ * the button must say it is busy. The phase's idempotency row names this control
+ * ("the disabled-while-pending button prevents second sends"); at `a9d76da` the
+ * unmounting dialog provided it by accident.
+ */
+test('the review submit is disabled while a review is in flight', () => {
+  const review = source(REVIEW);
+  const app = source(APP);
+  // The dialog takes the state and refuses the submit itself...
+  assert.match(review, /sending/);
+  // ...and the panel passes the store's state in.
+  assert.match(app, /sending=\{/);
+});
+
 test('the panel never renders untrusted text as markup after P25', () => {
   for (const file of [APP, DIALOG, REVIEW]) {
     const src = source(file);
     assert.doesNotMatch(src, /dangerouslySetInnerHTML|innerHTML/, path.basename(file));
     assert.doesNotMatch(src, /<a\s[^>]*href=/, path.basename(file));
   }
+});
+
+/**
+ * The More menu is one tab stop with arrow keys, like the Explorer header's menu
+ * (`ExplorerHeaderActions.tsx`). Without roving focus a keyboard user tabs through
+ * four rows and no arrow key moves between them, which is not a menu.
+ */
+test('the More menu moves with the arrow keys and keeps one tab stop', () => {
+  const src = source(APP);
+  const start = src.indexOf('function PullMoreMenu(');
+  assert.ok(start > 0, 'the More menu exists');
+  const body = src.slice(start, src.indexOf('\nfunction ', start + 10));
+  assert.match(body, /ArrowDown/);
+  assert.match(body, /ArrowUp/);
+  assert.match(body, /\.focus\(\)/);
+  assert.match(body, /tabIndex=\{/);
+});
+
+/**
+ * A fork pull request's head branch lives in the fork, not in the cloned
+ * repository, so there is no local branch to delete. The phase file states the
+ * rule; `PullDetail` cannot answer it (it carries no head repository), so the
+ * dialog is told.
+ */
+test('the merge dialog hides delete-branch for a fork', () => {
+  const dialog = source(DIALOG);
+  assert.match(dialog, /isFork/);
+  assert.match(dialog, /!isFork/);
+});
+
+/**
+ * The reply row posts to the parent comment and refreshes the thread. It was
+ * declared and passed through without a control; the phase scope includes
+ * replying to review threads.
+ */
+test('the conversation offers a reply input for review comments', () => {
+  const src = source(APP);
+  // Both strings were defined and unused; the panel is where they are read.
+  assert.match(src, /prMerge\.replyPlaceholder/);
+  assert.match(src, /prMerge\.replySend/);
+  // The reply goes to the store, never straight to a request.
+  assert.match(src, /onReply\(/);
 });
 
 test('the merged panel offers Show in graph and reports the deletion outcome', () => {
