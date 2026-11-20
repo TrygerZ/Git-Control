@@ -2187,8 +2187,16 @@ export function toPullDetail(body: unknown): PullDetail {
     state?: unknown;
     draft?: unknown;
     user?: { login?: unknown; avatar_url?: unknown } | null;
-    head?: { ref?: unknown; sha?: unknown } | null;
-    base?: { ref?: unknown; sha?: unknown } | null;
+    head?: {
+      ref?: unknown;
+      sha?: unknown;
+      repo?: { full_name?: unknown; fork?: unknown } | null;
+    } | null;
+    base?: {
+      ref?: unknown;
+      sha?: unknown;
+      repo?: { full_name?: unknown } | null;
+    } | null;
     commits?: unknown;
     additions?: unknown;
     deletions?: unknown;
@@ -2206,6 +2214,25 @@ export function toPullDetail(body: unknown): PullDetail {
   // to be read first or the 'merged' state would be unreachable.
   const merged = typeof pr.merged_at === 'string' && pr.merged_at.length > 0;
   const rawBody = typeof pr.body === 'string' ? pr.body : '';
+  const headRepo = pr.head?.repo;
+  const baseRepo = pr.base?.repo;
+  const headFullName =
+    typeof headRepo === 'object' && headRepo !== null && typeof headRepo.full_name === 'string'
+      ? headRepo.full_name
+      : '';
+  const baseFullName =
+    typeof baseRepo === 'object' && baseRepo !== null && typeof baseRepo.full_name === 'string'
+      ? baseRepo.full_name
+      : '';
+  // A missing head repository means the fork was deleted. Comparing full_name
+  // handles a same-repo PR inside a forked base repository (where fork is true
+  // on both sides); when base.repo is missing, fall back to head.repo.fork.
+  const isFork =
+    typeof headRepo !== 'object' || headRepo === null
+      ? true
+      : headFullName.length > 0 && baseFullName.length > 0
+        ? headFullName !== baseFullName
+        : headRepo.fork === true;
   return {
     number: safeInt(pr.number),
     title: typeof pr.title === 'string' ? pr.title : '',
@@ -2215,6 +2242,7 @@ export function toPullDetail(body: unknown): PullDetail {
     authorAvatarUrl: githubAvatarUrl(pr.user?.avatar_url),
     headRef: typeof pr.head?.ref === 'string' ? pr.head.ref : '',
     baseRef: typeof pr.base?.ref === 'string' ? pr.base.ref : '',
+    isFork,
     headSha: fullHashOrEmpty(pr.head?.sha),
     baseSha: fullHashOrEmpty(pr.base?.sha),
     commits: safeInt(pr.commits),

@@ -2073,3 +2073,37 @@ test('P25 fix: pullRequest can bypass the 60 s cache for the merge pre-check', a
   assert.equal(refreshed.cached, false, 'refresh bypasses the cache');
   assert.equal(h.calls.length, 2);
 });
+
+test('P25: pullRequest carries isFork from head.repo and base.repo so closed and >50 PRs know', async () => {
+  const h = client([
+    response(200, pullDetailBody({
+      head: { ref: 'feat/a', sha: 'a'.repeat(40), repo: { full_name: 'o/r', fork: false } },
+      base: { ref: 'main', sha: 'b'.repeat(40), repo: { full_name: 'o/r', fork: false } },
+    })),
+    response(200, pullDetailBody({
+      number: 151,
+      head: { ref: 'feat/local-in-fork', sha: 'a'.repeat(40), repo: { full_name: 'me/r', fork: true } },
+      base: { ref: 'main', sha: 'b'.repeat(40), repo: { full_name: 'me/r', fork: true } },
+    })),
+    response(200, pullDetailBody({
+      number: 152,
+      head: { ref: 'patch-1', sha: 'a'.repeat(40), repo: { full_name: 'someone/r', fork: true } },
+      base: { ref: 'main', sha: 'b'.repeat(40), repo: { full_name: 'o/r', fork: false } },
+    })),
+    response(200, pullDetailBody({
+      number: 153,
+      head: { ref: 'deleted-fork', sha: 'a'.repeat(40), repo: null },
+      base: { ref: 'main', sha: 'b'.repeat(40), repo: { full_name: 'o/r', fork: false } },
+    })),
+    response(200, pullDetailBody({
+      number: 154,
+      head: { ref: 'legacy-fork', sha: 'a'.repeat(40), repo: { full_name: 'someone/r', fork: true } },
+    })),
+  ]);
+
+  assert.equal((await h.gh.pullRequest('o', 'r', 150)).data.isFork, false);
+  assert.equal((await h.gh.pullRequest('o', 'r', 151)).data.isFork, false, 'same-repo PR inside a forked base repo is not a fork PR');
+  assert.equal((await h.gh.pullRequest('o', 'r', 152)).data.isFork, true);
+  assert.equal((await h.gh.pullRequest('o', 'r', 153)).data.isFork, true, 'deleted head repo is treated as a fork');
+  assert.equal((await h.gh.pullRequest('o', 'r', 154)).data.isFork, true, 'falls back to head.repo.fork when base.repo is omitted');
+});

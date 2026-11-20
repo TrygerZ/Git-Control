@@ -622,6 +622,12 @@ export interface PullDetail {
   authorAvatarUrl: string | null;
   headRef: string;
   baseRef: string;
+  /**
+   * True when the pull request's head branch lives outside the base repository
+   * (including a deleted fork whose `head.repo` is absent). Optional so older
+   * callers and test stubs that do not provide it remain valid.
+   */
+  isFork?: boolean;
   headSha: string;
   /** Base branch tip from the API; the input to the local merge-base lookup. */
   baseSha: string;
