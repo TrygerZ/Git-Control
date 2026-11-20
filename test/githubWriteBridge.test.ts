@@ -253,7 +253,8 @@ test('the mutation kind set is exported once and keeps the three git kinds', () 
 test('the GitHub mutation set holds the registered endpoint kinds and stays disjoint', () => {
   assert.ok(GITHUB_MUTATION_KINDS instanceof Set);
   // P22 registered the first endpoint kind, P25 added the four writes that
-  // merge, close, and review a pull request, and P26 added the three issue writes.
+  // merge, close, and review a pull request, P26 added the three issue writes,
+  // and P27 added rerunFailedJobs and dispatchWorkflow.
   // Later phases add theirs to this same set; the point is that the set is
   // populated deliberately and that no kind ever appears in both sets.
   assert.deepEqual([...GITHUB_MUTATION_KINDS].sort(), [
@@ -261,8 +262,10 @@ test('the GitHub mutation set holds the registered endpoint kinds and stays disj
     'github/commentIssue',
     'github/createIssue',
     'github/createPullRequest',
+    'github/dispatchWorkflow',
     'github/mergePullRequest',
     'github/replyReviewComment',
+    'github/rerunFailedJobs',
     'github/setIssueState',
     'github/submitReview',
   ]);

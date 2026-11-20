@@ -23,6 +23,9 @@ import type {
   Request,
   Response,
   SettingsSnapshot,
+  WorkflowInfo,
+  WorkflowInputsResult,
+  WorkflowRunInfo,
 } from '../src/messages';
 
 test('GitError REPOSITORY_LOCKED maps to 409', () => {
@@ -5180,5 +5183,312 @@ test('P26: issue write and label endpoints validate payloads, enforce guard, rep
       assert.equal(res.error.status, 503);
       assert.equal(res.error.code, 'UNAVAILABLE');
     }
+  }
+});
+
+// ------------------------------------------------ P27 actions write actions
+
+function sampleRun(overrides: Partial<WorkflowRunInfo> = {}): WorkflowRunInfo {
+  return {
+    id: 482,
+    workflowId: 10,
+    name: 'CI',
+    title: 'CI #482',
+    runNumber: 482,
+    event: 'push',
+    status: 'completed',
+    conclusion: 'failure',
+    branch: 'main',
+    sha: 'a'.repeat(40),
+    url: 'https://github.com/o/r/actions/runs/482',
+    createdAt: '2026-11-20T10:00:00Z',
+    startedAt: '2026-11-20T10:00:05Z',
+    updatedAt: '2026-11-20T10:01:00Z',
+    attempt: 1,
+    ...overrides,
+  };
+}
+
+function sampleWorkflow(overrides: Partial<WorkflowInfo> = {}): WorkflowInfo {
+  return {
+    id: 10,
+    name: 'Release',
+    path: '.github/workflows/release.yml',
+    state: 'active',
+    ...overrides,
+  };
+}
+
+test('P27: rerunFailedJobs checks fresh run status and conclusion, enforces validation/idempotency/503', async (t) => {
+  let currentRun = sampleRun({ status: 'in_progress', conclusion: null });
+  let runCalls = 0;
+  let rerunCalls = 0;
+
+  const h = harness(null, {
+    ...writeHost({
+      githubActionsRun: async () => {
+        runCalls += 1;
+        return { data: currentRun, rateLimit: RATE_LIMIT, cached: false };
+      },
+      githubRerunFailed: async () => {
+        rerunCalls += 1;
+        return { requested: true };
+      },
+    }),
+  });
+  t.after(() => h.bridge.dispose());
+
+  // Invalid payloads rejected before any host lookup
+  for (const bad of [
+    req('github/rerunFailedJobs', { owner: '../x', repo: 'r', runId: 482, idempotencyKey: 'rr-bad-1' }),
+    req('github/rerunFailedJobs', { owner: 'o', repo: 'r', runId: 0, idempotencyKey: 'rr-bad-2' }),
+    req('github/rerunFailedJobs', { owner: 'o', repo: 'r', runId: 482, extra: true, idempotencyKey: 'rr-bad-3' }),
+  ]) {
+    const res = await h.webview.send(bad);
+    assert.equal(res.ok, false);
+    if (!res.ok) assert.equal(res.error.code, 'VALIDATION_ERROR');
+  }
+  assert.equal(runCalls + rerunCalls, 0);
+
+  // In-progress run refused
+  const inProg = await h.webview.send(
+    req('github/rerunFailedJobs', { owner: 'o', repo: 'r', runId: 482, idempotencyKey: 'rr-inprog' }),
+  );
+  assert.equal(inProg.ok, false);
+  if (!inProg.ok) assert.equal(inProg.error.code, 'VALIDATION_ERROR');
+  assert.equal(rerunCalls, 0);
+
+  // Completed successful run refused
+  currentRun = sampleRun({ status: 'completed', conclusion: 'success' });
+  const successRun = await h.webview.send(
+    req('github/rerunFailedJobs', { owner: 'o', repo: 'r', runId: 482, idempotencyKey: 'rr-ok' }),
+  );
+  assert.equal(successRun.ok, false);
+  if (!successRun.ok) assert.equal(successRun.error.code, 'VALIDATION_ERROR');
+  assert.equal(rerunCalls, 0);
+
+  // Completed failure, timed_out, and cancelled accepted; same key replays
+  for (const [idx, conclusion] of (['failure', 'timed_out', 'cancelled'] as const).entries()) {
+    currentRun = sampleRun({ status: 'completed', conclusion });
+    const res1 = await h.webview.send(
+      req('github/rerunFailedJobs', { owner: 'o', repo: 'r', runId: 482, idempotencyKey: `rr-${conclusion}` }),
+    );
+    const res2 = await h.webview.send(
+      req('github/rerunFailedJobs', { owner: 'o', repo: 'r', runId: 482, idempotencyKey: `rr-${conclusion}` }),
+    );
+    assert.equal(res1.ok, true, conclusion);
+    assert.deepEqual(res1.ok ? res1.data : null, { requested: true });
+    assert.deepEqual(res2.ok ? res2.data : null, { requested: true });
+    assert.equal(rerunCalls, idx + 1);
+  }
+
+  // 503 UNAVAILABLE when host methods absent
+  const noHost = harness(null, writeHost({}));
+  t.after(() => noHost.bridge.dispose());
+  const missRun = await noHost.webview.send(
+    req('github/rerunFailedJobs', { owner: 'o', repo: 'r', runId: 482, idempotencyKey: 'rr-miss-1' }),
+  );
+  assert.equal(missRun.ok, false);
+  if (!missRun.ok) {
+    assert.equal(missRun.error.status, 503);
+    assert.equal(missRun.error.code, 'UNAVAILABLE');
+  }
+
+  const missExec = await noHost.webview.send(
+    req('github/rerunFailedJobs', { owner: 'o', repo: 'r', runId: 482, idempotencyKey: 'rr-miss-2' }),
+  );
+  assert.equal(missExec.ok, false);
+  if (!missExec.ok) assert.equal(missExec.error.code, 'UNAVAILABLE');
+
+  const onlyLookup = harness(null, writeHost({
+    githubActionsRun: async () => ({ data: sampleRun({ conclusion: 'failure' }), rateLimit: RATE_LIMIT, cached: false }),
+  }));
+  t.after(() => onlyLookup.bridge.dispose());
+  const missPost = await onlyLookup.webview.send(
+    req('github/rerunFailedJobs', { owner: 'o', repo: 'r', runId: 482, idempotencyKey: 'rr-miss-3' }),
+  );
+  assert.equal(missPost.ok, false);
+  if (!missPost.ok) {
+    assert.equal(missPost.error.status, 503);
+    assert.equal(missPost.error.code, 'UNAVAILABLE');
+  }
+});
+
+test('P27: workflowInputs validates, returns parsed:false fallback with https or null webUrl, and requires host method', async (t) => {
+  const h = harness(null, {
+    ...writeHost({
+      githubWorkflowInputs: async (p) => ({
+        inputs: [],
+        parsed: false,
+        webUrl: p.owner === 'nohost' ? null : `https://github.com/${p.owner}/${p.repo}/actions/workflows/release.yml`,
+        rateLimit: RATE_LIMIT,
+      }),
+    }),
+  });
+  t.after(() => h.bridge.dispose());
+
+  for (const bad of [
+    req('github/workflowInputs', { owner: 'o', repo: 'r', workflowId: 0, ref: 'main' }),
+    req('github/workflowInputs', { owner: 'o', repo: 'r', workflowId: 10, ref: '-flag' }),
+    req('github/workflowInputs', { owner: 'o', repo: 'r', workflowId: 10, ref: 'main', extra: 1 }),
+  ]) {
+    const res = await h.webview.send(bad);
+    assert.equal(res.ok, false);
+    if (!res.ok) assert.equal(res.error.code, 'VALIDATION_ERROR');
+  }
+
+  const withUrl = await h.webview.send(
+    req('github/workflowInputs', { owner: 'o', repo: 'r', workflowId: 10, ref: 'main' }),
+  );
+  assert.equal(withUrl.ok, true);
+  if (withUrl.ok) {
+    const data = withUrl.data as WorkflowInputsResult;
+    assert.equal(data.parsed, false);
+    assert.deepEqual(data.inputs, []);
+    assert.equal(data.webUrl, 'https://github.com/o/r/actions/workflows/release.yml');
+  }
+
+  const withoutUrl = await h.webview.send(
+    req('github/workflowInputs', { owner: 'nohost', repo: 'r', workflowId: 10, ref: 'main' }),
+  );
+  assert.equal(withoutUrl.ok, true);
+  if (withoutUrl.ok) {
+    const data = withoutUrl.data as WorkflowInputsResult;
+    assert.equal(data.parsed, false);
+    assert.equal(data.webUrl, null);
+  }
+
+  const noHost = harness(null, writeHost({}));
+  t.after(() => noHost.bridge.dispose());
+  const res = await noHost.webview.send(
+    req('github/workflowInputs', { owner: 'o', repo: 'r', workflowId: 10, ref: 'main' }),
+  );
+  assert.equal(res.ok, false);
+  if (!res.ok) {
+    assert.equal(res.error.status, 503);
+    assert.equal(res.error.code, 'UNAVAILABLE');
+  }
+});
+
+test('P27: dispatchWorkflow enforces confirm, active workflow, branch/inputs validation, 422 message, idempotency, and 503', async (t) => {
+  let workflowsList: WorkflowInfo[] = [
+    sampleWorkflow({ id: 10, state: 'active' }),
+    sampleWorkflow({ id: 20, name: 'Disabled', path: '.github/workflows/off.yml', state: 'disabled_manually' }),
+  ];
+  let workflowCalls = 0;
+  let dispatchCalls = 0;
+  let shouldThrow422 = false;
+  let seenInputs: Record<string, string> | undefined = { sentinel: 'x' };
+
+  const h = harness(null, {
+    ...writeHost({
+      githubActionsWorkflows: async () => {
+        workflowCalls += 1;
+        return { data: workflowsList, rateLimit: RATE_LIMIT, cached: false };
+      },
+      githubDispatchWorkflow: async (p) => {
+        dispatchCalls += 1;
+        seenInputs = p.inputs;
+        if (shouldThrow422) {
+          throw new GitHubError({
+            status: 422,
+            code: 'VALIDATION_ERROR',
+            message: hostText('en').github.inputsNeededOnGitHub,
+          });
+        }
+        return { dispatched: true, at: '2026-11-20T12:00:00.000Z' };
+      },
+    }),
+  });
+  t.after(() => h.bridge.dispose());
+
+  // Bad payloads rejected before guard or host lookup
+  for (const bad of [
+    req('github/dispatchWorkflow', { owner: 'o', repo: 'r', workflowId: 10, ref: 'bad ref', confirm: true, idempotencyKey: 'dw-b1' }),
+    req('github/dispatchWorkflow', { owner: 'o', repo: 'r', workflowId: 10, ref: 'main', inputs: { '1bad': 'v' }, confirm: true, idempotencyKey: 'dw-b2' }),
+    req('github/dispatchWorkflow', { owner: 'o', repo: 'r', workflowId: 10, ref: 'main', extra: 1, confirm: true, idempotencyKey: 'dw-b3' }),
+  ]) {
+    const res = await h.webview.send(bad);
+    assert.equal(res.ok, false);
+    if (!res.ok) assert.equal(res.error.code, 'VALIDATION_ERROR');
+  }
+  assert.equal(workflowCalls + dispatchCalls, 0);
+
+  // Confirm required before checking workflows or dispatching
+  const unconfirmed = await h.webview.send(
+    req('github/dispatchWorkflow', { owner: 'o', repo: 'r', workflowId: 10, ref: 'main', idempotencyKey: 'dw-conf' }),
+  );
+  assert.equal(unconfirmed.ok, false);
+  if (!unconfirmed.ok) {
+    assert.equal(unconfirmed.error.status, 428);
+    assert.equal(unconfirmed.error.code, 'CONFIRMATION_REQUIRED');
+  }
+  assert.equal(workflowCalls + dispatchCalls, 0);
+
+  // Disabled workflow refused
+  const disabledRes = await h.webview.send(
+    req('github/dispatchWorkflow', { owner: 'o', repo: 'r', workflowId: 20, ref: 'main', confirm: true, idempotencyKey: 'dw-off' }),
+  );
+  assert.equal(disabledRes.ok, false);
+  if (!disabledRes.ok) assert.equal(disabledRes.error.code, 'VALIDATION_ERROR');
+  assert.equal(dispatchCalls, 0);
+
+  // Unknown workflow refused
+  const unknownRes = await h.webview.send(
+    req('github/dispatchWorkflow', { owner: 'o', repo: 'r', workflowId: 999, ref: 'main', confirm: true, idempotencyKey: 'dw-unk' }),
+  );
+  assert.equal(unknownRes.ok, false);
+  if (!unknownRes.ok) assert.equal(unknownRes.error.code, 'VALIDATION_ERROR');
+  assert.equal(dispatchCalls, 0);
+
+  // Dispatch without inputs accepted and replays on double click
+  const d1 = await h.webview.send(
+    req('github/dispatchWorkflow', { owner: 'o', repo: 'r', workflowId: 10, ref: 'main', confirm: true, idempotencyKey: 'dw-ok-1' }),
+  );
+  const d2 = await h.webview.send(
+    req('github/dispatchWorkflow', { owner: 'o', repo: 'r', workflowId: 10, ref: 'main', confirm: true, idempotencyKey: 'dw-ok-1' }),
+  );
+  assert.equal(d1.ok, true);
+  assert.deepEqual(d1.ok ? d1.data : null, { dispatched: true, at: '2026-11-20T12:00:00.000Z' });
+  assert.deepEqual(d2.ok ? d2.data : null, { dispatched: true, at: '2026-11-20T12:00:00.000Z' });
+  assert.equal(seenInputs, undefined);
+  assert.equal(dispatchCalls, 1, 'double click replays cached outcome');
+
+  // 422 on missing required inputs maps to inputsNeededOnGitHub and VALIDATION_ERROR
+  shouldThrow422 = true;
+  const err422 = await h.webview.send(
+    req('github/dispatchWorkflow', { owner: 'o', repo: 'r', workflowId: 10, ref: 'main', confirm: true, idempotencyKey: 'dw-422' }),
+  );
+  assert.equal(err422.ok, false);
+  if (!err422.ok) {
+    assert.equal(err422.error.status, 422);
+    assert.equal(err422.error.code, 'VALIDATION_ERROR');
+    assert.equal(err422.error.message, hostText('en').github.inputsNeededOnGitHub);
+  }
+  shouldThrow422 = false;
+
+  // 503 UNAVAILABLE when host methods absent
+  const noHost = harness(null, writeHost({}));
+  t.after(() => noHost.bridge.dispose());
+  const missWf = await noHost.webview.send(
+    req('github/dispatchWorkflow', { owner: 'o', repo: 'r', workflowId: 10, ref: 'main', confirm: true, idempotencyKey: 'dw-miss-1' }),
+  );
+  assert.equal(missWf.ok, false);
+  if (!missWf.ok) {
+    assert.equal(missWf.error.status, 503);
+    assert.equal(missWf.error.code, 'UNAVAILABLE');
+  }
+
+  const onlyWf = harness(null, writeHost({
+    githubActionsWorkflows: async () => ({ data: workflowsList, rateLimit: RATE_LIMIT, cached: false }),
+  }));
+  t.after(() => onlyWf.bridge.dispose());
+  const missPost = await onlyWf.webview.send(
+    req('github/dispatchWorkflow', { owner: 'o', repo: 'r', workflowId: 10, ref: 'main', confirm: true, idempotencyKey: 'dw-miss-2' }),
+  );
+  assert.equal(missPost.ok, false);
+  if (!missPost.ok) {
+    assert.equal(missPost.error.status, 503);
+    assert.equal(missPost.error.code, 'UNAVAILABLE');
   }
 });
