@@ -699,3 +699,14 @@ test('P25: the parameterized merge strings keep their arguments', () => {
   assert.match(t('en').prMerge.mergedSentence('fix/x', 'main'), /fix\/x/);
   assert.match(t('en').prMerge.mergedSentence('fix/x', 'main'), /main/);
 });
+
+test('P25: close pull request confirmation strings keep arguments in both languages', () => {
+  for (const lang of ['en', 'id'] as const) {
+    const merged = t(lang).prMerge;
+    assert.match(merged.closeDialogTitle('150'), /150/);
+    assert.ok(merged.closeRunsOnGitHub.length > 0);
+    assert.ok(merged.closeRiskLow.length > 0);
+    assert.ok(merged.closeConfirmButton.length > 0);
+    assert.match(merged.closedToast('150'), /150/);
+  }
+});

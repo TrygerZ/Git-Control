@@ -72,3 +72,14 @@ export function mergeCommands(pr: MergeTarget, opts: MergeOptions): string[] {
 export function defaultSquashMessage(detail: Pick<PullDetail, 'title' | 'number'>): string {
   return `${sanitizeGitText(detail.title.trim() || 'Pull request')} (#${detail.number})`;
 }
+
+/**
+ * Build the exact read-only preview shown in the Close Pull Request
+ * confirmation dialog. Every untrusted segment is folded through
+ * `sanitizeGitText` so no bidi mark or NUL reaches the display.
+ */
+export function closeCommand(pr: Pick<MergeTarget, 'owner' | 'repo' | 'number'>): string {
+  const owner = sanitizeGitText(pr.owner);
+  const repo = sanitizeGitText(pr.repo);
+  return `PATCH /repos/${owner}/${repo}/pulls/${pr.number}`;
+}

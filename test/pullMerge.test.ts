@@ -10,6 +10,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
+  closeCommand,
   defaultSquashMessage,
   mergeBlockReason,
   mergeCommands,
@@ -215,4 +216,15 @@ test('a blank title still produces a usable subject', () => {
   const message = defaultSquashMessage(detail({ title: '   ' }));
   assert.match(message, /\(#150\)$/);
   assert.ok(message.trim().length > '150'.length, message);
+});
+
+// -------------------------------------------------------------- close preview
+
+test('closeCommand shows the exact PATCH route and sanitizes untrusted segments', () => {
+  assert.equal(
+    closeCommand({ owner: 'o', repo: 'r', number: 150 }),
+    'PATCH /repos/o/r/pulls/150',
+  );
+  const hostile = closeCommand({ owner: 'o\u202e', repo: 'r\u0000', number: 150 });
+  assert.doesNotMatch(hostile, /[\u202e\u0000]/);
 });
