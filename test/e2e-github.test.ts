@@ -1,6 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { GitHubClient, GitHubError, type FetchResponseLike } from '../src/github';
+import { parseDispatchInputs, workflowWebUrl } from '../src/workflowInputs';
+import { matchDispatchedRun } from '../src/webview/actionsModel';
+import type { ActionsRunsResult, DispatchWorkflowResult, WorkflowInputsResult } from '../src/messages';
 import { makeRepo, type Harness, type TestRepo } from './fixture';
 
 const TOKEN = 'ghp_e2e_secret_0123456789abcdef';
@@ -366,4 +369,262 @@ test('P26: create then list shows the new issue; close then Undo restores it', a
   if (!list4.ok) return;
   const data4 = list4.data as { issues: Array<{ number: number }> };
   assert.deepEqual(data4.issues.map((i) => i.number), [98, 97], 'Undo restores closed issue to open list');
+});
+
+test('P27: Actions workflowInputs -> dispatch -> 2-poll match and rerunFailed refusal/execution with cache invalidation', async (t) => {
+  const repo = await makeRepo({ label: 'p27-actions-e2e' });
+  const workflowYaml = [
+    'name: Release',
+    'on:',
+    '  workflow_dispatch:',
+    '    inputs:',
+    '      version:',
+    "        description: 'Release tag'",
+    '        required: true',
+    '        type: string',
+    '      target:',
+    "        description: 'Target environment'",
+    '        required: true',
+    '        type: choice',
+    "        default: 'staging'",
+    '        options: [staging, prod]',
+  ].join('\n');
+
+  const calls: Array<{ url: string; method: string; body: string | undefined }> = [];
+  const queue: FetchResponseLike[] = [
+    // 1. GET /workflows for workflowInputs
+    response(200, {
+      total_count: 1,
+      workflows: [{ id: 10, name: 'Release', path: '.github/workflows/release.yml', state: 'active' }],
+    }),
+    // 2. GET /contents/.github/workflows/release.yml?ref=main
+    response(200, {
+      encoding: 'base64',
+      size: Buffer.byteLength(workflowYaml, 'utf8'),
+      content: Buffer.from(workflowYaml, 'utf8').toString('base64'),
+    }),
+    // 3. POST /workflows/10/dispatches (workflows call hits cache)
+    { status: 204, ok: true, headers: headers({}), text: () => Promise.resolve('') },
+    // 4. First poll: GET /actions/runs -> empty
+    response(200, { workflow_runs: [] }),
+    // 5. Second poll after 5 s (past 0 s or TTL expired after advance): GET /actions/runs -> new workflow_dispatch run
+    response(200, {
+      workflow_runs: [
+        {
+          id: 901,
+          workflow_id: 10,
+          name: 'Release',
+          display_title: 'Release',
+          run_number: 12,
+          event: 'workflow_dispatch',
+          status: 'queued',
+          conclusion: null,
+          head_branch: 'main',
+          head_sha: 'b'.repeat(40),
+          html_url: 'https://github.com/o/r/actions/runs/901',
+          created_at: '2026-11-20T12:00:05.000Z',
+          run_started_at: null,
+          updated_at: '2026-11-20T12:00:05.000Z',
+          run_attempt: 1,
+        },
+      ],
+    }),
+    // 6. GET /actions/runs/481 for rerun refusal (completed + success)
+    response(200, {
+      id: 481,
+      workflow_id: 10,
+      name: 'Release',
+      display_title: 'Release',
+      run_number: 10,
+      event: 'push',
+      status: 'completed',
+      conclusion: 'success',
+      head_branch: 'main',
+      head_sha: 'a'.repeat(40),
+      html_url: 'https://github.com/o/r/actions/runs/481',
+      created_at: '2026-11-20T10:00:00.000Z',
+      run_started_at: '2026-11-20T10:00:05.000Z',
+      updated_at: '2026-11-20T10:01:00.000Z',
+      run_attempt: 1,
+    }),
+    // 7. GET /actions/runs/482 for rerun execution (completed + failure)
+    response(200, {
+      id: 482,
+      workflow_id: 10,
+      name: 'Release',
+      display_title: 'Release',
+      run_number: 11,
+      event: 'push',
+      status: 'completed',
+      conclusion: 'failure',
+      head_branch: 'main',
+      head_sha: 'c'.repeat(40),
+      html_url: 'https://github.com/o/r/actions/runs/482',
+      created_at: '2026-11-20T11:00:00.000Z',
+      run_started_at: '2026-11-20T11:00:05.000Z',
+      updated_at: '2026-11-20T11:01:00.000Z',
+      run_attempt: 1,
+    }),
+    // 8. POST /actions/runs/482/rerun-failed-jobs -> 201 (invalidates runs: and jobs:)
+    { status: 201, ok: true, headers: headers({}), text: () => Promise.resolve('') },
+    // 9. Subsequent GET /actions/runs hits network (not cached) after invalidation
+    response(200, {
+      workflow_runs: [
+        {
+          id: 482,
+          workflow_id: 10,
+          name: 'Release',
+          display_title: 'Release',
+          run_number: 11,
+          event: 'push',
+          status: 'in_progress',
+          conclusion: null,
+          head_branch: 'main',
+          head_sha: 'c'.repeat(40),
+          html_url: 'https://github.com/o/r/actions/runs/482',
+          created_at: '2026-11-20T11:00:00.000Z',
+          run_started_at: '2026-11-20T11:00:05.000Z',
+          updated_at: '2026-11-20T12:01:10.000Z',
+          run_attempt: 2,
+        },
+      ],
+    }),
+  ];
+
+  let clock = Date.parse('2026-11-20T12:00:00.000Z');
+  let qIdx = 0;
+  const gh = new GitHubClient({
+    apiUrl: 'https://api.github.com',
+    token: TOKEN,
+    now: () => clock,
+    sleep: async () => {},
+    fetchImpl: (url, init) => {
+      const i = init as { method?: string; body?: string } | undefined;
+      calls.push({ url, method: i?.method ?? 'GET', body: typeof i?.body === 'string' ? i.body : undefined });
+      const next = queue[qIdx++];
+      return next ? Promise.resolve(next) : Promise.reject(new Error(`unexpected fetch: ${url}`));
+    },
+  });
+
+  const bridge = repo.harness({
+    host: {
+      githubWriteContext: async () => ({
+        connected: true,
+        scopes: ['repo'],
+        tokenAllowed: true,
+        circuitOpen: gh.circuitOpen,
+      }),
+      githubActionsWorkflows: async (p) => gh.workflows(p.owner, p.repo),
+      githubActionsRun: async (p) => gh.workflowRun(p.owner, p.repo, p.runId),
+      githubActionsRuns: async (p) => {
+        const res = await gh.workflowRuns(p.owner, p.repo, {
+          ...(p.branch === undefined ? {} : { branch: p.branch }),
+          ...(p.workflowId === undefined ? {} : { workflowId: p.workflowId }),
+          ...(p.perPage === undefined ? {} : { perPage: p.perPage }),
+        });
+        return { runs: res.data, workflows: [], rateLimit: gh.rateLimit(res.cached) };
+      },
+      githubWorkflowInputs: async (p) => {
+        const wfs = await gh.workflows(p.owner, p.repo);
+        const wf = wfs.data.find((w) => w.id === p.workflowId);
+        assert.ok(wf);
+        const file = await gh.workflowFile(p.owner, p.repo, wf.path, p.ref);
+        const parsed = parseDispatchInputs(file.data);
+        return {
+          inputs: parsed ?? [],
+          parsed: parsed !== null,
+          webUrl: workflowWebUrl('github.com', p.owner, p.repo, wf.path),
+          rateLimit: gh.rateLimit(file.cached),
+        };
+      },
+      githubDispatchWorkflow: async (p) => {
+        const res = await gh.dispatchWorkflow(p.owner, p.repo, p.workflowId, {
+          ref: p.ref,
+          ...(p.inputs === undefined ? {} : { inputs: p.inputs }),
+        });
+        return res.data;
+      },
+      githubRerunFailed: async (p) => (await gh.rerunFailedJobs(p.owner, p.repo, p.runId)).data,
+    },
+  });
+  own(t, repo, bridge);
+
+  // 1. Read and parse workflow_dispatch inputs
+  const inputsRes = await bridge.send('github/workflowInputs', {
+    owner: 'o',
+    repo: 'r',
+    workflowId: 10,
+    ref: 'main',
+  });
+  assert.equal(inputsRes.ok, true);
+  if (!inputsRes.ok) return;
+  const inputsData = inputsRes.data as WorkflowInputsResult;
+  assert.equal(inputsData.parsed, true);
+  assert.equal(inputsData.webUrl, 'https://github.com/o/r/actions/workflows/release.yml');
+  assert.deepEqual(inputsData.inputs.map((x) => x.name), ['version', 'target']);
+
+  // 2. Dispatch workflow with confirm: true and inputs
+  const dispRes = await bridge.send('github/dispatchWorkflow', {
+    owner: 'o',
+    repo: 'r',
+    workflowId: 10,
+    ref: 'main',
+    inputs: { version: '2.8.0', target: 'prod' },
+    confirm: true,
+    idempotencyKey: 'e2e-p27-disp',
+  });
+  assert.equal(dispRes.ok, true);
+  if (!dispRes.ok) return;
+  const dispData = dispRes.data as DispatchWorkflowResult;
+  assert.equal(dispData.dispatched, true);
+  const postDispatch = calls.find((c) => c.method === 'POST' && c.url.endsWith('/dispatches'));
+  assert.equal(postDispatch?.body, JSON.stringify({ ref: 'main', inputs: { version: '2.8.0', target: 'prod' } }));
+
+  // 3. Two polls: first poll empty, second poll (after TTL window) finds new workflow_dispatch run
+  const poll1 = await bridge.send('github/actionsRuns', { owner: 'o', repo: 'r' });
+  assert.equal(poll1.ok, true);
+  if (!poll1.ok) return;
+  assert.equal(
+    matchDispatchedRun((poll1.data as ActionsRunsResult).runs, { workflowId: 10, branch: 'main', since: dispData.at }),
+    null,
+  );
+
+  clock += 65_000;
+  const poll2 = await bridge.send('github/actionsRuns', { owner: 'o', repo: 'r' });
+  assert.equal(poll2.ok, true);
+  if (!poll2.ok) return;
+  const matched = matchDispatchedRun((poll2.data as ActionsRunsResult).runs, {
+    workflowId: 10,
+    branch: 'main',
+    since: dispData.at,
+  });
+  assert.equal(matched?.id, 901);
+
+  // 4. Re-run refused on success run (no POST sent)
+  const badRerun = await bridge.send('github/rerunFailedJobs', {
+    owner: 'o',
+    repo: 'r',
+    runId: 481,
+    idempotencyKey: 'e2e-p27-rr-ok',
+  });
+  assert.equal(badRerun.ok, false);
+  if (!badRerun.ok) assert.equal(badRerun.error.code, 'VALIDATION_ERROR');
+  assert.equal(calls.filter((c) => c.url.endsWith('/rerun-failed-jobs')).length, 0);
+
+  // 5. Re-run succeeds on failure run and invalidates runs cache immediately without advancing clock
+  const goodRerun = await bridge.send('github/rerunFailedJobs', {
+    owner: 'o',
+    repo: 'r',
+    runId: 482,
+    idempotencyKey: 'e2e-p27-rr-fail',
+  });
+  assert.equal(goodRerun.ok, true);
+  assert.equal(calls.filter((c) => c.url.endsWith('/rerun-failed-jobs')).length, 1);
+
+  const afterRerun = await bridge.send('github/actionsRuns', { owner: 'o', repo: 'r' });
+  assert.equal(afterRerun.ok, true);
+  if (!afterRerun.ok) return;
+  const afterData = afterRerun.data as ActionsRunsResult;
+  assert.equal(afterData.runs[0]?.status, 'in_progress');
+  assert.equal(afterData.rateLimit.cached, false, 'rerunFailedJobs invalidated cached workflow runs');
 });
