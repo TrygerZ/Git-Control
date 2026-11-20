@@ -32,6 +32,11 @@ export interface ReviewDialogProps {
   /** The store's copy of the form, so a failed submit comes back with its text. */
   draft?: { event: ReviewEvent; body: string };
   error?: ErrorBody;
+  /**
+   * A review is in flight. The dialog stays mounted during the request, so the
+   * button is what stops a second press; the store refuses the repeat too.
+   */
+  sending: boolean;
   onConfirm(input: { event: ReviewEvent; body: string }): void;
   onCancel(): void;
 }
@@ -55,6 +60,7 @@ export function ReviewDialog({
   headRef,
   draft,
   error,
+  sending,
   onConfirm,
   onCancel,
 }: ReviewDialogProps): JSX.Element {
@@ -175,7 +181,7 @@ export function ReviewDialog({
               type="submit"
               className="gc-button gc-button--primary"
               aria-describedby={blocked ? noteId : undefined}
-              disabled={blocked}
+              disabled={blocked || sending}
             >
               {strings.prMerge.submitReview}
             </button>

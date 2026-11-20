@@ -683,6 +683,7 @@ export function PullRequestApp(): JSX.Element {
           headRef={sanitizeGitText(detail.headRef)}
           draft={reviewDraft ?? undefined}
           error={reviewError ?? undefined}
+          sending={reviewState === 'sending'}
           onConfirm={(input) => void review(input)}
           onCancel={() => closeReview()}
         />

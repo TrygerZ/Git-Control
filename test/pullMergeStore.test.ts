@@ -297,3 +297,80 @@ test('QA: a successful review clears the draft, and closing the form clears the 
   usePullStore.getState().closeReview();
   assert.equal(usePullStore.getState().reviewOpen, false);
 });
+
+/**
+ * QA-02: the dialog now survives its request, so the submit button does too.
+ *
+ * At `a9d76da` the dialog unmounted on submit, which was the only thing stopping
+ * a second press. Since the form stays open while the request is in flight, the
+ * store must refuse a second submit itself: each one mints a fresh key, so the
+ * host cannot join them and GitHub would post two reviews.
+ */
+test('QA-02: a second review submitted while one is in flight is ignored', async (t) => {
+  load();
+  // The gate is created before the calls, so the resolver exists no matter when
+  // the stubbed request runs. Assigning it inside the stub raced the release.
+  let release = (): void => {};
+  const gate = new Promise<void>((done) => {
+    release = done;
+  });
+  const calls: string[] = [];
+  const original = bridge.request;
+  bridge.request = (async (kind: string) => {
+    calls.push(kind);
+    if (kind !== 'github/submitReview') return RATE;
+    // Hold the first request open so the second submit arrives mid-flight.
+    await gate;
+    return { reviewId: 7 };
+  }) as typeof bridge.request;
+  t.after(() => {
+    release();
+    bridge.request = original;
+  });
+
+  usePullStore.getState().openReview();
+  const first = usePullStore.getState().review({ event: 'APPROVE', body: '' });
+  // The second press lands while `reviewState === 'sending'`.
+  const second = usePullStore.getState().review({ event: 'APPROVE', body: '' });
+  await Promise.resolve();
+  release();
+  await Promise.all([first, second]);
+
+  assert.equal(
+    calls.filter((kind) => kind === 'github/submitReview').length,
+    1,
+    'one submit in flight, one POST',
+  );
+});
+
+/**
+ * QA-02, the other half: a submit refused during `sending` must not clobber the
+ * draft of the request already on the wire. The early return happens before the
+ * store records anything, so a second string cannot overwrite the first.
+ */
+test('QA-02: the ignored second submit does not replace the draft in flight', async (t) => {
+  load();
+  let release = (): void => {};
+  const gate = new Promise<void>((done) => {
+    release = done;
+  });
+  const original = bridge.request;
+  bridge.request = (async (kind: string) => {
+    if (kind !== 'github/submitReview') return RATE;
+    await gate;
+    return { reviewId: 7 };
+  }) as typeof bridge.request;
+  t.after(() => {
+    release();
+    bridge.request = original;
+  });
+
+  usePullStore.getState().openReview();
+  const first = usePullStore.getState().review({ event: 'REQUEST_CHANGES', body: 'the first text' });
+  const second = usePullStore.getState().review({ event: 'APPROVE', body: 'the second text' });
+  // Asserted before the release: the guard is synchronous, so an unguarded
+  // second submit has already overwritten the draft by now.
+  assert.equal(usePullStore.getState().reviewDraft?.body, 'the first text');
+  release();
+  await Promise.all([first, second]);
+});

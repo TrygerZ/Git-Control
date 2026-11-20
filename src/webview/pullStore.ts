@@ -405,6 +405,11 @@ export const usePullStore = create<PullState>((set, get) => ({
   },
 
   async review(input) {
+    // The form stays open while the request is in flight, and each submit mints
+    // a fresh key, so a second press would post a second review GitHub cannot
+    // join. Guarded before the draft is recorded: the refused submit must not
+    // overwrite the text already on the wire.
+    if (get().reviewState === 'sending') return;
     // The store owns the text, not the dialog: a failure must leave it on
     // screen, so it is recorded before anything can go wrong.
     set({ reviewDraft: input });
