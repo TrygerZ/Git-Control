@@ -5,6 +5,21 @@ All notable changes to the "Git Control" extension will be documented in this fi
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.24.0] - 2026-11-20
+
+### Added
+- Re-run only the failed jobs of a completed failed, timed-out, or cancelled workflow run directly from expanded run rows in the sidebar Actions view, with a `View run` toast action.
+- Dispatch a workflow (`workflow_dispatch`) on a chosen branch from the Run workflow dialog, with a pure YAML parser for `string`, `boolean`, `choice`, `environment`, and `number` inputs, inline required-field validation, and a read-only `POST /repos/{owner}/{repo}/actions/workflows/{file}/dispatches` command preview.
+- Surface a `Starting` row and trigger a 5 s / 10 s / 20 s / 30 s host-refreshing poll burst after dispatch or re-run so new or restarted runs appear without manual reload.
+- Provide an `Open on GitHub` fallback and run workflows without inputs when a workflow's `workflow_dispatch.inputs` block cannot be parsed or read, preserving `422` missing-input recovery through the web link.
+
+### Changed
+- The sidebar header quick-create button on the Actions view now opens the in-extension Run workflow dialog when signed in, and the header Reload button refreshes Actions runs when the Actions view is active.
+- Running or re-running workflows requires a token with workflow write access (`workflow` classic PAT scope or Actions read/write permission); 403 expiry (older than 30 days) and disabled or untriggerable workflow refusals map to localized host messages.
+
+### Security
+- Validate workflow IDs, run IDs, branch names, and workflow dispatch input names and values (capped at 10 inputs, excluding prototype-polluting keys) before touching the GitHub REST client; validate parsed choice options and cap workflow YAML reads at 64 KiB; guard mutations with single-attempt idempotency keys and Level 1 dispatch confirmation; sanitize confirmation command previews against bidi and control characters; and exclude workflow YAML text and dispatch input values from diagnostic logs.
+
 ## [3.23.0] - 2026-11-20
 
 ### Added
