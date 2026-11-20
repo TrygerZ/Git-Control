@@ -4783,3 +4783,91 @@ test('QA-02: a webview-supplied refresh never reaches the host on the ordinary r
   assert.equal(response.ok, true);
   assert.deepEqual(seen, [{ owner: 'o', repo: 'r', number: 150 }], 'only the declared fields are forwarded');
 });
+
+/**
+ * QA-04: the delete path must refuse the base branch, not only HEAD.
+ *
+ * The phase file states "Never delete HEAD, the default branch, or a branch with
+ * unmerged commits", and `selectCleanupCandidates` already excludes the default
+ * branch. The bridge's two delete callers (the cleanup action and the merge's
+ * delete-branch step) shared a helper that compared only against `current`, so a
+ * merge whose head IS the base branch could delete it. The host can answer it;
+ * tree data cannot.
+ */
+function repoHost(defaultBranch: string): Partial<BridgeHost> {
+  return {
+    githubLinkage: () =>
+      Promise.resolve({
+        available: true,
+        host: 'github.com',
+        owner: 'o',
+        repo: 'r',
+        webUrl: 'https://github.com/o/r',
+        commitUrlTemplate: 'https://github.com/o/r/commit/{hash}',
+        apiUrl: 'https://api.github.com',
+      }),
+    githubRepo: () =>
+      Promise.resolve({
+        defaultBranch,
+        private: false,
+        htmlUrl: 'https://github.com/o/r',
+        rateLimit: RATE_LIMIT,
+      }),
+  };
+}
+
+test('QA-04: branch-delete refuses the default branch even when it is not HEAD', async (t) => {
+  const repo = await cleanupRepo();
+  t.after(() => cleanup(repo.folderPath));
+  const h = harness(repo, repoHost('feat/a'));
+  t.after(() => h.bridge.dispose());
+  const token = (await repo.status()).statusToken;
+  assert.equal((await repo.status()).branch, 'main', 'the fixture is on main, not on feat/a');
+
+  const response = await h.webview.send(
+    req('actions/git', {
+      action: 'branch-delete',
+      branch: 'feat/a',
+      statusToken: token,
+      idempotencyKey: 'bd-default',
+      confirm: true,
+      forceAcknowledgement: true,
+    }),
+  );
+  assert.equal(response.ok, false);
+  if (response.ok) return;
+  assert.equal(response.error.code, 'VALIDATION_ERROR');
+  assert.deepEqual(response.error.remedies, ['cancel']);
+  assert.ok(
+    (await repo.git.refs()).some((r) => r.refName === 'refs/heads/feat/a'),
+    'the default branch was not deleted',
+  );
+});
+
+test('QA-04: the merge delete step refuses a head that is the default branch', async (t) => {
+  const repo = await cleanupRepo();
+  t.after(() => cleanup(repo.folderPath));
+  const h = harness(repo, {
+    ...writeHost({
+      githubPullDetail: () =>
+        Promise.resolve({ detail: pullDetail({ headRef: 'feat/a' }), rateLimit: RATE_LIMIT }),
+      githubMergePullRequest: () => Promise.resolve(MERGED),
+    }),
+    ...repoHost('feat/a'),
+  });
+  t.after(() => h.bridge.dispose());
+
+  const response = await h.webview.send(
+    req('github/mergePullRequest', mergePayload({ deleteBranch: true })),
+  );
+  assert.equal(response.ok, true, JSON.stringify(response));
+  if (!response.ok) return;
+  const data = response.data as { merged: boolean; branchDeleted: { local: boolean | null; remote: boolean | null }; warnings: string[] };
+  assert.equal(data.merged, true, 'the merge still lands');
+  assert.equal(data.branchDeleted.local, false, 'the default branch was not deleted');
+  assert.ok(data.warnings.includes('branch-local'));
+  assert.ok(
+    (await repo.git.refs()).some((r) => r.refName === 'refs/heads/feat/a'),
+    'feat/a survived',
+  );
+});

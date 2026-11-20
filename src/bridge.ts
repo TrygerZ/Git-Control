@@ -1481,13 +1481,50 @@ export class MessageBridge {
    * that already invalidated the cache, not one that lands in the microseconds
    * after this line. `git branch -d` is the backstop for that last window and
    * refuses a checked-out branch on its own.
+   *
+   * The default branch is the second half of the phase rule ("Never delete HEAD,
+   * the default branch, or a branch with unmerged commits"). Only GitHub knows
+   * it, so it is asked of the host, best-effort: no GitHub wiring, no linkage,
+   * or a failed read all leave it `null`, which is today's behaviour, and git's
+   * `-d` still refuses a branch with unmerged commits. The lookup runs only after
+   * the name and current-branch checks pass, so a refused delete never spends a
+   * request. Both refusals share one error shape: the standalone action reports
+   * it, and the merge handler turns it into a warning.
    */
   private async deleteBranch(repo: RepositoryService, branch: string): Promise<void> {
     const status = await repo.status();
-    if (!validateDeletableBranch(branch, status.branch)) {
-      fail(409, 'VALIDATION_ERROR', this.text().invalid, { detail: 'branch' });
+    let defaultBranch: string | null = null;
+    if (validateDeletableBranch(branch, status.branch)) {
+      defaultBranch = await this.githubDefaultBranch();
+    }
+    if (!validateDeletableBranch(branch, status.branch, defaultBranch)) {
+      fail(409, 'VALIDATION_ERROR', this.text().invalid, { detail: 'branch', remedies: ['cancel'] });
     }
     await repo.git.deleteBranch(branch);
+  }
+
+  /**
+   * The repository's GitHub default branch, or `null` when it cannot be known.
+   *
+   * A delete costs one `githubRepo` call only when the repository has GitHub
+   * linkage: no link, no request, no extra refusal. Read through the same
+   * `githubRepo` method the panel uses. Every failure answers `null` rather than
+   * throwing: a delete must still work offline, and a host with no GitHub wiring
+   * is a supported host.
+   */
+  private async githubDefaultBranch(): Promise<string | null> {
+    const fetchRepo = this.host.githubRepo;
+    if (fetchRepo === undefined) return null;
+    try {
+      const linkage = this.host.githubLinkage;
+      if (linkage === undefined) return null;
+      const info = await linkage();
+      if (info.available !== true || info.owner === null || info.repo === null) return null;
+      const repoInfo = await fetchRepo({ owner: info.owner, repo: info.repo });
+      return repoInfo.defaultBranch.length > 0 ? repoInfo.defaultBranch : null;
+    } catch {
+      return null;
+    }
   }
 
   /**
