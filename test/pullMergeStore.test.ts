@@ -7,7 +7,7 @@
  * idempotency key per merge attempt, and the fact that a refusal is a state the
  * panel can explain rather than a toast that disappears.
  */
-import test from 'node:test';
+import test, { type TestContext } from 'node:test';
 import assert from 'node:assert/strict';
 import { bridge } from '../src/webview/bridge';
 import { usePullStore } from '../src/webview/pullStore';
@@ -425,4 +425,46 @@ test('P25: a submitted review and a sent reply each announce themselves', async 
   const messages = useOperationStore.getState().toasts.map((toast) => toast.message);
   assert.ok(messages.includes(t('en').prMerge.reviewSubmittedToast), 'the review announces itself');
   assert.ok(messages.includes(t('en').prMerge.replyToast), 'the reply announces itself');
+});
+
+/**
+ * Minor from the third gate: `reply()` had no in-flight guard, so two typed
+ * replies (or one row clicked while a slow request hangs) posted twice. GitHub
+ * has no reply dedupe either, and the reply is a mutation in the same class as
+ * the review POST the gate found.
+ */
+test('QA-03: a second reply sent while one is in flight is ignored', async (t: TestContext) => {
+  load();
+  let release = (): void => {};
+  const gate = new Promise<void>((done) => {
+    release = done;
+  });
+  const calls: string[] = [];
+  const original = bridge.request;
+  bridge.request = (async (kind: string) => {
+    calls.push(kind);
+    if (kind !== 'github/replyReviewComment') return RATE;
+    await gate;
+    return { commentId: 55 };
+  }) as typeof bridge.request;
+  t.after(() => {
+    release();
+    bridge.request = original;
+  });
+
+  const first = usePullStore.getState().reply(44, 'Agreed.');
+  const second = usePullStore.getState().reply(44, 'Agreed.');
+  await Promise.resolve();
+  release();
+  await Promise.all([first, second]);
+
+  assert.equal(
+    calls.filter((kind) => kind === 'github/replyReviewComment').length,
+    1,
+    'one reply in flight, one POST',
+  );
+  // The refusal is reported, not silent: the reply row keeps its text until a
+  // send actually went out, so an ignored press cannot eat what was typed.
+  const results = await Promise.all([first, second]);
+  assert.deepEqual(results.sort(), [false, true], 'one send won, one was refused');
 });

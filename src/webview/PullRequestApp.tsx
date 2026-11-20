@@ -619,7 +619,7 @@ export function PullRequestApp(): JSX.Element {
               onCancelMerge={() => cancelMerge()}
               onRetryMerge={() => void retryMerge()}
               onRevealMerge={(hash) => void revealInGraph(hash)}
-              onReply={(id, body) => void reply(id, body)}
+              onReply={(id, body) => reply(id, body)}
             />
           )}
           {tab === 'commits' && (
@@ -741,7 +741,7 @@ function ConversationTab({
   onCancelMerge(): void;
   onRetryMerge(): void;
   onRevealMerge(hash: string): void;
-  onReply(commentId: number, body: string): void;
+  onReply(commentId: number, body: string): Promise<boolean>;
 }): JSX.Element {
   const rows = mergeRows(detail, checks, strings, language);
   const tone = mergeTone(rows);
@@ -852,8 +852,15 @@ function ConversationTab({
  * store posts it and re-reads the thread, so a failed reply leaves the typed
  * text where it was. Empty (after trim) is not a reply, so the button waits.
  */
-function ReplyRow({ strings, onSend }: { strings: Catalog; onSend(body: string): void }): JSX.Element {
+function ReplyRow({
+  strings,
+  onSend,
+}: {
+  strings: Catalog;
+  onSend(body: string): Promise<boolean>;
+}): JSX.Element {
   const [body, setBody] = useState('');
+  const sending = usePullStore((s) => s.replySending);
   const trimmed = body.trim();
   return (
     <div className="gc-prmerge__reply">
@@ -866,11 +873,13 @@ function ReplyRow({ strings, onSend }: { strings: Catalog; onSend(body: string):
       <button
         type="button"
         className="gc-button gc-button--quiet"
-        disabled={trimmed.length === 0}
-        onClick={() => {
+        disabled={trimmed.length === 0 || sending}
+        onClick={async () => {
           if (trimmed.length === 0) return;
-          onSend(trimmed);
-          setBody('');
+          // Only a send that actually went out clears the box; a refused one
+          // keeps the text, so an ignored press cannot eat what was typed.
+          const sent = await onSend(trimmed);
+          if (sent) setBody('');
         }}
       >
         {strings.prMerge.replySend}

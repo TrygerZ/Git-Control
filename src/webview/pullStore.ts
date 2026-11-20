@@ -55,6 +55,8 @@ export interface PullState {
   /** P25 review submit state. A failure stays a state the panel explains. */
   reviewState: 'idle' | 'sending' | 'failed';
   reviewError: ErrorBody | null;
+  /** A reply is on the wire. A second send is ignored while this is true. */
+  replySending: boolean;
   /**
    * The review form's open flag and its text. Both live here, not in the
    * dialog, so a failed submit keeps the typed text and the reason to show it.
@@ -74,7 +76,8 @@ export interface PullState {
   /** Open the review form. Never clears the draft, so a failed text comes back. */
   openReview(): void;
   closeReview(): void;
-  reply(commentId: number, body: string): Promise<void>;
+  /** `true` when the reply was sent, `false` when it was refused (already sending, or nothing to send). */
+  reply(commentId: number, body: string): Promise<boolean>;
   close(): Promise<void>;
 }
 
@@ -212,6 +215,7 @@ export const usePullStore = create<PullState>((set, get) => ({
   mergeResult: null,
   reviewState: 'idle',
   reviewError: null,
+  replySending: false,
   reviewOpen: false,
   reviewDraft: null,
 
@@ -477,12 +481,18 @@ export const usePullStore = create<PullState>((set, get) => ({
   },
 
   async reply(commentId, body) {
+    // Same guard as `review()`: GitHub has no reply dedupe, so a second press
+    // while one is on the wire would post the same comment twice. Checked before
+    // anything is set, so the refused call cannot disturb the in-flight one.
+    // The answer is reported so the row keeps its text when the send was refused.
+    if (get().replySending) return false;
     const detail = get().detail;
     const repo = repoOf();
     if (detail === null || repo === null) {
       toastBody(unavailableBody());
-      return;
+      return false;
     }
+    set({ replySending: true });
     pointTarget({ owner: repo.owner, repo: repo.repo, number: detail.number });
     try {
       await bridge.request('github/replyReviewComment', {
@@ -498,8 +508,13 @@ export const usePullStore = create<PullState>((set, get) => ({
         level: 'info',
         message: t(activeLang()).prMerge.replyToast,
       });
+      return true;
     } catch (err) {
       toastFailure(err);
+      return false;
+    } finally {
+      // A failed reply must be retryable, so no path leaves the flag set.
+      set({ replySending: false });
     }
   },
 
