@@ -59,6 +59,8 @@ export interface PullState {
   replySending: boolean;
   /** A close request is on the wire. A second trigger is ignored while this is true. */
   closeSending: boolean;
+  /** Level 1 confirmation dialog is open for closing the pull request. */
+  closeConfirmOpen: boolean;
   /**
    * The review form's open flag and its text. Both live here, not in the
    * dialog, so a failed submit keeps the typed text and the reason to show it.
@@ -80,6 +82,9 @@ export interface PullState {
   closeReview(): void;
   /** `true` when the reply was sent, `false` when it was refused (already sending, or nothing to send). */
   reply(commentId: number, body: string): Promise<boolean>;
+  /** Open the Level 1 close confirmation dialog. Mints the close idempotency key; sends nothing. */
+  openClose(): void;
+  cancelClose(): void;
   close(): Promise<void>;
 }
 
@@ -122,6 +127,13 @@ let mergeKey: string | null = null;
 
 /** The options the confirm dialog sent, replayed verbatim by `retryMerge`. */
 let mergeOptions: MergeInput | null = null;
+
+/**
+ * The idempotency key of the current close confirmation. Minted only in
+ * `openClose` and kept across a failure; cleared on cancel, after a landed
+ * close, or when `load()` switches to another pull request.
+ */
+let closeKey: string | null = null;
 
 /**
  * Point `loadTab` at the pull request whose detail is on screen. A panel that was
@@ -219,11 +231,15 @@ export const usePullStore = create<PullState>((set, get) => ({
   reviewError: null,
   replySending: false,
   closeSending: false,
+  closeConfirmOpen: false,
   reviewOpen: false,
   reviewDraft: null,
 
   async load(payload) {
     const mine = ++generation;
+    if (target !== null && target.number !== payload.number) {
+      closeKey = null;
+    }
     target = payload;
     inFlight.clear();
     // Every other field starts empty: a rebuilt panel must not draw the previous
@@ -237,6 +253,7 @@ export const usePullStore = create<PullState>((set, get) => ({
       checkRuns: null,
       loading: true,
       error: null,
+      closeConfirmOpen: false,
       truncated: { commits: false, files: false, timeline: false },
     });
     try {
@@ -546,25 +563,53 @@ export const usePullStore = create<PullState>((set, get) => ({
     }
   },
 
+  openClose() {
+    const detail = get().detail;
+    if (detail === null || detail.state !== 'open' || get().closeSending) return;
+    // The dialog is the level 1 confirmation, so this mints the one key the
+    // attempt owns. Nothing is sent before the user confirms.
+    closeKey = closeKey ?? crypto.randomUUID();
+    set({ closeConfirmOpen: true });
+  },
+
+  cancelClose() {
+    closeKey = null;
+    set({ closeConfirmOpen: false });
+  },
+
   async close() {
     if (get().closeSending) return;
+    if (!get().closeConfirmOpen) {
+      get().openClose();
+      return;
+    }
     const detail = get().detail;
     const repo = repoOf();
     if (detail === null || repo === null) {
+      set({ closeConfirmOpen: false });
       toastBody(unavailableBody());
       return;
     }
-    set({ closeSending: true });
+    const key = closeKey ?? crypto.randomUUID();
+    closeKey = key;
+    set({ closeConfirmOpen: false, closeSending: true });
     try {
-      await bridge.request('github/closePullRequest', {
+      const outcome = await bridge.request('github/closePullRequest', {
         owner: repo.owner,
         repo: repo.repo,
         number: detail.number,
-        idempotencyKey: crypto.randomUUID(),
-        // The menu row is the level 1 confirmation.
+        idempotencyKey: key,
+        // ClosePullDialog confirm button IS the level 1 confirmation.
         confirm: true,
       });
-      await get().load({ owner: repo.owner, repo: repo.repo, number: detail.number });
+      closeKey = null;
+      if (outcome.closed) {
+        await get().load({ owner: repo.owner, repo: repo.repo, number: detail.number });
+        useOperationStore.getState().pushToast({
+          level: 'info',
+          message: t(activeLang()).prMerge.closedToast(String(detail.number)),
+        });
+      }
     } catch (err) {
       toastFailure(err);
     } finally {

@@ -19,6 +19,7 @@ import * as path from 'node:path';
 const ROOT = path.join(__dirname, '..', '..');
 const APP = path.join(ROOT, 'src', 'webview', 'PullRequestApp.tsx');
 const DIALOG = path.join(ROOT, 'src', 'webview', 'MergePullDialog.tsx');
+const CLOSE_DIALOG = path.join(ROOT, 'src', 'webview', 'ClosePullDialog.tsx');
 const REVIEW = path.join(ROOT, 'src', 'webview', 'ReviewDialog.tsx');
 const STORE = path.join(ROOT, 'src', 'webview', 'pullStore.ts');
 const CSS = path.join(ROOT, 'src', 'webview', 'styles.css');
@@ -90,7 +91,7 @@ test('the review submit is disabled while a review is in flight', () => {
 });
 
 test('the panel never renders untrusted text as markup after P25', () => {
-  for (const file of [APP, DIALOG, REVIEW]) {
+  for (const file of [APP, DIALOG, CLOSE_DIALOG, REVIEW]) {
     const src = source(file);
     assert.doesNotMatch(src, /dangerouslySetInnerHTML|innerHTML/, path.basename(file));
     assert.doesNotMatch(src, /<a\s[^>]*href=/, path.basename(file));
@@ -159,7 +160,7 @@ test('Rebase and merge appears nowhere in the P25 sources or the store', () => {
 });
 
 test('no P25 source constructs a force flag or a shell', () => {
-  for (const file of [APP, DIALOG, REVIEW, STORE]) {
+  for (const file of [APP, DIALOG, CLOSE_DIALOG, REVIEW, STORE]) {
     const src = source(file);
     assert.doesNotMatch(src, /--force-with-lease|shell:\s*true/, path.basename(file));
     assert.doesNotMatch(src, /refspec[^\n]*\+/, path.basename(file));
@@ -176,6 +177,22 @@ test('the Close pull request row is in the More menu, after the tools group', ()
   assert.match(src, /navigator\.clipboard|clipboard\.writeText/);
 });
 
+test('P25: closing a pull request opens ClosePullDialog with Level 1 focus safety and PATCH preview', () => {
+  const closeDialog = source(CLOSE_DIALOG);
+  assert.match(closeDialog, /role="dialog"/);
+  assert.match(closeDialog, /aria-modal/);
+  assert.match(closeDialog, /useDialogFocusTrap\(/);
+  assert.match(closeDialog, /cancelRef\.current\?\.focus\(\)/);
+  assert.match(closeDialog, /closeCommand\(/);
+  assert.match(closeDialog, /closeRiskLow/);
+  assert.match(closeDialog, /sanitizeGitText\(/);
+
+  const app = source(APP);
+  assert.match(app, /<ClosePullDialog/);
+  assert.match(app, /onClose=\{\(\)\s*=>\s*openClose\(\)/);
+  assert.doesNotMatch(app, /onClose=\{\(\)\s*=>\s*void closePr\(\)/);
+});
+
 test('the merge box uses only theme tokens', () => {
   const css = fs.readFileSync(CSS, 'utf8').replace(/\/\*[\s\S]*?\*\//g, '');
   const blocks = css.match(/\.gc-prmerge[^{]*\{[^}]*\}/g) ?? [];
@@ -189,7 +206,7 @@ test('every catalogue key the dialogs read exists in both catalogs', () => {
   const en = source(path.join(ROOT, 'src', 'webview', 'i18n.en.ts'));
   const id = source(path.join(ROOT, 'src', 'webview', 'i18n.id.ts'));
   const keys = new Set<string>();
-  for (const file of [DIALOG, REVIEW, APP]) {
+  for (const file of [DIALOG, CLOSE_DIALOG, REVIEW, APP]) {
     for (const match of source(file).matchAll(/strings\.prMerge\.([A-Za-z]+)/g)) {
       keys.add(match[1] as string);
     }

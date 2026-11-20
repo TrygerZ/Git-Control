@@ -47,6 +47,7 @@ import {
 import { initialPullTab, usePullStore, type PullMergeState } from './pullStore';
 import { mergeBlockReason, type BlockReason } from './pullMerge';
 import { MergePullDialog } from './MergePullDialog';
+import { ClosePullDialog } from './ClosePullDialog';
 import { ReviewDialog } from './ReviewDialog';
 import { Tablist, type TabDef } from './Tablist';
 import { GuardDialog } from './GuardDialog';
@@ -276,6 +277,9 @@ export function PullRequestApp(): JSX.Element {
   const reply = usePullStore((s) => s.reply);
   const closePr = usePullStore((s) => s.close);
   const closeSending = usePullStore((s) => s.closeSending);
+  const closeConfirmOpen = usePullStore((s) => s.closeConfirmOpen);
+  const openClose = usePullStore((s) => s.openClose);
+  const cancelClose = usePullStore((s) => s.cancelClose);
   const reviewState = usePullStore((s) => s.reviewState);
   const reviewError = usePullStore((s) => s.reviewError);
   const reviewOpen = usePullStore((s) => s.reviewOpen);
@@ -540,7 +544,7 @@ export function PullRequestApp(): JSX.Element {
               onCopy={() => void copy(detail.htmlUrl)}
               onOpen={() => void openUrl(detail.htmlUrl)}
               onRefresh={retry}
-              onClose={() => void closePr()}
+              onClose={() => openClose()}
             />
           </div>
         </div>
@@ -689,6 +693,15 @@ export function PullRequestApp(): JSX.Element {
           isFork={isFork}
           onConfirm={(options) => void mergeNow(options)}
           onCancel={() => cancelMerge()}
+        />
+      )}
+      {closeConfirmOpen && (
+        <ClosePullDialog
+          detail={detail}
+          owner={owner}
+          repo={repo}
+          onConfirm={() => void closePr()}
+          onCancel={cancelClose}
         />
       )}
       {reviewOpen && (
@@ -1254,8 +1267,8 @@ function MergedCard({
 /**
  * The panel's More menu (frame 53).
  *
- * Rows navigate, copy, refresh, or close. The close row names itself and the host
- * asks for the level 1 confirmation; nothing here can run a git mutation. Arrow
+ * Rows navigate, copy, refresh, or open the Level 1 close confirmation dialog
+ * before sending any close request; nothing here can run a git mutation. Arrow
  * keys move between the enabled rows over one tab stop, and Escape or Tab closes
  * the menu and hands focus back to the trigger.
  */

@@ -222,20 +222,44 @@ test('P25: a reply posts to its parent comment and refreshes the thread list', a
   assert.equal(post.payload.body, 'Agreed.');
 });
 
-test('P25: closing the pull request sends confirm and then re-reads the detail', async (t) => {
+test('P25: closing without opening the Level 1 confirm dialog opens confirmation and sends no request', async (t) => {
+  load();
+  const s = stub(() => ({ closed: true }));
+  t.after(() => s.restore());
+
+  await usePullStore.getState().close();
+  assert.equal(s.calls.length, 0, 'close() must never send confirm: true on a single menu press');
+  assert.equal(usePullStore.getState().closeConfirmOpen, true);
+
+  usePullStore.getState().cancelClose();
+  assert.equal(usePullStore.getState().closeConfirmOpen, false);
+  assert.equal(s.calls.length, 0, 'cancelling close confirmation sends nothing');
+});
+
+test('P25: confirmed close pull request sends confirm, re-reads detail, and announces closure', async (ctx) => {
   load();
   const s = stub((kind) => {
     if (kind === 'github/closePullRequest') return { closed: true };
     if (kind === 'github/pullDetail') return { detail: detail({ state: 'closed' }), rateLimit: RATE };
     return RATE;
   });
-  t.after(() => s.restore());
+  ctx.after(() => s.restore());
+
+  useOperationStore.setState({ toasts: [] });
+  usePullStore.getState().openClose();
+  assert.equal(usePullStore.getState().closeConfirmOpen, true);
+  assert.equal(s.calls.length, 0, 'opening the close confirmation sends nothing');
 
   await usePullStore.getState().close();
   const post = s.calls.find((c) => c.kind === 'github/closePullRequest');
   assert.ok(post);
-  assert.equal(post.payload.confirm, true, 'close needs the level 1 confirmation');
+  assert.equal(post.payload.confirm, true, 'close sends confirm: true only after Level 1 confirmation');
+  assert.equal(typeof post.payload.idempotencyKey, 'string');
+  assert.equal(usePullStore.getState().closeConfirmOpen, false);
   assert.equal(usePullStore.getState().detail?.state, 'closed');
+  assert.ok(
+    useOperationStore.getState().toasts.some((toast) => toast.message === t('en').prMerge.closedToast('150')),
+  );
 });
 
 test('P25: a merge is refused in the store before any request when a blocker exists', async (t) => {
@@ -494,6 +518,7 @@ test('P25: merge and close do not call useGitHubStore.load inside the isolated P
 
   usePullStore.getState().openMerge();
   await usePullStore.getState().merge({ method: 'merge' });
+  usePullStore.getState().openClose();
   await usePullStore.getState().close();
   await new Promise((r) => setTimeout(r, 0));
 
@@ -531,6 +556,7 @@ test('P25: a second close while one is in flight is ignored, and a failed close 
     bridge.request = original;
   });
 
+  usePullStore.getState().openClose();
   const first = usePullStore.getState().close();
   const second = usePullStore.getState().close();
   await Promise.resolve();
@@ -538,7 +564,8 @@ test('P25: a second close while one is in flight is ignored, and a failed close 
   await Promise.all([first, second]);
   assert.equal(closeCalls, 1, 'second close ignored while first is on the wire');
 
-  // After failure, closeSending resets so a retry runs.
+  // After failure, closeSending resets so opening confirmation and retrying runs.
+  usePullStore.getState().openClose();
   await usePullStore.getState().close();
   assert.equal(closeCalls, 2, 'failed close remains retryable');
 });
