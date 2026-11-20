@@ -137,6 +137,18 @@ function ToastItem({ toast, paused, onDismiss, onShowLogs }: ItemProps): JSX.Ele
           </span>
         )}
       </div>
+      {toast.action !== undefined && (
+        <button
+          type="button"
+          className="gc-button gc-button--quiet gc-toast__action"
+          onClick={() => {
+            toast.action?.run();
+            onDismiss();
+          }}
+        >
+          {sanitizeGitText(toast.action.label)}
+        </button>
+      )}
       {toast.showLogs === true && (
         <button
           type="button"

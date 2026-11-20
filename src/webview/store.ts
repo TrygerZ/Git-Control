@@ -34,6 +34,7 @@ import type {
   GitHubRateLimit,
   HelpTab,
   IssueInfo,
+  IssueLabel,
   IssueListFilter,
   IssueStateFilter,
   MutationMeta,
@@ -55,6 +56,8 @@ import type {
   WorktreeInfo,
 } from '../messages';
 import { failingDot, firstFailedJob } from './actionsModel';
+import { applyIssueMutation, canCreateIssue, canSubmitComment } from './issueFilters';
+import { issueExcerpt } from './issueText';
 import { normalizeLabels, normalizeReviewers } from '../pullRequestDraft';
 import type { BranchesSectionKey, BranchSort } from './branchesModel';
 import { clampZoom, COLUMN_WIDTH, LANE_HEIGHT, partitionUnrequestedHashes } from './viewport';
@@ -74,6 +77,11 @@ export function toErrorBody(err: unknown): ErrorBody {
 
 // ------------------------------------------------------------------- toasts
 
+export interface ToastAction {
+  label: string;
+  run(): void;
+}
+
 export interface Toast {
   id: string;
   level: 'info' | 'warning' | 'error';
@@ -81,6 +89,8 @@ export interface Toast {
   detail?: string;
   /** Offer a `Show Logs` button; set for server errors. */
   showLogs?: boolean;
+  /** Webview-local action button (such as Undo after closing an issue). */
+  action?: ToastAction;
 }
 
 // ---------------------------------------------------------------- repoStore
@@ -1599,9 +1609,33 @@ export interface IssuesState {
   state: IssueStateFilter;
   loading: boolean;
   error: ErrorBody | null;
+  /** Per-issue comment draft text (P26). */
+  commentDraft: Record<number, string>;
+  /** Issue numbers with an in-flight comment POST. */
+  commentSending: ReadonlySet<number>;
+  /** Issue numbers with an in-flight close or reopen PATCH. */
+  stateSending: ReadonlySet<number>;
+  /** True while a new issue POST is in flight. */
+  creating: boolean;
+  /** Repository labels for the New issue dialog (cached 300 s). */
+  labels: IssueLabel[];
+  labelsLoadedAt: number | null;
+  labelsLoading: boolean;
+  /** True when GitHub reported 410 Gone (issues disabled for this repository). */
+  issuesDisabled: boolean;
   /** Change the selection and show its cached rows, or an empty list. No request. */
   select(filter: IssueListFilter, state?: IssueStateFilter): void;
   load(filter: IssueListFilter, state: IssueStateFilter, force?: boolean): Promise<void>;
+  setCommentDraft(number: number, draft: string): void;
+  comment(number: number): Promise<boolean>;
+  close(number: number): Promise<boolean>;
+  reopen(number: number): Promise<boolean>;
+  create(form: {
+    title: string;
+    body: string;
+    labels: string[];
+  }): Promise<{ number: number; htmlUrl: string } | null>;
+  loadLabels(force?: boolean): Promise<void>;
   reset(): void;
 }
 
@@ -1621,8 +1655,93 @@ function emptyStamps(): Record<IssueListFilter, Record<IssueStateFilter, number 
   };
 }
 
+const ISSUE_FILTERS: readonly IssueListFilter[] = ['assigned', 'created', 'mentioned'];
+const LABELS_CACHE_TTL_MS = 300_000;
+
+function asIssueErrorBody(err: unknown): ErrorBody {
+  const attached = (err as { body?: ErrorBody } | null)?.body;
+  if (attached && typeof attached.code === 'string' && typeof attached.message === 'string') {
+    return attached;
+  }
+  return toErrorBody(err);
+}
+
+function toastIssueFailure(body: ErrorBody, markDisabled: () => void): void {
+  const strings = t(activeLang()).issueWrite;
+  if (body.status === 410) {
+    markDisabled();
+    useOperationStore.getState().pushToast({
+      level: 'error',
+      message: strings.issuesDisabled,
+      ...(body.detail === undefined ? {} : { detail: sanitizeGitText(body.detail) }),
+    });
+    return;
+  }
+  const isUntrustedHost =
+    body.message === 'The token is not sent to this host.' ||
+    body.message === 'Token tidak dikirim ke host ini.';
+  if (body.status === 403 && body.code === 'FORBIDDEN' && !isUntrustedHost) {
+    useOperationStore.getState().pushToast({
+      level: 'error',
+      message: strings.needScope,
+      ...(body.detail === undefined ? {} : { detail: sanitizeGitText(body.detail) }),
+    });
+    return;
+  }
+  useOperationStore.getState().pushToast({
+    level: body.code === 'UNAVAILABLE' ? 'warning' : 'error',
+    message: sanitizeGitText(body.message),
+    ...(body.detail === undefined ? {} : { detail: sanitizeGitText(body.detail) }),
+  });
+}
+
+function mutateGridState(
+  grid: Record<IssueListFilter, Record<IssueStateFilter, IssueInfo[]>>,
+  change: { number: number; state: 'open' | 'closed' },
+): Record<IssueListFilter, Record<IssueStateFilter, IssueInfo[]>> {
+  const next = emptyGrid();
+  for (const f of ISSUE_FILTERS) {
+    const open = grid[f].open;
+    const closed = grid[f].closed;
+    const hasTarget =
+      open.some((i) => i.number === change.number) || closed.some((i) => i.number === change.number);
+    if (!hasTarget) {
+      next[f] = { open, closed };
+      continue;
+    }
+    const seen = new Set<number>();
+    const combined: IssueInfo[] = [];
+    for (const item of [...open, ...closed]) {
+      if (!seen.has(item.number)) {
+        seen.add(item.number);
+        combined.push(item);
+      }
+    }
+    const mutated = applyIssueMutation(combined, change);
+    next[f] = {
+      open: mutated.filter((i) => i.state === 'open'),
+      closed: mutated.filter((i) => i.state === 'closed'),
+    };
+  }
+  return next;
+}
+
+function findIssueInGrid(
+  grid: Record<IssueListFilter, Record<IssueStateFilter, IssueInfo[]>>,
+  number: number,
+): IssueInfo | undefined {
+  for (const f of ISSUE_FILTERS) {
+    const found =
+      grid[f].open.find((i) => i.number === number) ??
+      grid[f].closed.find((i) => i.number === number);
+    if (found !== undefined) return found;
+  }
+  return undefined;
+}
+
 /** Keyed by `${filter}:${state}`, so the open and closed reads never share a slot. */
 const inFlightIssues = new Map<string, Promise<void>>();
+let inFlightLabels: Promise<void> | null = null;
 
 export const useIssuesStore = create<IssuesState>((set, get) => ({
   issues: [],
@@ -1632,6 +1751,14 @@ export const useIssuesStore = create<IssuesState>((set, get) => ({
   state: 'open',
   loading: false,
   error: null,
+  commentDraft: {},
+  commentSending: new Set<number>(),
+  stateSending: new Set<number>(),
+  creating: false,
+  labels: [],
+  labelsLoadedAt: null,
+  labelsLoading: false,
+  issuesDisabled: false,
 
   select(filter, state = get().state) {
     set({
@@ -1661,6 +1788,10 @@ export const useIssuesStore = create<IssuesState>((set, get) => ({
     const promise = (async () => {
       try {
         const result = await bridge.request('github/issues', { owner, repo, filter, state });
+        if (!result || !Array.isArray(result.issues)) {
+          set({ loading: false });
+          return;
+        }
         set((s) => {
           const nextByFilter = {
             ...s.issuesByFilter,
@@ -1677,6 +1808,7 @@ export const useIssuesStore = create<IssuesState>((set, get) => ({
             loadedAt: nextLoadedAt,
             loading: false,
             error: null,
+            issuesDisabled: false,
             ...(stillSelected ? { issues: result.issues } : {}),
           };
         });
@@ -1685,7 +1817,12 @@ export const useIssuesStore = create<IssuesState>((set, get) => ({
           useNavStore.getState().setCount('issues', result.issues.length);
         }
       } catch (err) {
-        set({ loading: false, error: toErrorBody(err) });
+        const body = asIssueErrorBody(err);
+        set({
+          loading: false,
+          error: body,
+          ...(body.status === 410 ? { issuesDisabled: true } : {}),
+        });
       } finally {
         inFlightIssues.delete(key);
       }
@@ -1694,8 +1831,288 @@ export const useIssuesStore = create<IssuesState>((set, get) => ({
     return promise;
   },
 
+  setCommentDraft(number, draft) {
+    set((s) => ({
+      commentDraft: { ...s.commentDraft, [number]: draft },
+    }));
+  },
+
+  async comment(number) {
+    if (get().commentSending.has(number)) return false;
+    const draft = get().commentDraft[number] ?? '';
+    if (!canSubmitComment(draft)) return false;
+    const linkage = useGitHubStore.getState().linkage;
+    if (!linkage || !linkage.available || !linkage.owner || !linkage.repo) return false;
+    const { owner, repo } = linkage;
+
+    set((s) => ({ commentSending: new Set(s.commentSending).add(number) }));
+    try {
+      await bridge.request('github/commentIssue', {
+        owner,
+        repo,
+        number,
+        body: draft.trim(),
+        idempotencyKey: crypto.randomUUID(),
+      });
+      set((s) => {
+        const nextDraft = { ...s.commentDraft };
+        delete nextDraft[number];
+        const bump = (rows: readonly IssueInfo[]): IssueInfo[] =>
+          rows.map((item) => (item.number === number ? { ...item, comments: item.comments + 1 } : item));
+        const nextByFilter = emptyGrid();
+        for (const f of ISSUE_FILTERS) {
+          nextByFilter[f] = {
+            open: bump(s.issuesByFilter[f].open),
+            closed: bump(s.issuesByFilter[f].closed),
+          };
+        }
+        return {
+          commentDraft: nextDraft,
+          issuesByFilter: nextByFilter,
+          issues: bump(s.issues),
+        };
+      });
+      useOperationStore.getState().pushToast({
+        level: 'info',
+        message: t(activeLang()).issueWrite.commentPosted,
+      });
+      void get().load(get().filter, get().state, true);
+      return true;
+    } catch (err) {
+      toastIssueFailure(asIssueErrorBody(err), () => set({ issuesDisabled: true }));
+      return false;
+    } finally {
+      set((s) => ({ commentSending: without(s.commentSending, number) }));
+    }
+  },
+
+  async close(number) {
+    if (get().stateSending.has(number)) return false;
+    const linkage = useGitHubStore.getState().linkage;
+    if (!linkage || !linkage.available || !linkage.owner || !linkage.repo) return false;
+    const { owner, repo } = linkage;
+
+    const prevByFilter = get().issuesByFilter;
+    const prevIssues = get().issues;
+    const prevNavCount = useNavStore.getState().counts.issues ?? null;
+    const targetIssue = findIssueInGrid(prevByFilter, number);
+    const wasInAssignedOpen = prevByFilter.assigned.open.some((i) => i.number === number);
+
+    const optimisticByFilter = mutateGridState(prevByFilter, { number, state: 'closed' });
+    set((s) => ({
+      stateSending: new Set(s.stateSending).add(number),
+      issuesByFilter: optimisticByFilter,
+      issues: optimisticByFilter[s.filter][s.state],
+    }));
+    if (wasInAssignedOpen || get().loadedAt.assigned.open !== null) {
+      useNavStore.getState().setCount('issues', optimisticByFilter.assigned.open.length);
+    }
+
+    try {
+      await bridge.request('github/setIssueState', {
+        owner,
+        repo,
+        number,
+        state: 'closed',
+        idempotencyKey: crypto.randomUUID(),
+      });
+      const strings = t(activeLang()).issueWrite;
+      useOperationStore.getState().pushToast({
+        level: 'info',
+        message: strings.closedToast(String(number)),
+        ...(targetIssue !== undefined && targetIssue.title.length > 0
+          ? { detail: sanitizeGitText(targetIssue.title) }
+          : {}),
+        action: {
+          label: strings.undo,
+          run: () => {
+            void get().reopen(number);
+          },
+        },
+      });
+      void get().load(get().filter, 'open', true);
+      if (get().loadedAt[get().filter].closed !== null) {
+        void get().load(get().filter, 'closed', true);
+      }
+      return true;
+    } catch (err) {
+      set({
+        issuesByFilter: prevByFilter,
+        issues: prevIssues,
+      });
+      useNavStore.getState().setCount('issues', prevNavCount);
+      toastIssueFailure(asIssueErrorBody(err), () => set({ issuesDisabled: true }));
+      return false;
+    } finally {
+      set((s) => ({ stateSending: without(s.stateSending, number) }));
+    }
+  },
+
+  async reopen(number) {
+    if (get().stateSending.has(number)) return false;
+    const linkage = useGitHubStore.getState().linkage;
+    if (!linkage || !linkage.available || !linkage.owner || !linkage.repo) return false;
+    const { owner, repo } = linkage;
+
+    const prevByFilter = get().issuesByFilter;
+    const prevIssues = get().issues;
+    const prevNavCount = useNavStore.getState().counts.issues ?? null;
+    const wasInAssignedClosed = prevByFilter.assigned.closed.some((i) => i.number === number);
+
+    const optimisticByFilter = mutateGridState(prevByFilter, { number, state: 'open' });
+    set((s) => ({
+      stateSending: new Set(s.stateSending).add(number),
+      issuesByFilter: optimisticByFilter,
+      issues: optimisticByFilter[s.filter][s.state],
+    }));
+    if (wasInAssignedClosed || get().loadedAt.assigned.open !== null) {
+      useNavStore.getState().setCount('issues', optimisticByFilter.assigned.open.length);
+    }
+
+    try {
+      await bridge.request('github/setIssueState', {
+        owner,
+        repo,
+        number,
+        state: 'open',
+        idempotencyKey: crypto.randomUUID(),
+      });
+      useOperationStore.getState().pushToast({
+        level: 'info',
+        message: t(activeLang()).issueWrite.reopenedToast(String(number)),
+      });
+      void get().load(get().filter, 'open', true);
+      if (get().loadedAt[get().filter].closed !== null) {
+        void get().load(get().filter, 'closed', true);
+      }
+      return true;
+    } catch (err) {
+      set({
+        issuesByFilter: prevByFilter,
+        issues: prevIssues,
+      });
+      useNavStore.getState().setCount('issues', prevNavCount);
+      toastIssueFailure(asIssueErrorBody(err), () => set({ issuesDisabled: true }));
+      return false;
+    } finally {
+      set((s) => ({ stateSending: without(s.stateSending, number) }));
+    }
+  },
+
+  async create(form) {
+    if (get().creating) return null;
+    const title = form.title.trim();
+    const body = form.body;
+    const labels = form.labels;
+    if (!canCreateIssue({ title, body, labels })) return null;
+    const linkage = useGitHubStore.getState().linkage;
+    if (!linkage || !linkage.available || !linkage.owner || !linkage.repo) return null;
+    const { owner, repo } = linkage;
+
+    set({ creating: true });
+    try {
+      const created = await bridge.request('github/createIssue', {
+        owner,
+        repo,
+        title,
+        body,
+        labels,
+        idempotencyKey: crypto.randomUUID(),
+      });
+      const knownLabels = new Map(get().labels.map((l) => [l.name, l]));
+      const newIssue: IssueInfo = {
+        number: created.number,
+        title,
+        state: 'open',
+        stateReason: null,
+        url: created.htmlUrl,
+        author: useGitHubStore.getState().auth?.login ?? '',
+        assignees: [],
+        labels: labels.map((name) => knownLabels.get(name) ?? { name, colorKey: 'gray' }),
+        comments: 0,
+        bodyExcerpt: issueExcerpt(body),
+        updatedAt: new Date().toISOString(),
+        closedAt: null,
+      };
+      set((s) => {
+        const rest = s.issuesByFilter.created.open.filter((i) => i.number !== created.number);
+        const nextCreatedOpen = [newIssue, ...rest];
+        const nextByFilter = {
+          ...s.issuesByFilter,
+          created: { ...s.issuesByFilter.created, open: nextCreatedOpen },
+        };
+        return {
+          filter: 'created',
+          state: 'open',
+          issuesByFilter: nextByFilter,
+          issues: nextCreatedOpen,
+          error: null,
+        };
+      });
+      saveState({ issueFilter: 'created' });
+      await get().load('created', 'open', true);
+      set((s) => {
+        const currentOpen = s.issuesByFilter.created.open;
+        if (currentOpen.some((i) => i.number === created.number)) return {};
+        const withCreated = [newIssue, ...currentOpen];
+        return {
+          issuesByFilter: {
+            ...s.issuesByFilter,
+            created: { ...s.issuesByFilter.created, open: withCreated },
+          },
+          ...(s.filter === 'created' && s.state === 'open' ? { issues: withCreated } : {}),
+        };
+      });
+      useOperationStore.getState().pushToast({
+        level: 'info',
+        message: t(activeLang()).issueWrite.createdToast(String(created.number)),
+      });
+      return created;
+    } catch (err) {
+      toastIssueFailure(asIssueErrorBody(err), () => set({ issuesDisabled: true }));
+      return null;
+    } finally {
+      set({ creating: false });
+    }
+  },
+
+  async loadLabels(force = false) {
+    if (inFlightLabels !== null) return inFlightLabels;
+    const auth = useGitHubStore.getState().auth;
+    if (auth?.connected !== true) return;
+    const linkage = useGitHubStore.getState().linkage;
+    if (!linkage || !linkage.available || !linkage.owner || !linkage.repo) return;
+    const { owner, repo } = linkage;
+    const stamp = get().labelsLoadedAt;
+    if (!force && stamp !== null && Date.now() - stamp <= LABELS_CACHE_TTL_MS) return;
+
+    set({ labelsLoading: true });
+    const promise = (async () => {
+      try {
+        const result = await bridge.request('github/repoLabels', { owner, repo });
+        if (result && Array.isArray(result.labels)) {
+          set({
+            labels: result.labels,
+            labelsLoadedAt: Date.now(),
+            labelsLoading: false,
+          });
+          useGitHubStore.setState({ rateLimit: result.rateLimit });
+        } else {
+          set({ labelsLoading: false });
+        }
+      } catch {
+        set({ labelsLoading: false });
+      } finally {
+        inFlightLabels = null;
+      }
+    })();
+    inFlightLabels = promise;
+    return promise;
+  },
+
   reset() {
     inFlightIssues.clear();
+    inFlightLabels = null;
     set({
       issues: [],
       issuesByFilter: emptyGrid(),
@@ -1704,6 +2121,14 @@ export const useIssuesStore = create<IssuesState>((set, get) => ({
       state: 'open',
       loading: false,
       error: null,
+      commentDraft: {},
+      commentSending: new Set<number>(),
+      stateSending: new Set<number>(),
+      creating: false,
+      labels: [],
+      labelsLoadedAt: null,
+      labelsLoading: false,
+      issuesDisabled: false,
     });
     useNavStore.getState().setCount('issues', null);
   },
