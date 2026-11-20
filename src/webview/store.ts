@@ -12,6 +12,7 @@
 import { create } from 'zustand';
 import { BridgeRequestError, bridge, fetchContributorIdentity, fetchContributors, isBridgeError, loadState, mutation, saveState } from './bridge';
 import { unknownErrorBody } from '../errorBody';
+import { hostText } from '../hostText';
 import { amendBlockedReason, joinCommitMessage, linkageChangedRepo, sanitizeGitText } from './format';
 import { DEFAULT_ROUTE, resolveInitialRoute, sameRoute } from './route';
 import type { NavCounts } from './navCounts';
@@ -1678,8 +1679,8 @@ function toastIssueFailure(body: ErrorBody, markDisabled: () => void): void {
     return;
   }
   const isUntrustedHost =
-    body.message === 'The token is not sent to this host.' ||
-    body.message === 'Token tidak dikirim ke host ini.';
+    body.message === hostText('en').github.tokenNotTrusted ||
+    body.message === hostText('id').github.tokenNotTrusted;
   if (body.status === 403 && body.code === 'FORBIDDEN' && !isUntrustedHost) {
     useOperationStore.getState().pushToast({
       level: 'error',
@@ -1741,7 +1742,27 @@ function findIssueInGrid(
 
 /** Keyed by `${filter}:${state}`, so the open and closed reads never share a slot. */
 const inFlightIssues = new Map<string, Promise<void>>();
+const issueLoadGen = new Map<string, number>();
 let inFlightLabels: Promise<void> | null = null;
+
+function nextIssueGen(key: string): number {
+  const next = (issueLoadGen.get(key) ?? 0) + 1;
+  issueLoadGen.set(key, next);
+  return next;
+}
+
+/**
+ * Invalidate every in-flight issue read when a mutation alters local issue state
+ * so a pre-mutation fetch that resolves late cannot overwrite optimistic or
+ * post-mutation rows.
+ */
+function invalidateAllIssueGens(): void {
+  for (const f of ISSUE_FILTERS) {
+    nextIssueGen(`${f}:open`);
+    nextIssueGen(`${f}:closed`);
+  }
+  inFlightIssues.clear();
+}
 
 export const useIssuesStore = create<IssuesState>((set, get) => ({
   issues: [],
@@ -1771,8 +1792,10 @@ export const useIssuesStore = create<IssuesState>((set, get) => ({
 
   async load(filter, state, force = false) {
     const key = `${filter}:${state}`;
-    const inFlight = inFlightIssues.get(key);
-    if (inFlight !== undefined) return inFlight;
+    if (!force) {
+      const inFlight = inFlightIssues.get(key);
+      if (inFlight !== undefined) return inFlight;
+    }
     const auth = useGitHubStore.getState().auth;
     if (auth?.connected !== true) return;
     const linkage = useGitHubStore.getState().linkage;
@@ -1784,10 +1807,12 @@ export const useIssuesStore = create<IssuesState>((set, get) => ({
       get().select(filter, state);
       return;
     }
+    const gen = nextIssueGen(key);
     set({ loading: true });
     const promise = (async () => {
       try {
         const result = await bridge.request('github/issues', { owner, repo, filter, state });
+        if (issueLoadGen.get(key) !== gen) return;
         if (!result || !Array.isArray(result.issues)) {
           set({ loading: false });
           return;
@@ -1817,6 +1842,7 @@ export const useIssuesStore = create<IssuesState>((set, get) => ({
           useNavStore.getState().setCount('issues', result.issues.length);
         }
       } catch (err) {
+        if (issueLoadGen.get(key) !== gen) return;
         const body = asIssueErrorBody(err);
         set({
           loading: false,
@@ -1824,7 +1850,9 @@ export const useIssuesStore = create<IssuesState>((set, get) => ({
           ...(body.status === 410 ? { issuesDisabled: true } : {}),
         });
       } finally {
-        inFlightIssues.delete(key);
+        if (issueLoadGen.get(key) === gen) {
+          inFlightIssues.delete(key);
+        }
       }
     })();
     inFlightIssues.set(key, promise);
@@ -1854,6 +1882,7 @@ export const useIssuesStore = create<IssuesState>((set, get) => ({
         body: draft.trim(),
         idempotencyKey: crypto.randomUUID(),
       });
+      invalidateAllIssueGens();
       set((s) => {
         const nextDraft = { ...s.commentDraft };
         delete nextDraft[number];
@@ -1892,6 +1921,7 @@ export const useIssuesStore = create<IssuesState>((set, get) => ({
     if (!linkage || !linkage.available || !linkage.owner || !linkage.repo) return false;
     const { owner, repo } = linkage;
 
+    invalidateAllIssueGens();
     const prevByFilter = get().issuesByFilter;
     const prevIssues = get().issues;
     const prevNavCount = useNavStore.getState().counts.issues ?? null;
@@ -1936,6 +1966,7 @@ export const useIssuesStore = create<IssuesState>((set, get) => ({
       }
       return true;
     } catch (err) {
+      invalidateAllIssueGens();
       set({
         issuesByFilter: prevByFilter,
         issues: prevIssues,
@@ -1954,6 +1985,7 @@ export const useIssuesStore = create<IssuesState>((set, get) => ({
     if (!linkage || !linkage.available || !linkage.owner || !linkage.repo) return false;
     const { owner, repo } = linkage;
 
+    invalidateAllIssueGens();
     const prevByFilter = get().issuesByFilter;
     const prevIssues = get().issues;
     const prevNavCount = useNavStore.getState().counts.issues ?? null;
@@ -1987,6 +2019,7 @@ export const useIssuesStore = create<IssuesState>((set, get) => ({
       }
       return true;
     } catch (err) {
+      invalidateAllIssueGens();
       set({
         issuesByFilter: prevByFilter,
         issues: prevIssues,
@@ -2019,6 +2052,7 @@ export const useIssuesStore = create<IssuesState>((set, get) => ({
         labels,
         idempotencyKey: crypto.randomUUID(),
       });
+      invalidateAllIssueGens();
       const knownLabels = new Map(get().labels.map((l) => [l.name, l]));
       const newIssue: IssueInfo = {
         number: created.number,
@@ -2111,7 +2145,8 @@ export const useIssuesStore = create<IssuesState>((set, get) => ({
   },
 
   reset() {
-    inFlightIssues.clear();
+    invalidateAllIssueGens();
+    issueLoadGen.clear();
     inFlightLabels = null;
     set({
       issues: [],

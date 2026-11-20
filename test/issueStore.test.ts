@@ -530,3 +530,63 @@ test('P26: loadLabels caches labels and create posts new issue and shows it at t
     s.restore();
   }
 });
+
+test('P26: slow post-close refetch resolving after Undo reopen is dropped by generation guard', async () => {
+  resetAll();
+  const openList = [issue(97), issue(98)];
+  useIssuesStore.setState({
+    issues: openList,
+    issuesByFilter: {
+      assigned: { open: openList, closed: [] },
+      created: { open: [], closed: [] },
+      mentioned: { open: [], closed: [] },
+    },
+    loadedAt: {
+      assigned: { open: Date.now(), closed: null },
+      created: { open: null, closed: null },
+      mentioned: { open: null, closed: null },
+    },
+  });
+  useNavStore.getState().setCount('issues', 2);
+
+  const issueReads: Array<(v: unknown) => void> = [];
+  const s = stub((kind, payload) => {
+    if (kind === 'github/setIssueState') {
+      const p = payload as { state: 'open' | 'closed' };
+      return { number: 97, state: p.state };
+    }
+    if (kind === 'github/issues') {
+      return new Promise<unknown>((resolve) => {
+        issueReads.push(resolve);
+      });
+    }
+    return { issues: [], rateLimit: RATE };
+  });
+  try {
+    // 1. Close #97: starts post-close load (issueReads[0])
+    const closed = await useIssuesStore.getState().close(97);
+    assert.equal(closed, true);
+    assert.equal(issueReads.length, 1, 'post-close load is in flight');
+
+    // 2. User immediately clicks Undo while issueReads[0] is still in flight
+    const closeToast = useOperationStore.getState().toasts.at(-1);
+    closeToast?.action?.run();
+    await new Promise((r) => setTimeout(r, 10));
+    assert.equal(issueReads.length, 2, 'reopen starts a fresh forced load instead of joining stale in-flight load');
+
+    // 3. Post-reopen load resolves first with [97, 98], then stale post-close load resolves late with [98]
+    issueReads[1]?.({ issues: [issue(97), issue(98)], rateLimit: RATE });
+    await new Promise((r) => setTimeout(r, 10));
+    issueReads[0]?.({ issues: [issue(98)], rateLimit: RATE });
+    await new Promise((r) => setTimeout(r, 10));
+
+    assert.deepEqual(
+      useIssuesStore.getState().issuesByFilter.assigned.open.map((i) => i.number),
+      [97, 98],
+      'late post-close refetch was dropped and did not overwrite reopened #97',
+    );
+    assert.equal(useNavStore.getState().counts.issues, 2, 'nav badge kept at 2');
+  } finally {
+    s.restore();
+  }
+});
