@@ -167,7 +167,6 @@ export function ReviewDialog({
             <span className="gc-field__label">{strings.prMerge.reviewMessage}</span>
             <textarea
               value={body}
-              placeholder={strings.prMerge.replyPlaceholder}
               aria-describedby={noteId}
               onChange={(change) => setBody(change.target.value)}
             />

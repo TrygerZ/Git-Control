@@ -955,7 +955,6 @@ const id: Catalog = {
       unknown: 'GitHub masih menghitung status merge. Muat ulang sebentar lagi.',
       closed: 'Pull request ini sudah ditutup.',
     },
-    headMoved: 'Branch berubah sejak kamu membukanya. Muat ulang lalu coba lagi.',
     reviewButton: 'Tinjau perubahan',
     reviewTitle: (n: string) => `Review perubahan #${n}`,
     reviewRunsOnGitHub: 'Dikirim ke GitHub atas nama akunmu. Riwayat lokal tidak diubah.',

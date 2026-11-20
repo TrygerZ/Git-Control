@@ -967,7 +967,6 @@ const en = {
       unknown: 'GitHub is still computing mergeability. Refresh in a moment.',
       closed: 'This pull request is closed.',
     },
-    headMoved: 'The branch changed since you opened this. Refresh and try again.',
     reviewButton: 'Review changes',
     reviewTitle: (n: string) => `Review changes #${n}`,
     reviewRunsOnGitHub: 'Posted to GitHub under your account. Local history is not changed.',
