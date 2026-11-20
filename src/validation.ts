@@ -340,4 +340,58 @@ export function validateCommentBody(value: unknown, max = 65536): value is strin
   return !trimmed.includes('\u0000');
 }
 
+/**
+ * An issue number, used as the path segment of `/issues/{n}`. Same positive
+ * 32-bit integer bound as pull request numbers.
+ */
+export function validateIssueNumber(value: unknown): value is number {
+  return validatePullRequestNumber(value);
+}
+
+/**
+ * Defends against: an issue title that is blank, unbounded, or carries control
+ * characters (including newlines, which would break single-line headings).
+ */
+export function validateIssueTitle(value: unknown): value is string {
+  if (typeof value !== 'string') return false;
+  if (CONTROL_CHARS.test(value)) return false;
+  const trimmed = value.trim();
+  return trimmed.length >= 1 && trimmed.length <= 256;
+}
+
+/**
+ * Defends against: an oversized or NUL-containing issue description body.
+ * Unlike a comment, an issue description may be empty.
+ */
+export function validateIssueBody(value: unknown): value is string {
+  if (typeof value !== 'string') return false;
+  if (value.length > 65_536) return false;
+  return !value.includes('\u0000');
+}
+
+/**
+ * Defends against: an empty, oversized, or control-character-bearing label name.
+ */
+export function validateLabelName(value: unknown): value is string {
+  if (typeof value !== 'string') return false;
+  if (value.length > 50 || CONTROL_CHARS.test(value)) return false;
+  const trimmed = value.trim();
+  return trimmed.length >= 1 && trimmed.length <= 50;
+}
+
+/**
+ * Defends against: non-array label lists, duplicate label names, or more than
+ * 10 labels on a single issue write.
+ */
+export function validateLabelList(value: unknown): value is string[] {
+  if (!Array.isArray(value) || value.length > 10) return false;
+  const seen = new Set<string>();
+  for (const item of value) {
+    if (!validateLabelName(item)) return false;
+    if (seen.has(item)) return false;
+    seen.add(item);
+  }
+  return true;
+}
+
 /** Shared assertion primitives for callers that must preserve their own error type. */
