@@ -274,6 +274,16 @@ test('returns null on unreadable shapes, invalid types/booleans, anchors, block 
     null,
     'duplicate input name',
   );
+  assert.equal(
+    parseDispatchInputs('on:\n  workflow_dispatch:\n    inputs:\n      env:\n        type: choice\n        options: ["ok", "bad\\0opt"]\n'),
+    null,
+    'inline choice option with NUL fails validateInputValue',
+  );
+  assert.equal(
+    parseDispatchInputs(`on:\n  workflow_dispatch:\n    inputs:\n      env:\n        type: choice\n        options:\n          - "${'x'.repeat(1025)}"\n`),
+    null,
+    'block choice option exceeding 1024 chars fails validateInputValue',
+  );
 });
 
 // ------------------------------------------------------------ workflowWebUrl

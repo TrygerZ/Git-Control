@@ -834,3 +834,26 @@ test('P27: defaultInputValues and missingRequired handle string, boolean, and ch
   assert.deepEqual(missingRequired(inputs, { ...defaults, version: '  ' }), ['version']);
   assert.deepEqual(missingRequired(inputs, { ...defaults, version: '2.8.0' }), []);
 });
+
+test('P27 QA: dispatchCommand strips bidi and control characters (SEC-007)', () => {
+  const cmd = dispatchCommand('acme', 'app', 'rel\u202Eease.yml', 'feat\u202Ex', { msg: 'ok\u202Ebad' });
+  assert.ok(!cmd.includes('\u202E'), 'command preview must strip RLO bidi overrides');
+});
+
+test('P27 QA: actionsRuns refresh flag validates and bypasses 60s host TTL cache', async () => {
+  assert.equal(runsFails({ owner: 'o', repo: 'r', refresh: true } as Parameters<typeof validateActionsRunsPayload>[0]), null);
+  assert.equal(
+    runsFails({ owner: 'o', repo: 'r', refresh: 'yes' as unknown as boolean } as Parameters<typeof validateActionsRunsPayload>[0]),
+    'refresh',
+  );
+
+  const h = fakeClient([
+    response(200, { workflow_runs: [runBody({ id: 1 })] }),
+    response(200, { workflow_runs: [runBody({ id: 2 })] }),
+  ]);
+  const first = await h.gh.workflowRuns('o', 'r', {});
+  assert.equal(first.data[0]?.id, 1);
+  const refreshed = await h.gh.workflowRuns('o', 'r', { refresh: true });
+  assert.equal(refreshed.cached, false);
+  assert.equal(refreshed.data[0]?.id, 2);
+});

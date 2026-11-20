@@ -217,7 +217,7 @@ function parseInlineOptions(raw: string): string[] | null {
     const ch = trimmed[i]!;
     if (ch === "'" || ch === '"') {
       const token = parseQuotedToken(trimmed, i, ch);
-      if (!token) return null;
+      if (!token || !validateInputValue(token.value)) return null;
       items.push(token.value);
       i = token.nextIndex;
       skipWs();
@@ -235,7 +235,7 @@ function parseInlineOptions(raw: string): string[] | null {
         i += 1;
       }
       const unquoted = trimmed.slice(itemStart, i).trimEnd();
-      if (unquoted.length === 0) return null;
+      if (unquoted.length === 0 || !validateInputValue(unquoted)) return null;
       items.push(unquoted);
     }
 
@@ -274,6 +274,7 @@ function parseBlockOptions(lines: readonly Line[], start: number, end: number): 
     const scalar = parseScalar(line.content.slice(2));
     if (!scalar) return null;
     if (!scalar.quoted && scalar.value.length === 0) return null;
+    if (!validateInputValue(scalar.value)) return null;
     options.push(scalar.value);
   }
   return options;

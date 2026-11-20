@@ -593,6 +593,9 @@ test('P27: rerunFailed deduplicates concurrent clicks, clears run/job caches, pu
     assert.equal(useActionsStore.getState().jobsByRun[482], undefined);
     assert.equal(useActionsStore.getState().jobsError.has(482), false);
     assert.ok(useActionsStore.getState().pollBurstNonce >= 1);
+    assert.equal(useActionsStore.getState().pollBurstActive, true);
+    const runsCall = s.calls.find((c) => c.kind === 'github/actionsRuns');
+    assert.equal((runsCall?.payload as { refresh?: boolean } | undefined)?.refresh, true, 'force load forwards refresh: true');
 
     const toast = useOperationStore.getState().toasts.at(-1);
     assert.equal(toast?.message, 'Re-running failed jobs');
@@ -711,9 +714,11 @@ test('P27: dispatch omits empty inputs, tracks pendingStart until matched, suppo
     assert.ok(useActionsStore.getState().pendingStart !== null, 'still waiting after 1st empty poll');
     useActionsStore.getState().finishPollBurst();
     assert.equal(useActionsStore.getState().pendingStart?.timedOut, true);
+    assert.equal(useActionsStore.getState().pollBurstActive, false, 'finishPollBurst clears pollBurstActive');
 
     await useActionsStore.getState().load({ force: true });
     assert.equal(useActionsStore.getState().pendingStart, null, 'cleared once matching run lands');
+    assert.equal(useActionsStore.getState().pollBurstActive, false);
 
     const toast = useOperationStore.getState().toasts.at(-1);
     assert.equal(toast?.message, 'Dispatched CI on main');
@@ -722,7 +727,49 @@ test('P27: dispatch omits empty inputs, tracks pendingStart until matched, suppo
     assert.deepEqual(useActionsStore.getState().dispatchInputs, {});
     assert.equal(useActionsStore.getState().pendingStart, null);
     assert.equal(useActionsStore.getState().pollBurstNonce, 0);
+    assert.equal(useActionsStore.getState().pollBurstActive, false);
   } finally {
+    s.restore();
+  }
+});
+
+test('P27 QA: overlapping loadDispatchInputs keep loading true until latest finishes and store fallback on error', async () => {
+  resetAll();
+  let releaseFirst: () => void = () => {};
+  const firstGate = new Promise<void>((r) => { releaseFirst = r; });
+  let releaseSecond: () => void = () => {};
+  const secondGate = new Promise<void>((r) => { releaseSecond = r; });
+  let step = 0;
+
+  const s = stub(async (kind) => {
+    if (kind !== 'github/workflowInputs') return {};
+    step += 1;
+    if (step === 1) {
+      await firstGate;
+      throw new Error('network failed');
+    }
+    await secondGate;
+    return { inputs: [], parsed: true, webUrl: 'https://github.com/o/r/actions/workflows/ci.yml', rateLimit: RATE };
+  });
+
+  try {
+    const p1 = useActionsStore.getState().loadDispatchInputs(12, 'branch-a');
+    const p2 = useActionsStore.getState().loadDispatchInputs(12, 'branch-b');
+    releaseFirst();
+    await p1;
+    assert.equal(useActionsStore.getState().dispatchInputsLoading, true, 'must stay loading while p2 is in flight');
+    assert.deepEqual(useActionsStore.getState().dispatchInputs['12:branch-a'], {
+      inputs: [],
+      parsed: false,
+      webUrl: null,
+    });
+    releaseSecond();
+    await p2;
+    assert.equal(useActionsStore.getState().dispatchInputsLoading, false);
+    assert.equal(useActionsStore.getState().dispatchInputs['12:branch-b']?.parsed, true);
+  } finally {
+    releaseFirst();
+    releaseSecond();
     s.restore();
   }
 });

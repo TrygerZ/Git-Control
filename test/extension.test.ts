@@ -92,4 +92,9 @@ test('P27: bridgeHost registers Actions write host methods and never logs dispat
   const dwBody = source.slice(dwStart, dwStart + 1000);
   assert.doesNotMatch(dwBody, /payload\.inputs[^\n]*logger|logger\.[^\n]*inputs/i, 'inputs must never reach logs');
   assert.match(dwBody, /dispatchWorkflow\(/);
+
+  const arStart = source.indexOf('private async githubActionsRuns(');
+  assert.ok(arStart > 0);
+  const arBody = source.slice(arStart, arStart + 600);
+  assert.match(arBody, /refresh:\s*payload\.refresh/);
 });

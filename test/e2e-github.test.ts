@@ -521,6 +521,7 @@ test('P27: Actions workflowInputs -> dispatch -> 2-poll match and rerunFailed re
           ...(p.branch === undefined ? {} : { branch: p.branch }),
           ...(p.workflowId === undefined ? {} : { workflowId: p.workflowId }),
           ...(p.perPage === undefined ? {} : { perPage: p.perPage }),
+          ...(p.refresh === undefined ? {} : { refresh: p.refresh }),
         });
         return { runs: res.data, workflows: [], rateLimit: gh.rateLimit(res.cached) };
       },
@@ -580,8 +581,8 @@ test('P27: Actions workflowInputs -> dispatch -> 2-poll match and rerunFailed re
   const postDispatch = calls.find((c) => c.method === 'POST' && c.url.endsWith('/dispatches'));
   assert.equal(postDispatch?.body, JSON.stringify({ ref: 'main', inputs: { version: '2.8.0', target: 'prod' } }));
 
-  // 3. Two polls: first poll empty, second poll (after TTL window) finds new workflow_dispatch run
-  const poll1 = await bridge.send('github/actionsRuns', { owner: 'o', repo: 'r' });
+  // 3. Two polls: first poll empty, second poll at +5s with refresh:true bypasses 60s cache and finds new workflow_dispatch run
+  const poll1 = await bridge.send('github/actionsRuns', { owner: 'o', repo: 'r', refresh: true });
   assert.equal(poll1.ok, true);
   if (!poll1.ok) return;
   assert.equal(
@@ -589,8 +590,8 @@ test('P27: Actions workflowInputs -> dispatch -> 2-poll match and rerunFailed re
     null,
   );
 
-  clock += 65_000;
-  const poll2 = await bridge.send('github/actionsRuns', { owner: 'o', repo: 'r' });
+  clock += 5_000;
+  const poll2 = await bridge.send('github/actionsRuns', { owner: 'o', repo: 'r', refresh: true });
   assert.equal(poll2.ok, true);
   if (!poll2.ok) return;
   const matched = matchDispatchedRun((poll2.data as ActionsRunsResult).runs, {

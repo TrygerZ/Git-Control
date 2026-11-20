@@ -78,6 +78,7 @@ test('annotations remain absent while P27 re-run and dispatch controls are wired
   assert.match(view, /nextBurstDelay/);
   assert.match(view, /finishPollBurst/);
   assert.match(view, /gc-actions__starting/);
+  assert.match(view, /pollBurstActive/, 'burst effect gated on pollBurstActive rather than sticky nonce > 0');
 
   const dialog = read('src/webview/RunWorkflowDialog.tsx');
   assert.doesNotMatch(dialog, /dangerouslySetInnerHTML|innerHTML|href=/);
@@ -93,6 +94,8 @@ test('annotations remain absent while P27 re-run and dispatch controls are wired
   assert.match(dialog, /\bmissingRequired\b/);
   assert.match(dialog, /actionsWrite\.openOnGitHub/);
   assert.match(dialog, /\bopenUrl\b/);
+  assert.match(dialog, /setTimeout/, 'debounces branch input YAML reads');
+  assert.doesNotMatch(dialog, /const canSubmit\s*=[\s\S]*?missing\.length === 0/, 'submit stays clickable so required-field alert is reachable');
 });
 
 test('the job log renders text nodes only and reaches the host through openUrl', () => {
