@@ -21,6 +21,11 @@ import {
   validateReviewEvent,
   validateCommitTitle,
   validateCommentBody,
+  validateIssueNumber,
+  validateIssueTitle,
+  validateIssueBody,
+  validateLabelName,
+  validateLabelList,
 } from '../src/validation';
 
 test('PRD mandated self-check asserts', () => {
@@ -412,4 +417,77 @@ test('validateCommentBody requires text and bounds it', () => {
   // A caller with a tighter budget passes it in rather than re-implementing the rule.
   assert.equal(validateCommentBody('a'.repeat(11), 10), false);
   assert.equal(validateCommentBody('a'.repeat(10), 10), true);
+});
+
+// ------------------------------------------------------- issue writes (P26)
+
+test('validateIssueNumber accepts positive 32-bit integers and rejects non-positive or non-integer values', () => {
+  assert.equal(validateIssueNumber(1), true);
+  assert.equal(validateIssueNumber(97), true);
+  assert.equal(validateIssueNumber(2_147_483_647), true);
+  for (const value of [0, -1, 1.5, 2_147_483_648, Number.NaN, Number.POSITIVE_INFINITY, '97', null, undefined, {}, []]) {
+    assert.equal(validateIssueNumber(value), false, String(value));
+  }
+});
+
+test('validateIssueTitle accepts 1..256 trimmed characters without control chars', () => {
+  assert.equal(validateIssueTitle('Crash on startup'), true);
+  assert.equal(validateIssueTitle('  trimmed title  '), true);
+  assert.equal(validateIssueTitle('a'.repeat(256)), true, '256 chars');
+  assert.equal(validateIssueTitle(`  ${'a'.repeat(256)}  `), true, '256 chars after trim');
+
+  assert.equal(validateIssueTitle(''), false, 'empty');
+  assert.equal(validateIssueTitle('   '), false, 'whitespace');
+  assert.equal(validateIssueTitle('a'.repeat(257)), false, '257 chars');
+  assert.equal(validateIssueTitle('bad\nnewline'), false, 'newline control char');
+  assert.equal(validateIssueTitle('bad\u0000nul'), false, 'NUL control char');
+  assert.equal(validateIssueTitle('bad\u0007bell'), false, 'BEL control char');
+  assert.equal(validateIssueTitle('bad\u007fdel'), false, 'DEL control char');
+  for (const value of [null, undefined, 42, {}, []]) {
+    assert.equal(validateIssueTitle(value), false, String(value));
+  }
+});
+
+test('validateIssueBody accepts 0..65536 characters without NUL', () => {
+  assert.equal(validateIssueBody(''), true, 'empty description is allowed');
+  assert.equal(validateIssueBody('Multi-line\ndescription\twith tabs'), true);
+  assert.equal(validateIssueBody('a'.repeat(65_536)), true, '65536 chars');
+  assert.equal(validateIssueBody('a'.repeat(65_537)), false, '65537 chars');
+  assert.equal(validateIssueBody('has\u0000nul'), false, 'NUL');
+  for (const value of [null, undefined, 42, {}, []]) {
+    assert.equal(validateIssueBody(value), false, String(value));
+  }
+});
+
+test('validateLabelName accepts 1..50 non-control characters and validateLabelList caps unique items at 10', () => {
+  assert.equal(validateLabelName('bug'), true);
+  assert.equal(validateLabelName('good first issue'), true);
+  assert.equal(validateLabelName('a'.repeat(50)), true, '50 chars');
+  assert.equal(validateLabelName(''), false, 'empty');
+  assert.equal(validateLabelName('   '), false, 'whitespace only');
+  assert.equal(validateLabelName('a'.repeat(51)), false, '51 chars');
+  assert.equal(validateLabelName('bug\n'), false, 'control char');
+  assert.equal(validateLabelName('bug\u0000'), false, 'NUL');
+  for (const value of [null, undefined, 1, {}, []]) {
+    assert.equal(validateLabelName(value), false, String(value));
+  }
+
+  assert.equal(validateLabelList([]), true, 'empty list');
+  assert.equal(validateLabelList(['bug', 'enhancement']), true);
+  assert.equal(
+    validateLabelList(Array.from({ length: 10 }, (_, i) => `label-${i}`)),
+    true,
+    '10 unique items',
+  );
+  assert.equal(
+    validateLabelList(Array.from({ length: 11 }, (_, i) => `label-${i}`)),
+    false,
+    '11 items exceeds cap',
+  );
+  assert.equal(validateLabelList(['bug', 'bug']), false, 'duplicates rejected');
+  assert.equal(validateLabelList(['bug', '']), false, 'invalid entry rejected');
+  assert.equal(validateLabelList(['bug', 'a'.repeat(51)]), false, 'oversized entry rejected');
+  for (const value of [null, undefined, 'bug', 1, {}]) {
+    assert.equal(validateLabelList(value), false, String(value));
+  }
 });

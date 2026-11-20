@@ -25,9 +25,11 @@ import {
   sanitizeGitText,
 } from './format';
 import { githubGate, isStale, type GateBanner } from './githubGate';
-import { filterIssues, labelOptions, matchesText } from './issueFilters';
+import { suggestBranchName } from './issueBranch';
+import { canSubmitComment, filterIssues, labelOptions, matchesText } from './issueFilters';
 import { issueExcerpt } from './issueText';
 import { nextIndex } from './listNav';
+import { NewIssueDialog } from './NewIssueDialog';
 import { badgeCount } from './prFilters';
 import { StartWorkDialog } from './StartWorkDialog';
 import {
@@ -75,8 +77,17 @@ export function IssuesView(): JSX.Element {
   const issuesLoading = useIssuesStore((s) => s.loading);
   const issuesError = useIssuesStore((s) => s.error);
   const load = useIssuesStore((s) => s.load);
+  const commentDraft = useIssuesStore((s) => s.commentDraft);
+  const setCommentDraft = useIssuesStore((s) => s.setCommentDraft);
+  const commentIssue = useIssuesStore((s) => s.comment);
+  const commentSending = useIssuesStore((s) => s.commentSending);
+  const closeIssue = useIssuesStore((s) => s.close);
+  const reopenIssue = useIssuesStore((s) => s.reopen);
+  const stateSending = useIssuesStore((s) => s.stateSending);
+  const issuesDisabled = useIssuesStore((s) => s.issuesDisabled);
 
   const route = useRouteStore((s) => s.route);
+  const pendingFocus = useRouteStore((s) => s.pendingFocus);
 
   const status = useRepoStore((s) => s.status);
   const graph = useRepoStore((s) => s.graph);
@@ -84,6 +95,10 @@ export function IssuesView(): JSX.Element {
   const opState = useOperationStore((s) => s.state);
 
   const [startWorkFor, setStartWorkFor] = useState<IssueInfo | null>(null);
+  const [newIssueOpen, setNewIssueOpen] = useState(false);
+  const [openComments, setOpenComments] = useState<ReadonlySet<number>>(
+    () => new Set<number>(),
+  );
 
   const [query, setQuery] = useState(() => loadState().issueQuery);
   const [labelFilter, setLabelFilter] = useState<string | null>(() => loadState().issueLabel);
@@ -105,11 +120,26 @@ export function IssuesView(): JSX.Element {
   const rowRefs = useRef<Array<HTMLButtonElement | null>>([]);
 
   const needsTick = rateLimit !== null && rateLimit.remaining === 0 && rateLimit.resetAt !== null;
+  const rateLimited = rateLimit !== null && rateLimit.remaining === 0;
   useEffect(() => {
     if (!needsTick) return undefined;
     const timer = setTimeout(() => setNow(Date.now()), TICK_MS);
     return () => clearTimeout(timer);
   }, [needsTick, now]);
+
+  useEffect(() => {
+    if (pendingFocus !== 'new-issue') return;
+    useRouteStore.getState().takeFocus();
+    if (
+      auth?.connected === true &&
+      !issuesDisabled &&
+      !rateLimited &&
+      linkage?.owner != null &&
+      linkage.repo != null
+    ) {
+      setNewIssueOpen(true);
+    }
+  }, [pendingFocus, auth?.connected, issuesDisabled, rateLimited, linkage]);
 
   useEffect(() => {
     if (
@@ -279,6 +309,23 @@ export function IssuesView(): JSX.Element {
       const next = new Set(prev);
       if (next.has(num)) next.delete(num);
       else next.add(num);
+      return next;
+    });
+  };
+
+  const toggleCommentBox = (num: number): void => {
+    setOpenComments((prev) => {
+      const next = new Set(prev);
+      if (next.has(num)) next.delete(num);
+      else next.add(num);
+      return next;
+    });
+  };
+
+  const closeCommentBox = (num: number): void => {
+    setOpenComments((prev) => {
+      const next = new Set(prev);
+      next.delete(num);
       return next;
     });
   };
@@ -525,6 +572,19 @@ export function IssuesView(): JSX.Element {
                   </div>
                 )}
               </div>
+              {!issuesDisabled && linkage?.owner != null && linkage.repo != null && (
+                <button
+                  type="button"
+                  className="gc-button gc-button--primary gc-issues__new-btn"
+                  disabled={rateLimited}
+                  title={rateLimited ? strings.prs.rateLimitedTitle : strings.issueWrite.newIssue}
+                  aria-label={strings.issueWrite.newIssue}
+                  onClick={() => setNewIssueOpen(true)}
+                >
+                  <Icon name="add" />
+                  <span>{strings.issueWrite.newIssue}</span>
+                </button>
+              )}
             </div>
           </div>
 
@@ -613,7 +673,7 @@ export function IssuesView(): JSX.Element {
                           <span className="gc-section__name">{title}</span>
                         </button>
                       </h3>
-                      {group === 'active' || loadedAt[filter].closed !== null ? (
+                      {group === 'active' || loadedAt[filter].closed !== null || rows.length > 0 ? (
                         <span className="gc-section__count">{formatCount(rows.length, language)}</span>
                       ) : null}
                     </div>
@@ -622,14 +682,24 @@ export function IssuesView(): JSX.Element {
                         {rows.map((issue) => {
                           const index = rowIndex.get(issue.number) ?? 0;
                           const isExpanded = expandedIssues.has(issue.number);
+                          const isCommentOpen = openComments.has(issue.number);
                           const previewId = `gc-issue-preview-${issue.number}`;
                           const startWorkReasonId = `gc-issue-start-work-reason-${issue.number}`;
+                          const commentLimitId = `gc-issue-comment-limit-${issue.number}`;
                           const title = sanitizeGitText(issue.title);
                           const author = sanitizeGitText(issue.author);
                           const labelNames = issue.labels.map((l) => sanitizeGitText(l.name)).join(', ');
                           const labelsPart = labelNames.length > 0 ? strings.issues.labelsJoin(labelNames) : '';
                           const rowName = strings.issues.rowAria(String(issue.number), title, labelsPart);
                           const excerpt = sanitizeGitText(issueExcerpt(issue.bodyExcerpt));
+                          const branchHint = suggestBranchName({
+                            number: issue.number,
+                            title: issue.title,
+                            labels: issue.labels.map((l) => l.name),
+                          });
+                          const draft = commentDraft[issue.number] ?? '';
+                          const isCommentSending = commentSending.has(issue.number);
+                          const isStateSending = stateSending.has(issue.number);
 
                           return (
                             <li key={issue.number} className="gc-issues__row">
@@ -708,31 +778,85 @@ export function IssuesView(): JSX.Element {
                                   {excerpt.length > 0 && (
                                     <p className="gc-issues__excerpt">{excerpt}</p>
                                   )}
+                                  {issue.state === 'open' && (
+                                    <code className="gc-issues__branch-hint">{branchHint}</code>
+                                  )}
                                   <div className="gc-issues__preview-actions">
-                                    <button
-                                      type="button"
-                                      className="gc-button gc-button--action"
-                                      aria-label={strings.startWork.buttonAria(String(issue.number))}
-                                      // Focusable while blocked so the reason is reachable:
-                                      // a `disabled` button announces nothing.
-                                      {...(startWorkBlocker === null
-                                        ? {}
-                                        : {
-                                            'aria-disabled': true,
-                                            'aria-describedby': startWorkReasonId,
-                                            title: startWorkBlocker,
-                                          })}
-                                      onClick={() => {
-                                        if (startWorkBlocker === null) setStartWorkFor(issue);
-                                      }}
-                                    >
-                                      <Icon name="git-branch" />
-                                      {strings.startWork.button}
-                                    </button>
-                                    {startWorkBlocker !== null && (
-                                      <span className="gc-visually-hidden" id={startWorkReasonId}>
-                                        {startWorkBlocker}
-                                      </span>
+                                    {issue.state === 'open' && (
+                                      <>
+                                        <button
+                                          type="button"
+                                          className="gc-button gc-button--action"
+                                          aria-label={strings.startWork.buttonAria(String(issue.number))}
+                                          // Focusable while blocked so the reason is reachable:
+                                          // a `disabled` button announces nothing.
+                                          {...(startWorkBlocker === null
+                                            ? {}
+                                            : {
+                                                'aria-disabled': true,
+                                                'aria-describedby': startWorkReasonId,
+                                                title: startWorkBlocker,
+                                              })}
+                                          onClick={() => {
+                                            if (startWorkBlocker === null) setStartWorkFor(issue);
+                                          }}
+                                        >
+                                          <Icon name="git-branch" />
+                                          {strings.startWork.button}
+                                        </button>
+                                        {startWorkBlocker !== null && (
+                                          <span className="gc-visually-hidden" id={startWorkReasonId}>
+                                            {startWorkBlocker}
+                                          </span>
+                                        )}
+                                      </>
+                                    )}
+                                    {!issuesDisabled && (
+                                      <button
+                                        type="button"
+                                        className="gc-button gc-button--quiet"
+                                        aria-expanded={isCommentOpen}
+                                        disabled={rateLimited}
+                                        title={rateLimited ? strings.prs.rateLimitedTitle : undefined}
+                                        onClick={() => toggleCommentBox(issue.number)}
+                                      >
+                                        {strings.issueWrite.commentSubmit}
+                                      </button>
+                                    )}
+                                    {!issuesDisabled && issue.state === 'open' && (
+                                      <button
+                                        type="button"
+                                        className="gc-button gc-button--quiet"
+                                        disabled={isStateSending || rateLimited}
+                                        title={rateLimited ? strings.prs.rateLimitedTitle : undefined}
+                                        onClick={() => {
+                                          closeCommentBox(issue.number);
+                                          const hadClosed = expandedGroups.has('closed');
+                                          setExpandedGroups((prev) => new Set(prev).add('closed'));
+                                          void closeIssue(issue.number).then((ok) => {
+                                            if (!ok && !hadClosed) {
+                                              setExpandedGroups((prev) => {
+                                                const next = new Set(prev);
+                                                next.delete('closed');
+                                                return next;
+                                              });
+                                            }
+                                          });
+                                        }}
+                                      >
+                                        {strings.issueWrite.closeIssue}
+                                      </button>
+                                    )}
+                                    {!issuesDisabled && issue.state === 'closed' && (
+                                      <button
+                                        type="button"
+                                        className="gc-button gc-button--quiet"
+                                        disabled={isStateSending || rateLimited}
+                                        title={rateLimited ? strings.prs.rateLimitedTitle : undefined}
+                                        onClick={() => void reopenIssue(issue.number)}
+                                      >
+                                        {strings.issueWrite.reopenIssue}
+                                      </button>
                                     )}
                                     <button
                                       type="button"
@@ -742,6 +866,54 @@ export function IssuesView(): JSX.Element {
                                       {strings.issues.openOnGitHub}
                                     </button>
                                   </div>
+
+                                  {!issuesDisabled && isCommentOpen && (
+                                    <div className="gc-issues__comment-box">
+                                      <textarea
+                                        className="gc-issues__comment-input"
+                                        rows={3}
+                                        maxLength={65536}
+                                        value={draft}
+                                        disabled={isCommentSending || rateLimited}
+                                        placeholder={strings.issueWrite.commentPlaceholder}
+                                        aria-label={strings.issueWrite.commentPlaceholder}
+                                        aria-describedby={commentLimitId}
+                                        onChange={(event) =>
+                                          setCommentDraft(issue.number, event.target.value)
+                                        }
+                                      />
+                                      <div className="gc-issues__comment-footer">
+                                        <span className="gc-help-text" id={commentLimitId}>
+                                          {formatCount(draft.length, language)} / {formatCount(65536, language)}
+                                        </span>
+                                        <div className="gc-issues__comment-actions">
+                                          <button
+                                            type="button"
+                                            className="gc-button gc-button--quiet"
+                                            disabled={isCommentSending}
+                                            onClick={() => closeCommentBox(issue.number)}
+                                          >
+                                            {strings.issueWrite.cancel}
+                                          </button>
+                                          <button
+                                            type="button"
+                                            className="gc-button gc-button--primary"
+                                            disabled={
+                                              !canSubmitComment(draft) || isCommentSending || rateLimited
+                                            }
+                                            title={rateLimited ? strings.prs.rateLimitedTitle : undefined}
+                                            onClick={() => {
+                                              void commentIssue(issue.number).then((ok) => {
+                                                if (ok) closeCommentBox(issue.number);
+                                              });
+                                            }}
+                                          >
+                                            {strings.issueWrite.commentSubmit}
+                                          </button>
+                                        </div>
+                                      </div>
+                                    </div>
+                                  )}
                                 </div>
                               )}
                             </li>
@@ -773,6 +945,19 @@ export function IssuesView(): JSX.Element {
           onDone={() => setStartWorkFor(null)}
         />
       )}
+
+      {newIssueOpen &&
+        auth?.connected === true &&
+        !issuesDisabled &&
+        linkage?.owner != null &&
+        linkage.repo != null && (
+          <NewIssueDialog
+            owner={linkage.owner}
+            repo={linkage.repo}
+            onCancel={() => setNewIssueOpen(false)}
+            onCreated={() => setNewIssueOpen(false)}
+          />
+        )}
 
       <footer className="gc-issues__footer">
         <span>

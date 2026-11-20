@@ -877,6 +877,33 @@ export interface IssuesResult {
   rateLimit: GitHubRateLimit;
 }
 
+export interface CommentIssuePayload extends GitHubMutationMeta {
+  owner: string;
+  repo: string;
+  number: number;
+  body: string;
+}
+
+export interface SetIssueStatePayload extends GitHubMutationMeta {
+  owner: string;
+  repo: string;
+  number: number;
+  state: 'open' | 'closed';
+}
+
+export interface CreateIssuePayload extends GitHubMutationMeta {
+  owner: string;
+  repo: string;
+  title: string;
+  body: string;
+  labels: string[];
+}
+
+export interface RepoLabelsPayload {
+  owner: string;
+  repo: string;
+}
+
 // ------------------------------------------------------------ actions (P13)
 
 /**
@@ -1304,6 +1331,26 @@ export interface RequestMap {
   'github/submitReview': { payload: SubmitReviewPayload; response: { reviewId: number } };
   /** Reply inside an existing review thread. Additive, so no confirmation. */
   'github/replyReviewComment': { payload: ReplyReviewPayload; response: { commentId: number } };
+  /** Comment on an issue. Additive, so no confirmation. */
+  'github/commentIssue': {
+    payload: CommentIssuePayload;
+    response: { commentId: number; htmlUrl: string };
+  };
+  /** Close an issue as completed or reopen it. No confirmation: Undo in the toast reverses a close. */
+  'github/setIssueState': {
+    payload: SetIssueStatePayload;
+    response: { number: number; state: 'open' | 'closed' };
+  };
+  /** Create a new issue with title, description, and existing labels. */
+  'github/createIssue': {
+    payload: CreateIssuePayload;
+    response: { number: number; htmlUrl: string };
+  };
+  /** Read-only repository label catalog for the New issue dialog. */
+  'github/repoLabels': {
+    payload: RepoLabelsPayload;
+    response: { labels: IssueLabel[]; rateLimit: GitHubRateLimit };
+  };
   'settings/get': { payload: SettingsGetPayload; response: SettingsSnapshot };
   'settings/set': { payload: SettingsSetPayload; response: SettingsSnapshot };
   /**
@@ -1428,7 +1475,7 @@ export type Route =
   | { id: 'prs' | 'issues' | 'actions' };
 
 /** Which control a navigated view should focus. Closed set, validated at the boundary. */
-export type FocusTarget = 'publish' | 'push' | 'commit' | 'create-pr' | 'new-branch' | 'resolve';
+export type FocusTarget = 'publish' | 'push' | 'commit' | 'create-pr' | 'new-branch' | 'new-issue' | 'resolve';
 
 export interface NavigateEvent {
   route: Route;

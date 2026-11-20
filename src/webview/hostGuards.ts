@@ -165,6 +165,7 @@ export function validateHostEvent(raw: unknown): HostEvent | null {
         rawFocus === 'commit' ||
         rawFocus === 'create-pr' ||
         rawFocus === 'new-branch' ||
+        rawFocus === 'new-issue' ||
         rawFocus === 'resolve'
           ? (rawFocus as FocusTarget)
           : undefined;

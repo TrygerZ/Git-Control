@@ -150,3 +150,54 @@ test('NavStrip reads every store hook before its early return', () => {
   const after = src.slice(earlyReturn);
   assert.doesNotMatch(after, /useIssuesStore\(|useNavStore\(|useChangesStore\(|useGitHubStore\(/, 'no hook below the return');
 });
+
+// ------------------------------------------------------ write actions (P26)
+
+test('P26: IssuesView wires Comment, Close, Reopen, inline comment box, and NewIssueDialog', () => {
+  const src = read('src/webview/IssuesView.tsx');
+  for (const helper of ['canSubmitComment', 'NewIssueDialog', 'suggestBranchName']) {
+    assert.match(src, new RegExp(`\\b${helper}\\b`), helper);
+  }
+  assert.match(src, /gc-button gc-button--primary gc-issues__new-btn/);
+  assert.doesNotMatch(src, /\bgc-btn\b/, 'never uses non-existent gc-btn class');
+  assert.match(src, /strings\.issueWrite\.commentPlaceholder/);
+  assert.match(src, /strings\.issueWrite\.commentSubmit/);
+  assert.match(src, /strings\.issueWrite\.closeIssue/);
+  assert.match(src, /strings\.issueWrite\.reopenIssue/);
+  assert.match(src, /strings\.issueWrite\.newIssue/);
+  assert.match(src, /aria-describedby=/, 'comment textarea describes its character limit');
+  assert.match(src, /pendingFocus !== 'new-issue'/, 'consumes the header quick-create focus target');
+  assert.match(src, /auth\?\.connected === true[\s\S]*?!issuesDisabled/, 'new-issue dialog requires connected auth and enabled issues');
+  assert.match(src, /issuesDisabled/, 'hides write controls when issues are disabled on the repository');
+  assert.doesNotMatch(src, /dangerouslySetInnerHTML|innerHTML/);
+});
+
+test('P26: NewIssueDialog implements focus trap, multiselect listbox label picker, command preview, and chip removal', () => {
+  const src = read('src/webview/NewIssueDialog.tsx');
+  for (const helper of [
+    'useDialogFocusTrap',
+    'canCreateIssue',
+    'issueCommand',
+    'labelChipTone',
+    'nextIndex',
+    'sanitizeGitText',
+  ]) {
+    assert.match(src, new RegExp(`\\b${helper}\\b`), helper);
+  }
+  assert.match(src, /role="dialog"/);
+  assert.match(src, /aria-modal="true"/);
+  assert.match(src, /role="listbox"/);
+  assert.match(src, /aria-multiselectable="true"/);
+  assert.match(src, /role="option"/);
+  assert.match(src, /aria-selected=/);
+  assert.match(src, /strings\.issueWrite\.removeLabel\(/);
+  assert.match(src, /strings\.issueWrite\.loadingLabels/);
+  assert.doesNotMatch(src, /bridge\.request\(/, 'dialog acts only through store actions');
+  assert.doesNotMatch(src, /dangerouslySetInnerHTML|innerHTML/);
+});
+
+test('P26: ToastItem renders webview-local toast.action when present', () => {
+  const src = read('src/webview/Toast.tsx');
+  assert.match(src, /toast\.action !== undefined/);
+  assert.match(src, /gc-toast__action/);
+});

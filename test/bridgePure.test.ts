@@ -23,6 +23,10 @@ import {
   validateClosePullPayload,
   validateSubmitReviewPayload,
   validateReplyReviewCommentPayload,
+  validateCommentIssuePayload,
+  validateSetIssueStatePayload,
+  validateCreateIssuePayload,
+  validateRepoLabelsPayload,
   GITHUB_MUTATION_KINDS,
   MUTATION_KINDS,
   type Outcome,
@@ -809,4 +813,80 @@ test('a confirmation refusal is not remembered, so the confirmed retry runs', ()
   assert.equal(shouldRemember({ ok: false, error: { code: 'CONFIRMATION_REQUIRED' } }), false);
   assert.equal(shouldRemember({ ok: true, data: { merged: true } }), true);
   assert.equal(shouldRemember({ ok: false, error: { code: 'CONFLICT' } }), true);
+});
+
+// --------------------------------------------------- P26 issue write actions
+
+test('P26: the three issue mutation kinds join GITHUB_MUTATION_KINDS and repoLabels stays a read', () => {
+  for (const kind of ['github/commentIssue', 'github/setIssueState', 'github/createIssue']) {
+    assert.ok(GITHUB_MUTATION_KINDS.has(kind), kind);
+    assert.ok(!MUTATION_KINDS.has(kind), `${kind} is not a git mutation`);
+    assert.equal(
+      idempotencyKeyOf({
+        id: 'r1',
+        kind,
+        payload: { owner: 'o', repo: 'r', idempotencyKey: 'ik-26' },
+      } as unknown as Request),
+      `${kind}:ik-26`,
+      kind,
+    );
+  }
+  assert.equal(GITHUB_MUTATION_KINDS.has('github/repoLabels'), false, 'repoLabels is a read');
+  assert.equal(
+    idempotencyKeyOf({
+      id: 'r2',
+      kind: 'github/repoLabels',
+      payload: { owner: 'o', repo: 'r' },
+    } as unknown as Request),
+    null,
+  );
+});
+
+test('P26: validateCommentIssuePayload, validateSetIssueStatePayload, validateCreateIssuePayload, and validateRepoLabelsPayload enforce strict payload bounds', () => {
+  const invalid = (detail: string): never => {
+    throw new Error(detail);
+  };
+  const detailOf = (fn: () => void): string => {
+    try {
+      fn();
+      return 'accepted';
+    } catch (err) {
+      return (err as Error).message;
+    }
+  };
+
+  const commentBase = { owner: 'o', repo: 'r', number: 97, body: 'Looks reproducible.', idempotencyKey: 'k1' };
+  assert.equal(detailOf(() => validateCommentIssuePayload(commentBase, invalid)), 'accepted');
+  assert.equal(detailOf(() => validateCommentIssuePayload({ ...commentBase, extra: 1 }, invalid)), 'payload');
+  assert.equal(detailOf(() => validateCommentIssuePayload({ ...commentBase, owner: '..' }, invalid)), 'owner/repo');
+  assert.equal(detailOf(() => validateCommentIssuePayload({ ...commentBase, number: 0 }, invalid)), 'number');
+  assert.equal(detailOf(() => validateCommentIssuePayload({ ...commentBase, body: '   ' }, invalid)), 'body');
+
+  const stateBase = { owner: 'o', repo: 'r', number: 97, state: 'closed' as const, idempotencyKey: 'k2' };
+  assert.equal(detailOf(() => validateSetIssueStatePayload(stateBase, invalid)), 'accepted');
+  assert.equal(detailOf(() => validateSetIssueStatePayload({ ...stateBase, state: 'open' }, invalid)), 'accepted');
+  assert.equal(detailOf(() => validateSetIssueStatePayload({ ...stateBase, extra: true }, invalid)), 'payload');
+  assert.equal(detailOf(() => validateSetIssueStatePayload({ ...stateBase, repo: '-r' }, invalid)), 'owner/repo');
+  assert.equal(detailOf(() => validateSetIssueStatePayload({ ...stateBase, number: -1 }, invalid)), 'number');
+  assert.equal(detailOf(() => validateSetIssueStatePayload({ ...stateBase, state: 'merged' }, invalid)), 'state');
+
+  const createBase = {
+    owner: 'o',
+    repo: 'r',
+    title: 'Crash on start',
+    body: 'Steps to reproduce',
+    labels: ['bug'],
+    idempotencyKey: 'k3',
+  };
+  assert.equal(detailOf(() => validateCreateIssuePayload(createBase, invalid)), 'accepted');
+  assert.equal(detailOf(() => validateCreateIssuePayload({ ...createBase, body: '', labels: [] }, invalid)), 'accepted');
+  assert.equal(detailOf(() => validateCreateIssuePayload({ ...createBase, assignee: 'me' }, invalid)), 'payload');
+  assert.equal(detailOf(() => validateCreateIssuePayload({ ...createBase, owner: '' }, invalid)), 'owner/repo');
+  assert.equal(detailOf(() => validateCreateIssuePayload({ ...createBase, title: '  ' }, invalid)), 'title');
+  assert.equal(detailOf(() => validateCreateIssuePayload({ ...createBase, body: 'a\u0000b' }, invalid)), 'body');
+  assert.equal(detailOf(() => validateCreateIssuePayload({ ...createBase, labels: ['bug', 'bug'] }, invalid)), 'labels');
+
+  assert.equal(detailOf(() => validateRepoLabelsPayload({ owner: 'o', repo: 'r' }, invalid)), 'accepted');
+  assert.equal(detailOf(() => validateRepoLabelsPayload({ owner: 'o', repo: 'r', extra: 1 }, invalid)), 'payload');
+  assert.equal(detailOf(() => validateRepoLabelsPayload({ owner: '..', repo: 'r' }, invalid)), 'owner/repo');
 });

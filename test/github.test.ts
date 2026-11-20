@@ -2127,3 +2127,157 @@ test('P25: submitReview drops cached pullRequest detail so mergeability reflects
   assert.equal(after.cached, false, 'pull detail cache must be evicted after review submission');
   assert.equal(after.data.mergeableState, 'clean');
 });
+
+// ------------------------------------------------------- P26 issue write actions
+
+test('P26: commentIssue posts to issues/{n}/comments and invalidates issues cache', async () => {
+  const h = writeClient([
+    response(200, []),
+    response(201, { id: 881, html_url: 'https://github.com/o/r/issues/97#issuecomment-881' }),
+  ]);
+  await h.gh.issues('o', 'r', { filter: 'assigned', state: 'open', login: 'me' });
+  assert.equal(h.gh.cacheSize, 1);
+
+  const result = await h.gh.commentIssue('o', 'r', 97, 'Looking into this.');
+  const sent = h.calls.at(-1) as WriteCall;
+  assert.equal(sent.method, 'POST');
+  assert.equal(sent.url, 'https://api.github.com/repos/o/r/issues/97/comments');
+  assert.deepEqual(sent.body, { body: 'Looking into this.' });
+  assert.deepEqual(result.data, {
+    commentId: 881,
+    htmlUrl: 'https://github.com/o/r/issues/97#issuecomment-881',
+  });
+  assert.equal(h.gh.cacheSize, 0, 'issues: cache is invalidated after commenting');
+});
+
+test('P26: setIssueState sends PATCH with completed on close and reopened on open', async () => {
+  const h = writeClient([
+    response(200, []),
+    response(200, { number: 97, state: 'closed', state_reason: 'completed' }),
+    response(200, { number: 97, state: 'open', state_reason: 'reopened' }),
+  ]);
+  await h.gh.issues('o', 'r', { filter: 'assigned', state: 'open', login: 'me' });
+  assert.equal(h.gh.cacheSize, 1);
+
+  const closed = await h.gh.setIssueState('o', 'r', 97, 'closed');
+  const closeCall = h.calls[1] as WriteCall;
+  assert.equal(closeCall.method, 'PATCH');
+  assert.equal(closeCall.url, 'https://api.github.com/repos/o/r/issues/97');
+  assert.deepEqual(closeCall.body, { state: 'closed', state_reason: 'completed' });
+  assert.deepEqual(closed.data, { number: 97, state: 'closed' });
+  assert.equal(h.gh.cacheSize, 0, 'issues: cache is invalidated after state change');
+
+  const reopened = await h.gh.setIssueState('o', 'r', 97, 'open');
+  const reopenCall = h.calls[2] as WriteCall;
+  assert.equal(reopenCall.method, 'PATCH');
+  assert.equal(reopenCall.url, 'https://api.github.com/repos/o/r/issues/97');
+  assert.deepEqual(reopenCall.body, { state: 'open', state_reason: 'reopened' });
+  assert.deepEqual(reopened.data, { number: 97, state: 'open' });
+});
+
+test('P26: createIssue posts title, body, and labels and invalidates issues cache', async () => {
+  const h = writeClient([
+    response(200, []),
+    response(201, { number: 105, html_url: 'https://github.com/o/r/issues/105' }),
+  ]);
+  await h.gh.issues('o', 'r', { filter: 'created', state: 'open', login: 'me' });
+  assert.equal(h.gh.cacheSize, 1);
+
+  const result = await h.gh.createIssue('o', 'r', {
+    title: 'Add lane gutter push state',
+    body: 'Track upstream divergence.',
+    labels: ['enhancement', 'ui'],
+  });
+  const sent = h.calls.at(-1) as WriteCall;
+  assert.equal(sent.method, 'POST');
+  assert.equal(sent.url, 'https://api.github.com/repos/o/r/issues');
+  assert.deepEqual(sent.body, {
+    title: 'Add lane gutter push state',
+    body: 'Track upstream divergence.',
+    labels: ['enhancement', 'ui'],
+  });
+  assert.deepEqual(result.data, {
+    number: 105,
+    htmlUrl: 'https://github.com/o/r/issues/105',
+  });
+  assert.equal(h.gh.cacheSize, 0);
+});
+
+test('P26: repoLabels fetches up to 100 labels, snaps colors to tones, and caches for 300 s', async () => {
+  const h = client([
+    response(200, [
+      { name: 'bug', color: 'd73a4a' },
+      { name: 'enhancement', color: 'a2eeef' },
+      { name: 'invalid-color', color: 'expression(alert(1))' },
+      { name: '', color: '000000' },
+      { name: 123, color: '000000' },
+    ]),
+    response(200, [{ name: 'bug', color: 'd73a4a' }]),
+  ]);
+
+  const first = await h.gh.repoLabels('o', 'r');
+  assert.equal(h.calls[0]?.url, 'https://api.github.com/repos/o/r/labels?per_page=100');
+  assert.equal(first.cached, false);
+  assert.deepEqual(first.data, [
+    { name: 'bug', colorKey: 'red' },
+    { name: 'enhancement', colorKey: 'blue' },
+    { name: 'invalid-color', colorKey: 'gray' },
+  ]);
+
+  h.advance(299_999);
+  const second = await h.gh.repoLabels('o', 'r');
+  assert.equal(second.cached, true);
+  assert.equal(h.calls.length, 1);
+
+  h.advance(2);
+  const third = await h.gh.repoLabels('o', 'r');
+  assert.equal(third.cached, false);
+  assert.equal(h.calls.length, 2);
+});
+
+test('P26: 410 (issues disabled), 403 (missing scope), and 422 (sanitized validation error) map to clear errors', async () => {
+  for (const lang of ['en', 'id'] as const) {
+    const disabled = writeClient([response(410, { message: 'Issues are disabled for this repo' })], lang);
+    await assert.rejects(
+      () => disabled.gh.createIssue('o', 'r', { title: 'T', body: '', labels: [] }),
+      (err: unknown) => {
+        assert.ok(err instanceof GitHubError);
+        assert.equal(err.status, 410);
+        assert.equal(err.code, 'FORBIDDEN');
+        assert.equal(err.message, hostText(lang).github.issuesDisabled);
+        return true;
+      },
+    );
+  }
+
+  const forbidden = writeClient([
+    response(403, { message: 'Resource not accessible by personal access token' }, { 'x-ratelimit-remaining': '4900' }),
+  ]);
+  await assert.rejects(
+    () => forbidden.gh.commentIssue('o', 'r', 97, 'hi'),
+    (err: unknown) => {
+      assert.ok(err instanceof GitHubError);
+      assert.equal(err.status, 403);
+      assert.equal(err.code, 'FORBIDDEN');
+      assert.equal(err.message, hostText('en').github.missingScope('repo'));
+      return true;
+    },
+  );
+
+  const invalid = writeClient([
+    response(422, {
+      message: 'Validation Failed',
+      errors: [{ message: 'title\u0000\u202e is invalid' }],
+    }),
+  ]);
+  await assert.rejects(
+    () => invalid.gh.setIssueState('o', 'r', 97, 'closed'),
+    (err: unknown) => {
+      assert.ok(err instanceof GitHubError);
+      assert.equal(err.status, 422);
+      assert.equal(err.code, 'VALIDATION_ERROR');
+      assert.equal(err.detail, 'title is invalid', 'control and bidi characters are stripped from 422 error text');
+      return true;
+    },
+  );
+});

@@ -5827,6 +5827,11 @@ h3 {
   font-size: var(--gc-fs-2xs);
 }
 
+.gc-toast__action {
+  flex: 0 0 auto;
+  align-self: center;
+}
+
 /* ---------------------------------------------------------------- icons */
 
 /*
@@ -6745,6 +6750,139 @@ h3 {
 .gc-start-work__command code {
   overflow-wrap: anywhere;
   font-family: var(--vscode-editor-font-family, monospace);
+  font-size: var(--gc-fs-xs);
+}
+
+/* --------------------------------------------------------------- issue write */
+
+.gc-issues__new-btn {
+  flex: 0 0 auto;
+}
+
+.gc-issues__branch-hint {
+  margin: 0;
+  color: var(--gc-text-muted);
+  font-size: var(--gc-fs-2xs);
+}
+
+/* Frame 82: inline comment textarea inside the expanded issue preview. */
+.gc-issues__comment-box {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gc-space-2);
+  padding-top: var(--gc-space-2);
+  border-top: 1px solid var(--gc-border-subtle);
+}
+
+/* Grows up to 6 rows (~9.5em at 1.4 line-height) and scrolls internally beyond that. */
+.gc-issues__comment-input {
+  min-height: 4.5em;
+  max-height: 9.5em;
+  overflow-y: auto;
+  resize: vertical;
+}
+
+.gc-issues__comment-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--gc-space-2);
+  flex-wrap: wrap;
+}
+
+.gc-issues__comment-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--gc-space-2);
+  margin-left: auto;
+}
+
+/* Frame 101: removable label chips + listbox picker in NewIssueDialog. */
+.gc-issues__label-chips {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--gc-space-1);
+}
+
+.gc-issues__label--removable {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--gc-space-1);
+}
+
+.gc-issues__label-remove {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+.gc-issues__label-remove:focus-visible {
+  outline: 1px solid var(--vscode-focusBorder, var(--gc-accent));
+  outline-offset: 1px;
+}
+
+.gc-issues__label-add {
+  flex: 0 0 auto;
+}
+
+.gc-issues__label-picker {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gc-space-1);
+  max-height: 11em;
+  overflow-y: auto;
+  padding: var(--gc-space-2);
+  border: 1px solid var(--gc-border-subtle);
+  border-radius: var(--gc-radius);
+  background: var(--gc-bg-surface);
+}
+
+.gc-issues__label-option {
+  display: flex;
+  align-items: center;
+  gap: var(--gc-space-2);
+  width: 100%;
+  padding: var(--gc-space-1) var(--gc-space-2);
+  border: none;
+  border-radius: var(--gc-radius);
+  background: transparent;
+  color: var(--gc-text-primary);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.gc-issues__label-option:hover,
+.gc-issues__label-option[aria-selected="true"] {
+  background: var(--vscode-list-hoverBackground, var(--gc-bg-raised));
+}
+
+.gc-issues__label-option:focus-visible {
+  outline: 1px solid var(--vscode-focusBorder, var(--gc-accent));
+  outline-offset: -1px;
+}
+
+.gc-issues__label-check {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.1em;
+  height: 1.1em;
+  flex: 0 0 auto;
+  color: var(--gc-accent);
+}
+
+.gc-issues__no-labels {
+  margin: 0;
+  padding: var(--gc-space-1) var(--gc-space-2);
+  color: var(--gc-text-muted);
   font-size: var(--gc-fs-xs);
 }
 

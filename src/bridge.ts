@@ -47,6 +47,10 @@ import {
   validatePullDetailPayload,
   validateReplyReviewCommentPayload,
   validateSubmitReviewPayload,
+  validateCommentIssuePayload,
+  validateSetIssueStatePayload,
+  validateCreateIssuePayload,
+  validateRepoLabelsPayload,
 } from './bridgePure';
 import type { RepositoryService } from './repository';
 import { parseRoute } from './webview/route';
@@ -71,6 +75,7 @@ import type {
   CheckRunsPayload,
   CheckRunsResult,
   ClosePullPayload,
+  CommentIssuePayload,
   CommitAuthorInfo,
   CommitAuthorsPayload,
   CommitAuthorsResult,
@@ -83,6 +88,7 @@ import type {
   ContributorIdentity,
   ContributorIdentityPayload,
   ContributorsResponse,
+  CreateIssuePayload,
   CreatePullRequestPayload,
   CreatePullRequestResult,
   ErrorBody,
@@ -102,6 +108,7 @@ import type {
   HostEvent,
   HostMessage,
   IconThemeSnapshot,
+  IssueLabel,
   IssuesPayload,
   IssuesResult,
   Lang,
@@ -127,6 +134,7 @@ import type {
   RefsResult,
   RemoteInfo,
   RepoGraph,
+  RepoLabelsPayload,
   RepoStatus,
   Request,
   ReplyReviewPayload,
@@ -134,6 +142,7 @@ import type {
   Response,
   RevealCommitPayload,
   Route,
+  SetIssueStatePayload,
   SettingsSetPayload,
   SettingsSnapshot,
   StagePayload,
@@ -244,6 +253,11 @@ export interface BridgeHost {
   githubClosePullRequest?(payload: ClosePullPayload): Promise<{ closed: boolean }>;
   githubSubmitReview?(payload: SubmitReviewPayload): Promise<{ reviewId: number }>;
   githubReplyReviewComment?(payload: ReplyReviewPayload): Promise<{ commentId: number }>;
+  /** P26 issue write actions and label catalog read. */
+  githubCommentIssue?(payload: CommentIssuePayload): Promise<{ commentId: number; htmlUrl: string }>;
+  githubSetIssueState?(payload: SetIssueStatePayload): Promise<{ number: number; state: 'open' | 'closed' }>;
+  githubCreateIssue?(payload: CreateIssuePayload): Promise<{ number: number; htmlUrl: string }>;
+  githubRepoLabels?(payload: RepoLabelsPayload): Promise<{ labels: IssueLabel[]; rateLimit: GitHubRateLimit }>;
   githubLinkage?(): Promise<GitHubLinkage>;
   /**
    * Snapshot of the active file icon theme for the webview this bridge serves,
@@ -568,6 +582,14 @@ export class MessageBridge {
         return this.handleSubmitReview(request.payload as SubmitReviewPayload);
       case 'github/replyReviewComment':
         return this.handleReplyReviewComment(request.payload as ReplyReviewPayload);
+      case 'github/commentIssue':
+        return this.handleCommentIssue(request.payload as CommentIssuePayload);
+      case 'github/setIssueState':
+        return this.handleSetIssueState(request.payload as SetIssueStatePayload);
+      case 'github/createIssue':
+        return this.handleCreateIssue(request.payload as CreateIssuePayload);
+      case 'github/repoLabels':
+        return this.handleRepoLabels(request.payload as RepoLabelsPayload);
       case 'github/prReviewers':
         return this.handlePrReviewers(request.payload as PrReviewersPayload);
       case 'github/linkage':
@@ -1357,6 +1379,62 @@ export class MessageBridge {
     const reply = this.host.githubReplyReviewComment;
     if (reply === undefined) fail(503, 'UNAVAILABLE', this.text().githubPending);
     return reply(payload);
+  }
+
+  // --------------------------------------------------- issue write actions (P26)
+
+  /** Post a comment on an issue. Additive, so the guard allows once connected with write scope. */
+  private async handleCommentIssue(
+    payload: CommentIssuePayload,
+  ): Promise<{ commentId: number; htmlUrl: string }> {
+    const invalid = (detail: string): never =>
+      fail(400, 'VALIDATION_ERROR', this.text().invalid, { detail });
+    validateCommentIssuePayload({ ...payload }, invalid);
+    await this.gateGitHub({ action: 'comment' }, payload);
+    const comment = this.host.githubCommentIssue;
+    if (comment === undefined) fail(503, 'UNAVAILABLE', this.text().githubPending);
+    return comment(payload);
+  }
+
+  /** Close an issue as completed or reopen it. Reversible via Undo, so no confirm dialog. */
+  private async handleSetIssueState(
+    payload: SetIssueStatePayload,
+  ): Promise<{ number: number; state: 'open' | 'closed' }> {
+    const invalid = (detail: string): never =>
+      fail(400, 'VALIDATION_ERROR', this.text().invalid, { detail });
+    validateSetIssueStatePayload({ ...payload }, invalid);
+    await this.gateGitHub(
+      { action: payload.state === 'closed' ? 'close-issue' : 'reopen-issue' },
+      payload,
+    );
+    const setState = this.host.githubSetIssueState;
+    if (setState === undefined) fail(503, 'UNAVAILABLE', this.text().githubPending);
+    return setState(payload);
+  }
+
+  /** Create a new issue with title, description, and existing repository labels. */
+  private async handleCreateIssue(
+    payload: CreateIssuePayload,
+  ): Promise<{ number: number; htmlUrl: string }> {
+    const invalid = (detail: string): never =>
+      fail(400, 'VALIDATION_ERROR', this.text().invalid, { detail });
+    validateCreateIssuePayload({ ...payload }, invalid);
+    await this.gateGitHub({ action: 'create-issue' }, payload);
+    const create = this.host.githubCreateIssue;
+    if (create === undefined) fail(503, 'UNAVAILABLE', this.text().githubPending);
+    return create(payload);
+  }
+
+  /** Read-only label list for the repository. */
+  private async handleRepoLabels(
+    payload: RepoLabelsPayload,
+  ): Promise<{ labels: IssueLabel[]; rateLimit: GitHubRateLimit }> {
+    const invalid = (detail: string): never =>
+      fail(400, 'VALIDATION_ERROR', this.text().invalid, { detail });
+    validateRepoLabelsPayload({ ...payload }, invalid);
+    const list = this.host.githubRepoLabels;
+    if (list === undefined) fail(503, 'UNAVAILABLE', this.text().githubPending);
+    return list(payload);
   }
 
   private async handleStage(payload: StagePayload, operationId: string): Promise<ActionResult> {

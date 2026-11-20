@@ -29,7 +29,9 @@ const ACTIONS: GitHubWriteAction[] = [
   { action: 'submit-review', event: 'REQUEST_CHANGES' },
   { action: 'submit-review', event: 'COMMENT' },
   { action: 'comment' },
+  { action: 'close-pull-request' },
   { action: 'close-issue' },
+  { action: 'reopen-issue' },
   { action: 'create-issue' },
   { action: 'rerun-failed-jobs' },
   { action: 'dispatch-workflow' },
@@ -135,7 +137,6 @@ test('the actions that change shared state ask for one confirmation', () => {
   assert.equal(levelOf({ action: 'merge-pull-request', method: 'squash' }), 1);
   assert.equal(levelOf({ action: 'create-release' }), 1);
   assert.equal(levelOf({ action: 'dispatch-workflow' }), 1);
-  assert.equal(levelOf({ action: 'close-issue' }), 1);
   assert.equal(levelOf({ action: 'close-pull-request' }), 1);
 });
 
@@ -148,10 +149,12 @@ test('the review form is the act, so no review event asks for confirmation', () 
   assert.equal(levelOf({ action: 'submit-review', event: 'REQUEST_CHANGES' }), null);
 });
 
-test('creating things and re-running jobs need no confirmation', () => {
+test('creating things, issue actions with Undo, and re-running jobs need no confirmation', () => {
   assert.equal(levelOf({ action: 'create-pull-request', draft: false }), null);
   assert.equal(levelOf({ action: 'create-pull-request', draft: true }), null);
   assert.equal(levelOf({ action: 'comment' }), null);
+  assert.equal(levelOf({ action: 'close-issue' }), null);
+  assert.equal(levelOf({ action: 'reopen-issue' }), null);
   assert.equal(levelOf({ action: 'create-issue' }), null);
   assert.equal(levelOf({ action: 'rerun-failed-jobs' }), null);
 });
@@ -165,11 +168,11 @@ test('a confirmation verdict carries the confirm remedy, the level, and its risk
   assert.deepEqual(merge.remedies, ['confirm', 'cancel']);
   assert.equal(merge.risk, 'medium');
 
-  const close = evaluateGitHubAction({ action: 'close-issue' }, CONNECTED);
-  assert.equal(close.allow, false);
-  if (close.allow) return;
-  assert.equal(close.risk, 'low');
-  assert.equal(close.message, hostText('en').github.confirmWrite);
+  const closePr = evaluateGitHubAction({ action: 'close-pull-request' }, CONNECTED);
+  assert.equal(closePr.allow, false);
+  if (closePr.allow) return;
+  assert.equal(closePr.risk, 'low');
+  assert.equal(closePr.message, hostText('en').github.confirmWrite);
 });
 
 test('every action either allows or returns a fully shaped verdict', () => {
@@ -284,4 +287,40 @@ test('P25: the merge action keeps its level 1 confirmation and its medium risk',
   if (verdict.allow) return;
   assert.equal(verdict.confirmationLevel, 1);
   assert.equal(verdict.risk, 'medium');
+});
+
+// ------------------------------------------------- issue write actions (P26)
+
+test('P26: comment, close-issue, reopen-issue, and create-issue are allowed when connected and trusted', () => {
+  const issueActions: GitHubWriteAction[] = [
+    { action: 'comment' },
+    { action: 'close-issue' },
+    { action: 'reopen-issue' },
+    { action: 'create-issue' },
+  ];
+  for (const action of issueActions) {
+    assert.deepEqual(evaluateGitHubAction(action, CONNECTED), { allow: true }, action.action);
+  }
+});
+
+test('P26: issue write actions are blocked when unconnected, on an untrusted base, or missing write scope', () => {
+  const issueActions: GitHubWriteAction[] = [
+    { action: 'comment' },
+    { action: 'close-issue' },
+    { action: 'reopen-issue' },
+    { action: 'create-issue' },
+  ];
+  for (const action of issueActions) {
+    const unconnected = evaluateGitHubAction(action, { ...CONNECTED, connected: false });
+    assert.equal(unconnected.allow, false, `${action.action} unconnected`);
+    if (!unconnected.allow) assert.equal(unconnected.code, 'AUTH_ERROR');
+
+    const untrusted = evaluateGitHubAction(action, { ...CONNECTED, tokenAllowed: false });
+    assert.equal(untrusted.allow, false, `${action.action} untrusted`);
+    if (!untrusted.allow) assert.equal(untrusted.code, 'FORBIDDEN');
+
+    const missingScope = evaluateGitHubAction(action, { ...CONNECTED, scopes: ['read:user'] });
+    assert.equal(missingScope.allow, false, `${action.action} missingScope`);
+    if (!missingScope.allow) assert.equal(missingScope.code, 'FORBIDDEN');
+  }
 });

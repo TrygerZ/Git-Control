@@ -26,6 +26,7 @@ import type {
   ErrorCode,
   GitHubRateLimit,
   IssueInfo,
+  IssueLabel,
   IssueLabelTone,
   IssueListFilter,
   IssueStateFilter,
@@ -221,6 +222,7 @@ const OPEN_PR_TTL_MS = 15_000;
  */
 const COLLABS_TTL_MS = 300_000;
 export const ISSUES_TTL_MS = 60_000;
+export const LABELS_TTL_MS = 300_000;
 /**
  * Workflow runs and jobs answer two questions with one request: what happened,
  * and what is happening now. A run that is still going can change any second, so
@@ -1008,6 +1010,118 @@ export class GitHubClient {
     );
   }
 
+  // --------------------------------------------------- issue writes (P26)
+
+  /**
+   * Post a comment on an issue (`POST /repos/{owner}/{repo}/issues/{number}/comments`).
+   * One attempt via `mutate`, invalidating the cached issue lists and counts.
+   */
+  async commentIssue(
+    owner: string,
+    repo: string,
+    number: number,
+    body: string,
+  ): Promise<{ data: { commentId: number; htmlUrl: string }; rateLimit: GitHubRateLimit }> {
+    return this.mutate<{ commentId: number; htmlUrl: string }>({
+      method: 'POST',
+      path: `/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/issues/${number}/comments`,
+      body: { body },
+      invalidate: ['issues:', 'issueCounts:'],
+      invalid: (raw) => {
+        const detail = errorMessages(raw).join('; ');
+        return new GitHubError({
+          status: 422,
+          code: 'VALIDATION_ERROR',
+          message: this.text().invalidWrite,
+          ...(detail.length === 0 ? {} : { detail }),
+        });
+      },
+      map: (raw) => {
+        const json = raw as { id?: unknown; html_url?: unknown } | null;
+        return {
+          commentId: safeInt(json?.id),
+          htmlUrl: httpsUrl(json?.html_url),
+        };
+      },
+    });
+  }
+
+  /**
+   * Close an issue as completed or reopen it (`PATCH /repos/{owner}/{repo}/issues/{number}`).
+   */
+  async setIssueState(
+    owner: string,
+    repo: string,
+    number: number,
+    state: 'open' | 'closed',
+  ): Promise<{ data: { number: number; state: 'open' | 'closed' }; rateLimit: GitHubRateLimit }> {
+    const stateReason = state === 'closed' ? 'completed' : 'reopened';
+    return this.mutate<{ number: number; state: 'open' | 'closed' }>({
+      method: 'PATCH',
+      path: `/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/issues/${number}`,
+      body: { state, state_reason: stateReason },
+      invalidate: ['issues:', 'issueCounts:'],
+      invalid: (raw) => {
+        const detail = errorMessages(raw).join('; ');
+        return new GitHubError({
+          status: 422,
+          code: 'VALIDATION_ERROR',
+          message: this.text().invalidWrite,
+          ...(detail.length === 0 ? {} : { detail }),
+        });
+      },
+      map: (raw) => {
+        const json = raw as { number?: unknown; state?: unknown } | null;
+        const mappedNumber = safeInt(json?.number, number) || number;
+        const mappedState = json?.state === 'open' ? 'open' : json?.state === 'closed' ? 'closed' : state;
+        return { number: mappedNumber, state: mappedState };
+      },
+    });
+  }
+
+  /**
+   * Create a new issue (`POST /repos/{owner}/{repo}/issues`).
+   */
+  async createIssue(
+    owner: string,
+    repo: string,
+    input: { title: string; body: string; labels: readonly string[] },
+  ): Promise<{ data: { number: number; htmlUrl: string }; rateLimit: GitHubRateLimit }> {
+    return this.mutate<{ number: number; htmlUrl: string }>({
+      method: 'POST',
+      path: `/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/issues`,
+      body: { title: input.title, body: input.body, labels: input.labels },
+      invalidate: ['issues:', 'issueCounts:'],
+      invalid: (raw) => {
+        const detail = errorMessages(raw).join('; ');
+        return new GitHubError({
+          status: 422,
+          code: 'VALIDATION_ERROR',
+          message: this.text().invalidWrite,
+          ...(detail.length === 0 ? {} : { detail }),
+        });
+      },
+      map: (raw) => {
+        const json = raw as { number?: unknown; html_url?: unknown } | null;
+        return {
+          number: safeInt(json?.number),
+          htmlUrl: httpsUrl(json?.html_url),
+        };
+      },
+    });
+  }
+
+  /**
+   * Fetch the repository's existing labels (`GET /repos/{owner}/{repo}/labels?per_page=100`),
+   * cached for 300 s under `labels:{owner}/{repo}`.
+   */
+  async repoLabels(owner: string, repo: string): Promise<Fetched<IssueLabel[]>> {
+    const path = `/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/labels?per_page=100`;
+    return this.get<IssueLabel[]>(path, `labels:${owner}/${repo}`, LABELS_TTL_MS, (body) =>
+      toRepoLabels(body),
+    );
+  }
+
   /**
    * Commit authors and avatars for a batch of commit hashes.
    *
@@ -1774,6 +1888,9 @@ export class GitHubClient {
     if (response.status === 404) {
       return new GitHubError({ status: 404, code: 'NOT_FOUND', message: text.notFound });
     }
+    if (response.status === 410) {
+      return new GitHubError({ status: 410, code: 'FORBIDDEN', message: text.issuesDisabled });
+    }
     if ((response.status === 403 || response.status === 429) && remaining === 0) {
       return new GitHubError({
         status: 429,
@@ -2514,6 +2631,24 @@ export function toIssues(body: unknown): IssueInfo[] {
   return result;
 }
 
+export function toRepoLabels(body: unknown): IssueLabel[] {
+  if (!Array.isArray(body)) return [];
+  const result: IssueLabel[] = [];
+  for (const raw of body) {
+    if (!raw || typeof raw !== 'object') continue;
+    const item = raw as { name?: unknown; color?: unknown };
+    if (typeof item.name !== 'string') continue;
+    const cleaned = item.name.replace(CONTROL_AND_BIDI_CHARS, '').trim();
+    if (cleaned.length === 0 || cleaned.length > 50) continue;
+    result.push({
+      name: cleaned,
+      colorKey: labelTone(item.color),
+    });
+    if (result.length === 100) break;
+  }
+  return result;
+}
+
 /** Keys that grow one per commit inspected, routed to their own bounded store. */
 function isAuthorKey(cacheKey: string): boolean {
   return cacheKey.startsWith('commitAuthor:') || cacheKey.startsWith('contributorId:');
@@ -2530,14 +2665,17 @@ function parseJson(body: string): unknown {
 
 /**
  * `errors[].message` from a 422 body. GitHub puts the human sentence there and
- * a machine code next to it; only the sentence is worth showing.
+ * a machine code next to it; only the sentence is worth showing. Control and
+ * bidi characters are stripped so an echoed input cannot spoof the toast.
  */
 function errorMessages(body: unknown): string[] {
   const errors = (body as { errors?: unknown } | null)?.errors;
   if (!Array.isArray(errors)) return [];
   return errors
     .map((e) => (e as { message?: unknown } | null)?.message)
-    .filter((m): m is string => typeof m === 'string' && m.length > 0);
+    .filter((m): m is string => typeof m === 'string')
+    .map((m) => redact(m.replace(CONTROL_AND_BIDI_CHARS, '').trim()))
+    .filter((m) => m.length > 0);
 }
 
 /** The top-level `message` from an error body. Refusals put the sentence here. */

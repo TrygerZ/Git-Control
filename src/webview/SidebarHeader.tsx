@@ -7,9 +7,9 @@
  * class on the same element, not a second component, so the route decides the
  * shape and the branch, sync, and upstream rows simply unmount.
  *
- * The quick-create button belongs to the destination: Pull requests and Branches
- * raise a focus target their view already consumes, while Issues and Actions open
- * the GitHub page until P26 and P27 ship a form in the extension. The More menu
+ * The quick-create button belongs to the destination: Pull requests, Issues, and
+ * Branches raise a focus target their view already consumes, while Actions opens
+ * the GitHub page until P27 ships a form in the extension. The More menu
  * reuses the Explorer's `.gc-menu` keyboard pattern, copied rather than imported
  * so the two roots stay independent.
  */
@@ -30,6 +30,7 @@ import {
   toErrorBody,
   useChangesStore,
   useGitHubStore,
+  useIssuesStore,
   useOperationStore,
   useRepoStore,
   useRouteStore,
@@ -67,6 +68,7 @@ export function SidebarHeader(): JSX.Element | null {
   const loadPullRequests = useGitHubStore((s) => s.loadPullRequests);
   const linkage = useGitHubStore((s) => s.linkage);
   const auth = useGitHubStore((s) => s.auth);
+  const issuesDisabled = useIssuesStore((s) => s.issuesDisabled);
   const route = useRouteStore((s) => s.route);
 
   const [menuOpen, setMenuOpen] = useState(false);
@@ -136,6 +138,10 @@ export function SidebarHeader(): JSX.Element | null {
     void loadStatus();
     void loadGraph();
     if (route.id === 'prs') void loadPullRequests({ refresh: true });
+    if (route.id === 'issues') {
+      const issuesState = useIssuesStore.getState();
+      void issuesState.load(issuesState.filter, issuesState.state, true);
+    }
   };
 
   const openExplorer = async (): Promise<void> => {
@@ -295,17 +301,22 @@ export function SidebarHeader(): JSX.Element | null {
               <Icon name="pr" />
             </button>
           )}
-          {route.id === 'issues' && slug !== null && (
-            <button
-              type="button"
-              className="gc-icon-button"
-              aria-label={strings.shell.addIssue}
-              title={strings.shell.addIssue}
-              onClick={() => openUrl(`https://github.com/${slug}/issues/new`)}
-            >
-              <Icon name="issue" />
-            </button>
-          )}
+          {route.id === 'issues' &&
+            slug !== null &&
+            auth?.connected === true &&
+            !issuesDisabled && (
+              <button
+                type="button"
+                className="gc-icon-button"
+                aria-label={strings.shell.addIssue}
+                title={strings.shell.addIssue}
+                onClick={() =>
+                  useRouteStore.getState().navigateWithFocus({ id: 'issues' }, 'new-issue')
+                }
+              >
+                <Icon name="issue" />
+              </button>
+            )}
           {route.id === 'actions' && slug !== null && (
             <button
               type="button"

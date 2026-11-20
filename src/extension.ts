@@ -46,12 +46,14 @@ import type {
   CheckRunsPayload,
   CheckRunsResult,
   ClosePullPayload,
+  CommentIssuePayload,
   CommitAuthorsPayload,
   CommitAuthorsResult,
   CommitPullRequestsPayload,
   CommitPullRequestsResult,
   ContributorIdentity,
   ContributorIdentityPayload,
+  CreateIssuePayload,
   CreatePullRequestPayload,
   CreatePullRequestResult,
   FocusTarget,
@@ -61,6 +63,7 @@ import type {
   GitHubRepoInfo,
   GitHubRepoPayload,
   IconThemeSnapshot,
+  IssueLabel,
   IssuesPayload,
   IssuesResult,
   Lang,
@@ -79,8 +82,10 @@ import type {
   PullRequestsChangedEvent,
   PullRequestsPayload,
   PullRequestsResult,
+  RepoLabelsPayload,
   ReplyReviewPayload,
   Route,
+  SetIssueStatePayload,
   SubmitReviewPayload,
   TimelineItem,
   SettingsSetPayload,
@@ -996,6 +1001,10 @@ class Controller implements vscode.Disposable {
       githubClosePullRequest: (payload) => this.githubClosePullRequest(payload),
       githubSubmitReview: (payload) => this.githubSubmitReview(payload),
       githubReplyReviewComment: (payload) => this.githubReplyReviewComment(payload),
+      githubCommentIssue: (payload) => this.githubCommentIssue(payload),
+      githubSetIssueState: (payload) => this.githubSetIssueState(payload),
+      githubCreateIssue: (payload) => this.githubCreateIssue(payload),
+      githubRepoLabels: (payload) => this.githubRepoLabels(payload),
       githubPrReviewers: (payload) => this.githubPrReviewers(payload),
       githubLinkage: () => this.githubLinkage(),
       takePendingRoute: () => this.takePendingRoute(),
@@ -1769,6 +1778,43 @@ class Controller implements vscode.Disposable {
     return (
       await client.replyToReviewComment(payload.owner, payload.repo, payload.number, payload.commentId, payload.body)
     ).data;
+  }
+
+  // --------------------------------------------------- issue write actions (P26)
+
+  private async githubCommentIssue(
+    payload: CommentIssuePayload,
+  ): Promise<{ commentId: number; htmlUrl: string }> {
+    const { client } = await this.githubClient();
+    return (await client.commentIssue(payload.owner, payload.repo, payload.number, payload.body)).data;
+  }
+
+  private async githubSetIssueState(
+    payload: SetIssueStatePayload,
+  ): Promise<{ number: number; state: 'open' | 'closed' }> {
+    const { client } = await this.githubClient();
+    return (await client.setIssueState(payload.owner, payload.repo, payload.number, payload.state)).data;
+  }
+
+  private async githubCreateIssue(
+    payload: CreateIssuePayload,
+  ): Promise<{ number: number; htmlUrl: string }> {
+    const { client } = await this.githubClient();
+    return (
+      await client.createIssue(payload.owner, payload.repo, {
+        title: payload.title,
+        body: payload.body,
+        labels: payload.labels,
+      })
+    ).data;
+  }
+
+  private async githubRepoLabels(
+    payload: RepoLabelsPayload,
+  ): Promise<{ labels: IssueLabel[]; rateLimit: GitHubRateLimit }> {
+    const { client } = await this.githubClient();
+    const result = await client.repoLabels(payload.owner, payload.repo);
+    return { labels: result.data, rateLimit: client.rateLimit(result.cached) };
   }
 
   /**
