@@ -144,3 +144,16 @@ test('the sidebar shell mounts the view and probes the dot before it is opened',
   assert.match(src, /refreshDot\(currentBranch\)/);
   assert.match(src, /if \(!githubConnected\) return;/);
 });
+
+test('P27: AGENTS.md, purity contract, and README document the Actions write modules and scopes', () => {
+  const agents = read('AGENTS.md');
+  assert.ok(agents.includes('src/workflowInputs.ts'), 'AGENTS.md File Map lists workflowInputs.ts');
+  assert.ok(agents.includes('src/webview/RunWorkflowDialog.tsx'), 'AGENTS.md File Map lists RunWorkflowDialog.tsx');
+
+  const purity = read('test/purity.test.ts');
+  assert.match(purity, /'src\/workflowInputs\.ts'/);
+
+  const readme = read('README.md');
+  assert.match(readme, /Actions Write Actions/);
+  assert.match(readme, /`repo` and `workflow`/);
+});
