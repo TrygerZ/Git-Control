@@ -412,8 +412,6 @@ export const usePullStore = create<PullState>((set, get) => ({
           message: strings.branchDeletedToast(detail.headRef),
         });
       }
-      // The list row now says merged; re-read auth, linkage, and the list.
-      void useGitHubStore.getState().load();
     } catch (err) {
       // Keep `mergeKey`: the retry must replay this same logical merge.
       set({ mergeState: 'failed', mergeError: asErrorBody(err) });
@@ -540,8 +538,6 @@ export const usePullStore = create<PullState>((set, get) => ({
         confirm: true,
       });
       await get().load({ owner: repo.owner, repo: repo.repo, number: detail.number });
-      // The list row now says closed; re-read auth, linkage, and the list.
-      void useGitHubStore.getState().load();
     } catch (err) {
       toastFailure(err);
     } finally {

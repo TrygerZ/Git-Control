@@ -469,7 +469,7 @@ test('QA-03: a second reply sent while one is in flight is ignored', async (t: T
   assert.deepEqual(results.sort(), [false, true], 'one send won, one was refused');
 });
 
-test('P25: closing the pull request refreshes the sidebar pull request list', async (t) => {
+test('P25: merge and close do not call useGitHubStore.load inside the isolated PR panel webview', async (t) => {
   load();
   useGitHubStore.setState({
     linkage: {
@@ -483,30 +483,24 @@ test('P25: closing the pull request refreshes the sidebar pull request list', as
     },
   });
   const s = stub((kind) => {
-    if (kind === 'github/closePullRequest') return { closed: true };
-    if (kind === 'github/pullDetail') return { detail: detail({ state: 'closed' }), rateLimit: RATE };
-    if (kind === 'github/auth') return { connected: true, login: 'me', scopes: ['repo'] };
-    if (kind === 'github/linkage') {
-      return {
-        available: true,
-        host: 'github.com',
-        owner: 'o',
-        repo: 'r',
-        webUrl: 'https://github.com/o/r',
-        commitUrlTemplate: 'https://github.com/o/r/commit/{hash}',
-        apiUrl: 'https://api.github.com',
-      };
+    if (kind === 'github/mergePullRequest') {
+      return { merged: true, mergeSha: 'c'.repeat(40), branchDeleted: { remote: null, local: null }, warnings: [] };
     }
-    if (kind === 'github/pullRequests') return { pullRequests: [], rateLimit: RATE };
+    if (kind === 'github/closePullRequest') return { closed: true };
+    if (kind === 'github/pullDetail') return { detail: detail({ state: 'open' }), rateLimit: RATE };
     return RATE;
   });
   t.after(() => s.restore());
 
+  usePullStore.getState().openMerge();
+  await usePullStore.getState().merge({ method: 'merge' });
   await usePullStore.getState().close();
   await new Promise((r) => setTimeout(r, 0));
-  assert.ok(
-    s.calls.some((c) => c.kind === 'github/pullRequests'),
-    'sidebar pull request list refreshes after closing a PR',
+
+  assert.equal(
+    s.calls.some((c) => c.kind === 'github/auth' || c.kind === 'github/linkage' || c.kind === 'github/pullRequests'),
+    false,
+    'sidebar PR list refresh comes from host broadcast, never isolated PR-panel useGitHubStore.load()',
   );
 });
 

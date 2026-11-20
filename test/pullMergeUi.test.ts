@@ -129,6 +129,7 @@ test('the panel reads isFork from PullDetail so closed and older-than-50 PRs kee
   const app = source(APP);
   assert.match(app, /detail\.isFork/);
   assert.match(app, /closeSending/);
+  assert.match(app, /wireHostEvents\('pr'\)/);
 });
 
 /**

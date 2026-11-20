@@ -292,7 +292,7 @@ export function PullRequestApp(): JSX.Element {
     // The tab is the only thing this panel persists, and the panel is rebuilt on
     // every reveal, so it comes back from host state before anything is drawn.
     usePullStore.setState({ tab: initialPullTab() });
-    const off = wireHostEvents('pending');
+    const off = wireHostEvents('pr');
     // The icon-theme pull must follow `wireHostEvents`, like the other roots: the
     // snapshot is requested only once the listener exists.
     void loadIconTheme();

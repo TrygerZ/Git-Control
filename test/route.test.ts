@@ -229,3 +229,26 @@ test('a navigate event with a focus target lands in the pending-focus store', ()
     restore();
   }
 });
+
+test('wireHostEvents pr ignores navigate and pullRequestsChanged and only refreshes status on repoChanged', async () => {
+  const receive = (message: unknown): void => (bridge as unknown as { receive(m: unknown): void }).receive(message);
+  const requested: string[] = [];
+  const restore = stubRequest((kind) => {
+    requested.push(kind);
+    return { route: null };
+  });
+  useRouteStore.setState({ route: DEFAULT_ROUTE });
+  const off = wireHostEvents('pr');
+  try {
+    receive({ kind: 'event/navigate', payload: { route: { id: 'prs' } } });
+    receive({ kind: 'event/pullRequestsChanged', payload: { owner: 'o', repo: 'r', number: 150 } });
+    assert.deepEqual(useRouteStore.getState().route, DEFAULT_ROUTE, 'pr mode ignores navigate');
+
+    receive({ kind: 'event/repoChanged', payload: { reason: 'action', statusToken: 'tok' } });
+    await new Promise((r) => setTimeout(r, 320));
+    assert.deepEqual(requested, ['repos/status'], 'pr mode only reloads repo status, never changes, graph, or PR lists');
+  } finally {
+    off();
+    restore();
+  }
+});

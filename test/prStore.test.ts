@@ -8,7 +8,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { bridge } from '../src/webview/bridge';
-import { useGitHubStore } from '../src/webview/store';
+import { useGitHubStore, wireHostEvents } from '../src/webview/store';
 import type { GitHubLinkage, PullRequestInfo } from '../src/messages';
 
 const LINKED: GitHubLinkage = {
@@ -656,4 +656,64 @@ test('P21: a failed commit pull request read is recorded, not left pending forev
     null,
     'the card can say the answer is unavailable instead of loading forever',
   );
+});
+
+test('P25: loadClosedPullRequests({ refresh: true }) reloads closed PRs even after closedLoaded is true', async () => {
+  resetStore();
+  useGitHubStore.setState({ closedLoaded: true, closedPullRequests: [pr(4, 'closed')] });
+  const payloads: Array<Record<string, unknown>> = [];
+  const s = stub((kind, payload) => {
+    if (kind === 'github/pullRequests') {
+      payloads.push(payload as Record<string, unknown>);
+      return { pullRequests: [pr(4, 'closed'), pr(150, 'merged')], rateLimit: RATE };
+    }
+    return { connected: true, login: 'me', scopes: ['repo'] };
+  });
+  try {
+    await useGitHubStore.getState().loadClosedPullRequests({ refresh: true });
+  } finally {
+    s.restore();
+  }
+  assert.equal(payloads.length, 1);
+  assert.deepEqual(payloads[0], { owner: 'o', repo: 'r', state: 'closed', refresh: true });
+  assert.equal(useGitHubStore.getState().closedPullRequests.length, 2);
+});
+
+test('P25: wireHostEvents pending refreshes open and loaded closed lists on event/pullRequestsChanged', async () => {
+  resetStore();
+  const receive = (message: unknown): void => (bridge as unknown as { receive(m: unknown): void }).receive(message);
+  const payloads: Array<Record<string, unknown>> = [];
+  const s = stub((kind, payload) => {
+    if (kind === 'github/pullRequests') {
+      payloads.push(payload as Record<string, unknown>);
+      const state = (payload as { state?: string }).state === 'closed' ? 'closed' : 'open';
+      return { pullRequests: state === 'closed' ? [pr(150, 'closed')] : [], rateLimit: RATE };
+    }
+    return { connected: true, login: 'me', scopes: ['repo'] };
+  });
+  const off = wireHostEvents('pending');
+  try {
+    // Mismatched repository is ignored.
+    receive({ kind: 'event/pullRequestsChanged', payload: { owner: 'other', repo: 'r', number: 1 } });
+    await new Promise((r) => setTimeout(r, 0));
+    assert.equal(payloads.length, 0);
+
+    // Matching repo with closedLoaded false refreshes open list only.
+    receive({ kind: 'event/pullRequestsChanged', payload: { owner: 'o', repo: 'r', number: 150 } });
+    await new Promise((r) => setTimeout(r, 0));
+    assert.deepEqual(payloads, [{ owner: 'o', repo: 'r', state: 'open', refresh: true }]);
+
+    // Matching repo with closedLoaded true refreshes both open and closed lists.
+    payloads.length = 0;
+    useGitHubStore.setState({ closedLoaded: true });
+    receive({ kind: 'event/pullRequestsChanged', payload: { owner: 'o', repo: 'r', number: 151 } });
+    await new Promise((r) => setTimeout(r, 10));
+    assert.deepEqual(payloads, [
+      { owner: 'o', repo: 'r', state: 'open', refresh: true },
+      { owner: 'o', repo: 'r', state: 'closed', refresh: true },
+    ]);
+  } finally {
+    off();
+    s.restore();
+  }
 });
