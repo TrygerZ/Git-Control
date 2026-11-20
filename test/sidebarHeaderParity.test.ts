@@ -50,9 +50,9 @@ test('the compact row carries one quick-create button per destination', () => {
   assert.match(src, /navigateWithFocus\(\{ id: 'prs' \}, 'create-pr'\)/);
   // Branches: the view owns the prompt, and consumes `new-branch` the same way.
   assert.match(src, /navigateWithFocus\(\{ id: 'branches', sub: 'local' \}, 'new-branch'\)/);
-  // Issues and Actions have no in-extension write flow until P26 and P27, so the
-  // button opens the GitHub page that does have one.
-  assert.match(src, /\/issues\/new/, 'New issue opens the GitHub form');
+  // Issues: P26 ships the in-extension NewIssueDialog, so the header raises `new-issue`.
+  assert.match(src, /navigateWithFocus\(\{ id: 'issues' \}, 'new-issue'\)/, 'New issue opens the in-extension dialog');
+  // Actions has no in-extension write flow until P27, so the button opens the GitHub page.
   assert.match(src, /\/actions/, 'Run workflow opens the GitHub Actions page');
   assert.match(src, /strings\.shell\.addPr/, 'the button is named in the catalog');
   assert.match(src, /strings\.shell\.addIssue/);
@@ -122,6 +122,11 @@ test('the new-branch focus target has a consumer, so the header may raise it', (
   const branches = read('src/webview/BranchesView.tsx');
   assert.match(branches, /pendingFocus !== 'new-branch'/, 'the Branches view ignores other targets');
   assert.match(branches, /setCreateOpen\(true\)/, 'and opens its own prompt');
+
+  assert.match(union, /new-issue/, 'new-issue ships with the Issues dialog that consumes it');
+  assert.match(guards, /'new-issue'/, 'the host boundary validates new-issue');
+  const issues = read('src/webview/IssuesView.tsx');
+  assert.match(issues, /pendingFocus !== 'new-issue'/, 'the Issues view consumes new-issue');
 });
 
 test('both catalogs name every new shell string', () => {
