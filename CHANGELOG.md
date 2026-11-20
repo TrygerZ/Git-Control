@@ -5,6 +5,21 @@ All notable changes to the "Git Control" extension will be documented in this fi
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.22.0] - 2026-11-20
+
+### Added
+- Merge or squash a pull request directly from its detail panel after a confirmation dialog showing the target branches, risk level in text, optional local (`git branch -d`) and `origin` branch deletion, and the exact commands that will run.
+- Hide branch deletion on fork pull requests in the merge confirmation dialog and skip base-repository branch deletion on the host.
+- Submit reviews (Approve, Request changes, or Comment) pinned to the pull request head commit from the panel, and reply inline inside review comment threads.
+- Close a pull request from the panel More menu after a Level 1 confirmation dialog previewing the API call with Cancel focused by default.
+- Broadcast pull request and repository change events across webviews so the sidebar Pull requests list (open and recently closed) and branch graph refresh after a merge or close in the PR panel.
+
+### Changed
+- Merging or closing a pull request or submitting a review requires a token with repository write access; missing permissions are reported directly.
+
+### Security
+- Pin merges and reviews to the head SHA shown in the panel, guard every write with single-attempt idempotency keys, refuse deleting the repository default branch locally or on the remote, and drop cached pull request details after merges or reviews.
+
 ## [3.21.0] - 2026-11-19
 
 ### Added
