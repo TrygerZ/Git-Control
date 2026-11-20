@@ -5,6 +5,21 @@ All notable changes to the "Git Control" extension will be documented in this fi
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.23.0] - 2026-11-20
+
+### Added
+- Comment on an issue directly from the expanded issue row in the sidebar Issues view.
+- Close an issue as completed with an optimistic transition to Recently closed, nav badge update, and an Undo toast action that reopens it.
+- Reopen a closed issue from the Recently closed or Closed list.
+- Create a new issue with a title, description, up to 10 existing repository labels from a multiselect listbox picker, and a read-only `POST /repos/{owner}/{repo}/issues` command preview from the New issue dialog.
+
+### Changed
+- The sidebar header quick-create button on the Issues view now opens the in-extension New issue dialog when signed in and issues are enabled on the repository.
+- Issue write actions require a token with issue write access; missing permissions or repositories with issues disabled are reported directly.
+
+### Security
+- Validate issue numbers, titles, bodies, and label lists before touching the GitHub REST client, guard every issue write with single-attempt idempotency keys, sanitize 422 error messages from control and bidi characters, and map label colors to a closed CSS tone palette.
+
 ## [3.22.0] - 2026-11-20
 
 ### Added
