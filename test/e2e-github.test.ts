@@ -246,3 +246,124 @@ test('P12: a 304 is not a failure, so repeated reloads never open the breaker', 
   }
   assert.equal(gh.circuitOpen, false, 'a 304 is a success');
 });
+
+// ------------------------------------------------ P26: issue writes + cache
+
+test('P26: create then list shows the new issue; close then Undo restores it', async (t) => {
+  const repo = await makeRepo({ label: 'p26-issues' });
+  const h = client([
+    // 1. Initial GET /issues (open)
+    response(200, [{ number: 97, title: 'Existing issue', state: 'open', html_url: 'https://github.com/o/r/issues/97', user: { login: 'me' } }]),
+    // 2. POST /issues (create #98)
+    response(201, { number: 98, html_url: 'https://github.com/o/r/issues/98' }),
+    // 3. GET /issues after create (cache was invalidated, returns #98 and #97)
+    response(200, [
+      { number: 98, title: 'New issue', state: 'open', html_url: 'https://github.com/o/r/issues/98', user: { login: 'me' }, labels: [{ name: 'bug', color: 'd73a4a' }] },
+      { number: 97, title: 'Existing issue', state: 'open', html_url: 'https://github.com/o/r/issues/97', user: { login: 'me' } },
+    ]),
+    // 4. PATCH /issues/97 (close)
+    response(200, { number: 97, state: 'closed', state_reason: 'completed' }),
+    // 5. GET /issues after close (cache invalidated, only #98 open)
+    response(200, [
+      { number: 98, title: 'New issue', state: 'open', html_url: 'https://github.com/o/r/issues/98', user: { login: 'me' } },
+    ]),
+    // 6. PATCH /issues/97 (Undo -> reopen)
+    response(200, { number: 97, state: 'open', state_reason: 'reopened' }),
+    // 7. GET /issues after reopen (cache invalidated, #98 and #97 both open again)
+    response(200, [
+      { number: 98, title: 'New issue', state: 'open', html_url: 'https://github.com/o/r/issues/98', user: { login: 'me' } },
+      { number: 97, title: 'Existing issue', state: 'open', state_reason: 'reopened', html_url: 'https://github.com/o/r/issues/97', user: { login: 'me' } },
+    ]),
+  ]);
+
+  const bridge = repo.harness({
+    host: {
+      githubWriteContext: async () => ({
+        connected: true,
+        scopes: ['repo'],
+        tokenAllowed: true,
+        circuitOpen: h.gh.circuitOpen,
+      }),
+      githubIssues: async (payload) => {
+        const result = await h.gh.issues(payload.owner, payload.repo, {
+          filter: payload.filter,
+          state: payload.state ?? 'open',
+          login: 'me',
+        });
+        return { issues: result.data, rateLimit: h.gh.rateLimit(result.cached) };
+      },
+      githubCreateIssue: async (payload) => {
+        return (
+          await h.gh.createIssue(payload.owner, payload.repo, {
+            title: payload.title,
+            body: payload.body,
+            labels: payload.labels,
+          })
+        ).data;
+      },
+      githubSetIssueState: async (payload) => {
+        return (await h.gh.setIssueState(payload.owner, payload.repo, payload.number, payload.state)).data;
+      },
+    },
+  });
+  own(t, repo, bridge);
+
+  // 1. List initial issues (caches response 1)
+  const list1 = await bridge.send('github/issues', { owner: 'o', repo: 'r', filter: 'created' });
+  assert.equal(list1.ok, true);
+  if (!list1.ok) return;
+  const data1 = list1.data as { issues: Array<{ number: number }> };
+  assert.deepEqual(data1.issues.map((i) => i.number), [97]);
+
+  // 2. Create #98 (invalidates cache) -> next list hits network and shows #98
+  const created = await bridge.send('github/createIssue', {
+    owner: 'o',
+    repo: 'r',
+    title: 'New issue',
+    body: 'Details',
+    labels: ['bug'],
+    idempotencyKey: 'e2e-cr-98',
+  });
+  assert.equal(created.ok, true);
+  if (!created.ok) return;
+  const createdData = created.data as { number: number; htmlUrl: string };
+  assert.equal(createdData.number, 98);
+
+  const list2 = await bridge.send('github/issues', { owner: 'o', repo: 'r', filter: 'created' });
+  assert.equal(list2.ok, true);
+  if (!list2.ok) return;
+  const data2 = list2.data as { issues: Array<{ number: number }> };
+  assert.deepEqual(data2.issues.map((i) => i.number), [98, 97], 'new issue appears in list after create invalidates cache');
+
+  // 3. Close #97 -> list shows only #98 open
+  const closed = await bridge.send('github/setIssueState', {
+    owner: 'o',
+    repo: 'r',
+    number: 97,
+    state: 'closed',
+    idempotencyKey: 'e2e-close-97',
+  });
+  assert.equal(closed.ok, true);
+
+  const list3 = await bridge.send('github/issues', { owner: 'o', repo: 'r', filter: 'created' });
+  assert.equal(list3.ok, true);
+  if (!list3.ok) return;
+  const data3 = list3.data as { issues: Array<{ number: number }> };
+  assert.deepEqual(data3.issues.map((i) => i.number), [98]);
+
+  // 4. Undo (reopen #97) -> list restores #97
+  const reopened = await bridge.send('github/setIssueState', {
+    owner: 'o',
+    repo: 'r',
+    number: 97,
+    state: 'open',
+    idempotencyKey: 'e2e-reopen-97',
+  });
+  assert.equal(reopened.ok, true);
+
+  const list4 = await bridge.send('github/issues', { owner: 'o', repo: 'r', filter: 'created' });
+  assert.equal(list4.ok, true);
+  if (!list4.ok) return;
+  const data4 = list4.data as { issues: Array<{ number: number }> };
+  assert.deepEqual(data4.issues.map((i) => i.number), [98, 97], 'Undo restores closed issue to open list');
+});
