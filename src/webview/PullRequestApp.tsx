@@ -2,10 +2,12 @@
  * Pull request detail panel (P24).
  *
  * One editor tab per pull request, opened from a PR row or the Inspector card.
- * Everything here is read-only: the panel reads the detail, then one tab's data
- * per visit, and every click either opens a diff, reveals a commit, navigates the
- * sidebar, or opens an https URL through the host. The merge box is a disabled
- * placeholder until P25, and it states that in words.
+ * The reads are the panel's own: the detail, then one tab's data per visit. The
+ * writes go through `pullStore`, which owns the state machines and the
+ * idempotency keys: this panel only opens the merge and review dialogs, posts a
+ * review thread reply, closes the pull request, and otherwise opens a diff,
+ * reveals a commit, navigates the sidebar, or opens an https URL through the
+ * host. Nothing here constructs a request of its own.
  *
  * Untrusted text is rendered as text nodes only. Bodies keep their line breaks
  * through `white-space: pre-wrap`, never through markup.
