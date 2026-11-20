@@ -710,3 +710,57 @@ test('P25: close pull request confirmation strings keep arguments in both langua
     assert.match(merged.closedToast('150'), /150/);
   }
 });
+
+test('P27: actionsWrite namespace has en/id parity, keeps function arguments, and help updates', () => {
+  const stringKeys = [
+    'rerunFailed',
+    'rerunToast',
+    'rerunNotAllowed',
+    'rerunExpired',
+    'viewRun',
+    'runWorkflow',
+    'dialogIntro',
+    'fieldWorkflow',
+    'fieldBranch',
+    'inputsUnreadable',
+    'openOnGitHub',
+    'openOnGitHubHint',
+    'inputsNeededOnGitHub',
+    'workflowDisabled',
+    'noDispatchTrigger',
+    'commandHeading',
+    'confirmRun',
+    'startingRun',
+    'mayTakeAMinute',
+    'needScope',
+    'rerunning',
+    'loadingInputs',
+    'noActiveWorkflows',
+    'cancel',
+    'dispatching',
+  ] as const;
+
+  for (const lang of ['en', 'id'] as const) {
+    const aw = t(lang).actionsWrite;
+    assert.ok(aw, `${lang} actionsWrite namespace exists`);
+    for (const key of stringKeys) {
+      const val = aw[key];
+      assert.equal(typeof val, 'string', `${lang}.actionsWrite.${key}`);
+      assert.ok(val.length > 0, `${lang}.actionsWrite.${key} non-empty`);
+      assert.ok(!val.includes('\u2014') && !val.includes('\u2013'), `${lang}.actionsWrite.${key} no em/en dash`);
+    }
+    assert.equal(aw.rerunToastDetail('1', '2'), '1 / 2');
+    assert.equal(aw.inputLabel('1'), '1 (input)');
+    assert.match(aw.inputRequired('1'), /1/);
+    assert.equal(aw.dispatchedDetail('1'), 'workflow_dispatch / 1');
+    const dispatched = aw.dispatchedToast('1', '2');
+    assert.ok(dispatched.includes('1') && dispatched.includes('2'), `${lang}.actionsWrite.dispatchedToast args`);
+  }
+
+  assert.equal(t('en').actionsWrite.rerunFailed, 'Re-run failed jobs');
+  assert.equal(t('id').actionsWrite.rerunFailed, 'Jalankan ulang job yang gagal');
+  assert.equal(t('en').actionsWrite.dispatchedToast('1', '2'), 'Dispatched 1 on 2');
+  assert.equal(t('id').actionsWrite.dispatchedToast('1', '2'), '1 dikirim di 2');
+  assert.match(t('en').help.fActionsDesc, /re-run|workflow/i);
+  assert.match(t('id').help.fActionsDesc, /jalankan|workflow/i);
+});
