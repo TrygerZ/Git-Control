@@ -82,6 +82,7 @@ Right-click any commit node or branch ref to perform standard Git actions:
 * **Checkout Pull Request**: The branch button on a row fetches the pull request head into a local branch named `pr/<number>` and switches to it. Unsaved changes are handled with the usual commit or stash options. Checking out again fast-forwards the branch, and a branch with local commits the pull request does not have is refused rather than overwritten.
 * **Pull Request Detail Panel**: Opens one dedicated editor tab per pull request number with Conversation, Commits, Checks, and Files changed tabs, inline diff launch against the merge base, and a reviewers and labels rail.
 * **Merge, Review, and Close Pull Requests**: Merge commit or Squash and merge directly from the panel after confirming the target branches, optional branch deletion (disabled on fork PRs, with default-branch protection), and exact commands; submit reviews (Approve, Request changes, or Comment) pinned to the head SHA; reply inline inside review threads; and close a pull request from the More menu behind a Level 1 confirmation dialog.
+* **Issues and Issue Write Actions**: Browse assigned, created, and mentioned issues, start a local branch from an issue, post comments inline from the expanded issue row, close an issue as completed with an Undo toast action, reopen closed issues, and create new issues with a title, description, and existing repository labels.
 * **External Navigation**: Direct links to view commits and pull requests in the browser.
 * **Rate Limit Monitoring**: Real-time indicator for GitHub REST API quotas and cache status.
 * **Contributor Identity Resolution**: Resolves author email addresses to GitHub profiles and avatars with cached API queries.
@@ -158,7 +159,7 @@ Git Control uses a Personal Access Token stored in VS Code `SecretStorage`. Read
 |---|---|---|
 | Read pull requests, issues, workflow runs, job logs | `repo` for private repositories, none for public | Pull requests: Read. Actions: Read. Contents: Read |
 | Read the private-repository warning state | `repo:status` | Metadata: Read |
-| Create, merge, or close pull requests and issues | `repo` | Pull requests: Read and write. Issues: Read and write |
+| Create, comment on, merge, close, or reopen pull requests and issues | `repo` | Pull requests: Read and write. Issues: Read and write |
 | Re-run workflows and dispatch a workflow | `repo` | Actions: Read and write |
 | Create releases and tags through the API | `repo` | Contents: Read and write |
 
