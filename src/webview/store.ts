@@ -1153,7 +1153,8 @@ export interface GitHubState {
    */
   refreshLinkage(): Promise<void>;
   loadPullRequests(opts?: { refresh?: boolean }): Promise<void>;
-  loadClosedPullRequests(): Promise<void>;
+  loadClosedPullRequests(opts?: { refresh?: boolean }): Promise<void>;
+  refreshPullRequestsAfterChange(target: { owner: string; repo: string }): Promise<void>;
   loadCommitAuthors(hashes: string[]): Promise<void>;
   loadCommitPullRequests(hash: string): Promise<void>;
   loadChecks(shas: string[]): Promise<void>;
@@ -1347,15 +1348,24 @@ export const useGitHubStore = create<GitHubState>((set, get) => ({
     return inFlightPullRequests;
   },
 
-  async loadClosedPullRequests() {
-    if (inFlightClosedPullRequests !== null) return inFlightClosedPullRequests;
+  async loadClosedPullRequests(opts?: { refresh?: boolean }) {
+    const refresh = opts?.refresh === true;
+    while (inFlightClosedPullRequests !== null) {
+      if (!refresh) return inFlightClosedPullRequests;
+      await inFlightClosedPullRequests;
+    }
     const { linkage, closedLoaded } = get();
-    if (closedLoaded) return;
+    if (!refresh && closedLoaded) return;
     if (linkage === null || !linkage.available || linkage.owner === null || linkage.repo === null) return;
     const { owner, repo } = linkage;
     inFlightClosedPullRequests = (async () => {
       try {
-        const result = await bridge.request('github/pullRequests', { owner, repo, state: 'closed' });
+        const result = await bridge.request('github/pullRequests', {
+          owner,
+          repo,
+          state: 'closed',
+          ...(refresh ? { refresh: true } : {}),
+        });
         set({
           closedPullRequests: result.pullRequests,
           closedLoaded: true,
@@ -1371,6 +1381,26 @@ export const useGitHubStore = create<GitHubState>((set, get) => ({
       }
     })();
     return inFlightClosedPullRequests;
+  },
+
+  async refreshPullRequestsAfterChange(target: { owner: string; repo: string }) {
+    const linkage = get().linkage;
+    if (
+      linkage === null ||
+      !linkage.available ||
+      linkage.owner !== target.owner ||
+      linkage.repo !== target.repo
+    ) {
+      return;
+    }
+    const reloadClosed = get().closedLoaded || inFlightClosedPullRequests !== null;
+    set({ closedLoaded: false });
+    if (inFlightPullRequests !== null) await inFlightPullRequests;
+    if (inFlightClosedPullRequests !== null) await inFlightClosedPullRequests;
+    await get().loadPullRequests({ refresh: true });
+    if (reloadClosed) {
+      await get().loadClosedPullRequests({ refresh: true });
+    }
   },
 
   async loadCommitAuthors(hashes: string[]) {
@@ -2480,14 +2510,16 @@ let refreshTimer: ReturnType<typeof setTimeout> | undefined;
  * Returns an unsubscribe for symmetry even though the webview lives as long as
  * the document.
  */
-export function wireHostEvents(mode: 'explorer' | 'pending'): () => void {
+export function wireHostEvents(mode: 'explorer' | 'pending' | 'pr'): () => void {
   if (wired) return () => undefined;
   wired = true;
 
   const offChanged = bridge.on('event/repoChanged', () => {
     if (refreshTimer !== undefined) clearTimeout(refreshTimer);
     refreshTimer = setTimeout(() => {
+      refreshTimer = undefined;
       if (mode === 'explorer') void useRepoStore.getState().refresh();
+      else if (mode === 'pr') void useRepoStore.getState().loadStatus();
       else {
         void useGitHubStore.getState().refreshLinkage();
         void useChangesStore.getState().load();
@@ -2551,7 +2583,19 @@ export function wireHostEvents(mode: 'explorer' | 'pending'): () => void {
         })
       : undefined;
 
+  // Only the sidebar owns the PR list; the explorer and isolated PR panels ignore it.
+  const offPullRequestsChanged =
+    mode === 'pending'
+      ? bridge.on('event/pullRequestsChanged', (payload) => {
+          void useGitHubStore.getState().refreshPullRequestsAfterChange(payload);
+        })
+      : undefined;
+
   return () => {
+    if (refreshTimer !== undefined) {
+      clearTimeout(refreshTimer);
+      refreshTimer = undefined;
+    }
     offChanged();
     offProgress();
     offToast();
@@ -2559,6 +2603,7 @@ export function wireHostEvents(mode: 'explorer' | 'pending'): () => void {
     offIconTheme();
     offCommitFocus();
     offNavigate?.();
+    offPullRequestsChanged?.();
     wired = false;
   };
 }

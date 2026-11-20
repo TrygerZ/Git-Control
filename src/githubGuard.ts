@@ -24,6 +24,7 @@ export type GitHubWriteAction =
   | { action: 'merge-pull-request'; method: 'merge' | 'squash' }
   | { action: 'submit-review'; event: 'APPROVE' | 'REQUEST_CHANGES' | 'COMMENT' }
   | { action: 'comment' }
+  | { action: 'close-pull-request' }
   | { action: 'close-issue' }
   | { action: 'create-issue' }
   | { action: 'rerun-failed-jobs' }
@@ -41,12 +42,20 @@ export interface GitHubGuardContext {
 
 export type GitHubGuardVerdict = GuardVerdict;
 
-/** Writes that change shared state; the rest are additive and reversible. */
+/**
+ * Writes that change shared state; the rest are additive and reversible.
+ *
+ * `submit-review` is deliberately absent (X-02, P25). It was a level 1 action in
+ * P19, but frame 107 shows the review form with a Submit button and no confirm
+ * step: the form the user fills in IS the explicit act, and a second dialog would
+ * ask the same question twice. A plain comment already worked this way.
+ */
 const CONFIRM_ACTIONS = new Set<GitHubWriteAction['action']>([
   'merge-pull-request',
   'create-release',
   'dispatch-workflow',
   'close-issue',
+  'close-pull-request',
 ]);
 
 /** `repo` covers every write; `public_repo` is its public-only equivalent. */
@@ -95,13 +104,14 @@ export function evaluateGitHubAction(
     return { allow: false, code: 'FORBIDDEN', message: text.missingScope('repo'), remedies: ['cancel'] };
   }
 
-  const reviewVerdict = action.action === 'submit-review' && action.event !== 'COMMENT';
   // A publish pushes a new branch, which changes the remote for everyone. A
   // draft PR with publish is the same push, so draft is irrelevant here.
   const publishVerdict = action.action === 'create-pull-request' && action.publish === true;
-  if (CONFIRM_ACTIONS.has(action.action) || reviewVerdict || publishVerdict) {
-    // Merging, releasing, dispatching, closing, publishing, and a review verdict
-    // change shared state; an additive comment does not.
+  if (CONFIRM_ACTIONS.has(action.action) || publishVerdict) {
+    // Merging, releasing, dispatching, closing an issue or a pull request, and
+    // publishing change shared state. A review verdict and an additive comment
+    // do not: the form or the comment box is the act.
+    const low = action.action === 'close-issue' || action.action === 'close-pull-request';
     return {
       allow: false,
       code: 'CONFIRMATION_REQUIRED',
@@ -109,7 +119,7 @@ export function evaluateGitHubAction(
       remedies: ['confirm', 'cancel'],
       requiresConfirmation: true,
       confirmationLevel: 1,
-      risk: reviewVerdict || action.action === 'close-issue' ? 'low' : 'medium',
+      risk: low ? 'low' : 'medium',
     };
   }
 

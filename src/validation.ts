@@ -79,17 +79,28 @@ export function validateBranchName(
 }
 
 /**
- * Defends against: deleting the branch the user is standing on, and against every
- * ref-name shape `git branch -d` would misread.
+ * Defends against: deleting the branch the user is standing on or the
+ * repository's default branch, and against every ref-name shape `git branch -d`
+ * would misread.
  *
- * The current-branch half lives here rather than in the guard because two layers
- * ask the same question: the guard before the request is accepted, and the bridge
- * again against freshly read status. A disagreement between them would be a path
- * that deletes the checked-out branch.
+ * The rule is the phase file's: "Never delete HEAD, the default branch, or a
+ * branch with unmerged commits". Git supplies the last half itself (`-d`
+ * refuses a branch whose work is not merged); this function supplies the first
+ * two. A `null` or empty `current` / `defaultBranch` means "unknown" and can
+ * never match, because a valid branch name is never empty.
+ *
+ * Both halves live here rather than in the guard because two layers ask the
+ * same question: the guard before the request is accepted, and the bridge again
+ * against freshly read status. A disagreement between them would be a path that
+ * deletes the checked-out or default branch.
  */
-export function validateDeletableBranch(value: unknown, current: string | null): boolean {
+export function validateDeletableBranch(
+  value: unknown,
+  current: string | null,
+  defaultBranch: string | null = null,
+): boolean {
   if (!validateBranchName(value)) return false;
-  return value !== current;
+  return value !== current && value !== defaultBranch;
 }
 
 /**
@@ -285,6 +296,48 @@ export function buildRepoPathspecs(
   onInvalid: (path?: string) => never,
 ): string[] {
   return assertValidRepoPaths(paths, onInvalid).map((path) => `:(top,literal)${path.replace(/\\/g, '/')}`);
+}
+
+/**
+ * Defends against: a rebase merge reaching the API at all (D-08). The allowlist
+ * is the guarantee, not the UI: rebase merge is permanently out of scope, and a
+ * request that never carries the value cannot perform it.
+ */
+export function validateMergeMethod(value: unknown): value is 'merge' | 'squash' {
+  return value === 'merge' || value === 'squash';
+}
+
+/**
+ * Defends against: an unknown review event reaching the reviews endpoint, where
+ * GitHub would reject it or apply a state the UI never offered.
+ */
+export function validateReviewEvent(value: unknown): value is 'APPROVE' | 'REQUEST_CHANGES' | 'COMMENT' {
+  return value === 'APPROVE' || value === 'REQUEST_CHANGES' || value === 'COMMENT';
+}
+
+/**
+ * Defends against: a squash title that is blank, unbounded, or spans more than
+ * one line. The title becomes the squash commit's subject, so a newline would
+ * split it into a subject and an unintended body.
+ */
+export function validateCommitTitle(value: unknown): value is string {
+  if (typeof value !== 'string') return false;
+  const trimmed = value.trim();
+  if (trimmed.length === 0 || trimmed.length > 256) return false;
+  return !CONTROL_CHARS.test(trimmed);
+}
+
+/**
+ * Defends against: an empty or unbounded comment body reaching the API. NUL is
+ * refused because it truncates downstream text handling; newlines are expected,
+ * since a comment body is multi-line Markdown. Content is not policed here: the
+ * extension never renders the body, GitHub does.
+ */
+export function validateCommentBody(value: unknown, max = 65536): value is string {
+  if (typeof value !== 'string') return false;
+  const trimmed = value.trim();
+  if (trimmed.length === 0 || trimmed.length > max) return false;
+  return !trimmed.includes('\u0000');
 }
 
 /** Shared assertion primitives for callers that must preserve their own error type. */

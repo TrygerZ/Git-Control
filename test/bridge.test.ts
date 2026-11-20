@@ -18,6 +18,7 @@ import type {
   HostMessage,
   OpenDiffPayload,
   OpenStashDiffHostPayload,
+  PullDetail,
   RemoteInfo,
   Request,
   Response,
@@ -4130,4 +4131,946 @@ test('P24: actions/openPullRequest answers opened false without a host method', 
   assert.equal(response.ok, true);
   if (!response.ok) return;
   assert.deepEqual(response.data, { opened: false });
+});
+
+// ------------------------------------- P25 merge, close, review, reply writes
+
+/**
+ * The P25 writes are the first GitHub mutations where the order of host work
+ * matters as much as the request. A merge re-reads the pull request before it
+ * trusts anything the webview said, pins the merge to the head the user saw, and
+ * treats a refused branch deletion as a warning after the merge already landed.
+ *
+ * The API calls themselves are host callbacks here, stubbed. What is under test
+ * is the bridge: validation, guard, idempotency, order, and result shape.
+ */
+
+const RATE_LIMIT = { limit: 5000, remaining: 4999, resetAt: null, cached: false, offline: false };
+
+function pullDetail(overrides: Partial<PullDetail> = {}): PullDetail {
+  return {
+    number: 150,
+    title: 'Rebalance change row content inset to 8px',
+    state: 'open',
+    draft: false,
+    author: 'TrygerZ',
+    authorAvatarUrl: null,
+    headRef: 'fix/ui-review-polish',
+    baseRef: 'main',
+    headSha: 'a'.repeat(40),
+    baseSha: 'b'.repeat(40),
+    commits: 2,
+    additions: 84,
+    deletions: 15,
+    changedFiles: 3,
+    mergeableState: 'clean',
+    htmlUrl: 'https://github.com/o/r/pull/150',
+    body: '',
+    createdAt: '2026-11-18T00:00:00Z',
+    updatedAt: '2026-11-18T00:00:00Z',
+    mergedAt: null,
+    reviewers: [],
+    approvedBy: [],
+    changesRequestedBy: [],
+    labels: [],
+    ...overrides,
+  };
+}
+
+function writeHost(overrides: Partial<BridgeHost> = {}): Partial<BridgeHost> {
+  return {
+    githubWriteContext: () =>
+      Promise.resolve({ connected: true, scopes: ['repo'], tokenAllowed: true, circuitOpen: false }),
+    githubPullDetail: () => Promise.resolve({ detail: pullDetail(), rateLimit: RATE_LIMIT }),
+    ...overrides,
+  };
+}
+
+function mergePayload(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+  return {
+    owner: 'o',
+    repo: 'r',
+    number: 150,
+    method: 'merge',
+    expectedHeadSha: 'a'.repeat(40),
+    idempotencyKey: 'merge-1',
+    confirm: true,
+    ...overrides,
+  };
+}
+
+const MERGED = { merged: true, mergeSha: 'c'.repeat(40), rateLimit: RATE_LIMIT };
+const MERGED_NO_SHA = { merged: true, mergeSha: null, rateLimit: RATE_LIMIT };
+
+test('P25: merge is refused without confirm, with 428 and its level', async (t) => {
+  let merged = 0;
+  const h = harness(null, writeHost({
+    githubMergePullRequest: () => {
+      merged += 1;
+      return Promise.resolve(MERGED);
+    },
+  }));
+  t.after(() => h.bridge.dispose());
+
+  const response = await h.webview.send(req('github/mergePullRequest', mergePayload({ confirm: undefined })));
+  assert.equal(response.ok, false);
+  if (response.ok) return;
+  assert.equal(response.error.status, 428);
+  assert.equal(response.error.code, 'CONFIRMATION_REQUIRED');
+  assert.equal(response.error.confirmationLevel, 1);
+  assert.equal(merged, 0, 'nothing was merged before the user confirmed');
+});
+
+test('P25: a stale expected head is refused before GitHub is asked', async (t) => {
+  let merged = 0;
+  const h = harness(null, writeHost({
+    githubPullDetail: () => Promise.resolve({ detail: pullDetail({ headSha: 'c'.repeat(40) }), rateLimit: RATE_LIMIT }),
+    githubMergePullRequest: () => {
+      merged += 1;
+      return Promise.resolve(MERGED);
+    },
+  }));
+  t.after(() => h.bridge.dispose());
+
+  const response = await h.webview.send(req('github/mergePullRequest', mergePayload()));
+  assert.equal(response.ok, false);
+  if (response.ok) return;
+  assert.equal(response.error.status, 409);
+  assert.equal(response.error.code, 'CONFLICT');
+  assert.equal(response.error.detail, 'head');
+  assert.equal(merged, 0, 'the moved head was caught here, not by GitHub');
+});
+
+test('P25: a pull request GitHub still calls unmergeable is refused host-side', async (t) => {
+  for (const state of ['dirty', 'blocked', 'behind', 'unknown'] as const) {
+    let merged = 0;
+    const h = harness(null, writeHost({
+      githubPullDetail: () => Promise.resolve({ detail: pullDetail({ mergeableState: state }), rateLimit: RATE_LIMIT }),
+      githubMergePullRequest: () => {
+        merged += 1;
+        return Promise.resolve(MERGED);
+      },
+    }));
+    t.after(() => h.bridge.dispose());
+    const response = await h.webview.send(req('github/mergePullRequest', mergePayload({ idempotencyKey: `m-${state}` })));
+    assert.equal(response.ok, false, state);
+    if (response.ok) return;
+    assert.equal(response.error.code, 'CONFLICT', state);
+    assert.equal(response.error.detail, state, `${state} names the reason`);
+    assert.equal(merged, 0, `${state} never reached GitHub`);
+  }
+});
+
+test('P25: a draft pull request is refused host-side', async (t) => {
+  let merged = 0;
+  const h = harness(null, writeHost({
+    githubPullDetail: () => Promise.resolve({ detail: pullDetail({ draft: true }), rateLimit: RATE_LIMIT }),
+    githubMergePullRequest: () => {
+      merged += 1;
+      return Promise.resolve(MERGED);
+    },
+  }));
+  t.after(() => h.bridge.dispose());
+  const response = await h.webview.send(req('github/mergePullRequest', mergePayload()));
+  assert.equal(response.ok, false);
+  if (response.ok) return;
+  assert.equal(response.error.code, 'CONFLICT');
+  assert.equal(response.error.detail, 'draft');
+  assert.equal(merged, 0);
+});
+
+test('P25: a pull request that is no longer open is refused host-side', async (t) => {
+  for (const state of ['closed', 'merged'] as const) {
+    let merged = 0;
+    const h = harness(null, writeHost({
+      githubPullDetail: () => Promise.resolve({ detail: pullDetail({ state }), rateLimit: RATE_LIMIT }),
+      githubMergePullRequest: () => {
+        merged += 1;
+        return Promise.resolve(MERGED);
+      },
+    }));
+    t.after(() => h.bridge.dispose());
+    const response = await h.webview.send(req('github/mergePullRequest', mergePayload({ idempotencyKey: `m-${state}` })));
+    assert.equal(response.ok, false, state);
+    if (response.ok) return;
+    assert.equal(response.error.code, 'CONFLICT');
+    assert.equal(merged, 0, `${state} pull requests are not merged twice`);
+  }
+});
+
+test('P25: a clean merge with a matching head reaches the host with the expected sha', async (t) => {
+  const seen: unknown[] = [];
+  const h = harness(null, writeHost({
+    githubMergePullRequest: (payload) => {
+      seen.push(payload);
+      return Promise.resolve(MERGED);
+    },
+  }));
+  t.after(() => h.bridge.dispose());
+  const response = await h.webview.send(req('github/mergePullRequest', mergePayload({ method: 'squash' })));
+  assert.equal(response.ok, true, JSON.stringify(response));
+  assert.equal(seen.length, 1);
+  const sent = seen[0] as { method: string; sha: string };
+  assert.equal(sent.method, 'squash');
+  assert.equal(sent.sha, 'a'.repeat(40), 'the sha the panel showed is the sha GitHub merges');
+  if (!response.ok) return;
+  const data = response.data as { merged: boolean; mergeSha: string | null; branchDeleted: unknown; warnings: string[] };
+  assert.equal(data.merged, true);
+  assert.equal(data.mergeSha, 'c'.repeat(40));
+  assert.deepEqual(data.warnings, []);
+  assert.deepEqual(data.branchDeleted, { remote: null, local: null }, 'no delete was asked for');
+});
+
+test('P25: two merges with one key run once and replay the same result', async (t) => {
+  let merged = 0;
+  const h = harness(null, writeHost({
+    githubMergePullRequest: () => {
+      merged += 1;
+      return Promise.resolve(MERGED);
+    },
+  }));
+  t.after(() => h.bridge.dispose());
+  const payload = mergePayload({ idempotencyKey: 'once' });
+  const first = await h.webview.send(req('github/mergePullRequest', payload));
+  const second = await h.webview.send(req('github/mergePullRequest', payload));
+  assert.equal(first.ok, true);
+  assert.equal(second.ok, true);
+  assert.equal(merged, 1, 'the second send replayed the first');
+  if (!first.ok || !second.ok) return;
+  assert.deepEqual(second.data, first.data);
+});
+
+test('P25: a failed merge is attempted again, because nothing landed to duplicate', async (t) => {
+  let merged = 0;
+  const h = harness(null, writeHost({
+    githubMergePullRequest: () => {
+      merged += 1;
+      throw new GitHubError({ status: 409, code: 'CONFLICT', message: 'The branch changed', detail: 'head' });
+    },
+  }));
+  t.after(() => h.bridge.dispose());
+  const payload = mergePayload({ idempotencyKey: 'retry-me' });
+  const first = await h.webview.send(req('github/mergePullRequest', payload));
+  assert.equal(first.ok, false);
+  const second = await h.webview.send(req('github/mergePullRequest', payload));
+  assert.equal(second.ok, false);
+  assert.equal(merged, 2, 'a refused merge is attempted again, because no merge exists to duplicate');
+});
+
+test('P25: a merge payload carrying rebase never reaches the host', async (t) => {
+  let merged = 0;
+  const h = harness(null, writeHost({
+    githubMergePullRequest: () => {
+      merged += 1;
+      return Promise.resolve(MERGED);
+    },
+  }));
+  t.after(() => h.bridge.dispose());
+  const response = await h.webview.send(req('github/mergePullRequest', mergePayload({ method: 'rebase' })));
+  assert.equal(response.ok, false);
+  if (response.ok) return;
+  assert.equal(response.error.code, 'VALIDATION_ERROR');
+  assert.equal(merged, 0);
+});
+
+test('P25: a merge payload with an extra field is refused, not ignored', async (t) => {
+  const h = harness(null, writeHost());
+  t.after(() => h.bridge.dispose());
+  const response = await h.webview.send(req('github/mergePullRequest', mergePayload({ path: '/etc/passwd' })));
+  assert.equal(response.ok, false);
+  if (response.ok) return;
+  assert.equal(response.error.code, 'VALIDATION_ERROR');
+});
+
+test('P25: a merge write with no host method is 503', async (t) => {
+  const h = harness(null, writeHost());
+  t.after(() => h.bridge.dispose());
+  const response = await h.webview.send(req('github/mergePullRequest', mergePayload()));
+  assert.equal(response.ok, false);
+  if (response.ok) return;
+  assert.equal(response.error.status, 503);
+});
+
+test('P25: a merge driven by a token without write scope never calls GitHub', async (t) => {
+  let merged = 0;
+  const h = harness(null, writeHost({
+    githubWriteContext: () =>
+      Promise.resolve({ connected: true, scopes: ['read:user'], tokenAllowed: true, circuitOpen: false }),
+    githubMergePullRequest: () => {
+      merged += 1;
+      return Promise.resolve(MERGED);
+    },
+  }));
+  t.after(() => h.bridge.dispose());
+  const response = await h.webview.send(req('github/mergePullRequest', mergePayload()));
+  assert.equal(response.ok, false);
+  if (response.ok) return;
+  assert.equal(response.error.status, 403);
+  assert.equal(merged, 0);
+});
+
+test('P25: close needs confirm and passes only the number through', async (t) => {
+  const seen: unknown[] = [];
+  const h = harness(null, writeHost({
+    githubClosePullRequest: (payload) => {
+      seen.push(payload);
+      return Promise.resolve({ closed: true });
+    },
+  }));
+  t.after(() => h.bridge.dispose());
+
+  const blocked = await h.webview.send(
+    req('github/closePullRequest', { owner: 'o', repo: 'r', number: 150, idempotencyKey: 'c1', confirm: undefined }),
+  );
+  assert.equal(blocked.ok, false);
+  if (blocked.ok) return;
+  assert.equal(blocked.error.code, 'CONFIRMATION_REQUIRED');
+
+  const ok = await h.webview.send(
+    req('github/closePullRequest', { owner: 'o', repo: 'r', number: 150, idempotencyKey: 'c2', confirm: true }),
+  );
+  assert.equal(ok.ok, true);
+  assert.deepEqual(seen, [{ owner: 'o', repo: 'r', number: 150, idempotencyKey: 'c2', confirm: true }]);
+});
+
+test('P25: a review posts without a confirm, because the form is the act', async (t) => {
+  const seen: unknown[] = [];
+  const h = harness(null, writeHost({
+    githubSubmitReview: (payload) => {
+      seen.push(payload);
+      return Promise.resolve({ reviewId: 7 });
+    },
+  }));
+  t.after(() => h.bridge.dispose());
+  const response = await h.webview.send(
+    req('github/submitReview', {
+      owner: 'o',
+      repo: 'r',
+      number: 150,
+      event: 'APPROVE',
+      body: '',
+      expectedHeadSha: 'a'.repeat(40),
+      idempotencyKey: 'rev-1',
+    }),
+  );
+  assert.equal(response.ok, true, JSON.stringify(response));
+  if (!response.ok) return;
+  assert.deepEqual(response.data, { reviewId: 7 });
+  assert.equal((seen[0] as { event: string }).event, 'APPROVE');
+});
+
+test('P25: request changes and comment with no text are refused before the host sees them', async (t) => {
+  let posted = 0;
+  const h = harness(null, writeHost({
+    githubSubmitReview: () => {
+      posted += 1;
+      return Promise.resolve({ reviewId: 7 });
+    },
+  }));
+  t.after(() => h.bridge.dispose());
+  for (const event of ['REQUEST_CHANGES', 'COMMENT']) {
+    for (const body of ['', '   ', '\n\t']) {
+      const response = await h.webview.send(
+        req('github/submitReview', {
+          owner: 'o',
+          repo: 'r',
+          number: 150,
+          event,
+          body,
+          expectedHeadSha: 'a'.repeat(40),
+          idempotencyKey: `rev-${event}-${body.length}`,
+        }),
+      );
+      assert.equal(response.ok, false, `${event} ${JSON.stringify(body)}`);
+      if (response.ok) return;
+      assert.equal(response.error.code, 'VALIDATION_ERROR');
+    }
+  }
+  assert.equal(posted, 0);
+});
+
+test('P25: an approve with no text is allowed, because it has nothing to say', async (t) => {
+  const h = harness(null, writeHost({
+    githubSubmitReview: () => Promise.resolve({ reviewId: 9 }),
+  }));
+  t.after(() => h.bridge.dispose());
+  const response = await h.webview.send(
+    req('github/submitReview', {
+      owner: 'o',
+      repo: 'r',
+      number: 1,
+      event: 'APPROVE',
+      body: '',
+      expectedHeadSha: 'a'.repeat(40),
+      idempotencyKey: 'approve-empty',
+    }),
+  );
+  assert.equal(response.ok, true);
+});
+
+test('P25: a review on a moved head is refused with the refresh message', async (t) => {
+  let posted = 0;
+  const h = harness(null, writeHost({
+    githubPullDetail: () => Promise.resolve({ detail: pullDetail({ headSha: 'c'.repeat(40) }), rateLimit: RATE_LIMIT }),
+    githubSubmitReview: () => {
+      posted += 1;
+      return Promise.resolve({ reviewId: 7 });
+    },
+  }));
+  t.after(() => h.bridge.dispose());
+  const response = await h.webview.send(
+    req('github/submitReview', {
+      owner: 'o',
+      repo: 'r',
+      number: 150,
+      event: 'APPROVE',
+      body: '',
+      expectedHeadSha: 'a'.repeat(40),
+      idempotencyKey: 'rev-stale',
+    }),
+  );
+  assert.equal(response.ok, false);
+  if (response.ok) return;
+  assert.equal(response.error.code, 'CONFLICT');
+  assert.equal(posted, 0);
+});
+
+test('P25: a review event outside the allowlist is refused', async (t) => {
+  const h = harness(null, writeHost());
+  t.after(() => h.bridge.dispose());
+  for (const event of ['DISMISS', 'approve', '', 'PENDING']) {
+    const response = await h.webview.send(
+      req('github/submitReview', {
+        owner: 'o',
+        repo: 'r',
+        number: 1,
+        event,
+        body: 'x',
+        expectedHeadSha: 'a'.repeat(40),
+        idempotencyKey: `rev-${event}`,
+      }),
+    );
+    assert.equal(response.ok, false, event);
+    if (response.ok) return;
+    assert.equal(response.error.code, 'VALIDATION_ERROR');
+  }
+});
+
+test('P25: a reply posts to the host with a positive comment id', async (t) => {
+  const seen: unknown[] = [];
+  const h = harness(null, writeHost({
+    githubReplyReviewComment: (payload) => {
+      seen.push(payload);
+      return Promise.resolve({ commentId: 55 });
+    },
+  }));
+  t.after(() => h.bridge.dispose());
+
+  for (const commentId of [0, -1, 1.5, '44', null]) {
+    const response = await h.webview.send(
+      req('github/replyReviewComment', {
+        owner: 'o',
+        repo: 'r',
+        number: 150,
+        commentId,
+        body: 'Agreed.',
+        idempotencyKey: `rep-${String(commentId)}`,
+      }),
+    );
+    assert.equal(response.ok, false, String(commentId));
+    if (response.ok) return;
+    assert.equal(response.error.code, 'VALIDATION_ERROR');
+  }
+
+  const ok = await h.webview.send(
+    req('github/replyReviewComment', {
+      owner: 'o',
+      repo: 'r',
+      number: 150,
+      commentId: 44,
+      body: 'Agreed.',
+      idempotencyKey: 'rep-ok',
+    }),
+  );
+  assert.equal(ok.ok, true);
+  assert.equal(seen.length, 1);
+});
+
+test('P25: an empty reply body is refused', async (t) => {
+  const h = harness(null, writeHost());
+  t.after(() => h.bridge.dispose());
+  const response = await h.webview.send(
+    req('github/replyReviewComment', {
+      owner: 'o',
+      repo: 'r',
+      number: 150,
+      commentId: 44,
+      body: '  ',
+      idempotencyKey: 'rep-empty',
+    }),
+  );
+  assert.equal(response.ok, false);
+  if (response.ok) return;
+  assert.equal(response.error.code, 'VALIDATION_ERROR');
+});
+
+/**
+ * SEC-014 extended to GitHub writes.
+ *
+ * A write that dies mid-flight may have landed on GitHub's side. Replaying the
+ * stored failure is the only retry that cannot duplicate a review, a merge, or a
+ * comment. A REFUSAL is different: the write provably did not land, so the retry
+ * behind the confirmation dialog must actually run.
+ */
+test('P25: an unavailable GitHub write is replayed, so a retry cannot post twice', async (t) => {
+  let posted = 0;
+  const h = harness(null, writeHost({
+    githubSubmitReview: () => {
+      posted += 1;
+      throw new GitHubError({ status: 503, code: 'UNAVAILABLE', message: 'GitHub is unreachable.' });
+    },
+  }));
+  t.after(() => h.bridge.dispose());
+  const payload = {
+    owner: 'o',
+    repo: 'r',
+    number: 150,
+    event: 'APPROVE',
+    body: '',
+    expectedHeadSha: 'a'.repeat(40),
+    idempotencyKey: 'unavailable-once',
+  };
+  const first = await h.webview.send(req('github/submitReview', payload));
+  const second = await h.webview.send(req('github/submitReview', payload));
+  assert.equal(first.ok, false);
+  assert.equal(second.ok, false);
+  assert.equal(posted, 1, 'the write that may have landed was not attempted again');
+  if (first.ok || second.ok) return;
+  assert.deepEqual(second.error, first.error, 'the stored failure is replayed verbatim');
+});
+
+test('P25: a stale-head refusal is attempted again after the reload', async (t) => {
+  let reads = 0;
+  let posted = 0;
+  const h = harness(null, writeHost({
+    // The first read reports a moved head: the refusal path.
+    githubPullDetail: () => {
+      reads += 1;
+      return Promise.resolve({
+        detail: pullDetail({ headSha: reads === 1 ? 'c'.repeat(40) : 'a'.repeat(40) }),
+        rateLimit: RATE_LIMIT,
+      });
+    },
+    githubSubmitReview: () => {
+      posted += 1;
+      return Promise.resolve({ reviewId: 7 });
+    },
+  }));
+  t.after(() => h.bridge.dispose());
+  const payload = {
+    owner: 'o',
+    repo: 'r',
+    number: 150,
+    event: 'APPROVE',
+    body: '',
+    expectedHeadSha: 'a'.repeat(40),
+    idempotencyKey: 'stale-then-ok',
+  };
+  const first = await h.webview.send(req('github/submitReview', payload));
+  assert.equal(first.ok, false);
+  if (first.ok) return;
+  assert.equal(first.error.code, 'CONFLICT');
+
+  const second = await h.webview.send(req('github/submitReview', payload));
+  assert.equal(second.ok, true, 'the refusal was not replayed: the retry ran');
+  assert.equal(posted, 1);
+});
+
+test('P25: a missing-scope refusal is attempted again after reconnecting', async (t) => {
+  let contexts = 0;
+  const h = harness(null, writeHost({
+    githubWriteContext: () => {
+      contexts += 1;
+      return Promise.resolve(
+        contexts === 1
+          ? { connected: true, scopes: ['read:user'], tokenAllowed: true, circuitOpen: false }
+          : { connected: true, scopes: ['repo'], tokenAllowed: true, circuitOpen: false },
+      );
+    },
+    githubClosePullRequest: () => Promise.resolve({ closed: true }),
+  }));
+  t.after(() => h.bridge.dispose());
+  const payload = { owner: 'o', repo: 'r', number: 150, idempotencyKey: 'scope-then-ok', confirm: true };
+  const first = await h.webview.send(req('github/closePullRequest', payload));
+  assert.equal(first.ok, false);
+  if (first.ok) return;
+  assert.equal(first.error.code, 'FORBIDDEN');
+
+  const second = await h.webview.send(req('github/closePullRequest', payload));
+  assert.equal(second.ok, true, 'the refusal was not replayed: the gate ran again');
+});
+
+/**
+ * The merge and review pre-check must not read the same cached detail the
+ * webview read. Within the 60 s TTL a cached re-read returns the webview's own
+ * snapshot, so the pin would compare a value against itself and a head that moved
+ * would be invisible until GitHub refused it. The host asks for a refresh.
+ */
+test('P25 fix: the merge pre-check asks the host for a fresh detail read', async (t) => {
+  const refresh: unknown[] = [];
+  const h = harness(null, writeHost({
+    githubPullDetail: (payload) => {
+      refresh.push(payload);
+      return Promise.resolve({ detail: pullDetail(), rateLimit: RATE_LIMIT });
+    },
+    githubMergePullRequest: () => Promise.resolve(MERGED),
+  }));
+  t.after(() => h.bridge.dispose());
+  const response = await h.webview.send(req('github/mergePullRequest', mergePayload()));
+  assert.equal(response.ok, true);
+  assert.equal(refresh.length, 1);
+  assert.equal((refresh[0] as { refresh?: boolean }).refresh, true, 'the merge read must bypass the cache');
+});
+
+test('P25 fix: the review pre-check asks the host for a fresh detail read', async (t) => {
+  const refresh: unknown[] = [];
+  const h = harness(null, writeHost({
+    githubPullDetail: (payload) => {
+      refresh.push(payload);
+      return Promise.resolve({ detail: pullDetail(), rateLimit: RATE_LIMIT });
+    },
+    githubSubmitReview: () => Promise.resolve({ reviewId: 7 }),
+  }));
+  t.after(() => h.bridge.dispose());
+  await h.webview.send(
+    req('github/submitReview', {
+      owner: 'o',
+      repo: 'r',
+      number: 150,
+      event: 'APPROVE',
+      body: '',
+      expectedHeadSha: 'a'.repeat(40),
+      idempotencyKey: 'rev-fresh',
+    }),
+  );
+  assert.equal(refresh.length, 1);
+  assert.equal((refresh[0] as { refresh?: boolean }).refresh, true);
+});
+
+/**
+ * QA-02: the webview must not be able to force an uncached read.
+ *
+ * `refresh` is a host-internal hint the merge and review handlers add to their own
+ * re-read. A webview that sends the same key on the ordinary `github/pullDetail`
+ * request must not have it forwarded, or every panel read could bypass the cache
+ * and spend the anonymous quota.
+ */
+test('QA-02: a webview-supplied refresh never reaches the host on the ordinary read', async (t) => {
+  const seen: unknown[] = [];
+  const h = harness(null, {
+    githubPullDetail: (payload) => {
+      seen.push(payload);
+      return Promise.resolve({
+        detail: {} as never,
+        rateLimit: { limit: null, remaining: null, resetAt: null, cached: false, offline: false },
+      });
+    },
+  });
+  t.after(() => h.bridge.dispose());
+  const response = await h.webview.send(
+    req('github/pullDetail', { owner: 'o', repo: 'r', number: 150, refresh: true }),
+  );
+  assert.equal(response.ok, true);
+  assert.deepEqual(seen, [{ owner: 'o', repo: 'r', number: 150 }], 'only the declared fields are forwarded');
+});
+
+/**
+ * QA-04: the delete path must refuse the base branch, not only HEAD.
+ *
+ * The phase file states "Never delete HEAD, the default branch, or a branch with
+ * unmerged commits", and `selectCleanupCandidates` already excludes the default
+ * branch. The bridge's two delete callers (the cleanup action and the merge's
+ * delete-branch step) shared a helper that compared only against `current`, so a
+ * merge whose head IS the base branch could delete it. The host can answer it;
+ * tree data cannot.
+ */
+function repoHost(defaultBranch: string): Partial<BridgeHost> {
+  return {
+    githubLinkage: () =>
+      Promise.resolve({
+        available: true,
+        host: 'github.com',
+        owner: 'o',
+        repo: 'r',
+        webUrl: 'https://github.com/o/r',
+        commitUrlTemplate: 'https://github.com/o/r/commit/{hash}',
+        apiUrl: 'https://api.github.com',
+      }),
+    githubRepo: () =>
+      Promise.resolve({
+        defaultBranch,
+        private: false,
+        htmlUrl: 'https://github.com/o/r',
+        rateLimit: RATE_LIMIT,
+      }),
+  };
+}
+
+test('QA-04: branch-delete refuses the default branch even when it is not HEAD', async (t) => {
+  const repo = await cleanupRepo();
+  t.after(() => cleanup(repo.folderPath));
+  const h = harness(repo, repoHost('feat/a'));
+  t.after(() => h.bridge.dispose());
+  const token = (await repo.status()).statusToken;
+  assert.equal((await repo.status()).branch, 'main', 'the fixture is on main, not on feat/a');
+
+  const response = await h.webview.send(
+    req('actions/git', {
+      action: 'branch-delete',
+      branch: 'feat/a',
+      statusToken: token,
+      idempotencyKey: 'bd-default',
+      confirm: true,
+      forceAcknowledgement: true,
+    }),
+  );
+  assert.equal(response.ok, false);
+  if (response.ok) return;
+  assert.equal(response.error.code, 'VALIDATION_ERROR');
+  assert.deepEqual(response.error.remedies, ['cancel']);
+  assert.ok(
+    (await repo.git.refs()).some((r) => r.refName === 'refs/heads/feat/a'),
+    'the default branch was not deleted',
+  );
+});
+
+test('QA-04: the merge delete step refuses a head that is the default branch', async (t) => {
+  const repo = await cleanupRepo();
+  t.after(() => cleanup(repo.folderPath));
+  const h = harness(repo, {
+    ...writeHost({
+      githubPullDetail: () =>
+        Promise.resolve({ detail: pullDetail({ headRef: 'feat/a' }), rateLimit: RATE_LIMIT }),
+      githubMergePullRequest: () => Promise.resolve(MERGED),
+    }),
+    ...repoHost('feat/a'),
+  });
+  t.after(() => h.bridge.dispose());
+
+  const response = await h.webview.send(
+    req('github/mergePullRequest', mergePayload({ deleteBranch: true })),
+  );
+  assert.equal(response.ok, true, JSON.stringify(response));
+  if (!response.ok) return;
+  const data = response.data as { merged: boolean; branchDeleted: { local: boolean | null; remote: boolean | null }; warnings: string[] };
+  assert.equal(data.merged, true, 'the merge still lands');
+  assert.equal(data.branchDeleted.local, false, 'the default branch was not deleted');
+  assert.ok(data.warnings.includes('branch-local'));
+  assert.ok(
+    (await repo.git.refs()).some((r) => r.refName === 'refs/heads/feat/a'),
+    'feat/a survived',
+  );
+});
+
+test('QA-05: branch-delete-remote refuses the default branch and keeps the remote ref', async (t) => {
+  const repo = await cleanupRepo();
+  t.after(() => cleanup(repo.folderPath));
+  const h = harness(repo, repoHost('feat/a'));
+  t.after(() => h.bridge.dispose());
+  const token = (await repo.status()).statusToken;
+
+  const response = await h.webview.send(
+    req('actions/git', {
+      action: 'branch-delete-remote',
+      remote: 'origin',
+      branch: 'feat/a',
+      statusToken: token,
+      idempotencyKey: 'bdr-default',
+      confirm: true,
+      forceAcknowledgement: true,
+    }),
+  );
+  assert.equal(response.ok, false);
+  if (response.ok) return;
+  assert.equal(response.error.code, 'VALIDATION_ERROR');
+  assert.deepEqual(response.error.remedies, ['cancel']);
+  const remote = await repo.git.run(['ls-remote', '--heads', 'origin']);
+  assert.match(remote.stdout, /refs\/heads\/feat\/a$/m, 'the default branch survived on origin');
+});
+
+test('QA-05: the merge delete step refuses both local and remote deletion for the default branch', async (t) => {
+  const repo = await cleanupRepo();
+  t.after(() => cleanup(repo.folderPath));
+  const h = harness(repo, {
+    ...writeHost({
+      githubPullDetail: () =>
+        Promise.resolve({ detail: pullDetail({ headRef: 'feat/a', isFork: false }), rateLimit: RATE_LIMIT }),
+      githubMergePullRequest: () => Promise.resolve(MERGED),
+    }),
+    ...repoHost('feat/a'),
+  });
+  t.after(() => h.bridge.dispose());
+
+  const response = await h.webview.send(
+    req('github/mergePullRequest', mergePayload({ deleteBranch: true, idempotencyKey: 'm-default-both' })),
+  );
+  assert.equal(response.ok, true, JSON.stringify(response));
+  if (!response.ok) return;
+  const data = response.data as {
+    merged: boolean;
+    branchDeleted: { local: boolean | null; remote: boolean | null };
+    warnings: string[];
+  };
+  assert.equal(data.merged, true);
+  assert.deepEqual(data.branchDeleted, { local: false, remote: false });
+  assert.ok(data.warnings.includes('branch-local'));
+  assert.ok(data.warnings.includes('branch-remote'));
+  assert.ok(
+    (await repo.git.refs()).some((r) => r.refName === 'refs/heads/feat/a'),
+    'feat/a survived locally',
+  );
+  const remote = await repo.git.run(['ls-remote', '--heads', 'origin']);
+  assert.match(remote.stdout, /refs\/heads\/feat\/a$/m, 'feat/a survived on origin');
+});
+
+test('P25: merge with deleteBranch removes local and origin branches and invalidates repo cache', async (t) => {
+  const repo = await cleanupRepo();
+  t.after(() => cleanup(repo.folderPath));
+  let invalidatedBeforeNotify = false;
+  let invalidated = 0;
+  const origInvalidate = repo.invalidate.bind(repo);
+  repo.invalidate = () => {
+    invalidated += 1;
+    origInvalidate();
+  };
+  const h = harness(repo, {
+    ...writeHost({
+      githubPullDetail: () =>
+        Promise.resolve({ detail: pullDetail({ headRef: 'feat/a', isFork: false }), rateLimit: RATE_LIMIT }),
+      githubMergePullRequest: () => Promise.resolve(MERGED),
+    }),
+    ...repoHost('main'),
+  });
+  t.after(() => h.bridge.dispose());
+  const origPost = h.webview.postMessage.bind(h.webview);
+  h.webview.postMessage = (msg) => {
+    if ('kind' in msg && msg.kind === 'event/repoChanged') invalidatedBeforeNotify = invalidated > 0;
+    return origPost(msg);
+  };
+
+  const response = await h.webview.send(
+    req('github/mergePullRequest', mergePayload({ deleteBranch: true, idempotencyKey: 'm-del-ok' })),
+  );
+  assert.equal(response.ok, true, JSON.stringify(response));
+  if (!response.ok) return;
+  const data = response.data as {
+    merged: boolean;
+    branchDeleted: { local: boolean | null; remote: boolean | null };
+    warnings: string[];
+  };
+  assert.equal(data.merged, true);
+  assert.deepEqual(data.branchDeleted, { local: true, remote: true });
+  assert.deepEqual(data.warnings, []);
+  assert.equal(invalidatedBeforeNotify, true, 'repo cache invalidated before event/repoChanged');
+  assert.ok(
+    !(await repo.git.refs()).some((r) => r.refName === 'refs/heads/feat/a'),
+    'feat/a deleted locally',
+  );
+  const remote = await repo.git.run(['ls-remote', '--heads', 'origin']);
+  assert.doesNotMatch(remote.stdout, /refs\/heads\/feat\/a$/m, 'feat/a deleted on origin');
+});
+
+test('P25: merge with deleteBranch on a fork pull request keeps base repo branches untouched', async (t) => {
+  const repo = await cleanupRepo();
+  t.after(() => cleanup(repo.folderPath));
+  const h = harness(repo, {
+    ...writeHost({
+      githubPullDetail: () =>
+        Promise.resolve({ detail: pullDetail({ headRef: 'feat/a', isFork: true }), rateLimit: RATE_LIMIT }),
+      githubMergePullRequest: () => Promise.resolve(MERGED),
+    }),
+    ...repoHost('main'),
+  });
+  t.after(() => h.bridge.dispose());
+
+  const response = await h.webview.send(
+    req('github/mergePullRequest', mergePayload({ deleteBranch: true, idempotencyKey: 'm-del-fork' })),
+  );
+  assert.equal(response.ok, true, JSON.stringify(response));
+  if (!response.ok) return;
+  const data = response.data as {
+    merged: boolean;
+    branchDeleted: { local: boolean | null; remote: boolean | null };
+    warnings: string[];
+  };
+  assert.equal(data.merged, true);
+  assert.deepEqual(data.branchDeleted, { local: false, remote: false });
+  assert.ok(data.warnings.includes('branch-local'));
+  assert.ok(data.warnings.includes('branch-remote'));
+  assert.ok(
+    (await repo.git.refs()).some((r) => r.refName === 'refs/heads/feat/a'),
+    'local branch with colliding name survived',
+  );
+  const remote = await repo.git.run(['ls-remote', '--heads', 'origin']);
+  assert.match(remote.stdout, /refs\/heads\/feat\/a$/m, 'origin branch with colliding name survived');
+});
+
+test('QA-06: merge and close broadcast pullRequestsChanged and merge broadcasts repoChanged across webviews', async (t) => {
+  const repoBroadcasts: string[] = [];
+  const prBroadcasts: unknown[] = [];
+  const h = harness(null, {
+    ...writeHost({
+      githubMergePullRequest: () => Promise.resolve(MERGED),
+      githubClosePullRequest: () => Promise.resolve({ closed: true }),
+    }),
+    broadcastRepoChanged: async (reason) => {
+      repoBroadcasts.push(reason);
+    },
+    broadcastPullRequestsChanged: (event) => {
+      prBroadcasts.push(event);
+    },
+  });
+  t.after(() => h.bridge.dispose());
+
+  const merged = await h.webview.send(req('github/mergePullRequest', mergePayload({ idempotencyKey: 'bcast-m' })));
+  assert.equal(merged.ok, true);
+  assert.deepEqual(repoBroadcasts, ['action'], 'merge broadcasts repoChanged across all webviews');
+  assert.deepEqual(prBroadcasts, [{ owner: 'o', repo: 'r', number: 150 }]);
+
+  const closed = await h.webview.send(
+    req('github/closePullRequest', { owner: 'o', repo: 'r', number: 151, idempotencyKey: 'bcast-c', confirm: true }),
+  );
+  assert.equal(closed.ok, true);
+  assert.deepEqual(prBroadcasts, [
+    { owner: 'o', repo: 'r', number: 150 },
+    { owner: 'o', repo: 'r', number: 151 },
+  ]);
+});
+
+test('QA-06: failed close never broadcasts pullRequestsChanged, and local bridge emits fallback without host hook', async (t) => {
+  const h = harness(null, {
+    ...writeHost({
+      githubClosePullRequest: () => Promise.resolve({ closed: true }),
+    }),
+  });
+  t.after(() => h.bridge.dispose());
+
+  const refused = await h.webview.send(
+    req('github/closePullRequest', { owner: 'o', repo: 'r', number: 150, idempotencyKey: 'bcast-refuse' }),
+  );
+  assert.equal(refused.ok, false);
+  assert.equal(
+    h.webview.sent.some((m) => 'kind' in m && m.kind === 'event/pullRequestsChanged'),
+    false,
+    'refused close does not broadcast',
+  );
+
+  const ok = await h.webview.send(
+    req('github/closePullRequest', { owner: 'o', repo: 'r', number: 150, idempotencyKey: 'bcast-ok', confirm: true }),
+  );
+  assert.equal(ok.ok, true);
+  assert.ok(
+    h.webview.sent.some((m) => 'kind' in m && m.kind === 'event/pullRequestsChanged'),
+    'standalone bridge falls back to emitting on its own webview',
+  );
 });

@@ -1854,3 +1854,276 @@ test('P24: an open breaker serves the cached detail rather than failing', async 
   assert.equal(stale.cached, true);
   assert.equal(stale.data.number, 150);
 });
+
+// ------------------------------------------- P25 merge, close, review, reply
+
+interface WriteCall {
+  url: string;
+  method: string;
+  body: unknown;
+  headers: Record<string, string>;
+}
+
+/**
+ * A client whose writes are recorded with method and parsed body.
+ *
+ * The shared `recorder` above drops both because every earlier call in this file
+ * is a GET; every call in this block is a write, so both are the whole point.
+ */
+function writeClient(
+  queue: Array<FetchResponseLike | Error>,
+  lang: Lang = 'en',
+): { gh: GitHubClient; calls: WriteCall[]; sleeps: number[] } {
+  const calls: WriteCall[] = [];
+  const sleeps: number[] = [];
+  let index = 0;
+  const fetchImpl: FetchLike = (url, init) => {
+    calls.push({
+      url,
+      method: init.method,
+      body: init.body === undefined ? undefined : JSON.parse(init.body),
+      headers: init.headers,
+    });
+    const next = queue[Math.min(index, queue.length - 1)];
+    index += 1;
+    if (next instanceof Error) return Promise.reject(next);
+    return Promise.resolve(next as FetchResponseLike);
+  };
+  const gh = new GitHubClient({
+    apiUrl: 'https://api.github.com',
+    token: 'ghp_p25token0123456789abcdef',
+    fetchImpl,
+    now: () => 1_700_000_000_000,
+    sleep: (ms) => {
+      sleeps.push(ms);
+      return Promise.resolve();
+    },
+    lang: () => lang,
+  });
+  return { gh, calls, sleeps };
+}
+
+const MERGE_SHA = 'a'.repeat(40);
+
+test('P25: merge sends PUT with the method, the pinned sha, and the squash message', async () => {
+  const h = writeClient([
+    response(200, { sha: 'c'.repeat(40), merged: true, message: 'Pull Request successfully merged' }),
+  ]);
+  const result = await h.gh.mergePullRequest('o', 'r', 150, {
+    method: 'squash',
+    sha: MERGE_SHA,
+    commitTitle: 'fix(webview): rebalance inset (#150)',
+    commitMessage: 'Additive tree indent.',
+  });
+  assert.equal(h.calls.length, 1);
+  const sent = h.calls[0] as WriteCall;
+  assert.equal(sent.method, 'PUT');
+  assert.equal(sent.url, 'https://api.github.com/repos/o/r/pulls/150/merge');
+  assert.deepEqual(sent.body, {
+    merge_method: 'squash',
+    sha: MERGE_SHA,
+    commit_title: 'fix(webview): rebalance inset (#150)',
+    commit_message: 'Additive tree indent.',
+  });
+  assert.deepEqual(result.data, { merged: true, mergeSha: 'c'.repeat(40) });
+});
+
+test('P25: a merge commit omits the squash fields entirely', async () => {
+  const h = writeClient([response(200, { sha: 'c'.repeat(40), merged: true })]);
+  await h.gh.mergePullRequest('o', 'r', 150, { method: 'merge', sha: MERGE_SHA });
+  assert.deepEqual((h.calls[0] as WriteCall).body, { merge_method: 'merge', sha: MERGE_SHA });
+});
+
+test('P25: a 405 is a refusal, never an outage, and carries GitHub own sentence', async () => {
+  const h = writeClient([
+    response(405, { message: 'Pull Request is not mergeable', documentation_url: 'https://docs.github.com' }),
+  ]);
+  await assert.rejects(
+    () => h.gh.mergePullRequest('o', 'r', 150, { method: 'merge', sha: MERGE_SHA }),
+    (err: unknown) => {
+      assert.ok(err instanceof GitHubError);
+      assert.equal(err.code, 'CONFLICT', '405 is a refusal, not UNAVAILABLE');
+      assert.equal(err.status, 409, 'the UI treats a refusal as a conflict');
+      assert.equal(err.detail, 'Pull Request is not mergeable');
+      return true;
+    },
+  );
+});
+
+test('P25: a 409 says the head moved, in the host language', async () => {
+  for (const lang of ['en', 'id'] as const) {
+    const h = writeClient([response(409, { message: 'Head branch was modified' })], lang);
+    await assert.rejects(
+      () => h.gh.mergePullRequest('o', 'r', 150, { method: 'merge', sha: MERGE_SHA }),
+      (err: unknown) => {
+        assert.ok(err instanceof GitHubError);
+        assert.equal(err.code, 'CONFLICT');
+        assert.equal(err.message, hostText(lang).github.headMoved);
+        assert.equal(err.detail, 'Head branch was modified');
+        return true;
+      },
+    );
+  }
+});
+
+test('P25: a merge write is never retried', async () => {
+  const h = writeClient([response(502, { message: 'later' })]);
+  await assert.rejects(() => h.gh.mergePullRequest('o', 'r', 1, { method: 'merge', sha: MERGE_SHA }));
+  assert.equal(h.calls.length, 1, 'one attempt only: a retried merge could double-merge');
+  assert.deepEqual(h.sleeps, []);
+});
+
+test('P25: a landed merge drops every pull cache that now lies', async () => {
+  const h = writeClient([
+    response(200, []), // pulls list
+    response(200, pullDetailBody()), // pull detail
+    response(200, []), // commit pulls
+    response(200, { sha: 'c'.repeat(40), merged: true }), // the merge
+  ]);
+  await h.gh.pullRequests('o', 'r');
+  await h.gh.pullRequest('o', 'r', 150);
+  await h.gh.pullRequestsForCommit('o', 'r', MERGE_SHA);
+  assert.equal(h.gh.cacheSize, 3);
+  await h.gh.mergePullRequest('o', 'r', 150, { method: 'merge', sha: MERGE_SHA });
+  assert.equal(h.gh.cacheSize, 0, 'pulls:, pull: and commitPulls: are all stale after a merge');
+});
+
+test('P25: close sends PATCH with state closed and drops the list', async () => {
+  const h = writeClient([response(200, [{ number: 1 }]), response(200, { number: 150, state: 'closed' })]);
+  await h.gh.pullRequests('o', 'r');
+  const result = await h.gh.closePullRequest('o', 'r', 150);
+  const sent = h.calls[1] as WriteCall;
+  assert.equal(sent.method, 'PATCH');
+  assert.equal(sent.url, 'https://api.github.com/repos/o/r/pulls/150');
+  assert.deepEqual(sent.body, { state: 'closed' });
+  assert.equal(result.data.closed, true);
+  assert.equal(h.gh.cacheSize, 0);
+});
+
+test('P25: a close GitHub refuses is VALIDATION_ERROR, not a silent success', async () => {
+  const h = writeClient([
+    response(422, { message: 'Validation Failed', errors: [{ message: 'state is invalid' }] }),
+  ]);
+  await assert.rejects(
+    () => h.gh.closePullRequest('o', 'r', 150),
+    (err: unknown) => {
+      assert.ok(err instanceof GitHubError);
+      assert.equal(err.code, 'VALIDATION_ERROR');
+      assert.equal(err.detail, 'state is invalid');
+      return true;
+    },
+  );
+});
+
+test('P25: submitReview posts the event, body, and pinned commit, and drops the review cache', async () => {
+  const h = writeClient([
+    response(200, []), // reviews
+    response(200, []), // review comments
+    response(200, []), // issue comments
+    response(200, { id: 991, state: 'APPROVED' }), // the review
+  ]);
+  await h.gh.pullTimeline('o', 'r', 150);
+  assert.equal(h.gh.cacheSize, 3);
+  const result = await h.gh.submitReview('o', 'r', 150, {
+    event: 'APPROVE',
+    body: 'Looks good.',
+    commitId: MERGE_SHA,
+  });
+  const sent = h.calls.at(-1) as WriteCall;
+  assert.equal(sent.method, 'POST');
+  assert.equal(sent.url, 'https://api.github.com/repos/o/r/pulls/150/reviews');
+  assert.deepEqual(sent.body, { event: 'APPROVE', body: 'Looks good.', commit_id: MERGE_SHA });
+  assert.equal(result.data.reviewId, 991);
+  // The review list is stale, the issue-comment list is not.
+  assert.equal(h.gh.cacheSize, 1, 'only the review cache is dropped');
+});
+
+test('P25: replyToReviewComment posts to the reply route with only the body', async () => {
+  const h = writeClient([response(201, { id: 55 })]);
+  const result = await h.gh.replyToReviewComment('o', 'r', 150, 44, 'Agreed.');
+  const sent = h.calls[0] as WriteCall;
+  assert.equal(sent.method, 'POST');
+  assert.equal(sent.url, 'https://api.github.com/repos/o/r/pulls/150/comments/44/replies');
+  assert.deepEqual(sent.body, { body: 'Agreed.' });
+  assert.equal(result.data.commentId, 55);
+});
+
+test('P25: every review and reply write is one attempt', async () => {
+  const review = writeClient([response(503, { message: 'down' })]);
+  await assert.rejects(() =>
+    review.gh.submitReview('o', 'r', 1, { event: 'COMMENT', body: 'x', commitId: MERGE_SHA }),
+  );
+  assert.equal(review.calls.length, 1);
+  const reply = writeClient([response(503, { message: 'down' })]);
+  await assert.rejects(() => reply.gh.replyToReviewComment('o', 'r', 1, 2, 'x'));
+  assert.equal(reply.calls.length, 1);
+});
+
+test('P25 fix: pullRequest can bypass the 60 s cache for the merge pre-check', async () => {
+  // The merge handler calls this read to decide whether the head moved. A cached
+  // answer would compare the webview's sha against itself, so the pre-check must
+  // be able to force a network read; the panel's ordinary read stays cached.
+  const h = client([response(200, pullDetailBody()), response(200, pullDetailBody())]);
+  await h.gh.pullRequest('o', 'r', 150);
+  const cached = await h.gh.pullRequest('o', 'r', 150);
+  assert.equal(cached.cached, true);
+  assert.equal(h.calls.length, 1);
+
+  const refreshed = await h.gh.pullRequest('o', 'r', 150, { refresh: true });
+  assert.equal(refreshed.cached, false, 'refresh bypasses the cache');
+  assert.equal(h.calls.length, 2);
+});
+
+test('P25: pullRequest carries isFork from head.repo and base.repo so closed and >50 PRs know', async () => {
+  const h = client([
+    response(200, pullDetailBody({
+      head: { ref: 'feat/a', sha: 'a'.repeat(40), repo: { full_name: 'o/r', fork: false } },
+      base: { ref: 'main', sha: 'b'.repeat(40), repo: { full_name: 'o/r', fork: false } },
+    })),
+    response(200, pullDetailBody({
+      number: 151,
+      head: { ref: 'feat/local-in-fork', sha: 'a'.repeat(40), repo: { full_name: 'me/r', fork: true } },
+      base: { ref: 'main', sha: 'b'.repeat(40), repo: { full_name: 'me/r', fork: true } },
+    })),
+    response(200, pullDetailBody({
+      number: 152,
+      head: { ref: 'patch-1', sha: 'a'.repeat(40), repo: { full_name: 'someone/r', fork: true } },
+      base: { ref: 'main', sha: 'b'.repeat(40), repo: { full_name: 'o/r', fork: false } },
+    })),
+    response(200, pullDetailBody({
+      number: 153,
+      head: { ref: 'deleted-fork', sha: 'a'.repeat(40), repo: null },
+      base: { ref: 'main', sha: 'b'.repeat(40), repo: { full_name: 'o/r', fork: false } },
+    })),
+    response(200, pullDetailBody({
+      number: 154,
+      head: { ref: 'legacy-fork', sha: 'a'.repeat(40), repo: { full_name: 'someone/r', fork: true } },
+    })),
+  ]);
+
+  assert.equal((await h.gh.pullRequest('o', 'r', 150)).data.isFork, false);
+  assert.equal((await h.gh.pullRequest('o', 'r', 151)).data.isFork, false, 'same-repo PR inside a forked base repo is not a fork PR');
+  assert.equal((await h.gh.pullRequest('o', 'r', 152)).data.isFork, true);
+  assert.equal((await h.gh.pullRequest('o', 'r', 153)).data.isFork, true, 'deleted head repo is treated as a fork');
+  assert.equal((await h.gh.pullRequest('o', 'r', 154)).data.isFork, true, 'falls back to head.repo.fork when base.repo is omitted');
+});
+
+test('P25: submitReview drops cached pullRequest detail so mergeability reflects the review', async () => {
+  const h = writeClient([
+    response(200, pullDetailBody({ mergeable_state: 'blocked' })),
+    response(200, { id: 991, state: 'APPROVED' }),
+    response(200, pullDetailBody({ mergeable_state: 'clean' })),
+  ]);
+  const before = await h.gh.pullRequest('o', 'r', 150);
+  assert.equal(before.data.mergeableState, 'blocked');
+
+  await h.gh.submitReview('o', 'r', 150, {
+    event: 'APPROVE',
+    body: '',
+    commitId: MERGE_SHA,
+  });
+
+  const after = await h.gh.pullRequest('o', 'r', 150);
+  assert.equal(after.cached, false, 'pull detail cache must be evicted after review submission');
+  assert.equal(after.data.mergeableState, 'clean');
+});

@@ -4,15 +4,22 @@ import {
   validatePullRequestInput,
 } from './pullRequestDraft';
 import type { ErrorCode, GitActionPayload, IssueListFilter, IssueStateFilter, Request, RequestKind } from './messages';
-import { validateBranchName, validateHash, validatePullRequestNumber, validateRemoteName, validateRepoRelativePath, validateStashIndex } from './validation';
+import { validateBranchName, validateCommentBody, validateCommitTitle, validateFullHash, validateHash, validateMergeMethod, validatePullRequestNumber, validateRemoteName, validateRepoRelativePath, validateReviewEvent, validateStashIndex } from './validation';
 
 export type Outcome = { ok: true; data: unknown } | { ok: false; error: { code: ErrorCode } };
 export const MUTATION_KINDS = new Set<string>(['actions/stage', 'actions/commit', 'actions/git']);
 /**
- * GitHub mutations. P22 registers the first one; later phases add theirs here so
- * `idempotencyKeyOf` keeps a single place to consult.
+ * GitHub mutations. P22 registered the first one; P25 adds the four writes
+ * (merge, close, review, reply) so `idempotencyKeyOf` keeps a single place to
+ * consult.
  */
-export const GITHUB_MUTATION_KINDS = new Set<string>(['github/createPullRequest']);
+export const GITHUB_MUTATION_KINDS = new Set<string>([
+  'github/createPullRequest',
+  'github/mergePullRequest',
+  'github/closePullRequest',
+  'github/submitReview',
+  'github/replyReviewComment',
+]);
 const RETRYABLE_CODES = new Set<ErrorCode>([
   'CONFIRMATION_REQUIRED',
   'DIRTY_TREE',
@@ -214,6 +221,100 @@ export function validateOpenPullRequestPayload(
   const keys = Object.keys(payload);
   if (keys.length !== 1 || keys[0] !== 'number') fail('payload');
   if (!validatePullRequestNumber(payload.number)) fail('number');
+}
+
+/**
+ * `true` when every key is in `allowed`. The P25 payload types are open
+ * (`& Record<string, unknown>`), so a caller bug would otherwise ride a field
+ * the host never reads. Each validator runs this first, so an unknown field
+ * always reports `payload`, not whichever field happens to be malformed.
+ */
+function onlyKeys(payload: Record<string, unknown>, allowed: readonly string[]): boolean {
+  return Object.keys(payload).every((key) => allowed.includes(key));
+}
+
+/**
+ * `github/mergePullRequest`. The slug pair and the number name path segments;
+ * `expectedHeadSha` becomes the `sha` body field and must be the full 40-hex pin
+ * the user saw, never a ref or an abbreviation: a merge with no pin is the
+ * merge this phase exists to prevent. `commitMessage` is multi-line text, so it
+ * is held to the comment body rule.
+ */
+export function validateMergePullPayload(
+  payload: {
+    owner: unknown;
+    repo: unknown;
+    number: unknown;
+    method: unknown;
+    expectedHeadSha: unknown;
+  } & Record<string, unknown>,
+  fail: (detail: string) => never,
+): void {
+  if (!onlyKeys(payload, ['owner', 'repo', 'number', 'method', 'expectedHeadSha', 'commitTitle', 'commitMessage', 'deleteBranch', 'remote', 'idempotencyKey', 'confirm', 'forceAcknowledgement'])) fail('payload');
+  if (!isSlug(payload.owner) || !isSlug(payload.repo)) fail('owner/repo');
+  if (!validatePullRequestNumber(payload.number)) fail('number');
+  if (!validateMergeMethod(payload.method)) fail('method');
+  if (!validateFullHash(payload.expectedHeadSha)) fail('expectedHeadSha');
+  if (payload.commitTitle !== undefined && !validateCommitTitle(payload.commitTitle)) fail('commitTitle');
+  if (payload.commitMessage !== undefined && !validateCommentBody(payload.commitMessage)) fail('commitMessage');
+  if (payload.deleteBranch !== undefined && typeof payload.deleteBranch !== 'boolean') fail('deleteBranch');
+  if (payload.remote !== undefined && !validateRemoteName(payload.remote)) fail('remote');
+}
+
+/** `github/closePullRequest`: the slug pair, the number, and the write meta only. */
+export function validateClosePullPayload(
+  payload: { owner: unknown; repo: unknown; number: unknown } & Record<string, unknown>,
+  fail: (detail: string) => never,
+): void {
+  if (!onlyKeys(payload, ['owner', 'repo', 'number', 'idempotencyKey', 'confirm', 'forceAcknowledgement'])) fail('payload');
+  if (!isSlug(payload.owner) || !isSlug(payload.repo)) fail('owner/repo');
+  if (!validatePullRequestNumber(payload.number)) fail('number');
+}
+
+/**
+ * `github/submitReview`: the pin, the event, and the text rule per event.
+ * `APPROVE` may carry no text, so the non-empty rule would refuse a legal
+ * approval; the max and NUL bounds still apply, since GitHub stores and renders
+ * the body.
+ */
+export function validateSubmitReviewPayload(
+  payload: {
+    owner: unknown;
+    repo: unknown;
+    number: unknown;
+    event: unknown;
+    body: unknown;
+    expectedHeadSha: unknown;
+  } & Record<string, unknown>,
+  fail: (detail: string) => never,
+): void {
+  if (!onlyKeys(payload, ['owner', 'repo', 'number', 'event', 'body', 'expectedHeadSha', 'idempotencyKey', 'confirm', 'forceAcknowledgement'])) fail('payload');
+  if (!isSlug(payload.owner) || !isSlug(payload.repo)) fail('owner/repo');
+  if (!validatePullRequestNumber(payload.number)) fail('number');
+  if (!validateReviewEvent(payload.event)) fail('event');
+  if (typeof payload.body !== 'string') fail('body');
+  if (payload.event === 'APPROVE') {
+    if (payload.body.trim().length > 65_536 || payload.body.includes('\u0000')) fail('body');
+  } else if (!validateCommentBody(payload.body)) fail('body');
+  if (!validateFullHash(payload.expectedHeadSha)) fail('expectedHeadSha');
+}
+
+/** `github/replyReviewComment`: the parent comment id and the body. */
+export function validateReplyReviewCommentPayload(
+  payload: {
+    owner: unknown;
+    repo: unknown;
+    number: unknown;
+    commentId: unknown;
+    body: unknown;
+  } & Record<string, unknown>,
+  fail: (detail: string) => never,
+): void {
+  if (!onlyKeys(payload, ['owner', 'repo', 'number', 'commentId', 'body', 'idempotencyKey', 'confirm', 'forceAcknowledgement'])) fail('payload');
+  if (!isSlug(payload.owner) || !isSlug(payload.repo)) fail('owner/repo');
+  if (!validatePullRequestNumber(payload.number)) fail('number');
+  if (!isPositiveInt(payload.commentId)) fail('commentId');
+  if (!validateCommentBody(payload.body)) fail('body');
 }
 
 /**

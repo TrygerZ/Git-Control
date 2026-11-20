@@ -17,6 +17,11 @@ import type {
   PrReviewersPayload,
   PrReviewersResult,
   RequestMap,
+  MergePullPayload,
+  MergePullResult,
+  ClosePullPayload,
+  SubmitReviewPayload,
+  ReplyReviewPayload,
 } from '../src/messages';
 
 test('the three pull request kinds exist in the request map', () => {
@@ -116,4 +121,61 @@ test('a create request without a key is not replayable, one with a key is', () =
 
   const withKey = { ...without, payload: { ...without.payload, idempotencyKey: 'k' } };
   assert.equal(idempotencyKeyOf(withKey as never), 'github/createPullRequest:k');
+});
+
+test('the merge payload carries the pin, the method, and the optional squash fields', () => {
+  const payload: MergePullPayload = {
+    owner: 'o',
+    repo: 'r',
+    number: 150,
+    method: 'squash',
+    expectedHeadSha: 'a'.repeat(40),
+    commitTitle: 'fix(webview): rebalance inset (#150)',
+    commitMessage: 'Additive tree indent.',
+    deleteBranch: true,
+    idempotencyKey: 'k1',
+    confirm: true,
+  };
+  assert.equal(payload.method, 'squash');
+  assert.equal(payload.deleteBranch, true);
+});
+
+test('the merge result reports the branch deletion separately from the merge', () => {
+  const result: MergePullResult = {
+    merged: true,
+    mergeSha: 'c'.repeat(40),
+    branchDeleted: { remote: true, local: false },
+    warnings: ['branch'],
+  };
+  assert.equal(result.merged, true);
+  assert.equal(result.branchDeleted.remote, true);
+  assert.equal(result.branchDeleted.local, false);
+  assert.deepEqual(result.warnings, ['branch']);
+});
+
+test('the review payload carries the event, the body, and the pin', () => {
+  const payload: SubmitReviewPayload = {
+    owner: 'o',
+    repo: 'r',
+    number: 150,
+    event: 'REQUEST_CHANGES',
+    body: 'Please fix the inset.',
+    expectedHeadSha: 'a'.repeat(40),
+    idempotencyKey: 'k2',
+  };
+  assert.equal(payload.event, 'REQUEST_CHANGES');
+});
+
+test('the close and reply payloads carry only what their routes need', () => {
+  const close: ClosePullPayload = { owner: 'o', repo: 'r', number: 150, idempotencyKey: 'k3' };
+  const reply: ReplyReviewPayload = {
+    owner: 'o',
+    repo: 'r',
+    number: 150,
+    commentId: 44,
+    body: 'Agreed.',
+    idempotencyKey: 'k4',
+  };
+  assert.equal(close.number, 150);
+  assert.equal(reply.commentId, 44);
 });

@@ -136,12 +136,16 @@ test('the actions that change shared state ask for one confirmation', () => {
   assert.equal(levelOf({ action: 'create-release' }), 1);
   assert.equal(levelOf({ action: 'dispatch-workflow' }), 1);
   assert.equal(levelOf({ action: 'close-issue' }), 1);
-  assert.equal(levelOf({ action: 'submit-review', event: 'APPROVE' }), 1);
-  assert.equal(levelOf({ action: 'submit-review', event: 'REQUEST_CHANGES' }), 1);
+  assert.equal(levelOf({ action: 'close-pull-request' }), 1);
 });
 
-test('a plain comment review needs no confirmation', () => {
+test('the review form is the act, so no review event asks for confirmation', () => {
+  // X-02 (P25): P19 gave APPROVE and REQUEST_CHANGES a level 1 confirmation, but
+  // frame 107 shows the form with a Submit button and no confirm step. P25 moved
+  // all three events to allow.
   assert.equal(levelOf({ action: 'submit-review', event: 'COMMENT' }), null);
+  assert.equal(levelOf({ action: 'submit-review', event: 'APPROVE' }), null);
+  assert.equal(levelOf({ action: 'submit-review', event: 'REQUEST_CHANGES' }), null);
 });
 
 test('creating things and re-running jobs need no confirmation', () => {
@@ -240,4 +244,44 @@ test('creating a pull request with a read-only token is refused with the scope m
   assert.equal(readOnly.allow, false);
   if (readOnly.allow) return;
   assert.equal(readOnly.code, 'FORBIDDEN');
+});
+
+// ------------------------------------------------- merge and review (P25)
+
+test('P25: closing a pull request needs one confirmation and joins the confirm set', () => {
+  const verdict = evaluateGitHubAction({ action: 'close-pull-request' }, CONNECTED);
+  assert.equal(verdict.allow, false);
+  if (verdict.allow) return;
+  assert.equal(verdict.code, 'CONFIRMATION_REQUIRED');
+  assert.equal(verdict.confirmationLevel, 1);
+  assert.equal(verdict.requiresConfirmation, true);
+  assert.deepEqual(verdict.remedies, ['confirm', 'cancel']);
+  assert.equal(verdict.risk, 'low');
+});
+
+/**
+ * X-02: P19 gave `submit-review` a level 1 confirmation. The review form (frame
+ * 107) has a Submit button and no confirm step, so P25 changes the rule. The
+ * form the user fills in IS the explicit act; a second dialog would be the same
+ * act asked twice.
+ */
+test('P25: submitting a review needs no confirmation, for all three events', () => {
+  for (const event of ['APPROVE', 'REQUEST_CHANGES', 'COMMENT'] as const) {
+    assert.deepEqual(evaluateGitHubAction({ action: 'submit-review', event }, CONNECTED), { allow: true }, event);
+  }
+});
+
+test('P25: closing a pull request is still refused when the token cannot write', () => {
+  const verdict = evaluateGitHubAction({ action: 'close-pull-request' }, { ...CONNECTED, scopes: ['read:user'] });
+  assert.equal(verdict.allow, false);
+  if (verdict.allow) return;
+  assert.equal(verdict.code, 'FORBIDDEN');
+});
+
+test('P25: the merge action keeps its level 1 confirmation and its medium risk', () => {
+  const verdict = evaluateGitHubAction({ action: 'merge-pull-request', method: 'squash' }, CONNECTED);
+  assert.equal(verdict.allow, false);
+  if (verdict.allow) return;
+  assert.equal(verdict.confirmationLevel, 1);
+  assert.equal(verdict.risk, 'medium');
 });

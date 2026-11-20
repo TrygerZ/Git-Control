@@ -21,6 +21,7 @@ import { hostText } from './hostText';
 import { redact, type Logger } from './logger';
 import { parseRemoteUrl, stripCredentials } from './remoteUrl';
 import {
+  GITHUB_MUTATION_KINDS,
   idempotencyKeyOf,
   isIssueFilter,
   isIssueState,
@@ -35,13 +36,17 @@ import {
   validateActionsLogPayload,
   validateActionsRunsPayload,
   validateCheckRunsPayload,
+  validateClosePullPayload,
   validateCommitPullRequestsPayload,
   validateCreatePullRequestPayload,
   validateEmptyPayload as validateEmptyPayloadPure,
+  validateMergePullPayload,
   validateOpenPullRequestPayload,
   validatePrPreparePayload,
   validatePrReviewersPayload,
   validatePullDetailPayload,
+  validateReplyReviewCommentPayload,
+  validateSubmitReviewPayload,
 } from './bridgePure';
 import type { RepositoryService } from './repository';
 import { parseRoute } from './webview/route';
@@ -65,6 +70,7 @@ import type {
   ActionsRunsResult,
   CheckRunsPayload,
   CheckRunsResult,
+  ClosePullPayload,
   CommitAuthorInfo,
   CommitAuthorsPayload,
   CommitAuthorsResult,
@@ -99,6 +105,8 @@ import type {
   IssuesPayload,
   IssuesResult,
   Lang,
+  MergePullPayload,
+  MergePullResult,
   MutationMeta,
   OpenDiffPayload,
   OpenDiffResult,
@@ -113,6 +121,7 @@ import type {
   PullDetail,
   PullDetailPayload,
   PullFile,
+  PullRequestsChangedEvent,
   PullRequestsPayload,
   PullRequestsResult,
   RefsResult,
@@ -120,6 +129,7 @@ import type {
   RepoGraph,
   RepoStatus,
   Request,
+  ReplyReviewPayload,
   RequestKind,
   Response,
   RevealCommitPayload,
@@ -131,6 +141,7 @@ import type {
   StashFile,
   StashShowPayload,
   StatusPayload,
+  SubmitReviewPayload,
   TimelineItem,
   WorktreeInfo,
 } from './messages';
@@ -191,7 +202,9 @@ export interface BridgeHost {
    * and the files read also needs a local merge-base lookup. Read-only: no guard,
    * no idempotency key.
    */
-  githubPullDetail?(payload: PullDetailPayload): Promise<{ detail: PullDetail; rateLimit: GitHubRateLimit }>;
+  githubPullDetail?(
+    payload: PullDetailPayload & { refresh?: boolean },
+  ): Promise<{ detail: PullDetail; rateLimit: GitHubRateLimit }>;
   githubPullCommits?(
     payload: PullDetailPayload,
   ): Promise<{ commits: PullCommit[]; truncated: boolean; rateLimit: GitHubRateLimit }>;
@@ -219,6 +232,18 @@ export interface BridgeHost {
    * calls this, so the host callback never has to know about the push.
    */
   githubCreatePullRequest?(payload: CreatePullRequestPayload): Promise<CreatePullRequestResult>;
+  /**
+   * P25 writes. The bridge gates and re-reads before calling any of them, so a
+   * host callback is only ever reached with a payload the guard allowed and the
+   * live pull request still matches. A callback that throws lets the error travel:
+   * `GitHubError` is mapped by `toErrorBody`.
+   */
+  githubMergePullRequest?(
+    payload: MergePullPayload,
+  ): Promise<{ merged: boolean; mergeSha: string | null; rateLimit: GitHubRateLimit }>;
+  githubClosePullRequest?(payload: ClosePullPayload): Promise<{ closed: boolean }>;
+  githubSubmitReview?(payload: SubmitReviewPayload): Promise<{ reviewId: number }>;
+  githubReplyReviewComment?(payload: ReplyReviewPayload): Promise<{ commentId: number }>;
   githubLinkage?(): Promise<GitHubLinkage>;
   /**
    * Snapshot of the active file icon theme for the webview this bridge serves,
@@ -233,6 +258,10 @@ export interface BridgeHost {
    * when none is queued or it is stale. Takes no parameters, so it cannot run commands.
    */
   takePendingRoute?(): { route: Route; focus?: FocusTarget } | null;
+  /** Broadcast a repository change across every live webview, falling back to this bridge when omitted. */
+  broadcastRepoChanged?(reason: 'fs' | 'action' | 'manual'): Promise<void>;
+  /** Broadcast a pull request state change across every live webview, falling back to this bridge when omitted. */
+  broadcastPullRequestsChanged?(event: PullRequestsChangedEvent): void;
 }
 
 /**
@@ -245,6 +274,19 @@ export interface BridgeHost {
 const STATIC_EXTERNAL_HOSTS: readonly string[] = ['github.com', 'www.github.com', 'git-scm.com'];
 
 const IDEMPOTENCY_TTL_MS = 300_000;
+
+/**
+ * Failed GitHub writes whose retry must actually run.
+ *
+ * These are refusals, not transport failures: the write provably did not land, so
+ * re-attempting it cannot duplicate anything. Everything else stays replayable,
+ * because a write that died mid-flight may have committed on GitHub's side.
+ */
+const GITHUB_WRITE_REFUSALS: ReadonlySet<string> = new Set([
+  'CONFIRMATION_REQUIRED',
+  'CONFLICT',
+  'FORBIDDEN',
+]);
 const IDEMPOTENCY_MAX_ENTRIES = 200;
 /** Cap on stderr lines forwarded per operation so a chatty remote cannot flood. */
 const PROGRESS_LINE_CAP = 40;
@@ -324,6 +366,15 @@ export class MessageBridge {
     this.emit('event/repoChanged', { reason, statusToken });
   }
 
+  /** Broadcast a pull request change across bridges, falling back to this webview alone. */
+  private notifyPullRequestsChanged(event: PullRequestsChangedEvent): void {
+    if (this.host.broadcastPullRequestsChanged !== undefined) {
+      this.host.broadcastPullRequestsChanged(event);
+    } else {
+      this.emit('event/pullRequestsChanged', event);
+    }
+  }
+
   // ---------------------------------------------------------------- routing
 
   private async handleRaw(raw: unknown): Promise<void> {
@@ -394,7 +445,20 @@ export class MessageBridge {
       });
     }
 
-    if (key !== null) this.remember(key, outcome);
+    // A GitHub write whose failure is a REFUSAL is not remembered, so the retry
+    // behind the confirmation dialog actually runs. `CONFIRMATION_REQUIRED` is
+    // already retryable for git kinds; P25 adds the refusals that mean "the world
+    // moved, re-read and try again": a 409 from the stale-head or mergeability
+    // check, and a 403 that names a missing scope.
+    //
+    // `UNAVAILABLE`, `CONFLICT` without a retryable shape, and every other
+    // failure stay remembered (SEC-014): a write that died mid-flight may have
+    // landed, and replaying the same answer is the only way a retry cannot
+    // duplicate it. `remember` applies `shouldRemember` itself, so the code set
+    // stays in one place.
+    if (key !== null && !(GITHUB_MUTATION_KINDS.has(request.kind) && !outcome.ok && GITHUB_WRITE_REFUSALS.has(outcome.error.code))) {
+      this.remember(key, outcome);
+    }
     return outcome;
   }
 
@@ -496,6 +560,14 @@ export class MessageBridge {
         return this.handlePrPrepare(request.payload as PrPreparePayload);
       case 'github/createPullRequest':
         return this.handleCreatePullRequest(request.payload as CreatePullRequestPayload, operationId);
+      case 'github/mergePullRequest':
+        return this.handleMergePullRequest(request.payload as MergePullPayload);
+      case 'github/closePullRequest':
+        return this.handleClosePullRequest(request.payload as ClosePullPayload);
+      case 'github/submitReview':
+        return this.handleSubmitReview(request.payload as SubmitReviewPayload);
+      case 'github/replyReviewComment':
+        return this.handleReplyReviewComment(request.payload as ReplyReviewPayload);
       case 'github/prReviewers':
         return this.handlePrReviewers(request.payload as PrReviewersPayload);
       case 'github/linkage':
@@ -922,7 +994,10 @@ export class MessageBridge {
     validatePullDetailPayload(payload, invalid);
     const detail = this.host.githubPullDetail;
     if (detail === undefined) fail(503, 'UNAVAILABLE', this.text().githubPending);
-    return detail(payload);
+    // Only the declared fields are forwarded. `refresh` is a host-internal hint
+    // the merge and review handlers add to their own re-read; a webview that
+    // sends it here must not be able to force every panel read past the cache.
+    return detail({ owner: payload.owner, repo: payload.repo, number: payload.number });
   }
 
   private async handleGitHubPullCommits(
@@ -1103,6 +1178,187 @@ export class MessageBridge {
     return { ...result, published: pushed };
   }
 
+  /**
+   * Merge a pull request, then delete its head branch when asked.
+   *
+   * The re-read is authoritative only because it bypasses the cache: the panel's
+   * `pull:` read populated that cache, so an ordinary re-read within the 60 s TTL
+   * would compare the webview's sha against its own snapshot. `mergeableState`,
+   * `draft`, and the head sha all describe a pull request at a moment in time,
+   * and the payload's copy came from a panel that may have been open for minutes.
+   * Refusing on the live detail rather than trusting the webview is what makes
+   * the pin meaningful: a head that moved is caught here, with the same sentence
+   * the panel uses for a stale read, instead of surfacing as a bare GitHub 409.
+   *
+   * The deletion is a courtesy, not part of the merge. Once the merge lands on
+   * GitHub it cannot be undone from here, so a refused `git branch -d` or
+   * `push --delete` must degrade to a warning: throwing would tell the user the
+   * merge failed when it did not.
+   */
+  private async handleMergePullRequest(payload: MergePullPayload): Promise<MergePullResult> {
+    const invalid = (detail: string): never =>
+      fail(400, 'VALIDATION_ERROR', this.text().invalid, { detail });
+    validateMergePullPayload({ ...payload }, invalid);
+
+    await this.gateGitHub({ action: 'merge-pull-request', method: payload.method }, payload);
+
+    const read = this.host.githubPullDetail;
+    if (read === undefined) fail(503, 'UNAVAILABLE', this.text().githubPending);
+    const { detail } = await read({
+      owner: payload.owner,
+      repo: payload.repo,
+      number: payload.number,
+      refresh: true,
+    });
+    const lang = this.host.settings().language ?? 'en';
+    if (detail.state !== 'open') {
+      fail(409, 'CONFLICT', this.text().invalid, { detail: 'closed' });
+    }
+    if (detail.draft) {
+      fail(409, 'CONFLICT', this.text().invalid, { detail: 'draft' });
+    }
+    if (detail.headSha !== payload.expectedHeadSha) {
+      fail(409, 'CONFLICT', hostText(lang).github.headMoved, { detail: 'head' });
+    }
+    if (detail.mergeableState !== 'clean') {
+      fail(409, 'CONFLICT', this.text().invalid, { detail: detail.mergeableState });
+    }
+
+    const merge = this.host.githubMergePullRequest;
+    if (merge === undefined) fail(503, 'UNAVAILABLE', this.text().githubPending);
+    // `sha` alongside `expectedHeadSha`: the pin is a property of the request the
+    // host method names, and a payload that says the same thing twice cannot
+    // disagree with itself.
+    const mergeRequest = { ...payload, sha: payload.expectedHeadSha };
+    const result = await merge(mergeRequest);
+
+    const branchDeleted: MergePullResult['branchDeleted'] = { remote: null, local: null };
+    const warnings: string[] = [];
+    if (payload.deleteBranch === true && result.merged) {
+      if (detail.isFork === true) {
+        // A fork PR's head branch lives in the fork, not the base repository.
+        // Deleting a same-named local or origin branch would remove unrelated work.
+        branchDeleted.local = false;
+        branchDeleted.remote = false;
+        warnings.push('branch-local', 'branch-remote');
+      } else {
+        const branch = detail.headRef;
+        const remote = payload.remote ?? 'origin';
+        const target = { owner: payload.owner, repo: payload.repo };
+        // Local first, and the order is load-bearing: `git branch -d` proves the
+        // branch merged against its tracking ref, so deleting the remote first
+        // would remove the only proof and refuse the local half of a squash merge.
+        let repo: RepositoryService | null = null;
+        try {
+          repo = await this.repository();
+        } catch {
+          // Reported as warnings below: the merge already landed, a missing local
+          // repository cannot undo it.
+        }
+        if (repo === null) {
+          branchDeleted.local = false;
+          branchDeleted.remote = false;
+          warnings.push('branch-local', 'branch-remote');
+        } else {
+          try {
+            try {
+              await this.deleteBranch(repo, branch, target);
+              branchDeleted.local = true;
+            } catch {
+              branchDeleted.local = false;
+              warnings.push('branch-local');
+            }
+            try {
+              await this.deleteRemoteBranch(repo, remote, branch, target);
+              branchDeleted.remote = true;
+            } catch {
+              branchDeleted.remote = false;
+              warnings.push('branch-remote');
+            }
+          } finally {
+            repo.invalidate();
+          }
+        }
+      }
+    }
+
+    if (this.host.broadcastRepoChanged !== undefined) {
+      await this.host.broadcastRepoChanged('action');
+    } else {
+      await this.notifyRepoChanged('action');
+    }
+    if (result.merged) {
+      this.notifyPullRequestsChanged({
+        owner: payload.owner,
+        repo: payload.repo,
+        number: payload.number,
+      });
+    }
+    return { merged: result.merged, mergeSha: result.mergeSha, branchDeleted, warnings };
+  }
+
+  /** Close without merging. Level 1 confirm, checked by the guard before the host. */
+  private async handleClosePullRequest(payload: ClosePullPayload): Promise<{ closed: boolean }> {
+    const invalid = (detail: string): never =>
+      fail(400, 'VALIDATION_ERROR', this.text().invalid, { detail });
+    validateClosePullPayload({ ...payload }, invalid);
+    await this.gateGitHub({ action: 'close-pull-request' }, payload);
+    const close = this.host.githubClosePullRequest;
+    if (close === undefined) fail(503, 'UNAVAILABLE', this.text().githubPending);
+    const outcome = await close(payload);
+    if (outcome.closed) {
+      this.notifyPullRequestsChanged({
+        owner: payload.owner,
+        repo: payload.repo,
+        number: payload.number,
+      });
+    }
+    return outcome;
+  }
+
+  /**
+   * Post a review on the head the reviewer read.
+   *
+   * The same pin as the merge: the review carries `commit_id`, and a review
+   * approved against a head that has since moved attaches to work nobody saw.
+   * The re-read catches it here, before the POST, and bypasses the cache for the
+   * same reason as the merge handler: a cached copy is the panel's own snapshot.
+   */
+  private async handleSubmitReview(payload: SubmitReviewPayload): Promise<{ reviewId: number }> {
+    const invalid = (detail: string): never =>
+      fail(400, 'VALIDATION_ERROR', this.text().invalid, { detail });
+    validateSubmitReviewPayload({ ...payload }, invalid);
+    await this.gateGitHub({ action: 'submit-review', event: payload.event }, payload);
+
+    const read = this.host.githubPullDetail;
+    if (read === undefined) fail(503, 'UNAVAILABLE', this.text().githubPending);
+    const { detail } = await read({
+      owner: payload.owner,
+      repo: payload.repo,
+      number: payload.number,
+      refresh: true,
+    });
+    if (detail.headSha !== payload.expectedHeadSha) {
+      const lang = this.host.settings().language ?? 'en';
+      fail(409, 'CONFLICT', hostText(lang).github.headMoved, { detail: 'head' });
+    }
+
+    const submit = this.host.githubSubmitReview;
+    if (submit === undefined) fail(503, 'UNAVAILABLE', this.text().githubPending);
+    return submit(payload);
+  }
+
+  /** Reply inside a review thread. Additive, so the guard treats it as a comment. */
+  private async handleReplyReviewComment(payload: ReplyReviewPayload): Promise<{ commentId: number }> {
+    const invalid = (detail: string): never =>
+      fail(400, 'VALIDATION_ERROR', this.text().invalid, { detail });
+    validateReplyReviewCommentPayload({ ...payload }, invalid);
+    await this.gateGitHub({ action: 'comment' }, payload);
+    const reply = this.host.githubReplyReviewComment;
+    if (reply === undefined) fail(503, 'UNAVAILABLE', this.text().githubPending);
+    return reply(payload);
+  }
+
   private async handleStage(payload: StagePayload, operationId: string): Promise<ActionResult> {
     if (!Array.isArray(payload.paths) || payload.paths.length === 0) {
       fail(400, 'VALIDATION_ERROR', this.text().invalid, { detail: 'paths' });
@@ -1271,21 +1527,74 @@ export class MessageBridge {
    * that already invalidated the cache, not one that lands in the microseconds
    * after this line. `git branch -d` is the backstop for that last window and
    * refuses a checked-out branch on its own.
+   *
+   * The default branch is the second half of the phase rule ("Never delete HEAD,
+   * the default branch, or a branch with unmerged commits"). Only GitHub knows
+   * it, so it is asked of the host, best-effort: no GitHub wiring, no linkage,
+   * or a failed read all leave it `null`, which is today's behaviour, and git's
+   * `-d` still refuses a branch with unmerged commits. The lookup runs only after
+   * the name and current-branch checks pass, so a refused delete never spends a
+   * request. Both refusals share one error shape: the standalone action reports
+   * it, and the merge handler turns it into a warning.
    */
-  private async deleteBranch(repo: RepositoryService, branch: string): Promise<void> {
+  private async deleteBranch(
+    repo: RepositoryService,
+    branch: string,
+    target?: { owner: string; repo: string },
+  ): Promise<void> {
     const status = await repo.status();
-    if (!validateDeletableBranch(branch, status.branch)) {
-      fail(409, 'VALIDATION_ERROR', this.text().invalid, { detail: 'branch' });
+    let defaultBranch: string | null = null;
+    if (validateDeletableBranch(branch, status.branch)) {
+      defaultBranch = await this.githubDefaultBranch(target);
+    }
+    if (!validateDeletableBranch(branch, status.branch, defaultBranch)) {
+      fail(409, 'VALIDATION_ERROR', this.text().invalid, { detail: 'branch', remedies: ['cancel'] });
     }
     await repo.git.deleteBranch(branch);
   }
 
   /**
-   * Delete a branch on a remote. The remote ref is confirmed to exist first, so a
-   * typo or an already-deleted branch reports a conflict instead of git's
-   * "remote ref does not exist" buried in a generic failure.
+   * The repository's GitHub default branch, or `null` when it cannot be known.
+   *
+   * When `target` is supplied (as in `handleMergePullRequest`), reads that
+   * repository directly; otherwise asks `githubLinkage` (no link, no request).
+   * Read through the same `githubRepo` method the panel uses. Every failure
+   * answers `null` rather than throwing: a delete must still work offline, and
+   * a host with no GitHub wiring is a supported host.
    */
-  private async deleteRemoteBranch(repo: RepositoryService, remote: string, branch: string): Promise<void> {
+  private async githubDefaultBranch(target?: { owner: string; repo: string }): Promise<string | null> {
+    const fetchRepo = this.host.githubRepo;
+    if (fetchRepo === undefined) return null;
+    try {
+      let resolved = target;
+      if (resolved === undefined) {
+        const linkage = this.host.githubLinkage;
+        if (linkage === undefined) return null;
+        const info = await linkage();
+        if (info.available !== true || info.owner === null || info.repo === null) return null;
+        resolved = { owner: info.owner, repo: info.repo };
+      }
+      const repoInfo = await fetchRepo(resolved);
+      return repoInfo.defaultBranch.length > 0 ? repoInfo.defaultBranch : null;
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * Delete a branch on a remote. Validates the branch name, confirms the remote
+   * and tracking ref exist, and refuses to delete the repository's GitHub
+   * default branch.
+   */
+  private async deleteRemoteBranch(
+    repo: RepositoryService,
+    remote: string,
+    branch: string,
+    target?: { owner: string; repo: string },
+  ): Promise<void> {
+    if (!validateBranchName(branch)) {
+      fail(409, 'VALIDATION_ERROR', this.text().invalid, { detail: 'branch', remedies: ['cancel'] });
+    }
     const remotes = await repo.git.remotes();
     if (!remotes.some((r) => r.name === remote)) {
       fail(409, 'CONFLICT', this.text().notFound, { detail: 'remote' });
@@ -1294,6 +1603,10 @@ export class MessageBridge {
     const trackingRef = `refs/remotes/${remote}/${branch}`;
     if (!refs.some((r) => r.refName === trackingRef)) {
       fail(409, 'CONFLICT', this.text().notFound, { detail: 'remote-ref' });
+    }
+    const defaultBranch = await this.githubDefaultBranch(target);
+    if (defaultBranch !== null && branch === defaultBranch) {
+      fail(409, 'VALIDATION_ERROR', this.text().invalid, { detail: 'branch', remedies: ['cancel'] });
     }
     await repo.git.deleteRemoteBranch(remote, branch);
   }
