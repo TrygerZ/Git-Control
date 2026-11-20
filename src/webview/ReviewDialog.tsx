@@ -73,6 +73,7 @@ export function ReviewDialog({
   const titleId = useId();
   const descId = useId();
   const noteId = useId();
+  const groupLabelId = useId();
 
   useEffect(() => {
     returnFocus.current = document.activeElement;
@@ -140,9 +141,13 @@ export function ReviewDialog({
           <div
             className="gc-prmerge__review-actions"
             role="radiogroup"
-            aria-labelledby={noteId}
+            aria-labelledby={groupLabelId}
             onKeyDown={onEventKeyDown}
           >
+            {/* Names the group itself; `noteId` stays the textarea's hint. */}
+            <span id={groupLabelId} className="gc-visually-hidden">
+              {strings.prMerge.reviewAction}
+            </span>
             {EVENTS.map((value) => (
               <button
                 key={value}

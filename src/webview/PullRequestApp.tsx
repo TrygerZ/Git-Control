@@ -10,7 +10,16 @@
  * Untrusted text is rendered as text nodes only. Bodies keep their line breaks
  * through `white-space: pre-wrap`, never through markup.
  */
-import { useEffect, useId, useMemo, useRef, useState, type JSX, type ReactNode } from 'react';
+import {
+  useEffect,
+  useId,
+  useMemo,
+  useRef,
+  useState,
+  type JSX,
+  type KeyboardEvent,
+  type ReactNode,
+} from 'react';
 import { bridge } from './bridge';
 import { formatDuration } from './actionsModel';
 import { summarizeChecks } from '../checkSummary';
@@ -673,6 +682,7 @@ export function PullRequestApp(): JSX.Element {
           detail={detail}
           owner={owner}
           repo={repo}
+          isFork={isFork}
           onConfirm={(options) => void mergeNow(options)}
           onCancel={() => cancelMerge()}
         />
@@ -765,6 +775,14 @@ function ConversationTab({
                 )}
               </div>
               <p className="gc-prdetail__text">{sanitizeGitText(item.body)}</p>
+              {/*
+                Only a review comment has a thread to reply into; GitHub's reply
+                endpoint takes a review comment id, so a plain conversation
+                comment offers nothing here.
+              */}
+              {item.kind === 'reviewComment' && (
+                <ReplyRow strings={strings} onSend={(body) => onReply(item.id, body)} />
+              )}
             </li>
           ))}
         </ol>
@@ -826,6 +844,38 @@ function ConversationTab({
         )}
       </section>
     </>
+  );
+}
+
+/**
+ * One reply box under a review comment. It owns the text and nothing else: the
+ * store posts it and re-reads the thread, so a failed reply leaves the typed
+ * text where it was. Empty (after trim) is not a reply, so the button waits.
+ */
+function ReplyRow({ strings, onSend }: { strings: Catalog; onSend(body: string): void }): JSX.Element {
+  const [body, setBody] = useState('');
+  const trimmed = body.trim();
+  return (
+    <div className="gc-prmerge__reply">
+      <textarea
+        value={body}
+        placeholder={strings.prMerge.replyPlaceholder}
+        aria-label={strings.prMerge.replyPlaceholder}
+        onChange={(event) => setBody(event.target.value)}
+      />
+      <button
+        type="button"
+        className="gc-button gc-button--quiet"
+        disabled={trimmed.length === 0}
+        onClick={() => {
+          if (trimmed.length === 0) return;
+          onSend(trimmed);
+          setBody('');
+        }}
+      >
+        {strings.prMerge.replySend}
+      </button>
+    </div>
   );
 }
 
@@ -1192,8 +1242,9 @@ function MergedCard({
  * The panel's More menu (frame 53).
  *
  * Rows navigate, copy, refresh, or close. The close row names itself and the host
- * asks for the level 1 confirmation; nothing here can run a git mutation. Escape
- * and Tab close it and hand focus back to the trigger.
+ * asks for the level 1 confirmation; nothing here can run a git mutation. Arrow
+ * keys move between the enabled rows over one tab stop, and Escape or Tab closes
+ * the menu and hands focus back to the trigger.
  */
 function PullMoreMenu({
   detail,
@@ -1211,9 +1262,20 @@ function PullMoreMenu({
   onClose(): void;
 }): JSX.Element {
   const [open, setOpen] = useState(false);
+  /** Which row holds the menu's single tab stop. */
+  const [active, setActive] = useState(0);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
   const menuId = useId();
+
+  // On open, focus the first row a user can press, so the keyboard path starts
+  // where the eye is. Keyed on `open` only: the row flags cannot change while
+  // the menu is up, and re-running would steal focus back on every render.
+  useEffect(() => {
+    if (!open) return;
+    setActive(0);
+    menuRef.current?.querySelector<HTMLElement>('[role="menuitem"]:not(:disabled)')?.focus();
+  }, [open]);
 
   useEffect(() => {
     if (!open) return;
@@ -1235,6 +1297,44 @@ function PullMoreMenu({
   const run = (action: () => void): void => {
     action();
     close(true);
+  };
+
+  /**
+   * Arrow keys walk the enabled rows and move real focus, so the browser's own
+   * focus ring follows the roving tab stop; each row's `onFocus` moves the tab
+   * stop to itself. Clamped, not wrapped: a wrap hides which end the user is on.
+   */
+  const move = (delta: number): void => {
+    const buttons = Array.from(
+      menuRef.current?.querySelectorAll<HTMLElement>('[role="menuitem"]:not(:disabled)') ?? [],
+    );
+    if (buttons.length === 0) return;
+    const index = buttons.findIndex((button) => button === document.activeElement);
+    const next = Math.max(0, Math.min(index + delta, buttons.length - 1));
+    buttons[next]?.focus();
+  };
+
+  const onKeyDown = (event: KeyboardEvent<HTMLDivElement>): void => {
+    switch (event.key) {
+      case 'Escape':
+        event.preventDefault();
+        close(true);
+        return;
+      case 'ArrowDown':
+        event.preventDefault();
+        move(1);
+        return;
+      case 'ArrowUp':
+        event.preventDefault();
+        move(-1);
+        return;
+      case 'Tab':
+        // A menu is not part of the tab ring: close, hand focus to the trigger,
+        // and let the browser's default move on from there.
+        close(true);
+        return;
+      default:
+    }
   };
 
   return (
@@ -1260,16 +1360,16 @@ function PullMoreMenu({
           role="menu"
           aria-orientation="vertical"
           aria-label={strings.prMerge.moreAria}
-          onKeyDown={(event) => {
-            if (event.key === 'Escape') {
-              event.preventDefault();
-              close(true);
-            } else if (event.key === 'Tab') {
-              close(true);
-            }
-          }}
+          onKeyDown={onKeyDown}
         >
-          <button type="button" role="menuitem" className="gc-menu__item" onClick={() => run(onCopy)}>
+          <button
+            type="button"
+            role="menuitem"
+            className="gc-menu__item"
+            tabIndex={active === 0 ? 0 : -1}
+            onFocus={() => setActive(0)}
+            onClick={() => run(onCopy)}
+          >
             <span className="gc-menu__label">{strings.prMerge.copyLink}</span>
           </button>
           <button
@@ -1277,11 +1377,20 @@ function PullMoreMenu({
             role="menuitem"
             className="gc-menu__item"
             disabled={detail.htmlUrl.length === 0}
+            tabIndex={active === 1 ? 0 : -1}
+            onFocus={() => setActive(1)}
             onClick={() => run(onOpen)}
           >
             <span className="gc-menu__label">{strings.prMerge.openOnGitHub}</span>
           </button>
-          <button type="button" role="menuitem" className="gc-menu__item" onClick={() => run(onRefresh)}>
+          <button
+            type="button"
+            role="menuitem"
+            className="gc-menu__item"
+            tabIndex={active === 2 ? 0 : -1}
+            onFocus={() => setActive(2)}
+            onClick={() => run(onRefresh)}
+          >
             <span className="gc-menu__label">{strings.prMerge.refresh}</span>
           </button>
           <span className="gc-menu__separator" aria-hidden="true" />
@@ -1290,6 +1399,8 @@ function PullMoreMenu({
             role="menuitem"
             className="gc-menu__item"
             disabled={detail.state !== 'open'}
+            tabIndex={active === 3 ? 0 : -1}
+            onFocus={() => setActive(3)}
             onClick={() => run(onClose)}
           >
             <span className="gc-menu__label">{strings.prMerge.closePr}</span>

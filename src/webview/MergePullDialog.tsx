@@ -20,6 +20,12 @@ export interface MergePullDialogProps {
   detail: PullDetail;
   owner: string;
   repo: string;
+  /**
+   * The head branch lives in a fork this clone does not have, so there is no
+   * local branch to delete and the checkbox is not offered. `PullDetail` carries
+   * no head repository, so the panel tells the dialog from the list row.
+   */
+  isFork: boolean;
   onConfirm(options: {
     method: MergeMethod;
     commitTitle?: string;
@@ -31,7 +37,14 @@ export interface MergePullDialogProps {
 
 const METHODS: readonly MergeMethod[] = ['merge', 'squash'];
 
-export function MergePullDialog({ detail, owner, repo, onConfirm, onCancel }: MergePullDialogProps): JSX.Element {
+export function MergePullDialog({
+  detail,
+  owner,
+  repo,
+  isFork,
+  onConfirm,
+  onCancel,
+}: MergePullDialogProps): JSX.Element {
   const strings = useT();
   const [method, setMethod] = useState<MergeMethod>('squash');
   const [title, setTitle] = useState(() => defaultSquashMessage(detail));
@@ -153,8 +166,12 @@ export function MergePullDialog({ detail, owner, repo, onConfirm, onCancel }: Me
             </label>
           )}
 
-          {/* Fork pull requests have no branch in this repository to delete. */}
-          {detail.headRef.length > 0 && (
+          {/*
+            A fork's head branch lives in the fork, not in this clone, so there
+            is nothing local to delete; offering the checkbox would promise a
+            deletion the host cannot perform.
+          */}
+          {!isFork && detail.headRef.length > 0 && (
             <label className="gc-checkbox" htmlFor={deleteId}>
               <input
                 id={deleteId}
