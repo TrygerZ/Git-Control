@@ -52,11 +52,12 @@ import type {
   StashEntry,
   StashFile,
   IconThemeSnapshot,
+  DispatchInput,
   WorkflowInfo,
   WorkflowRunInfo,
   WorktreeInfo,
 } from '../messages';
-import { failingDot, firstFailedJob } from './actionsModel';
+import { failingDot, firstFailedJob, matchDispatchedRun } from './actionsModel';
 import { applyIssueMutation, canCreateIssue, canSubmitComment } from './issueFilters';
 import { issueExcerpt } from './issueText';
 import { normalizeLabels, normalizeReviewers } from '../pullRequestDraft';
@@ -2191,6 +2192,20 @@ export interface LogEntry {
   headCut: boolean;
 }
 
+export interface PendingDispatch {
+  workflowId: number;
+  workflowName: string;
+  branch: string;
+  since: string;
+  timedOut: boolean;
+}
+
+export interface DispatchInputsEntry {
+  inputs: DispatchInput[];
+  parsed: boolean;
+  webUrl: string | null;
+}
+
 export interface ActionsState {
   runs: WorkflowRunInfo[];
   workflows: WorkflowInfo[];
@@ -2210,6 +2225,14 @@ export interface ActionsState {
   expandedJobs: Set<number>;
   loading: boolean;
   error: ErrorBody | null;
+  rerunning: Set<number>;
+  dispatchOpen: boolean;
+  dispatchInputs: Record<string, DispatchInputsEntry>;
+  dispatchInputsLoading: boolean;
+  dispatching: boolean;
+  dispatchError: ErrorBody | null;
+  pendingStart: PendingDispatch | null;
+  pollBurstNonce: number;
   load(opts: { branch?: string | null; workflowId?: number | null; force?: boolean }): Promise<void>;
   loadJobs(runId: number): Promise<void>;
   /** Idempotent per job id: a second call for a loaded tail sends nothing. */
@@ -2220,6 +2243,12 @@ export interface ActionsState {
   selectWorkflow(workflowId: number | null): void;
   /** Bounded dot refresh: five rows, current branch only, never while signed out. */
   refreshDot(branch: string | null): Promise<void>;
+  rerunFailed(runId: number): Promise<boolean>;
+  openDispatch(): void;
+  closeDispatch(): void;
+  loadDispatchInputs(workflowId: number, ref: string): Promise<void>;
+  dispatch(form: { workflowId: number; branch: string; inputs?: Record<string, string> }): Promise<boolean>;
+  finishPollBurst(): void;
   reset(): void;
 }
 
@@ -2233,8 +2262,10 @@ const inFlightActions = new Map<string, Promise<void>>();
 const inFlightJobs = new Map<number, Promise<void>>();
 const inFlightLogs = new Map<number, Promise<void>>();
 let inFlightDot: Promise<void> | null = null;
-/** Bumped by  so a reply for the previous repository is discarded. */
+/** Bumped by `reset()` so a reply for the previous repository is discarded. */
 let actionsGeneration = 0;
+const latestLoadKeySeq = new Map<string, number>();
+let loadSeqCounter = 0;
 
 function actionsFilterKey(branch: string | null, workflowId: number | null): string {
   return `${branch ?? '*'}:${workflowId ?? '*'}`;
@@ -2257,6 +2288,14 @@ export const useActionsStore = create<ActionsState>((set, get) => {
     expandedJobs: new Set<number>(),
     loading: false,
     error: null,
+    rerunning: new Set<number>(),
+    dispatchOpen: false,
+    dispatchInputs: {},
+    dispatchInputsLoading: false,
+    dispatching: false,
+    dispatchError: null,
+    pendingStart: null,
+    pollBurstNonce: 0,
 
     async load(opts) {
       const branch = opts.branch === undefined ? get().branch : opts.branch;
@@ -2265,8 +2304,10 @@ export const useActionsStore = create<ActionsState>((set, get) => {
       // The selection is applied here, before any await: one place decides what
       // the list is showing, so a reply can be matched against it afterwards.
       set({ branch, workflowId });
-      const inFlight = inFlightActions.get(key);
-      if (inFlight !== undefined) return inFlight;
+      if (opts.force !== true) {
+        const inFlight = inFlightActions.get(key);
+        if (inFlight !== undefined) return inFlight;
+      }
 
       const auth = useGitHubStore.getState().auth;
       if (auth?.connected !== true) return;
@@ -2283,10 +2324,13 @@ export const useActionsStore = create<ActionsState>((set, get) => {
       set({ loading: true });
       // A read can outlive the repository it was asked about: `reset()` bumps the
       // generation, and `stillSelected` cannot catch that because reset keeps the
-      // persisted filter. Without this guard the old reply repaints the new
-      // repository's rows and seeds its cache with the previous owner's data.
+      // persisted filter. `latestLoadKeySeq` also drops an older read when a
+      // `force: true` reload overtakes it for the same filter key.
       const generation = actionsGeneration;
-      const promise = (async () => {
+      const seq = ++loadSeqCounter;
+      latestLoadKeySeq.set(key, seq);
+      let promise!: Promise<void>;
+      promise = (async () => {
         try {
           const result = await bridge.request('github/actionsRuns', {
             owner,
@@ -2295,15 +2339,18 @@ export const useActionsStore = create<ActionsState>((set, get) => {
             ...(workflowId === null ? {} : { workflowId }),
             perPage: ACTIONS_PAGE_SIZE,
           });
-          if (generation !== actionsGeneration) return;
+          if (generation !== actionsGeneration || latestLoadKeySeq.get(key) !== seq) return;
           set((s) => {
             const stillSelected = s.branch === branch && s.workflowId === workflowId;
+            const matchedPending =
+              s.pendingStart !== null && matchDispatchedRun(result.runs, s.pendingStart) !== null;
             return {
               runsByFilter: { ...s.runsByFilter, [key]: result.runs },
               loadedAt: { ...s.loadedAt, [key]: Date.now() },
               loading: false,
               error: null,
               ...(stillSelected ? { runs: result.runs } : {}),
+              ...(matchedPending ? { pendingStart: null } : {}),
               // The workflow list only arrives on an unfiltered read; keep the last one.
               ...(result.workflows.length > 0 ? { workflows: result.workflows } : {}),
             };
@@ -2317,10 +2364,12 @@ export const useActionsStore = create<ActionsState>((set, get) => {
             useNavStore.getState().setFailing(failingDot(result.runs, repoBranch));
           }
         } catch (err) {
-          if (generation !== actionsGeneration) return;
+          if (generation !== actionsGeneration || latestLoadKeySeq.get(key) !== seq) return;
           set({ loading: false, error: toErrorBody(err) });
         } finally {
-          inFlightActions.delete(key);
+          if (inFlightActions.get(key) === promise) {
+            inFlightActions.delete(key);
+          }
         }
       })();
       inFlightActions.set(key, promise);
@@ -2469,9 +2518,213 @@ export const useActionsStore = create<ActionsState>((set, get) => {
       return inFlightDot;
     },
 
+    async rerunFailed(runId) {
+      if (get().rerunning.has(runId)) return false;
+      const auth = useGitHubStore.getState().auth;
+      if (auth?.connected !== true) return false;
+      const linkage = useGitHubStore.getState().linkage;
+      if (!linkage || !linkage.available || !linkage.owner || !linkage.repo) return false;
+      const { owner, repo } = linkage;
+
+      const snapshot = get();
+      const targetRun =
+        snapshot.runs.find((r) => r.id === runId) ??
+        Object.values(snapshot.runsByFilter)
+          .flat()
+          .find((r) => r.id === runId);
+      const existingJobs = snapshot.jobsByRun[runId];
+      const failedJob = existingJobs ? firstFailedJob(existingJobs) : null;
+
+      set((s) => ({ rerunning: new Set(s.rerunning).add(runId) }));
+      const generation = actionsGeneration;
+      try {
+        await bridge.request('github/rerunFailedJobs', {
+          owner,
+          repo,
+          runId,
+          idempotencyKey: crypto.randomUUID(),
+        });
+        if (generation !== actionsGeneration) return false;
+        set((s) => {
+          const nextJobsByRun = { ...s.jobsByRun };
+          delete nextJobsByRun[runId];
+          return {
+            runsByFilter: {},
+            loadedAt: {},
+            jobsByRun: nextJobsByRun,
+            jobsError: without(s.jobsError, runId),
+            pollBurstNonce: s.pollBurstNonce + 1,
+          };
+        });
+        const strings = t(activeLang()).actionsWrite;
+        const detail =
+          targetRun !== undefined && failedJob !== null
+            ? strings.rerunToastDetail(`${targetRun.name} #${targetRun.runNumber}`, failedJob.name)
+            : undefined;
+        useOperationStore.getState().pushToast({
+          level: 'info',
+          message: strings.rerunToast,
+          ...(detail === undefined ? {} : { detail }),
+          ...(targetRun?.url
+            ? {
+                action: {
+                  label: strings.viewRun,
+                  run: () => {
+                    void useGitHubStore.getState().openUrl(targetRun.url);
+                  },
+                },
+              }
+            : {}),
+        });
+        void get().load({ force: true });
+        return true;
+      } catch (err) {
+        if (generation !== actionsGeneration) return false;
+        const body = toErrorBody(err);
+        useOperationStore.getState().pushToast({
+          level: 'error',
+          message: body.message,
+          showLogs: body.code === 'SERVER_ERROR',
+        });
+        return false;
+      } finally {
+        set((s) => ({ rerunning: without(s.rerunning, runId) }));
+      }
+    },
+
+    openDispatch() {
+      set({ dispatchOpen: true, dispatchError: null });
+    },
+
+    closeDispatch() {
+      set({ dispatchOpen: false, dispatchError: null });
+    },
+
+    async loadDispatchInputs(workflowId, ref) {
+      const auth = useGitHubStore.getState().auth;
+      if (auth?.connected !== true) return;
+      const linkage = useGitHubStore.getState().linkage;
+      if (!linkage || !linkage.available || !linkage.owner || !linkage.repo) return;
+      const { owner, repo } = linkage;
+
+      const key = `${workflowId}:${ref}`;
+      if (get().dispatchInputs[key] !== undefined) return;
+
+      const generation = actionsGeneration;
+      set({ dispatchInputsLoading: true });
+      try {
+        const result = await bridge.request('github/workflowInputs', {
+          owner,
+          repo,
+          workflowId,
+          ref,
+        });
+        if (generation !== actionsGeneration) return;
+        set((s) => ({
+          dispatchInputs: {
+            ...s.dispatchInputs,
+            [key]: { inputs: result.inputs, parsed: result.parsed, webUrl: result.webUrl },
+          },
+          dispatchInputsLoading: false,
+        }));
+        useGitHubStore.setState({ rateLimit: result.rateLimit });
+      } catch {
+        if (generation !== actionsGeneration) return;
+        set({ dispatchInputsLoading: false });
+      }
+    },
+
+    async dispatch({ workflowId, branch, inputs }) {
+      if (get().dispatching) return false;
+      const auth = useGitHubStore.getState().auth;
+      if (auth?.connected !== true) return false;
+      const linkage = useGitHubStore.getState().linkage;
+      if (!linkage || !linkage.available || !linkage.owner || !linkage.repo) return false;
+      const { owner, repo } = linkage;
+
+      const hasInputs = inputs !== undefined && Object.keys(inputs).length > 0;
+      set({ dispatching: true, dispatchError: null });
+      const generation = actionsGeneration;
+      try {
+        const res = await bridge.request('github/dispatchWorkflow', {
+          owner,
+          repo,
+          workflowId,
+          ref: branch,
+          ...(hasInputs ? { inputs } : {}),
+          idempotencyKey: crypto.randomUUID(),
+          confirm: true,
+        });
+        if (generation !== actionsGeneration) return false;
+        const wf = get().workflows.find((w) => w.id === workflowId);
+        const workflowName = wf?.name ?? String(workflowId);
+        const entry = get().dispatchInputs[`${workflowId}:${branch}`];
+        set((s) => ({
+          dispatchOpen: false,
+          dispatchError: null,
+          runsByFilter: {},
+          loadedAt: {},
+          pendingStart: {
+            workflowId,
+            workflowName,
+            branch,
+            since: res.at,
+            timedOut: false,
+          },
+          pollBurstNonce: s.pollBurstNonce + 1,
+        }));
+
+        const strings = t(activeLang()).actionsWrite;
+        let detail: string | undefined;
+        if (hasInputs && inputs !== undefined) {
+          const version = inputs.version;
+          if (typeof version === 'string' && version.trim().length > 0) {
+            detail = strings.dispatchedDetail(version);
+          } else {
+            const firstEntry = Object.entries(inputs).find(([, v]) => v.trim().length > 0);
+            if (firstEntry !== undefined) {
+              detail = `${firstEntry[0]} ${firstEntry[1]}`;
+            }
+          }
+        }
+        const targetUrl = entry?.webUrl ?? (linkage.webUrl ? `${linkage.webUrl}/actions/runs` : null);
+        useOperationStore.getState().pushToast({
+          level: 'info',
+          message: strings.dispatchedToast(workflowName, branch),
+          ...(detail === undefined ? {} : { detail }),
+          ...(targetUrl
+            ? {
+                action: {
+                  label: strings.viewRun,
+                  run: () => {
+                    void useGitHubStore.getState().openUrl(targetUrl);
+                  },
+                },
+              }
+            : {}),
+        });
+        void get().load({ force: true });
+        return true;
+      } catch (err) {
+        if (generation !== actionsGeneration) return false;
+        set({ dispatchError: toErrorBody(err) });
+        return false;
+      } finally {
+        set({ dispatching: false });
+      }
+    },
+
+    finishPollBurst() {
+      const current = get().pendingStart;
+      if (current !== null) {
+        set({ pendingStart: { ...current, timedOut: true } });
+      }
+    },
+
     reset() {
       actionsGeneration += 1;
       inFlightActions.clear();
+      latestLoadKeySeq.clear();
       inFlightJobs.clear();
       inFlightLogs.clear();
       inFlightDot = null;
@@ -2488,6 +2741,14 @@ export const useActionsStore = create<ActionsState>((set, get) => {
         expandedJobs: new Set<number>(),
         loading: false,
         error: null,
+        rerunning: new Set<number>(),
+        dispatchOpen: false,
+        dispatchInputs: {},
+        dispatchInputsLoading: false,
+        dispatching: false,
+        dispatchError: null,
+        pendingStart: null,
+        pollBurstNonce: 0,
       });
       useNavStore.getState().setFailing(false);
     },
