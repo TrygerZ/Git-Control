@@ -1853,6 +1853,9 @@ export const useIssuesStore = create<IssuesState>((set, get) => ({
         if (issueLoadGen.get(key) === gen) {
           inFlightIssues.delete(key);
         }
+        if (inFlightIssues.size === 0 && get().loading) {
+          set({ loading: false });
+        }
       }
     })();
     inFlightIssues.set(key, promise);
@@ -2146,7 +2149,6 @@ export const useIssuesStore = create<IssuesState>((set, get) => ({
 
   reset() {
     invalidateAllIssueGens();
-    issueLoadGen.clear();
     inFlightLabels = null;
     set({
       issues: [],
