@@ -4756,3 +4756,30 @@ test('P25 fix: the review pre-check asks the host for a fresh detail read', asyn
   assert.equal(refresh.length, 1);
   assert.equal((refresh[0] as { refresh?: boolean }).refresh, true);
 });
+
+/**
+ * QA-02: the webview must not be able to force an uncached read.
+ *
+ * `refresh` is a host-internal hint the merge and review handlers add to their own
+ * re-read. A webview that sends the same key on the ordinary `github/pullDetail`
+ * request must not have it forwarded, or every panel read could bypass the cache
+ * and spend the anonymous quota.
+ */
+test('QA-02: a webview-supplied refresh never reaches the host on the ordinary read', async (t) => {
+  const seen: unknown[] = [];
+  const h = harness(null, {
+    githubPullDetail: (payload) => {
+      seen.push(payload);
+      return Promise.resolve({
+        detail: {} as never,
+        rateLimit: { limit: null, remaining: null, resetAt: null, cached: false, offline: false },
+      });
+    },
+  });
+  t.after(() => h.bridge.dispose());
+  const response = await h.webview.send(
+    req('github/pullDetail', { owner: 'o', repo: 'r', number: 150, refresh: true }),
+  );
+  assert.equal(response.ok, true);
+  assert.deepEqual(seen, [{ owner: 'o', repo: 'r', number: 150 }], 'only the declared fields are forwarded');
+});

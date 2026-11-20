@@ -980,7 +980,10 @@ export class MessageBridge {
     validatePullDetailPayload(payload, invalid);
     const detail = this.host.githubPullDetail;
     if (detail === undefined) fail(503, 'UNAVAILABLE', this.text().githubPending);
-    return detail(payload);
+    // Only the declared fields are forwarded. `refresh` is a host-internal hint
+    // the merge and review handlers add to their own re-read; a webview that
+    // sends it here must not be able to force every panel read past the cache.
+    return detail({ owner: payload.owner, repo: payload.repo, number: payload.number });
   }
 
   private async handleGitHubPullCommits(
