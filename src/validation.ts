@@ -394,4 +394,68 @@ export function validateLabelList(value: unknown): value is string[] {
   return true;
 }
 
+const INPUT_NAME = /^[A-Za-z_][A-Za-z0-9_-]{0,99}$/;
+const FORBIDDEN_INPUT_KEYS = new Set(['__proto__', 'constructor', 'prototype']);
+
+function isPositiveSafeInt(value: unknown): value is number {
+  return typeof value === 'number' && Number.isSafeInteger(value) && value >= 1;
+}
+
+/**
+ * Positive safe integer identifier for a GitHub Actions workflow.
+ * Defends against: floats, non-positive values, and path-segment injection in
+ * `/actions/workflows/{id}/...` requests.
+ */
+export function validateWorkflowId(value: unknown): value is number {
+  return isPositiveSafeInt(value);
+}
+
+/**
+ * Positive safe integer identifier for a GitHub Actions run.
+ * Defends against: floats, non-positive values, and path-segment injection in
+ * `/actions/runs/{id}/...` requests.
+ */
+export function validateRunId(value: unknown): value is number {
+  return isPositiveSafeInt(value);
+}
+
+/**
+ * Workflow dispatch input name: starts with letter or underscore, up to 100 chars,
+ * and excludes prototype-polluting keys.
+ * Defends against: malformed input identifiers and prototype pollution via
+ * `__proto__`, `constructor`, or `prototype` keys.
+ */
+export function validateInputName(value: unknown): value is string {
+  if (typeof value !== 'string') return false;
+  if (FORBIDDEN_INPUT_KEYS.has(value)) return false;
+  return INPUT_NAME.test(value);
+}
+
+/**
+ * Workflow dispatch input value: string of at most 1024 chars without NUL.
+ * Defends against: oversized dispatch payloads and NUL truncation downstream.
+ */
+export function validateInputValue(value: unknown): value is string {
+  return typeof value === 'string' && value.length <= 1024 && !value.includes('\u0000');
+}
+
+/**
+ * Workflow dispatch inputs map: plain object with at most 10 valid name/value entries.
+ * Defends against: prototype-polluted objects, non-plain prototypes, symbol keys,
+ * and unbounded input maps reaching the workflow dispatch endpoint.
+ */
+export function validateDispatchInputs(value: unknown): value is Record<string, string> {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return false;
+  const proto: unknown = Object.getPrototypeOf(value);
+  if (proto !== Object.prototype && proto !== null) return false;
+  if (Object.getOwnPropertySymbols(value).length > 0) return false;
+  if (Object.prototype.hasOwnProperty.call(value, '__proto__')) return false;
+  const entries = Object.entries(value);
+  if (entries.length > 10) return false;
+  for (const [key, entryValue] of entries) {
+    if (!validateInputName(key) || !validateInputValue(entryValue)) return false;
+  }
+  return true;
+}
+
 /** Shared assertion primitives for callers that must preserve their own error type. */

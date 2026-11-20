@@ -26,6 +26,11 @@ import {
   validateIssueBody,
   validateLabelName,
   validateLabelList,
+  validateWorkflowId,
+  validateRunId,
+  validateInputName,
+  validateInputValue,
+  validateDispatchInputs,
 } from '../src/validation';
 
 test('PRD mandated self-check asserts', () => {
@@ -490,4 +495,103 @@ test('validateLabelName accepts 1..50 non-control characters and validateLabelLi
   for (const value of [null, undefined, 'bug', 1, {}]) {
     assert.equal(validateLabelList(value), false, String(value));
   }
+});
+
+// ------------------------------------------------- Actions write actions (P27)
+
+test('validateWorkflowId and validateRunId accept positive safe integers only', () => {
+  for (const fn of [validateWorkflowId, validateRunId]) {
+    assert.equal(fn(1), true);
+    assert.equal(fn(482), true);
+    assert.equal(fn(Number.MAX_SAFE_INTEGER), true);
+    for (const bad of [
+      0,
+      -1,
+      1.5,
+      '12',
+      Number.NaN,
+      Number.POSITIVE_INFINITY,
+      Number.NEGATIVE_INFINITY,
+      Number.MAX_SAFE_INTEGER + 1,
+      1e20,
+      null,
+      undefined,
+      {},
+      [],
+    ]) {
+      assert.equal(fn(bad), false, `${fn.name}(${String(bad)})`);
+    }
+  }
+});
+
+test('validateInputName accepts valid identifiers up to 100 chars and rejects hostile or malformed names', () => {
+  assert.equal(validateInputName('a'), true);
+  assert.equal(validateInputName('version'), true);
+  assert.equal(validateInputName('_env-1'), true);
+  assert.equal(validateInputName('a'.repeat(100)), true, '100 chars');
+
+  for (const bad of [
+    '',
+    '1abc',
+    '-abc',
+    'a'.repeat(101),
+    'a\nb',
+    'a b',
+    'a.b',
+    '__proto__',
+    'constructor',
+    'prototype',
+    123,
+    null,
+    undefined,
+  ]) {
+    assert.equal(validateInputName(bad), false, String(bad));
+  }
+});
+
+test('validateInputValue accepts strings up to 1024 chars without NUL', () => {
+  assert.equal(validateInputValue(''), true);
+  assert.equal(validateInputValue('2.8.0'), true);
+  assert.equal(validateInputValue('line1\nline2'), true);
+  assert.equal(validateInputValue('x'.repeat(1024)), true, '1024 chars');
+
+  for (const bad of ['x'.repeat(1025), 'a\u0000b', 123, true, null, undefined, {}]) {
+    assert.equal(validateInputValue(bad), false, String(bad));
+  }
+});
+
+test('validateDispatchInputs validates plain objects capped at 10 safe entries', () => {
+  assert.equal(validateDispatchInputs({}), true);
+  assert.equal(validateDispatchInputs({ version: '2.8.0', dry_run: 'true' }), true);
+  const ten = Object.fromEntries(Array.from({ length: 10 }, (_, i) => [`k${i}`, `v${i}`]));
+  assert.equal(validateDispatchInputs(ten), true, '10 entries allowed');
+
+  const nullProto = Object.assign(Object.create(null) as Record<string, string>, { version: '1.0' });
+  assert.equal(validateDispatchInputs(nullProto), true, 'null-prototype plain object allowed');
+
+  const eleven = Object.fromEntries(Array.from({ length: 11 }, (_, i) => [`k${i}`, `v${i}`]));
+  assert.equal(validateDispatchInputs(eleven), false, '11 entries exceeds cap');
+
+  for (const bad of [
+    [],
+    null,
+    undefined,
+    'str',
+    42,
+    new Date(),
+    { constructor: 'x' },
+    { prototype: 'x' },
+    JSON.parse('{"__proto__":"x"}'),
+    { version: 123 },
+    { version: true },
+    { version: 'bad\u0000val' },
+    { version: 'x'.repeat(1025) },
+    { '1bad': 'ok' },
+    { '-flag': 'ok' },
+    { 'bad\nkey': 'ok' },
+  ]) {
+    assert.equal(validateDispatchInputs(bad), false, JSON.stringify(bad));
+  }
+  const symObj = { [Symbol('s')]: 'v' };
+  assert.equal(validateDispatchInputs(symObj), false, 'symbol keys rejected');
 });
