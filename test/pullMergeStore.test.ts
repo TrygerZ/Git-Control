@@ -11,6 +11,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { bridge } from '../src/webview/bridge';
 import { usePullStore } from '../src/webview/pullStore';
+import { t } from '../src/webview/i18n';
+import { useOperationStore } from '../src/webview/store';
 import type { PullDetail } from '../src/messages';
 
 const RATE = { limit: 5000, remaining: 4999, resetAt: null, cached: false, offline: false };
@@ -373,4 +375,54 @@ test('QA-02: the ignored second submit does not replace the draft in flight', as
   assert.equal(usePullStore.getState().reviewDraft?.body, 'the first text');
   release();
   await Promise.all([first, second]);
+});
+
+/**
+ * Frame 52 names the success toasts, and `pullStore` never read them. The merge
+ * announces itself after the re-read, and the deletion only when both halves
+ * succeeded; a half-deletion is a warning the panel states, not a toast.
+ */
+test('P25: a landed merge announces itself, and the deletion when both halves succeeded', async (ctx) => {
+  load();
+  const s = stub((kind) =>
+    kind === 'github/mergePullRequest'
+      ? { merged: true, mergeSha: 'c'.repeat(40), branchDeleted: { local: true, remote: true }, warnings: [] }
+      : { detail: detail({ state: 'merged' }), rateLimit: RATE },
+  );
+  ctx.after(() => s.restore());
+
+  useOperationStore.setState({ toasts: [] });
+  usePullStore.getState().openMerge();
+  await usePullStore.getState().merge({ method: 'merge', deleteBranch: true });
+
+  const messages = useOperationStore.getState().toasts.map((toast) => toast.message);
+  assert.ok(
+    messages.includes(t('en').prMerge.mergedToast('150', 'main')),
+    'the merge announces itself',
+  );
+  assert.ok(
+    messages.includes(t('en').prMerge.branchDeletedToast('fix/ui-review-polish')),
+    'both halves deleted is announced too',
+  );
+});
+
+test('P25: a submitted review and a sent reply each announce themselves', async (ctx) => {
+  load();
+  const s = stub((kind) => {
+    if (kind === 'github/submitReview') return { reviewId: 7 };
+    if (kind === 'github/replyReviewComment') return { commentId: 55 };
+    if (kind === 'github/pullTimeline') return { items: [], truncated: false, rateLimit: RATE };
+    return RATE;
+  });
+  ctx.after(() => s.restore());
+
+  useOperationStore.setState({ toasts: [] });
+  usePullStore.setState({ timeline: [] });
+  usePullStore.getState().openReview();
+  await usePullStore.getState().review({ event: 'APPROVE', body: '' });
+  await usePullStore.getState().reply(44, 'Agreed.');
+
+  const messages = useOperationStore.getState().toasts.map((toast) => toast.message);
+  assert.ok(messages.includes(t('en').prMerge.reviewSubmittedToast), 'the review announces itself');
+  assert.ok(messages.includes(t('en').prMerge.replyToast), 'the reply announces itself');
 });

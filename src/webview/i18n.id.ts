@@ -936,7 +936,6 @@ const id: Catalog = {
     commandsHeading: 'Perintah yang akan dijalankan',
     cancel: 'Batal',
     merging: 'Menggabungkan',
-    mergeFailed: 'Merge tidak terjadi.',
     retry: 'Coba lagi',
     mergedTitle: 'Pull request berhasil digabung dan ditutup',
     mergedSentence: (head: string, base: string) => `${head} digabung ke ${base}.`,
@@ -957,11 +956,11 @@ const id: Catalog = {
       closed: 'Pull request ini sudah ditutup.',
     },
     headMoved: 'Branch berubah sejak kamu membukanya. Muat ulang lalu coba lagi.',
-    needScope: 'Token kamu tidak bisa merge. Sambungkan ulang dengan akses tulis pull request.',
     reviewButton: 'Tinjau perubahan',
     reviewTitle: (n: string) => `Review perubahan #${n}`,
     reviewRunsOnGitHub: 'Dikirim ke GitHub atas nama akunmu. Riwayat lokal tidak diubah.',
     reviewNote: 'Comment dan Request changes perlu pesan. Approve boleh dikirim kosong.',
+    reviewAction: 'Tindakan review',
     reviewMessage: 'Pesan review',
     approve: 'Setujui',
     requestChanges: 'Minta perubahan',
@@ -976,7 +975,6 @@ const id: Catalog = {
     openOnGitHub: 'Buka di GitHub',
     refresh: 'Muat ulang',
     moreAria: 'Tindakan pull request lainnya',
-    deletedNote: 'Branch dihapus setelah merge.',
   },
 
 

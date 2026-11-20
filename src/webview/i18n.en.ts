@@ -948,7 +948,6 @@ const en = {
     commandsHeading: 'Command that will run',
     cancel: 'Cancel',
     merging: 'Merging',
-    mergeFailed: 'The merge did not happen.',
     retry: 'Try again',
     mergedTitle: 'Pull request successfully merged and closed',
     mergedSentence: (head: string, base: string) => `${head} was merged into ${base}.`,
@@ -969,11 +968,11 @@ const en = {
       closed: 'This pull request is closed.',
     },
     headMoved: 'The branch changed since you opened this. Refresh and try again.',
-    needScope: 'Your token cannot merge. Reconnect with pull request write access.',
     reviewButton: 'Review changes',
     reviewTitle: (n: string) => `Review changes #${n}`,
     reviewRunsOnGitHub: 'Posted to GitHub under your account. Local history is not changed.',
     reviewNote: 'Comment and Request changes need a message. Approve can be sent empty.',
+    reviewAction: 'Review action',
     reviewMessage: 'Review message',
     approve: 'Approve',
     requestChanges: 'Request changes',
@@ -988,7 +987,6 @@ const en = {
     openOnGitHub: 'Open on GitHub',
     refresh: 'Refresh',
     moreAria: 'More pull request actions',
-    deletedNote: 'The branch was deleted after the merge.',
   },
 
 

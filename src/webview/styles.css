@@ -8285,13 +8285,17 @@ h3 {
 /* The reply box under a review thread (frame 06). */
 .gc-prmerge__reply {
   display: flex;
+  align-items: flex-start;
   gap: var(--gc-space-2);
   margin-top: var(--gc-space-2);
 }
 
-.gc-prmerge__reply input {
+.gc-prmerge__reply textarea {
   flex: 1 1 auto;
   min-width: 0;
+  min-height: 56px;
+  resize: vertical;
+  font-family: inherit;
 }
 
 @media (forced-colors: active) {

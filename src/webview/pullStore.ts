@@ -390,6 +390,21 @@ export const usePullStore = create<PullState>((set, get) => ({
       mergeOptions = null;
       set({ mergeState: 'merged', mergeResult: outcome });
       await get().load({ owner: repo.owner, repo: repo.repo, number: detail.number });
+      // Frame 52: the merge announces itself once the panel shows the re-read
+      // state, and names the deletion only when both halves succeeded. The
+      // message is a catalog template around validated values and renders as a
+      // text node, so there is nothing to sanitize here.
+      const strings = t(activeLang()).prMerge;
+      useOperationStore.getState().pushToast({
+        level: 'info',
+        message: strings.mergedToast(String(detail.number), detail.baseRef),
+      });
+      if (outcome.branchDeleted.local === true && outcome.branchDeleted.remote === true) {
+        useOperationStore.getState().pushToast({
+          level: 'info',
+          message: strings.branchDeletedToast(detail.headRef),
+        });
+      }
       // The list row now says merged; re-read auth, linkage, and the list.
       void useGitHubStore.getState().load();
     } catch (err) {
@@ -442,6 +457,10 @@ export const usePullStore = create<PullState>((set, get) => ({
       // Landed: the form has nothing left to show, so it closes over the text.
       set({ reviewState: 'idle', reviewError: null, reviewDraft: null, reviewOpen: false });
       await refreshConversation(get, set);
+      useOperationStore.getState().pushToast({
+        level: 'info',
+        message: t(activeLang()).prMerge.reviewSubmittedToast,
+      });
     } catch (err) {
       // Keep the draft and the open flag: the dialog stays over the typed text.
       set({ reviewState: 'failed', reviewError: asErrorBody(err), reviewOpen: true });
@@ -475,6 +494,10 @@ export const usePullStore = create<PullState>((set, get) => ({
         idempotencyKey: crypto.randomUUID(),
       });
       await refreshConversation(get, set);
+      useOperationStore.getState().pushToast({
+        level: 'info',
+        message: t(activeLang()).prMerge.replyToast,
+      });
     } catch (err) {
       toastFailure(err);
     }
