@@ -54,8 +54,11 @@ test('the compact row carries one quick-create button per destination', () => {
   // when signed in and issues are enabled.
   assert.match(src, /navigateWithFocus\(\{ id: 'issues' \}, 'new-issue'\)/, 'New issue opens the in-extension dialog');
   assert.match(src, /route\.id === 'issues'[\s\S]*?auth\?\.connected === true[\s\S]*?!issuesDisabled/, 'header New issue button requires signed-in state and enabled issues');
-  // Actions has no in-extension write flow until P27, so the button opens the GitHub page.
-  assert.match(src, /\/actions/, 'Run workflow opens the GitHub Actions page');
+  // Actions: P27 ships the in-extension RunWorkflowDialog, so the header raises `run-workflow`
+  // when signed in.
+  assert.match(src, /navigateWithFocus\(\{ id: 'actions' \}, 'run-workflow'\)/, 'Run workflow opens the in-extension dialog');
+  assert.match(src, /route\.id === 'actions'[\s\S]*?auth\?\.connected === true/, 'header Run workflow button requires signed-in state');
+  assert.match(src, /route\.id === 'actions'[\s\S]*?useActionsStore\.getState\(\)\.load\(\{ force: true \}\)/, 'header reload refreshes Actions list on Actions route');
   assert.match(src, /strings\.shell\.addPr/, 'the button is named in the catalog');
   assert.match(src, /strings\.shell\.addIssue/);
   assert.match(src, /strings\.shell\.addWorkflow/);
@@ -129,6 +132,11 @@ test('the new-branch focus target has a consumer, so the header may raise it', (
   assert.match(guards, /'new-issue'/, 'the host boundary validates new-issue');
   const issues = read('src/webview/IssuesView.tsx');
   assert.match(issues, /pendingFocus !== 'new-issue'/, 'the Issues view consumes new-issue');
+
+  assert.match(union, /run-workflow/, 'run-workflow ships with the Actions dialog that consumes it');
+  assert.match(guards, /'run-workflow'/, 'the host boundary validates run-workflow');
+  const actions = read('src/webview/ActionsView.tsx');
+  assert.match(actions, /pendingFocus !== 'run-workflow'/, 'the Actions view consumes run-workflow');
 });
 
 test('both catalogs name every new shell string', () => {

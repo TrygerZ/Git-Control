@@ -7,6 +7,7 @@ import assert from 'node:assert/strict';
 import {
   evaluateGitHubAction,
   hasWriteScope,
+  isRerunableRun,
   requiredScopes,
   type GitHubGuardContext,
   type GitHubWriteAction,
@@ -323,4 +324,96 @@ test('P26: issue write actions are blocked when unconnected, on an untrusted bas
     assert.equal(missingScope.allow, false, `${action.action} missingScope`);
     if (!missingScope.allow) assert.equal(missingScope.code, 'FORBIDDEN');
   }
+});
+
+// ------------------------------------------------ Actions write actions (P27)
+
+test('P27: isRerunableRun admits completed runs with failure, timed_out, or cancelled conclusions only', () => {
+  for (const conclusion of ['failure', 'timed_out', 'cancelled'] as const) {
+    assert.equal(isRerunableRun({ status: 'completed', conclusion }), true, conclusion);
+  }
+  for (const conclusion of ['success', 'skipped', 'neutral', 'stale', 'action_required', 'startup_failure', null] as const) {
+    assert.equal(isRerunableRun({ status: 'completed', conclusion }), false, `completed:${String(conclusion)}`);
+  }
+  for (const status of ['in_progress', 'queued', 'waiting', 'requested', 'pending'] as const) {
+    assert.equal(isRerunableRun({ status, conclusion: 'failure' }), false, status);
+    assert.equal(isRerunableRun({ status, conclusion: null }), false, `${status}:null`);
+  }
+});
+
+test('P27: rerun-failed-jobs enforces run completion/conclusion after connection and scope checks', () => {
+  for (const conclusion of ['failure', 'timed_out', 'cancelled'] as const) {
+    assert.deepEqual(
+      evaluateGitHubAction({ action: 'rerun-failed-jobs', run: { status: 'completed', conclusion } }, CONNECTED),
+      { allow: true },
+    );
+  }
+
+  for (const lang of ['en', 'id'] as const) {
+    const running = evaluateGitHubAction(
+      { action: 'rerun-failed-jobs', run: { status: 'in_progress', conclusion: null } },
+      CONNECTED,
+      lang,
+    );
+    assert.equal(running.allow, false);
+    if (!running.allow) {
+      assert.equal(running.code, 'VALIDATION_ERROR');
+      assert.equal(running.message, hostText(lang).github.rerunNotAllowed);
+      assert.deepEqual(running.remedies, ['cancel']);
+    }
+
+    const succeeded = evaluateGitHubAction(
+      { action: 'rerun-failed-jobs', run: { status: 'completed', conclusion: 'success' } },
+      CONNECTED,
+      lang,
+    );
+    assert.equal(succeeded.allow, false);
+    if (!succeeded.allow) {
+      assert.equal(succeeded.code, 'VALIDATION_ERROR');
+      assert.equal(succeeded.message, hostText(lang).github.rerunNotAllowed);
+    }
+  }
+
+  // Connection and trust checks precede run eligibility.
+  const disconnected = evaluateGitHubAction(
+    { action: 'rerun-failed-jobs', run: { status: 'completed', conclusion: 'success' } },
+    { ...CONNECTED, connected: false },
+  );
+  assert.equal(disconnected.allow, false);
+  if (!disconnected.allow) assert.equal(disconnected.code, 'AUTH_ERROR');
+
+  const untrusted = evaluateGitHubAction(
+    { action: 'rerun-failed-jobs', run: { status: 'completed', conclusion: 'success' } },
+    { ...CONNECTED, tokenAllowed: false },
+  );
+  assert.equal(untrusted.allow, false);
+  if (!untrusted.allow) assert.equal(untrusted.code, 'FORBIDDEN');
+});
+
+test('P27: dispatch-workflow requires level 1 confirmation and blocks on auth, trust, breaker, and scope', () => {
+  const verdict = evaluateGitHubAction({ action: 'dispatch-workflow' }, CONNECTED);
+  assert.equal(verdict.allow, false);
+  if (!verdict.allow) {
+    assert.equal(verdict.code, 'CONFIRMATION_REQUIRED');
+    assert.equal(verdict.confirmationLevel, 1);
+    assert.equal(verdict.requiresConfirmation, true);
+    assert.equal(verdict.risk, 'medium');
+    assert.deepEqual(verdict.remedies, ['confirm', 'cancel']);
+  }
+
+  const unconnected = evaluateGitHubAction({ action: 'dispatch-workflow' }, { ...CONNECTED, connected: false });
+  assert.equal(unconnected.allow, false);
+  if (!unconnected.allow) assert.equal(unconnected.code, 'AUTH_ERROR');
+
+  const untrusted = evaluateGitHubAction({ action: 'dispatch-workflow' }, { ...CONNECTED, tokenAllowed: false });
+  assert.equal(untrusted.allow, false);
+  if (!untrusted.allow) assert.equal(untrusted.code, 'FORBIDDEN');
+
+  const openBreaker = evaluateGitHubAction({ action: 'dispatch-workflow' }, { ...CONNECTED, circuitOpen: true });
+  assert.equal(openBreaker.allow, false);
+  if (!openBreaker.allow) assert.equal(openBreaker.code, 'UNAVAILABLE');
+
+  const noScope = evaluateGitHubAction({ action: 'dispatch-workflow' }, { ...CONNECTED, scopes: ['read:user'] });
+  assert.equal(noScope.allow, false);
+  if (!noScope.allow) assert.equal(noScope.code, 'FORBIDDEN');
 });

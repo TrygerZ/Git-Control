@@ -51,6 +51,9 @@ import {
   validateSetIssueStatePayload,
   validateCreateIssuePayload,
   validateRepoLabelsPayload,
+  validateRerunFailedPayload,
+  validateWorkflowInputsPayload,
+  validateDispatchWorkflowPayload,
 } from './bridgePure';
 import type { RepositoryService } from './repository';
 import { parseRoute } from './webview/route';
@@ -91,6 +94,8 @@ import type {
   CreateIssuePayload,
   CreatePullRequestPayload,
   CreatePullRequestResult,
+  DispatchWorkflowPayload,
+  DispatchWorkflowResult,
   ErrorBody,
   ErrorCode,
   EventKind,
@@ -139,6 +144,8 @@ import type {
   Request,
   ReplyReviewPayload,
   RequestKind,
+  RerunFailedPayload,
+  RerunFailedResult,
   Response,
   RevealCommitPayload,
   Route,
@@ -152,6 +159,10 @@ import type {
   StatusPayload,
   SubmitReviewPayload,
   TimelineItem,
+  WorkflowInfo,
+  WorkflowInputsPayload,
+  WorkflowInputsResult,
+  WorkflowRunInfo,
   WorktreeInfo,
 } from './messages';
 
@@ -258,6 +269,20 @@ export interface BridgeHost {
   githubSetIssueState?(payload: SetIssueStatePayload): Promise<{ number: number; state: 'open' | 'closed' }>;
   githubCreateIssue?(payload: CreateIssuePayload): Promise<{ number: number; htmlUrl: string }>;
   githubRepoLabels?(payload: RepoLabelsPayload): Promise<{ labels: IssueLabel[]; rateLimit: GitHubRateLimit }>;
+  /** P27 Actions write actions and workflow input lookup. */
+  githubActionsRun?(payload: { owner: string; repo: string; runId: number }): Promise<{
+    data: WorkflowRunInfo;
+    rateLimit: GitHubRateLimit;
+    cached: boolean;
+  }>;
+  githubActionsWorkflows?(payload: { owner: string; repo: string }): Promise<{
+    data: WorkflowInfo[];
+    rateLimit: GitHubRateLimit;
+    cached: boolean;
+  }>;
+  githubRerunFailed?(payload: RerunFailedPayload): Promise<RerunFailedResult>;
+  githubWorkflowInputs?(payload: WorkflowInputsPayload): Promise<WorkflowInputsResult>;
+  githubDispatchWorkflow?(payload: DispatchWorkflowPayload): Promise<DispatchWorkflowResult>;
   githubLinkage?(): Promise<GitHubLinkage>;
   /**
    * Snapshot of the active file icon theme for the webview this bridge serves,
@@ -590,6 +615,12 @@ export class MessageBridge {
         return this.handleCreateIssue(request.payload as CreateIssuePayload);
       case 'github/repoLabels':
         return this.handleRepoLabels(request.payload as RepoLabelsPayload);
+      case 'github/rerunFailedJobs':
+        return this.handleRerunFailedJobs(request.payload as RerunFailedPayload);
+      case 'github/workflowInputs':
+        return this.handleWorkflowInputs(request.payload as WorkflowInputsPayload);
+      case 'github/dispatchWorkflow':
+        return this.handleDispatchWorkflow(request.payload as DispatchWorkflowPayload);
       case 'github/prReviewers':
         return this.handlePrReviewers(request.payload as PrReviewersPayload);
       case 'github/linkage':
@@ -1435,6 +1466,49 @@ export class MessageBridge {
     const list = this.host.githubRepoLabels;
     if (list === undefined) fail(503, 'UNAVAILABLE', this.text().githubPending);
     return list(payload);
+  }
+
+  private invalidFail(): (detail: string) => never {
+    return (detail: string): never => fail(400, 'VALIDATION_ERROR', this.text().invalid, { detail });
+  }
+
+  /** Re-run failed jobs of a completed failed, timed-out, or cancelled run. */
+  private async handleRerunFailedJobs(payload: RerunFailedPayload): Promise<RerunFailedResult> {
+    validateRerunFailedPayload({ ...payload }, this.invalidFail());
+    await this.gateGitHub({ action: 'rerun-failed-jobs' }, payload);
+    const lookupRun = this.host.githubActionsRun;
+    if (lookupRun === undefined) fail(503, 'UNAVAILABLE', this.text().githubPending);
+    const { data: run } = await lookupRun({ owner: payload.owner, repo: payload.repo, runId: payload.runId });
+    await this.gateGitHub({ action: 'rerun-failed-jobs', run }, payload);
+    const rerun = this.host.githubRerunFailed;
+    if (rerun === undefined) fail(503, 'UNAVAILABLE', this.text().githubPending);
+    return rerun(payload);
+  }
+
+  /** Read and parse `workflow_dispatch` inputs from the repository workflow YAML. */
+  private async handleWorkflowInputs(payload: WorkflowInputsPayload): Promise<WorkflowInputsResult> {
+    validateWorkflowInputsPayload({ ...payload }, this.invalidFail());
+    const readInputs = this.host.githubWorkflowInputs;
+    if (readInputs === undefined) fail(503, 'UNAVAILABLE', this.text().githubPending);
+    return readInputs(payload);
+  }
+
+  /** Dispatch a `workflow_dispatch` event on GitHub after level 1 confirmation. */
+  private async handleDispatchWorkflow(payload: DispatchWorkflowPayload): Promise<DispatchWorkflowResult> {
+    validateDispatchWorkflowPayload({ ...payload }, this.invalidFail());
+    await this.gateGitHub({ action: 'dispatch-workflow' }, payload);
+    const lookupWorkflows = this.host.githubActionsWorkflows;
+    if (lookupWorkflows === undefined) fail(503, 'UNAVAILABLE', this.text().githubPending);
+    const { data: workflows } = await lookupWorkflows({ owner: payload.owner, repo: payload.repo });
+    const workflow = workflows.find((wf) => wf.id === payload.workflowId);
+    if (workflow === undefined) fail(400, 'VALIDATION_ERROR', this.text().invalid, { detail: 'workflowId' });
+    if (workflow.state !== 'active') {
+      const lang = this.host.settings().language ?? 'en';
+      fail(400, 'VALIDATION_ERROR', hostText(lang).github.workflowDisabled, { detail: 'workflowId' });
+    }
+    const dispatch = this.host.githubDispatchWorkflow;
+    if (dispatch === undefined) fail(503, 'UNAVAILABLE', this.text().githubPending);
+    return dispatch(payload);
   }
 
   private async handleStage(payload: StagePayload, operationId: string): Promise<ActionResult> {

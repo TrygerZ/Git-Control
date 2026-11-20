@@ -233,6 +233,9 @@ export const RUNS_TTL_MS = 60_000;
 const WORKFLOWS_TTL_MS = 300_000;
 export const JOBS_ACTIVE_TTL_MS = 15_000;
 export const JOBS_TTL_MS = 300_000;
+export const RUN_DETAIL_TTL_MS = 30_000;
+export const WORKFLOW_FILE_TTL_MS = 60_000;
+export const WORKFLOW_FILE_MAX_BYTES = 65_536;
 /** Check runs move while a push is building, so a commit's checks live 30 s. */
 export const CHECK_TTL_MS = 30_000;
 const VIEWER_TTL_MS = 300_000;
@@ -945,7 +948,7 @@ export class GitHubClient {
   async workflowRuns(
     owner: string,
     repo: string,
-    opts: { branch?: string; workflowId?: number; perPage?: number } = {},
+    opts: { branch?: string; workflowId?: number; perPage?: number; refresh?: boolean } = {},
   ): Promise<Fetched<WorkflowRunInfo[]>> {
     const perPage = clampPerPage(opts.perPage ?? 30);
     const base = `/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}`;
@@ -959,7 +962,13 @@ export class GitHubClient {
     // still going is stale in seconds, a finished one is history.
     const cached = this.readAny<WorkflowRunInfo[]>(key);
     const ttl = cached !== undefined && runsActive(cached) ? RUNS_ACTIVE_TTL_MS : RUNS_TTL_MS;
-    return this.get<WorkflowRunInfo[]>(path, key, ttl, (body) => toWorkflowRuns(body));
+    return this.get<WorkflowRunInfo[]>(
+      path,
+      key,
+      ttl,
+      (body) => toWorkflowRuns(body),
+      opts.refresh === true ? { refresh: true } : undefined,
+    );
   }
 
   async workflows(owner: string, repo: string): Promise<Fetched<WorkflowInfo[]>> {
@@ -979,6 +988,161 @@ export class GitHubClient {
     const cached = this.readAny<RunJobInfo[]>(key);
     const ttl = cached !== undefined && jobsActive(cached) ? JOBS_ACTIVE_TTL_MS : JOBS_TTL_MS;
     return this.get<RunJobInfo[]>(path, key, ttl, (body) => toJobs(body));
+  }
+
+  // ------------------------------------------------- actions writes (P27)
+
+  async workflowRun(owner: string, repo: string, runId: number): Promise<Fetched<WorkflowRunInfo>> {
+    const path = `/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/actions/runs/${runId}`;
+    return this.get<WorkflowRunInfo>(
+      path,
+      `runs:single:${owner}/${repo}:${runId}`,
+      RUN_DETAIL_TTL_MS,
+      (body) => toWorkflowRun(body),
+    );
+  }
+
+  async rerunFailedJobs(
+    owner: string,
+    repo: string,
+    runId: number,
+  ): Promise<{ data: { requested: true }; rateLimit: GitHubRateLimit }> {
+    return this.mutate<{ requested: true }>({
+      method: 'POST',
+      path: `/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/actions/runs/${runId}/rerun-failed-jobs`,
+      invalidate: ['runs:', 'jobs:'],
+      refuse: (status, body) => {
+        if (status !== 403) return undefined;
+        const msg = bodyMessage(body) ?? '';
+        const expired = /30\s*days?|older\s+than|expired|retention/i.test(msg);
+        return new GitHubError({
+          status: 403,
+          code: 'FORBIDDEN',
+          message: expired ? this.text().rerunExpired : this.text().workflowMissingScope,
+        });
+      },
+      map: () => ({ requested: true }),
+    });
+  }
+
+  async dispatchWorkflow(
+    owner: string,
+    repo: string,
+    workflowId: number,
+    input: { ref: string; inputs?: Record<string, string> },
+  ): Promise<{ data: { dispatched: true; at: string }; rateLimit: GitHubRateLimit }> {
+    const hasInputs = input.inputs !== undefined && Object.keys(input.inputs).length > 0;
+    const body = hasInputs ? { ref: input.ref, inputs: input.inputs } : { ref: input.ref };
+    return this.mutate<{ dispatched: true; at: string }>({
+      method: 'POST',
+      path: `/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/actions/workflows/${workflowId}/dispatches`,
+      body,
+      invalidate: ['runs:'],
+      invalid: (raw) => {
+        const parts = [...errorMessages(raw)];
+        const rawMsg = bodyMessage(raw);
+        if (rawMsg !== undefined) {
+          const cleaned = redact(rawMsg.replace(CONTROL_AND_BIDI_CHARS, '').trim());
+          if (cleaned.length > 0 && !parts.includes(cleaned)) parts.push(cleaned);
+        }
+        const detail = parts.join('; ');
+        const detailField = detail.length === 0 ? {} : { detail };
+        if (/workflow_dispatch/i.test(detail)) {
+          return new GitHubError({
+            status: 422,
+            code: 'VALIDATION_ERROR',
+            message: this.text().noDispatchTrigger,
+            ...detailField,
+          });
+        }
+        if (/disabled/i.test(detail)) {
+          return new GitHubError({
+            status: 422,
+            code: 'VALIDATION_ERROR',
+            message: this.text().workflowDisabled,
+            ...detailField,
+          });
+        }
+        return new GitHubError({
+          status: 422,
+          code: 'VALIDATION_ERROR',
+          message: this.text().inputsNeededOnGitHub,
+          ...detailField,
+        });
+      },
+      refuse: (status) => {
+        if (status !== 403) return undefined;
+        return new GitHubError({
+          status: 403,
+          code: 'FORBIDDEN',
+          message: this.text().workflowMissingScope,
+        });
+      },
+      map: () => ({
+        dispatched: true,
+        at: new Date(this.now()).toISOString(),
+      }),
+    });
+  }
+
+  async workflowFile(owner: string, repo: string, filePath: string, ref: string): Promise<Fetched<string>> {
+    const segments = filePath.split('/');
+    if (
+      filePath.length === 0 ||
+      filePath.startsWith('/') ||
+      filePath.includes('\\') ||
+      /[\u0000-\u001f\u007f]/.test(filePath) ||
+      filePath.replace(CONTROL_AND_BIDI_CHARS, '') !== filePath ||
+      segments.some((s) => s.length === 0 || s === '.' || s === '..')
+    ) {
+      throw new GitHubError({
+        status: 400,
+        code: 'VALIDATION_ERROR',
+        message: this.text().invalidWrite,
+        detail: 'invalid workflow path',
+      });
+    }
+    const encodedPath = segments.map(encodeURIComponent).join('/');
+    const path =
+      `/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}` +
+      `/contents/${encodedPath}?ref=${encodeURIComponent(ref)}`;
+    return this.get<string>(
+      path,
+      `workflowFile:${owner}/${repo}:${ref}:${filePath}`,
+      WORKFLOW_FILE_TTL_MS,
+      (body) => {
+        const fail = (detail: string): never => {
+          throw new GitHubError({
+            status: 422,
+            code: 'VALIDATION_ERROR',
+            message: this.text().invalidWrite,
+            detail,
+          });
+        };
+        if (!body || typeof body !== 'object' || Array.isArray(body)) {
+          return fail('workflow content is not a file');
+        }
+        const item = body as { type?: unknown; encoding?: unknown; size?: unknown; content?: unknown };
+        if (item.type !== undefined && item.type !== 'file') {
+          return fail('workflow path is not a file');
+        }
+        if (item.encoding !== 'base64' || typeof item.content !== 'string') {
+          return fail('workflow content is not base64');
+        }
+        if (
+          typeof item.size === 'number' &&
+          (!Number.isFinite(item.size) || item.size < 0 || item.size > WORKFLOW_FILE_MAX_BYTES)
+        ) {
+          return fail('workflow file exceeds 64 KiB limit');
+        }
+        const cleanB64 = item.content.replace(/\s+/g, '');
+        const buf = Buffer.from(cleanB64, 'base64');
+        if (buf.byteLength > WORKFLOW_FILE_MAX_BYTES) {
+          return fail('workflow file exceeds 64 KiB limit');
+        }
+        return buf.toString('utf8');
+      },
+    );
   }
 
   async issues(
@@ -1594,12 +1758,18 @@ export class GitHubClient {
           ? new GitHubError({ status: 422, code: 'VALIDATION_ERROR', message: this.text().invalidWrite })
           : options.invalid(parseJson(await response.text()));
     } else if (response.status === 403 && numberOf(response.headers.get('x-ratelimit-remaining')) !== 0) {
-      error = new GitHubError({ status: 403, code: 'FORBIDDEN', message: this.text().missingScope('repo') });
+      const refusal =
+        options.refuse === undefined
+          ? undefined
+          : options.refuse(403, parseJson(await response.text()));
+      error =
+        refusal ??
+        new GitHubError({ status: 403, code: 'FORBIDDEN', message: this.text().missingScope('repo') });
     } else {
       // Quota 403/429 and every other status keep the read mapping, unless the
       // endpoint knows this status is a refusal and supplies its own error.
       const refusal =
-        options.refuse === undefined
+        options.refuse === undefined || response.status === 403
           ? undefined
           : options.refuse(response.status, parseJson(await response.text()));
       error = refusal ?? (await this.toError(response));
@@ -2103,45 +2273,47 @@ function isoOrEmpty(value: unknown): string {
   return typeof value === 'string' ? value : '';
 }
 
+export function toWorkflowRun(raw: unknown): WorkflowRunInfo {
+  const run = (raw && typeof raw === 'object' ? raw : {}) as {
+    id?: unknown;
+    workflow_id?: unknown;
+    name?: unknown;
+    display_title?: unknown;
+    run_number?: unknown;
+    event?: unknown;
+    status?: unknown;
+    conclusion?: unknown;
+    head_branch?: unknown;
+    head_sha?: unknown;
+    html_url?: unknown;
+    created_at?: unknown;
+    run_started_at?: unknown;
+    updated_at?: unknown;
+    run_attempt?: unknown;
+  };
+  return {
+    id: safeInt(run.id),
+    workflowId: safeInt(run.workflow_id),
+    name: typeof run.name === 'string' ? run.name : '',
+    title: typeof run.display_title === 'string' ? run.display_title : '',
+    runNumber: safeInt(run.run_number),
+    event: typeof run.event === 'string' ? run.event : '',
+    status: toRunStatus(run.status),
+    conclusion: toRunConclusion(run.conclusion),
+    branch: typeof run.head_branch === 'string' && run.head_branch.length > 0 ? run.head_branch : null,
+    sha: typeof run.head_sha === 'string' ? run.head_sha : '',
+    url: httpsUrl(run.html_url),
+    createdAt: isoOrEmpty(run.created_at),
+    startedAt: isoOrNull(run.run_started_at),
+    updatedAt: isoOrEmpty(run.updated_at),
+    attempt: safeInt(run.run_attempt, 1) || 1,
+  };
+}
+
 export function toWorkflowRuns(body: unknown): WorkflowRunInfo[] {
   const list = (body as { workflow_runs?: unknown } | null)?.workflow_runs;
   if (!Array.isArray(list)) return [];
-  return list.map((raw) => {
-    const run = raw as {
-      id?: unknown;
-      workflow_id?: unknown;
-      name?: unknown;
-      display_title?: unknown;
-      run_number?: unknown;
-      event?: unknown;
-      status?: unknown;
-      conclusion?: unknown;
-      head_branch?: unknown;
-      head_sha?: unknown;
-      html_url?: unknown;
-      created_at?: unknown;
-      run_started_at?: unknown;
-      updated_at?: unknown;
-      run_attempt?: unknown;
-    };
-    return {
-      id: safeInt(run.id),
-      workflowId: safeInt(run.workflow_id),
-      name: typeof run.name === 'string' ? run.name : '',
-      title: typeof run.display_title === 'string' ? run.display_title : '',
-      runNumber: safeInt(run.run_number),
-      event: typeof run.event === 'string' ? run.event : '',
-      status: toRunStatus(run.status),
-      conclusion: toRunConclusion(run.conclusion),
-      branch: typeof run.head_branch === 'string' && run.head_branch.length > 0 ? run.head_branch : null,
-      sha: typeof run.head_sha === 'string' ? run.head_sha : '',
-      url: httpsUrl(run.html_url),
-      createdAt: isoOrEmpty(run.created_at),
-      startedAt: isoOrNull(run.run_started_at),
-      updatedAt: isoOrEmpty(run.updated_at),
-      attempt: safeInt(run.run_attempt, 1) || 1,
-    };
-  });
+  return list.map((raw) => toWorkflowRun(raw));
 }
 
 export function toWorkflows(body: unknown): WorkflowInfo[] {

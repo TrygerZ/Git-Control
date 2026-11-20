@@ -28,6 +28,7 @@ import { formatCount, headerModel, sanitizeGitText, type SyncBadge } from './for
 import type { IconName } from './icons';
 import {
   toErrorBody,
+  useActionsStore,
   useChangesStore,
   useGitHubStore,
   useIssuesStore,
@@ -142,6 +143,7 @@ export function SidebarHeader(): JSX.Element | null {
       const issuesState = useIssuesStore.getState();
       void issuesState.load(issuesState.filter, issuesState.state, true);
     }
+    if (route.id === 'actions') void useActionsStore.getState().load({ force: true });
   };
 
   const openExplorer = async (): Promise<void> => {
@@ -317,13 +319,15 @@ export function SidebarHeader(): JSX.Element | null {
                 <Icon name="issue" />
               </button>
             )}
-          {route.id === 'actions' && slug !== null && (
+          {route.id === 'actions' && slug !== null && auth?.connected === true && (
             <button
               type="button"
               className="gc-icon-button"
               aria-label={strings.shell.addWorkflow}
               title={strings.shell.addWorkflow}
-              onClick={() => openUrl(`https://github.com/${slug}/actions`)}
+              onClick={() =>
+                useRouteStore.getState().navigateWithFocus({ id: 'actions' }, 'run-workflow')
+              }
             >
               <Icon name="play" />
             </button>

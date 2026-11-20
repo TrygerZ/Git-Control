@@ -32,7 +32,7 @@ test('AGENTS.md maps every module this phase added', () => {
 
 test('the README names pull request creation in its scope table', () => {
   const readme = read('README.md');
-  assert.match(readme, /Create, merge, or close pull requests and issues/);
+  assert.match(readme, /Create, comment on, merge, close, or reopen pull requests and issues/);
   // The publish half is the part a reader can be surprised by: it pushes a branch.
   assert.match(readme, /publish|push/i);
 });

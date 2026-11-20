@@ -9,8 +9,20 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { bridge, loadState, saveState } from '../src/webview/bridge';
-import { useActionsStore, useGitHubStore, useNavStore, useRepoStore } from '../src/webview/store';
-import type { GitHubLinkage, RepoStatus, WorkflowInfo, WorkflowRunInfo } from '../src/messages';
+import {
+  useActionsStore,
+  useGitHubStore,
+  useNavStore,
+  useOperationStore,
+  useRepoStore,
+} from '../src/webview/store';
+import type {
+  GitHubLinkage,
+  RepoStatus,
+  WorkflowInfo,
+  WorkflowInputsResult,
+  WorkflowRunInfo,
+} from '../src/messages';
 
 const LINKED: GitHubLinkage = {
   available: true,
@@ -87,6 +99,7 @@ function resetAll(): void {
   // otherwise one case's selection leaks into the next.
   useActionsStore.setState({ branch: null, workflowId: null });
   useNavStore.setState({ failing: false });
+  useOperationStore.setState({ toasts: [] });
 }
 
 test('load fetches runs and the workflow list', async () => {
@@ -525,4 +538,238 @@ test('a repository reset clears every cached log', async () => {
   assert.ok(useActionsStore.getState().logs[3] !== undefined);
   useActionsStore.getState().reset();
   assert.deepEqual(useActionsStore.getState().logs, {});
+});
+
+// ------------------------------------------------ P27 actions write store
+
+test('P27: rerunFailed deduplicates concurrent clicks, clears run/job caches, pushes View run toast, and forces reload', async () => {
+  resetAll();
+  const failedRun = run({ id: 482, status: 'completed', conclusion: 'failure', url: 'https://github.com/o/r/actions/runs/482' });
+  useActionsStore.setState({
+    runs: [failedRun],
+    runsByFilter: { '*:*': [failedRun] },
+    loadedAt: { '*:*': Date.now() },
+    jobsByRun: { 482: [{ id: 10, name: 'test', status: 'completed', conclusion: 'failure', startedAt: null, completedAt: null, url: '', steps: [] }] },
+    jobsError: new Set([482]),
+  });
+
+  let releaseRerun!: () => void;
+  const rerunGate = new Promise<void>((resolve) => {
+    releaseRerun = resolve;
+  });
+  const openedUrls: string[] = [];
+  const s = stub(async (kind, payload) => {
+    if (kind === 'github/rerunFailedJobs') {
+      await rerunGate;
+      return { requested: true };
+    }
+    if (kind === 'github/actionsRuns') {
+      return {
+        runs: [{ ...failedRun, status: 'in_progress', conclusion: null }],
+        workflows: WORKFLOWS,
+        rateLimit: RATE,
+      };
+    }
+    if (kind === 'actions/openExternal') {
+      openedUrls.push((payload as { url: string }).url);
+      return {};
+    }
+    return {};
+  });
+
+  try {
+    const first = useActionsStore.getState().rerunFailed(482);
+    assert.equal(useActionsStore.getState().rerunning.has(482), true);
+    const second = useActionsStore.getState().rerunFailed(482);
+    releaseRerun();
+    const [ok1, ok2] = await Promise.all([first, second]);
+    assert.equal(ok1, true);
+    assert.equal(ok2, false, 'duplicate click is ignored while in flight');
+    // Wait a tick for the triggered force reload to finish
+    await new Promise((r) => setTimeout(r, 0));
+
+    assert.equal(s.calls.filter((c) => c.kind === 'github/rerunFailedJobs').length, 1);
+    assert.equal(useActionsStore.getState().rerunning.has(482), false);
+    assert.equal(useActionsStore.getState().jobsByRun[482], undefined);
+    assert.equal(useActionsStore.getState().jobsError.has(482), false);
+    assert.ok(useActionsStore.getState().pollBurstNonce >= 1);
+    assert.equal(useActionsStore.getState().pollBurstActive, true);
+    const runsCall = s.calls.find((c) => c.kind === 'github/actionsRuns');
+    assert.equal((runsCall?.payload as { refresh?: boolean } | undefined)?.refresh, true, 'force load forwards refresh: true');
+
+    const toast = useOperationStore.getState().toasts.at(-1);
+    assert.equal(toast?.message, 'Re-running failed jobs');
+    assert.equal(toast?.action?.label, 'View run');
+    toast?.action?.run();
+    await new Promise((r) => setTimeout(r, 0));
+    assert.deepEqual(openedUrls, ['https://github.com/o/r/actions/runs/482']);
+  } finally {
+    releaseRerun();
+    s.restore();
+  }
+});
+
+test('P27: load({ force: true }) bypasses an older slow load without letting the stale reply overwrite', async () => {
+  resetAll();
+  let releaseSlow: () => void = () => {};
+  const slowGate = new Promise<void>((resolve) => {
+    releaseSlow = resolve;
+  });
+  let callIndex = 0;
+  const s = stub(async (kind) => {
+    if (kind !== 'github/actionsRuns') return {};
+    callIndex += 1;
+    if (callIndex === 1) {
+      await slowGate;
+      return { runs: [run({ id: 1, title: 'stale' })], workflows: WORKFLOWS, rateLimit: RATE };
+    }
+    return { runs: [run({ id: 2, title: 'fresh' })], workflows: WORKFLOWS, rateLimit: RATE };
+  });
+
+  try {
+    const slow = useActionsStore.getState().load({});
+    const forced = useActionsStore.getState().load({ force: true });
+    const outcome = await Promise.race([
+      forced.then(() => 'settled' as const),
+      new Promise<'blocked'>((resolve) => setTimeout(() => resolve('blocked'), 100)),
+    ]);
+    assert.equal(outcome, 'settled', 'force load must bypass older in-flight load');
+    assert.equal(useActionsStore.getState().runs[0]?.title, 'fresh');
+    releaseSlow();
+    await slow;
+    assert.equal(useActionsStore.getState().runs[0]?.title, 'fresh');
+  } finally {
+    releaseSlow();
+    s.restore();
+  }
+});
+
+test('P27: dispatch omits empty inputs, tracks pendingStart until matched, supports timedOut, and keeps dialog open on error', async () => {
+  resetAll();
+  useActionsStore.setState({ workflows: WORKFLOWS });
+  const key = '12:main';
+  const inputsReply: WorkflowInputsResult = {
+    inputs: [{ name: 'version', description: 'Tag', required: false, type: 'string', default: null, options: [] }],
+    parsed: true,
+    webUrl: 'https://github.com/o/r/actions/workflows/ci.yml',
+    rateLimit: RATE,
+  };
+  let failDispatch = false;
+  let pollStep = 0;
+  let sentInputs: unknown = 'unset';
+
+  const s = stub(async (kind, payload) => {
+    if (kind === 'github/workflowInputs') return inputsReply;
+    if (kind === 'github/dispatchWorkflow') {
+      sentInputs = (payload as { inputs?: Record<string, string> }).inputs;
+      assert.equal((payload as { confirm?: boolean }).confirm, true);
+      if (failDispatch) throw new Error('Inputs required');
+      return { dispatched: true, at: '2026-11-20T12:00:00.000Z' };
+    }
+    if (kind === 'github/actionsRuns') {
+      pollStep += 1;
+      if (pollStep === 1) return { runs: [], workflows: WORKFLOWS, rateLimit: RATE };
+      return {
+        runs: [
+          run({
+            id: 700,
+            workflowId: 12,
+            event: 'workflow_dispatch',
+            branch: 'main',
+            createdAt: '2026-11-20T12:00:03.000Z',
+          }),
+        ],
+        workflows: WORKFLOWS,
+        rateLimit: RATE,
+      };
+    }
+    return {};
+  });
+
+  try {
+    useActionsStore.getState().openDispatch();
+    assert.equal(useActionsStore.getState().dispatchOpen, true);
+
+    await useActionsStore.getState().loadDispatchInputs(12, 'main');
+    assert.equal(useActionsStore.getState().dispatchInputs[key]?.parsed, true);
+
+    // Error keeps dialog open and sets dispatchError
+    failDispatch = true;
+    const failedOk = await useActionsStore.getState().dispatch({ workflowId: 12, branch: 'main', inputs: {} });
+    assert.equal(failedOk, false);
+    assert.equal(useActionsStore.getState().dispatchOpen, true);
+    assert.ok(useActionsStore.getState().dispatchError !== null);
+    assert.equal(sentInputs, undefined, 'empty inputs map is omitted from payload');
+
+    // Success closes dialog, starts pendingStart + burst nonce, and clears pendingStart once matched
+    failDispatch = false;
+    const ok = await useActionsStore.getState().dispatch({ workflowId: 12, branch: 'main' });
+    assert.equal(ok, true);
+    assert.equal(useActionsStore.getState().dispatchOpen, false);
+    assert.equal(useActionsStore.getState().dispatchError, null);
+    assert.equal(useActionsStore.getState().pendingStart?.workflowId, 12);
+    assert.equal(useActionsStore.getState().pendingStart?.timedOut, false);
+
+    await new Promise((r) => setTimeout(r, 0));
+    assert.ok(useActionsStore.getState().pendingStart !== null, 'still waiting after 1st empty poll');
+    useActionsStore.getState().finishPollBurst();
+    assert.equal(useActionsStore.getState().pendingStart?.timedOut, true);
+    assert.equal(useActionsStore.getState().pollBurstActive, false, 'finishPollBurst clears pollBurstActive');
+
+    await useActionsStore.getState().load({ force: true });
+    assert.equal(useActionsStore.getState().pendingStart, null, 'cleared once matching run lands');
+    assert.equal(useActionsStore.getState().pollBurstActive, false);
+
+    const toast = useOperationStore.getState().toasts.at(-1);
+    assert.equal(toast?.message, 'Dispatched CI on main');
+
+    useActionsStore.getState().reset();
+    assert.deepEqual(useActionsStore.getState().dispatchInputs, {});
+    assert.equal(useActionsStore.getState().pendingStart, null);
+    assert.equal(useActionsStore.getState().pollBurstNonce, 0);
+    assert.equal(useActionsStore.getState().pollBurstActive, false);
+  } finally {
+    s.restore();
+  }
+});
+
+test('P27 QA: overlapping loadDispatchInputs keep loading true until latest finishes and store fallback on error', async () => {
+  resetAll();
+  let releaseFirst: () => void = () => {};
+  const firstGate = new Promise<void>((r) => { releaseFirst = r; });
+  let releaseSecond: () => void = () => {};
+  const secondGate = new Promise<void>((r) => { releaseSecond = r; });
+  let step = 0;
+
+  const s = stub(async (kind) => {
+    if (kind !== 'github/workflowInputs') return {};
+    step += 1;
+    if (step === 1) {
+      await firstGate;
+      throw new Error('network failed');
+    }
+    await secondGate;
+    return { inputs: [], parsed: true, webUrl: 'https://github.com/o/r/actions/workflows/ci.yml', rateLimit: RATE };
+  });
+
+  try {
+    const p1 = useActionsStore.getState().loadDispatchInputs(12, 'branch-a');
+    const p2 = useActionsStore.getState().loadDispatchInputs(12, 'branch-b');
+    releaseFirst();
+    await p1;
+    assert.equal(useActionsStore.getState().dispatchInputsLoading, true, 'must stay loading while p2 is in flight');
+    assert.deepEqual(useActionsStore.getState().dispatchInputs['12:branch-a'], {
+      inputs: [],
+      parsed: false,
+      webUrl: null,
+    });
+    releaseSecond();
+    await p2;
+    assert.equal(useActionsStore.getState().dispatchInputsLoading, false);
+    assert.equal(useActionsStore.getState().dispatchInputs['12:branch-b']?.parsed, true);
+  } finally {
+    releaseFirst();
+    releaseSecond();
+    s.restore();
+  }
 });

@@ -416,8 +416,13 @@ import {
   formatDuration,
   runRowLabel,
   statusWord,
+  canRerun,
+  dispatchCommand,
+  matchDispatchedRun,
+  defaultInputValues,
+  missingRequired,
 } from '../src/webview/actionsModel';
-import type { RunJobInfo, WorkflowRunInfo } from '../src/messages';
+import type { DispatchInput, RunJobInfo, WorkflowRunInfo } from '../src/messages';
 
 function run(patch: Partial<WorkflowRunInfo> = {}): WorkflowRunInfo {
   return {
@@ -715,4 +720,140 @@ test('logAriaLabel names the job and sanitizes it', () => {
   assert.ok(!label.includes('‮'), label);
   assert.equal(logAriaLabel('build', 'en'), 'Log output for build');
   assert.equal(logAriaLabel('build', 'id'), 'Output log untuk build');
+});
+
+// ------------------------------------------------ P27 actions write model
+
+test('P27: canRerun allows only completed failure, timed_out, or cancelled runs', () => {
+  for (const conclusion of ['failure', 'timed_out', 'cancelled'] as const) {
+    assert.equal(canRerun({ status: 'completed', conclusion }), true, conclusion);
+  }
+  for (const conclusion of ['success', 'startup_failure', 'neutral', 'skipped', 'action_required', null] as const) {
+    assert.equal(canRerun({ status: 'completed', conclusion }), false, String(conclusion));
+  }
+  for (const status of ['in_progress', 'queued', 'pending'] as const) {
+    assert.equal(canRerun({ status, conclusion: 'failure' }), false, status);
+  }
+});
+
+test('P27: dispatchCommand formats POST /dispatches URL and omits empty inputs', () => {
+  assert.equal(
+    dispatchCommand('acme', 'app', '.github/workflows/release.yml', 'main'),
+    'POST /repos/acme/app/actions/workflows/release.yml/dispatches {"ref":"main"}',
+  );
+  assert.equal(
+    dispatchCommand('acme', 'app', '.github/workflows/release.yml', 'main', {}),
+    'POST /repos/acme/app/actions/workflows/release.yml/dispatches {"ref":"main"}',
+  );
+  assert.equal(
+    dispatchCommand('acme', 'app', 'ci.yml', 'release/v2', { version: '2.8.0' }),
+    'POST /repos/acme/app/actions/workflows/ci.yml/dispatches {"ref":"release/v2","inputs":{"version":"2.8.0"}}',
+  );
+});
+
+test('P27: matchDispatchedRun picks newest workflow_dispatch run on matching workflow/branch within skew window', () => {
+  const since = '2026-11-20T12:00:10.000Z';
+  const olderSame = run({
+    id: 1,
+    workflowId: 10,
+    event: 'workflow_dispatch',
+    branch: 'main',
+    createdAt: '2026-11-20T12:00:00.000Z',
+  });
+  const wrongEvent = run({
+    id: 2,
+    workflowId: 10,
+    event: 'push',
+    branch: 'main',
+    createdAt: '2026-11-20T12:00:20.000Z',
+  });
+  const wrongBranch = run({
+    id: 3,
+    workflowId: 10,
+    event: 'workflow_dispatch',
+    branch: 'dev',
+    createdAt: '2026-11-20T12:00:25.000Z',
+  });
+  const wrongWorkflow = run({
+    id: 4,
+    workflowId: 99,
+    event: 'workflow_dispatch',
+    branch: 'main',
+    createdAt: '2026-11-20T12:00:30.000Z',
+  });
+  const skewMatch = run({
+    id: 5,
+    workflowId: 10,
+    event: 'workflow_dispatch',
+    branch: 'main',
+    createdAt: '2026-11-20T12:00:06.000Z',
+  });
+  const newestMatch = run({
+    id: 6,
+    workflowId: 10,
+    event: 'workflow_dispatch',
+    branch: 'main',
+    createdAt: '2026-11-20T12:00:15.000Z',
+  });
+
+  assert.equal(
+    matchDispatchedRun([olderSame, wrongEvent, wrongBranch, wrongWorkflow], {
+      workflowId: 10,
+      branch: 'main',
+      since,
+    }),
+    null,
+  );
+  assert.equal(
+    matchDispatchedRun([skewMatch], { workflowId: 10, branch: 'main', since })?.id,
+    5,
+    'accepts 5s clock skew before dispatch timestamp',
+  );
+  assert.equal(
+    matchDispatchedRun([skewMatch, newestMatch], { workflowId: 10, branch: 'main', since })?.id,
+    6,
+    'picks the newest matching run',
+  );
+});
+
+test('P27: defaultInputValues and missingRequired handle string, boolean, and choice inputs', () => {
+  const inputs: DispatchInput[] = [
+    { name: 'version', description: 'Tag', required: true, type: 'string', default: null, options: [] },
+    { name: 'target', description: 'Env', required: false, type: 'choice', default: null, options: ['staging', 'prod'] },
+    { name: 'dry_run', description: 'Dry', required: true, type: 'boolean', default: 'true', options: [] },
+    { name: 'flag', description: 'Flag', required: false, type: 'boolean', default: null, options: [] },
+  ];
+  const defaults = defaultInputValues(inputs);
+  assert.deepEqual(defaults, {
+    version: '',
+    target: 'staging',
+    dry_run: 'true',
+    flag: 'false',
+  });
+  assert.deepEqual(missingRequired(inputs, defaults), ['version']);
+  assert.deepEqual(missingRequired(inputs, { ...defaults, version: '  ' }), ['version']);
+  assert.deepEqual(missingRequired(inputs, { ...defaults, version: '2.8.0' }), []);
+});
+
+test('P27 QA: dispatchCommand strips bidi and control characters (SEC-007)', () => {
+  const cmd = dispatchCommand('acme', 'app', 'rel\u202Eease.yml', 'feat\u202Ex', { msg: 'ok\u202Ebad' });
+  assert.ok(!cmd.includes('\u202E'), 'command preview must strip RLO bidi overrides');
+});
+
+test('P27 QA: actionsRuns refresh flag validates and bypasses 60s host TTL cache', async () => {
+  assert.equal(runsFails({ owner: 'o', repo: 'r', refresh: true } as Parameters<typeof validateActionsRunsPayload>[0]), null);
+  assert.equal(
+    runsFails({ owner: 'o', repo: 'r', refresh: 'yes' as unknown as boolean } as Parameters<typeof validateActionsRunsPayload>[0]),
+    'refresh',
+  );
+
+  const h = fakeClient([
+    response(200, { workflow_runs: [runBody({ id: 1 })] }),
+    response(200, { workflow_runs: [runBody({ id: 2 })] }),
+  ]);
+  const first = await h.gh.workflowRuns('o', 'r', {});
+  assert.equal(first.data[0]?.id, 1);
+  const refreshed = await h.gh.workflowRuns('o', 'r', { refresh: true });
+  assert.equal(refreshed.cached, false);
+  assert.equal(refreshed.data[0]?.id, 2);
 });

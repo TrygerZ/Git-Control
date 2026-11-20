@@ -8,6 +8,7 @@ import {
   validateBranchName,
   validateCommentBody,
   validateCommitTitle,
+  validateDispatchInputs,
   validateFullHash,
   validateHash,
   validateIssueBody,
@@ -19,7 +20,9 @@ import {
   validateRemoteName,
   validateRepoRelativePath,
   validateReviewEvent,
+  validateRunId,
   validateStashIndex,
+  validateWorkflowId,
 } from './validation';
 
 export type Outcome = { ok: true; data: unknown } | { ok: false; error: { code: ErrorCode } };
@@ -27,7 +30,8 @@ export const MUTATION_KINDS = new Set<string>(['actions/stage', 'actions/commit'
 /**
  * GitHub mutations. P22 registered the first one; P25 adds the four PR writes
  * (merge, close, review, reply); P26 adds the three issue writes (comment,
- * state toggle, create) so `idempotencyKeyOf` keeps a single place to consult.
+ * state toggle, create); P27 adds the two Actions writes (rerunFailedJobs,
+ * dispatchWorkflow) so `idempotencyKeyOf` keeps a single place to consult.
  */
 export const GITHUB_MUTATION_KINDS = new Set<string>([
   'github/createPullRequest',
@@ -38,6 +42,8 @@ export const GITHUB_MUTATION_KINDS = new Set<string>([
   'github/commentIssue',
   'github/setIssueState',
   'github/createIssue',
+  'github/rerunFailedJobs',
+  'github/dispatchWorkflow',
 ]);
 const RETRYABLE_CODES = new Set<ErrorCode>([
   'CONFIRMATION_REQUIRED',
@@ -138,7 +144,14 @@ export function isRunId(value: unknown): boolean {
  * a path segment, so both are validated with the same rules the git argv uses.
  */
 export function validateActionsRunsPayload(
-  payload: { owner: unknown; repo: unknown; branch?: unknown; workflowId?: unknown; perPage?: unknown },
+  payload: {
+    owner: unknown;
+    repo: unknown;
+    branch?: unknown;
+    workflowId?: unknown;
+    perPage?: unknown;
+    refresh?: unknown;
+  },
   fail: (detail: string) => never,
 ): void {
   if (!isSlug(payload.owner) || !isSlug(payload.repo)) fail('owner/repo');
@@ -147,6 +160,7 @@ export function validateActionsRunsPayload(
   if (payload.perPage !== undefined && (!isPositiveInt(payload.perPage) || (payload.perPage as number) > 50)) {
     fail('perPage');
   }
+  if (payload.refresh !== undefined && typeof payload.refresh !== 'boolean') fail('refresh');
 }
 
 /** `github/actionsJobs`. The run id is the only variable part of the path. */
@@ -449,4 +463,56 @@ export function validateRepoLabelsPayload(
 ): void {
   if (!onlyKeys(payload, ['owner', 'repo'])) fail('payload');
   if (!isSlug(payload.owner) || !isSlug(payload.repo)) fail('owner/repo');
+}
+
+/** `github/rerunFailedJobs`: owner, repo, run id, and mutation metadata. */
+export function validateRerunFailedPayload(
+  payload: { owner: unknown; repo: unknown; runId: unknown } & Record<string, unknown>,
+  fail: (detail: string) => never,
+): void {
+  if (!onlyKeys(payload, ['owner', 'repo', 'runId', 'idempotencyKey', 'confirm', 'forceAcknowledgement'])) fail('payload');
+  if (!isSlug(payload.owner) || !isSlug(payload.repo)) fail('owner/repo');
+  if (!validateRunId(payload.runId)) fail('runId');
+}
+
+/** `github/workflowInputs`: read-only workflow dispatch input definition lookup. */
+export function validateWorkflowInputsPayload(
+  payload: { owner: unknown; repo: unknown; workflowId: unknown; ref: unknown } & Record<string, unknown>,
+  fail: (detail: string) => never,
+): void {
+  if (!onlyKeys(payload, ['owner', 'repo', 'workflowId', 'ref'])) fail('payload');
+  if (!isSlug(payload.owner) || !isSlug(payload.repo)) fail('owner/repo');
+  if (!validateWorkflowId(payload.workflowId)) fail('workflowId');
+  if (!validateBranchName(payload.ref)) fail('ref');
+}
+
+/** `github/dispatchWorkflow`: workflow id, target branch, optional inputs, and confirm metadata. */
+export function validateDispatchWorkflowPayload(
+  payload: {
+    owner: unknown;
+    repo: unknown;
+    workflowId: unknown;
+    ref: unknown;
+    inputs?: unknown;
+  } & Record<string, unknown>,
+  fail: (detail: string) => never,
+): void {
+  if (
+    !onlyKeys(payload, [
+      'owner',
+      'repo',
+      'workflowId',
+      'ref',
+      'inputs',
+      'idempotencyKey',
+      'confirm',
+      'forceAcknowledgement',
+    ])
+  ) {
+    fail('payload');
+  }
+  if (!isSlug(payload.owner) || !isSlug(payload.repo)) fail('owner/repo');
+  if (!validateWorkflowId(payload.workflowId)) fail('workflowId');
+  if (!validateBranchName(payload.ref)) fail('ref');
+  if (payload.inputs !== undefined && !validateDispatchInputs(payload.inputs)) fail('inputs');
 }

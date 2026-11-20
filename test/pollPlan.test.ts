@@ -9,7 +9,9 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   DEFAULT_POLL_CONFIG,
+  POLL_BURST_MS,
   applyResult,
+  nextBurstDelay,
   nextPoll,
   type PollConfig,
   type PollState,
@@ -160,4 +162,20 @@ test('the default config polls every 15 s and never while hidden', () => {
   assert.equal(DEFAULT_POLL_CONFIG.maxMs, 120_000);
   assert.equal(DEFAULT_POLL_CONFIG.hiddenMs, null);
   assert.equal(DEFAULT_POLL_CONFIG.serverMinMs, null);
+});
+
+test('P27: POLL_BURST_MS and nextBurstDelay follow 5s/10s/20s/30s and pause when blocked', () => {
+  assert.deepEqual(POLL_BURST_MS, [5_000, 10_000, 20_000, 30_000]);
+  const ready = { visible: true, inFlight: false, rateLimited: false, offline: false };
+  assert.equal(nextBurstDelay(0, ready), 5_000);
+  assert.equal(nextBurstDelay(1, ready), 10_000);
+  assert.equal(nextBurstDelay(2, ready), 20_000);
+  assert.equal(nextBurstDelay(3, ready), 30_000);
+  assert.equal(nextBurstDelay(4, ready), null);
+  assert.equal(nextBurstDelay(-1, ready), null);
+
+  assert.equal(nextBurstDelay(0, { ...ready, visible: false }), null);
+  assert.equal(nextBurstDelay(0, { ...ready, inFlight: true }), null);
+  assert.equal(nextBurstDelay(0, { ...ready, rateLimited: true }), null);
+  assert.equal(nextBurstDelay(0, { ...ready, offline: true }), null);
 });

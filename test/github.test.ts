@@ -7,6 +7,9 @@ import {
   ETAG_MAX_ENTRIES,
   GitHubClient,
   GitHubError,
+  RUN_DETAIL_TTL_MS,
+  WORKFLOW_FILE_MAX_BYTES,
+  WORKFLOW_FILE_TTL_MS,
   hasPrivateScope,
   parseScopes,
   type FetchLike,
@@ -2280,4 +2283,266 @@ test('P26: 410 (issues disabled), 403 (missing scope), and 422 (sanitized valida
       return true;
     },
   );
+});
+
+// ------------------------------------------------------- P27 Actions writes
+
+test('P27: rerunFailedJobs sends POST with no body, returns requested, and invalidates runs and jobs caches only', async () => {
+  const h = writeClient([
+    response(200, { workflow_runs: [{ id: 10, workflow_id: 1, name: 'CI', status: 'completed', conclusion: 'failure' }] }),
+    response(200, { jobs: [{ id: 20, name: 'test', status: 'completed', conclusion: 'failure' }] }),
+    response(200, { workflows: [{ id: 1, name: 'CI', path: '.github/workflows/ci.yml', state: 'active' }] }),
+    response(200, [{ number: 1, title: 'Issue', state: 'open', html_url: 'https://github.com/o/r/issues/1', user: { login: 'me' } }]),
+    response(201, ''),
+  ]);
+  await h.gh.workflowRuns('o', 'r', {});
+  await h.gh.runJobs('o', 'r', 10);
+  await h.gh.workflows('o', 'r');
+  await h.gh.issues('o', 'r', { filter: 'assigned', state: 'open', login: 'me' });
+  assert.equal(h.gh.cacheSize, 4);
+
+  const res = await h.gh.rerunFailedJobs('o', 'r', 10);
+  assert.deepEqual(res.data, { requested: true });
+  const sent = h.calls.at(-1) as WriteCall;
+  assert.equal(sent.method, 'POST');
+  assert.equal(sent.url, 'https://api.github.com/repos/o/r/actions/runs/10/rerun-failed-jobs');
+  assert.equal(sent.body, undefined, 're-run sends no JSON body');
+  assert.equal(h.gh.cacheSize, 2, 'workflows: and issues: stay cached while runs: and jobs: are invalidated');
+
+  const wfCached = await h.gh.workflows('o', 'r');
+  assert.equal(wfCached.cached, true);
+  const issCached = await h.gh.issues('o', 'r', { filter: 'assigned', state: 'open', login: 'me' });
+  assert.equal(issCached.cached, true);
+});
+
+test('P27: rerunFailedJobs does not retry on 502 and distinguishes 403 expiry from missing workflow scope', async () => {
+  const retryClient = writeClient([response(502, { message: 'bad gateway' })]);
+  await assert.rejects(() => retryClient.gh.rerunFailedJobs('o', 'r', 10));
+  assert.equal(retryClient.calls.length, 1, 'no retry on POST');
+  assert.deepEqual(retryClient.sleeps, []);
+
+  for (const lang of ['en', 'id'] as const) {
+    const expired = writeClient(
+      [
+        response(
+          403,
+          { message: 'This run is older than 30 days and cannot be re-run.' },
+          { 'x-ratelimit-remaining': '4900' },
+        ),
+      ],
+      lang,
+    );
+    await assert.rejects(
+      () => expired.gh.rerunFailedJobs('o', 'r', 10),
+      (err: unknown) => {
+        assert.ok(err instanceof GitHubError);
+        assert.equal(err.status, 403);
+        assert.equal(err.code, 'FORBIDDEN');
+        assert.equal(err.message, hostText(lang).github.rerunExpired);
+        assert.notEqual(err.message, '__stub__');
+        return true;
+      },
+    );
+
+    const noScope = writeClient(
+      [
+        response(
+          403,
+          { message: 'Resource not accessible by personal access token' },
+          { 'x-ratelimit-remaining': '4900' },
+        ),
+      ],
+      lang,
+    );
+    await assert.rejects(
+      () => noScope.gh.rerunFailedJobs('o', 'r', 10),
+      (err: unknown) => {
+        assert.ok(err instanceof GitHubError);
+        assert.equal(err.status, 403);
+        assert.equal(err.code, 'FORBIDDEN');
+        assert.equal(err.message, hostText(lang).github.workflowMissingScope);
+        assert.notEqual(err.message, '__stub__');
+        return true;
+      },
+    );
+  }
+});
+
+test('P27: dispatchWorkflow sends POST body with and without inputs, handles 204, invalidates runs, and never retries or logs input values', async () => {
+  const logs: string[] = [];
+  const calls: WriteCall[] = [];
+  const sleeps: number[] = [];
+  const queue = [
+    response(200, { workflow_runs: [{ id: 1, workflow_id: 12, name: 'CI', status: 'completed', conclusion: 'success' }] }),
+    response(200, { workflows: [{ id: 12, name: 'CI', path: '.github/workflows/ci.yml', state: 'active' }] }),
+    response(204, ''),
+    response(204, ''),
+  ];
+  let idx = 0;
+  const gh = new GitHubClient({
+    apiUrl: 'https://api.github.com',
+    token: 'ghp_dispatchtoken0123456789abc',
+    now: () => 1_700_000_000_000,
+    sleep: (ms) => {
+      sleeps.push(ms);
+      return Promise.resolve();
+    },
+    logger: (line) => logs.push(line),
+    fetchImpl: (url, init) => {
+      calls.push({
+        url,
+        method: init.method,
+        body: init.body === undefined ? undefined : JSON.parse(init.body),
+        headers: init.headers,
+      });
+      return Promise.resolve(queue[Math.min(idx++, queue.length - 1)]!);
+    },
+  });
+
+  await gh.workflowRuns('o', 'r', {});
+  await gh.workflows('o', 'r');
+  assert.equal(gh.cacheSize, 2);
+
+  const secretValue = 'super-secret-input-val-99';
+  const withInputs = await gh.dispatchWorkflow('o', 'r', 12, {
+    ref: 'main',
+    inputs: { version: '2.8.0', token_note: secretValue },
+  });
+  assert.deepEqual(withInputs.data, {
+    dispatched: true,
+    at: new Date(1_700_000_000_000).toISOString(),
+  });
+  assert.equal(calls[2]?.method, 'POST');
+  assert.equal(calls[2]?.url, 'https://api.github.com/repos/o/r/actions/workflows/12/dispatches');
+  assert.deepEqual(calls[2]?.body, {
+    ref: 'main',
+    inputs: { version: '2.8.0', token_note: secretValue },
+  });
+  assert.equal(gh.cacheSize, 1, 'runs: invalidated while workflows: stays cached');
+  assert.equal((await gh.workflows('o', 'r')).cached, true);
+  assert.equal(logs.some((line) => line.includes(secretValue)), false, 'input values must never appear in logs');
+
+  await gh.dispatchWorkflow('o', 'r', 12, { ref: 'feat/no-inputs' });
+  assert.deepEqual(calls[3]?.body, { ref: 'feat/no-inputs' }, 'inputs key omitted when absent');
+
+  const fail502 = writeClient([response(502, { message: 'bad gateway' })]);
+  await assert.rejects(() => fail502.gh.dispatchWorkflow('o', 'r', 12, { ref: 'main' }));
+  assert.equal(fail502.calls.length, 1);
+  assert.deepEqual(fail502.sleeps, []);
+});
+
+test('P27: dispatchWorkflow maps 403, 404, and 422 (no trigger, disabled, missing inputs)', async () => {
+  for (const lang of ['en', 'id'] as const) {
+    const noTrigger = writeClient(
+      [response(422, { message: 'Workflow does not have workflow_dispatch trigger' })],
+      lang,
+    );
+    await assert.rejects(
+      () => noTrigger.gh.dispatchWorkflow('o', 'r', 12, { ref: 'main' }),
+      (err: unknown) => {
+        assert.ok(err instanceof GitHubError);
+        assert.equal(err.code, 'VALIDATION_ERROR');
+        assert.equal(err.message, hostText(lang).github.noDispatchTrigger);
+        assert.notEqual(err.message, '__stub__');
+        return true;
+      },
+    );
+
+    const disabled = writeClient(
+      [response(422, { message: 'Workflow is disabled' })],
+      lang,
+    );
+    await assert.rejects(
+      () => disabled.gh.dispatchWorkflow('o', 'r', 12, { ref: 'main' }),
+      (err: unknown) => {
+        assert.ok(err instanceof GitHubError);
+        assert.equal(err.code, 'VALIDATION_ERROR');
+        assert.equal(err.message, hostText(lang).github.workflowDisabled);
+        return true;
+      },
+    );
+
+    const missingInputs = writeClient(
+      [response(422, { message: 'Required input version was not provided\u0000\u202e' })],
+      lang,
+    );
+    await assert.rejects(
+      () => missingInputs.gh.dispatchWorkflow('o', 'r', 12, { ref: 'main' }),
+      (err: unknown) => {
+        assert.ok(err instanceof GitHubError);
+        assert.equal(err.code, 'VALIDATION_ERROR');
+        assert.equal(err.message, hostText(lang).github.inputsNeededOnGitHub);
+        assert.equal(err.detail, 'Required input version was not provided');
+        return true;
+      },
+    );
+  }
+
+  const notFound = writeClient([response(404, { message: 'Not Found' })]);
+  await assert.rejects(
+    () => notFound.gh.dispatchWorkflow('o', 'r', 999, { ref: 'main' }),
+    (err: unknown) => err instanceof GitHubError && err.code === 'NOT_FOUND',
+  );
+
+  const forbidden = writeClient([
+    response(403, { message: 'Forbidden' }, { 'x-ratelimit-remaining': '4900' }),
+  ]);
+  await assert.rejects(
+    () => forbidden.gh.dispatchWorkflow('o', 'r', 12, { ref: 'main' }),
+    (err: unknown) =>
+      err instanceof GitHubError &&
+      err.code === 'FORBIDDEN' &&
+      err.message === hostText('en').github.workflowMissingScope,
+  );
+});
+
+test('P27: workflowFile decodes base64 YAML, caches 60 s, enforces 64 KiB cap, and workflowRun caches 30 s', async () => {
+  const yaml = 'on:\n  workflow_dispatch:\n';
+  const b64 = Buffer.from(yaml, 'utf8').toString('base64').replace(/(.{8})/g, '$1\n');
+  const h = client([
+    response(200, { type: 'file', encoding: 'base64', size: yaml.length, content: b64 }),
+    response(200, { type: 'file', encoding: 'base64', size: yaml.length, content: b64 }),
+  ]);
+
+  const first = await h.gh.workflowFile('o', 'r', '.github/workflows/ci build.yml', 'feat/a b');
+  assert.equal(
+    h.calls[0]?.url,
+    'https://api.github.com/repos/o/r/contents/.github/workflows/ci%20build.yml?ref=feat%2Fa%20b',
+  );
+  assert.equal(first.data, yaml);
+  assert.equal(first.cached, false);
+
+  h.advance(WORKFLOW_FILE_TTL_MS - 1);
+  const second = await h.gh.workflowFile('o', 'r', '.github/workflows/ci build.yml', 'feat/a b');
+  assert.equal(second.cached, true);
+  assert.equal(h.calls.length, 1);
+
+  h.advance(2);
+  const third = await h.gh.workflowFile('o', 'r', '.github/workflows/ci build.yml', 'feat/a b');
+  assert.equal(third.cached, false);
+  assert.equal(h.calls.length, 2);
+
+  // 64 KiB cap (declared size and decoded byte length)
+  const oversized = Buffer.alloc(WORKFLOW_FILE_MAX_BYTES + 1, 0x61).toString('base64');
+  const big = client([
+    response(200, { type: 'file', encoding: 'base64', size: WORKFLOW_FILE_MAX_BYTES + 1, content: oversized }),
+  ]);
+  await assert.rejects(
+    () => big.gh.workflowFile('o', 'r', '.github/workflows/big.yml', 'main'),
+    (err: unknown) => err instanceof GitHubError && err.code === 'VALIDATION_ERROR',
+  );
+
+  // workflowRun caches 30 s and invalidates on rerunFailedJobs
+  const runPayload = { id: 10, workflow_id: 1, name: 'CI', status: 'completed', conclusion: 'failure' };
+  const rh = writeClient([response(200, runPayload), response(201, ''), response(200, runPayload)]);
+  const r1 = await rh.gh.workflowRun('o', 'r', 10);
+  assert.equal(r1.data.id, 10);
+  assert.equal(r1.data.conclusion, 'failure');
+  assert.equal((await rh.gh.workflowRun('o', 'r', 10)).cached, true);
+  assert.equal(rh.calls.length, 1);
+
+  await rh.gh.rerunFailedJobs('o', 'r', 10);
+  const r2 = await rh.gh.workflowRun('o', 'r', 10);
+  assert.equal(r2.cached, false);
+  assert.equal(RUN_DETAIL_TTL_MS, 30_000);
 });

@@ -4,6 +4,9 @@
  * `bridge.request('repos/graph', payload)` infers the response shape. No `any`.
  */
 
+import type { DispatchInput, DispatchInputType } from './workflowInputs';
+export type { DispatchInput, DispatchInputType } from './workflowInputs';
+
 export type Lang = 'en' | 'id';
 
 // ------------------------------------------------------------------ errors
@@ -974,6 +977,8 @@ export interface ActionsRunsPayload {
   workflowId?: number;
   /** 1..50, default 30. */
   perPage?: number;
+  /** Bypass the host TTL cache while still using any stored ETag validator. */
+  refresh?: boolean;
 }
 
 export interface ActionsRunsResult {
@@ -1049,6 +1054,45 @@ export interface ActionsLogResult {
   /** True when earlier lines were dropped. */
   headCut: boolean;
   rateLimit: GitHubRateLimit;
+}
+
+// -------------------------------------------------- actions writes (P27)
+
+export interface RerunFailedPayload extends GitHubMutationMeta {
+  owner: string;
+  repo: string;
+  runId: number;
+}
+
+export interface RerunFailedResult {
+  requested: true;
+}
+
+export interface WorkflowInputsPayload {
+  owner: string;
+  repo: string;
+  workflowId: number;
+  ref: string;
+}
+
+export interface WorkflowInputsResult {
+  inputs: DispatchInput[];
+  parsed: boolean;
+  webUrl: string | null;
+  rateLimit: GitHubRateLimit;
+}
+
+export interface DispatchWorkflowPayload extends GitHubMutationMeta {
+  owner: string;
+  repo: string;
+  workflowId: number;
+  ref: string;
+  inputs?: Record<string, string>;
+}
+
+export interface DispatchWorkflowResult {
+  dispatched: true;
+  at: string;
 }
 
 // ------------------------------------------------ pull requests (write, P22)
@@ -1351,6 +1395,12 @@ export interface RequestMap {
     payload: RepoLabelsPayload;
     response: { labels: IssueLabel[]; rateLimit: GitHubRateLimit };
   };
+  /** Re-run only the failed jobs of a completed workflow run. */
+  'github/rerunFailedJobs': { payload: RerunFailedPayload; response: RerunFailedResult };
+  /** Read and parse `workflow_dispatch.inputs` from the workflow YAML file. */
+  'github/workflowInputs': { payload: WorkflowInputsPayload; response: WorkflowInputsResult };
+  /** Dispatch a workflow run on GitHub (`workflow_dispatch`). Level 1 confirmation. */
+  'github/dispatchWorkflow': { payload: DispatchWorkflowPayload; response: DispatchWorkflowResult };
   'settings/get': { payload: SettingsGetPayload; response: SettingsSnapshot };
   'settings/set': { payload: SettingsSetPayload; response: SettingsSnapshot };
   /**
@@ -1475,7 +1525,7 @@ export type Route =
   | { id: 'prs' | 'issues' | 'actions' };
 
 /** Which control a navigated view should focus. Closed set, validated at the boundary. */
-export type FocusTarget = 'publish' | 'push' | 'commit' | 'create-pr' | 'new-branch' | 'new-issue' | 'resolve';
+export type FocusTarget = 'publish' | 'push' | 'commit' | 'create-pr' | 'new-branch' | 'new-issue' | 'run-workflow' | 'resolve';
 
 export interface NavigateEvent {
   route: Route;

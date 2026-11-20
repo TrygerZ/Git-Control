@@ -46,6 +46,7 @@ const PURE_MODULES = [
   'src/pullRequestDraft.ts',
   'src/webview/pullView.ts',
   'src/webview/pullMerge.ts',
+  'src/workflowInputs.ts',
 ];
 
 test('pure modules contain no vscode imports', () => {
@@ -121,4 +122,10 @@ test('the P20 pure module is listed', () => {
 
 test('the P21 pure module is listed', () => {
   assert.ok(PURE_MODULES.includes('src/checkSummary.ts'));
+});
+
+test('the P27 pure module is listed and free of vscode and node imports', () => {
+  assert.ok(PURE_MODULES.includes('src/workflowInputs.ts'));
+  const source = fs.readFileSync(path.join(__dirname, '..', '..', 'src/workflowInputs.ts'), 'utf8');
+  assert.doesNotMatch(source, /(?:from\s+|require\(\s*)['"]node:/, 'workflowInputs must not import node builtins');
 });

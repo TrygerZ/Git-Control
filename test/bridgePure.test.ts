@@ -27,6 +27,9 @@ import {
   validateSetIssueStatePayload,
   validateCreateIssuePayload,
   validateRepoLabelsPayload,
+  validateRerunFailedPayload,
+  validateWorkflowInputsPayload,
+  validateDispatchWorkflowPayload,
   GITHUB_MUTATION_KINDS,
   MUTATION_KINDS,
   type Outcome,
@@ -889,4 +892,91 @@ test('P26: validateCommentIssuePayload, validateSetIssueStatePayload, validateCr
   assert.equal(detailOf(() => validateRepoLabelsPayload({ owner: 'o', repo: 'r' }, invalid)), 'accepted');
   assert.equal(detailOf(() => validateRepoLabelsPayload({ owner: 'o', repo: 'r', extra: 1 }, invalid)), 'payload');
   assert.equal(detailOf(() => validateRepoLabelsPayload({ owner: '..', repo: 'r' }, invalid)), 'owner/repo');
+});
+
+// -------------------------------------------------- P27 actions write actions
+
+test('P27: rerunFailedJobs and dispatchWorkflow join GITHUB_MUTATION_KINDS while workflowInputs stays a read', () => {
+  for (const kind of ['github/rerunFailedJobs', 'github/dispatchWorkflow']) {
+    assert.ok(GITHUB_MUTATION_KINDS.has(kind), kind);
+    assert.ok(!MUTATION_KINDS.has(kind), `${kind} is not a git mutation`);
+    assert.equal(
+      idempotencyKeyOf({
+        id: 'r27',
+        kind,
+        payload: { owner: 'o', repo: 'r', idempotencyKey: 'ik-27' },
+      } as unknown as Request),
+      `${kind}:ik-27`,
+      kind,
+    );
+  }
+  assert.equal(GITHUB_MUTATION_KINDS.has('github/workflowInputs'), false, 'workflowInputs is a read');
+  assert.equal(
+    idempotencyKeyOf({
+      id: 'r27-read',
+      kind: 'github/workflowInputs',
+      payload: { owner: 'o', repo: 'r', workflowId: 1, ref: 'main', idempotencyKey: 'ignored' },
+    } as unknown as Request),
+    null,
+  );
+});
+
+test('P27: validateRerunFailedPayload, validateWorkflowInputsPayload, and validateDispatchWorkflowPayload enforce strict payload bounds', () => {
+  const invalid = (detail: string): never => {
+    throw new Error(detail);
+  };
+  const detailOf = (fn: () => void): string => {
+    try {
+      fn();
+      return 'accepted';
+    } catch (err) {
+      return (err as Error).message;
+    }
+  };
+
+  const rerunBase = { owner: 'o', repo: 'r', runId: 42, idempotencyKey: 'rr-1' };
+  assert.equal(detailOf(() => validateRerunFailedPayload(rerunBase, invalid)), 'accepted');
+  assert.equal(detailOf(() => validateRerunFailedPayload({ ...rerunBase, extra: 1 }, invalid)), 'payload');
+  assert.equal(detailOf(() => validateRerunFailedPayload({ ...rerunBase, owner: '../o' }, invalid)), 'owner/repo');
+  assert.equal(detailOf(() => validateRerunFailedPayload({ ...rerunBase, runId: 0 }, invalid)), 'runId');
+  assert.equal(detailOf(() => validateRerunFailedPayload({ ...rerunBase, runId: 1.5 }, invalid)), 'runId');
+
+  const inputsBase = { owner: 'o', repo: 'r', workflowId: 7, ref: 'main' };
+  assert.equal(detailOf(() => validateWorkflowInputsPayload(inputsBase, invalid)), 'accepted');
+  assert.equal(detailOf(() => validateWorkflowInputsPayload({ ...inputsBase, extra: true }, invalid)), 'payload');
+  assert.equal(detailOf(() => validateWorkflowInputsPayload({ ...inputsBase, repo: '-bad' }, invalid)), 'owner/repo');
+  assert.equal(detailOf(() => validateWorkflowInputsPayload({ ...inputsBase, workflowId: 0 }, invalid)), 'workflowId');
+  assert.equal(detailOf(() => validateWorkflowInputsPayload({ ...inputsBase, ref: 'bad branch' }, invalid)), 'ref');
+  assert.equal(detailOf(() => validateWorkflowInputsPayload({ ...inputsBase, ref: '-flag' }, invalid)), 'ref');
+
+  const dispatchBase = {
+    owner: 'o',
+    repo: 'r',
+    workflowId: 7,
+    ref: 'release/v1',
+    inputs: { version: '1.0.0', dry_run: 'false' },
+    idempotencyKey: 'dp-1',
+    confirm: true,
+  };
+  assert.equal(detailOf(() => validateDispatchWorkflowPayload(dispatchBase, invalid)), 'accepted');
+  assert.equal(
+    detailOf(() =>
+      validateDispatchWorkflowPayload(
+        { owner: 'o', repo: 'r', workflowId: 7, ref: 'main', idempotencyKey: 'dp-2', confirm: true },
+        invalid,
+      ),
+    ),
+    'accepted',
+  );
+  assert.equal(detailOf(() => validateDispatchWorkflowPayload({ ...dispatchBase, extra: 1 }, invalid)), 'payload');
+  assert.equal(detailOf(() => validateDispatchWorkflowPayload({ ...dispatchBase, owner: '' }, invalid)), 'owner/repo');
+  assert.equal(detailOf(() => validateDispatchWorkflowPayload({ ...dispatchBase, workflowId: -1 }, invalid)), 'workflowId');
+  assert.equal(detailOf(() => validateDispatchWorkflowPayload({ ...dispatchBase, ref: 'bad..ref' }, invalid)), 'ref');
+  assert.equal(
+    detailOf(() => validateDispatchWorkflowPayload({ ...dispatchBase, inputs: { '1bad': 'x' } }, invalid)),
+    'inputs',
+  );
+  const eleven: Record<string, string> = {};
+  for (let i = 0; i < 11; i += 1) eleven[`k_${i}`] = 'v';
+  assert.equal(detailOf(() => validateDispatchWorkflowPayload({ ...dispatchBase, inputs: eleven }, invalid)), 'inputs');
 });

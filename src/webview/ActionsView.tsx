@@ -12,7 +12,8 @@ import { ActionsFilters } from './ActionsFilters';
 import { restoreTarget } from './focusTrap';
 import { apiQuotaLabel, countdown, formatCount, sanitizeGitText } from './format';
 import { githubGate, type GateBanner } from './githubGate';
-import { applyResult, DEFAULT_POLL_CONFIG, nextPoll, type PollState } from './pollPlan';
+import { applyResult, DEFAULT_POLL_CONFIG, nextBurstDelay, nextPoll, type PollState } from './pollPlan';
+import { RunWorkflowDialog } from './RunWorkflowDialog';
 import {
   ACTIONS_PAGE_SIZE,
   useActionsStore,
@@ -42,8 +43,16 @@ export function ActionsView(): JSX.Element {
   const actionsLoading = useActionsStore((s) => s.loading);
   const actionsError = useActionsStore((s) => s.error);
   const load = useActionsStore((s) => s.load);
+  const dispatchOpen = useActionsStore((s) => s.dispatchOpen);
+  const openDispatch = useActionsStore((s) => s.openDispatch);
+  const closeDispatch = useActionsStore((s) => s.closeDispatch);
+  const pendingStart = useActionsStore((s) => s.pendingStart);
+  const pollBurstNonce = useActionsStore((s) => s.pollBurstNonce);
+  const pollBurstActive = useActionsStore((s) => s.pollBurstActive);
+  const finishPollBurst = useActionsStore((s) => s.finishPollBurst);
 
   const route = useRouteStore((s) => s.route);
+  const pendingFocus = useRouteStore((s) => s.pendingFocus);
   const status = useRepoStore((s) => s.status);
 
   const [expandedSections, setExpandedSections] = useState<ReadonlySet<string>>(
@@ -52,6 +61,8 @@ export function ActionsView(): JSX.Element {
   const [now, setNow] = useState(() => Date.now());
 
   const connectRef = useRef<HTMLButtonElement>(null);
+  const runWorkflowBtnRef = useRef<HTMLButtonElement>(null);
+  const wasDialogOpenRef = useRef(false);
 
   /*
    * The clock moves for two reasons: a quota countdown, and a running run whose
@@ -154,6 +165,75 @@ export function ActionsView(): JSX.Element {
     };
   }, [polling, load]);
 
+  useEffect(() => {
+    if (pendingFocus !== 'run-workflow') return;
+    useRouteStore.getState().takeFocus();
+    if (auth?.connected === true && linkage?.owner != null && linkage.repo != null) {
+      openDispatch();
+    }
+  }, [pendingFocus, auth?.connected, linkage, openDispatch]);
+
+  useEffect(() => {
+    if (dispatchOpen) {
+      wasDialogOpenRef.current = true;
+      return;
+    }
+    if (wasDialogOpenRef.current) {
+      wasDialogOpenRef.current = false;
+      if (document.activeElement === document.body || document.activeElement === null) {
+        runWorkflowBtnRef.current?.focus();
+      }
+    }
+  }, [dispatchOpen]);
+
+  const burstActive = route.id === 'actions' && (pendingStart !== null || pollBurstActive);
+  useEffect(() => {
+    if (!burstActive) return undefined;
+
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    let step = 0;
+
+    const scheduleNext = (): void => {
+      if (cancelled) return;
+      const currentRl = useGitHubStore.getState().rateLimit;
+      const delay = nextBurstDelay(step, {
+        visible: true,
+        inFlight: false,
+        rateLimited: currentRl?.remaining === 0,
+        offline: currentRl?.offline === true,
+      });
+      if (delay === null) {
+        finishPollBurst();
+        return;
+      }
+      timer = setTimeout(async () => {
+        if (cancelled) return;
+        step += 1;
+        try {
+          await load({ force: true });
+        } finally {
+          if (cancelled) return;
+          const currentState = useActionsStore.getState();
+          if (currentState.pendingStart === null && needsPolling(currentState.runs)) {
+            finishPollBurst();
+            return;
+          }
+          scheduleNext();
+        }
+      }, delay);
+    };
+
+    scheduleNext();
+
+    return () => {
+      cancelled = true;
+      if (timer !== null) {
+        clearTimeout(timer);
+      }
+    };
+  }, [burstActive, pollBurstNonce, load, finishPollBurst]);
+
   const loading = ghLoading || actionsLoading;
   const error = actionsError ?? ghError;
   const gate = githubGate({
@@ -241,7 +321,7 @@ export function ActionsView(): JSX.Element {
                 </button>
               }
             />
-          ) : filteredRuns.length === 0 ? (
+          ) : filteredRuns.length === 0 && pendingStart === null ? (
             <EmptyState
               title={
                 workflowId !== null
@@ -267,7 +347,7 @@ export function ActionsView(): JSX.Element {
             />
           ) : (
             <div className="gc-actions__groups">
-              {groups.thisBranch.length > 0 && (
+              {(groups.thisBranch.length > 0 || pendingStart !== null) && (
                 <section className="gc-section" aria-label={strings.actions.groupThisBranch}>
                   <div className="gc-section__head">
                     <h3 className="gc-section__title">
@@ -300,6 +380,30 @@ export function ActionsView(): JSX.Element {
                   </div>
                   {expandedSections.has('thisBranch') && (
                     <ul className="gc-actions__rows" role="list">
+                      {pendingStart !== null && (
+                        <li className="gc-actions__starting" role="status">
+                          <span
+                            className="gc-actions__status gc-actions__status--running"
+                            aria-hidden="true"
+                          >
+                            <Icon name="status-running" />
+                          </span>
+                          <span className="gc-actions__body">
+                            <span className="gc-actions__title">
+                              {sanitizeGitText(pendingStart.workflowName)}
+                            </span>
+                            <span className="gc-actions__meta">
+                              <span>{sanitizeGitText(pendingStart.branch)}</span>
+                              <span>{strings.actionsWrite.startingRun}</span>
+                            </span>
+                            {pendingStart.timedOut && (
+                              <span className="gc-actions__starting-note">
+                                {strings.actionsWrite.mayTakeAMinute}
+                              </span>
+                            )}
+                          </span>
+                        </li>
+                      )}
                       {groups.thisBranch.map((run) => (
                         <ActionRunRow key={run.id} run={run} now={now} />
                       ))}
@@ -352,12 +456,25 @@ export function ActionsView(): JSX.Element {
           )}
 
           <footer className="gc-actions__footer">
+            <button
+              ref={runWorkflowBtnRef}
+              type="button"
+              className="gc-button gc-button--quiet"
+              disabled={auth?.connected !== true || linkageOwner === null}
+              onClick={() => openDispatch()}
+            >
+              <Icon name="play" />
+              {strings.actionsWrite.runWorkflow}
+            </button>
             {runs.length === ACTIONS_PAGE_SIZE && (
               <span>{strings.actions.latestOnly(String(ACTIONS_PAGE_SIZE))}</span>
             )}
             {quota !== null && <span className="gc-actions__quota">{quota}</span>}
           </footer>
         </>
+      )}
+      {dispatchOpen && linkageOwner !== null && linkageRepo !== null && (
+        <RunWorkflowDialog owner={linkageOwner} repo={linkageRepo} onCancel={closeDispatch} />
       )}
     </section>
   );

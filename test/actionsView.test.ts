@@ -46,7 +46,7 @@ test('the actions view routes every decision through the pure helpers', () => {
 });
 
 test('no component keeps a helper alive just to satisfy a contract test', () => {
-  for (const file of ['ActionsView.tsx', 'ActionRunRow.tsx', 'ActionsFilters.tsx']) {
+  for (const file of ['ActionsView.tsx', 'ActionRunRow.tsx', 'ActionsFilters.tsx', 'RunWorkflowDialog.tsx']) {
     assert.doesNotMatch(read(`src/webview/${file}`), /^\s*void \w+;/m, file);
   }
 });
@@ -56,15 +56,46 @@ test('the actions view sends no request of its own beyond the store actions', ()
   assert.doesNotMatch(src, /bridge\.request\(/);
 });
 
-test('re-run, annotation, and dispatch controls do not exist yet', () => {
+test('annotations remain absent while P27 re-run and dispatch controls are wired', () => {
   const view = read('src/webview/ActionsView.tsx');
   const row = read('src/webview/ActionRunRow.tsx');
   const log = read('src/webview/ActionJobLog.tsx');
-  for (const forbidden of ['Run workflow', 'Re-run', 'Annotations', 'workflow_dispatch']) {
-    for (const src of [view, row, log]) {
-      assert.ok(!src.includes(forbidden), `${forbidden} must not be drawn`);
-    }
+  for (const src of [view, row, log]) {
+    assert.ok(!src.includes('Annotations'), 'Annotations must not be drawn');
   }
+
+  assert.match(row, /\bcanRerun\b/);
+  assert.match(row, /\brerunFailed\b/);
+  assert.match(row, /actionsWrite\.rerunFailed/);
+  assert.match(row, /gc-actions__run-actions/);
+
+  assert.match(view, /<RunWorkflowDialog/);
+  assert.match(view, /pendingFocus !== 'run-workflow'/);
+  assert.match(view, /\bopenDispatch\b/);
+  assert.match(view, /\bpendingStart\b/);
+  assert.match(view, /actionsWrite\.runWorkflow/);
+  assert.match(view, /actionsWrite\.startingRun/);
+  assert.match(view, /nextBurstDelay/);
+  assert.match(view, /finishPollBurst/);
+  assert.match(view, /gc-actions__starting/);
+  assert.match(view, /pollBurstActive/, 'burst effect gated on pollBurstActive rather than sticky nonce > 0');
+
+  const dialog = read('src/webview/RunWorkflowDialog.tsx');
+  assert.doesNotMatch(dialog, /dangerouslySetInnerHTML|innerHTML|href=/);
+  assert.match(dialog, /useDialogFocusTrap/);
+  assert.match(dialog, /role="dialog"/);
+  assert.match(dialog, /aria-modal="true"/);
+  assert.match(dialog, /aria-required/);
+  assert.match(dialog, /aria-describedby/);
+  assert.match(dialog, /role="status"/);
+  assert.match(dialog, /<select\b/);
+  assert.match(dialog, /type="checkbox"/);
+  assert.match(dialog, /\bdispatchCommand\b/);
+  assert.match(dialog, /\bmissingRequired\b/);
+  assert.match(dialog, /actionsWrite\.openOnGitHub/);
+  assert.match(dialog, /\bopenUrl\b/);
+  assert.match(dialog, /setTimeout/, 'debounces branch input YAML reads');
+  assert.doesNotMatch(dialog, /const canSubmit\s*=[\s\S]*?missing\.length === 0/, 'submit stays clickable so required-field alert is reachable');
 });
 
 test('the job log renders text nodes only and reaches the host through openUrl', () => {
@@ -115,4 +146,17 @@ test('the sidebar shell mounts the view and probes the dot before it is opened',
   // The dot must be right on every route, not only while Actions is open.
   assert.match(src, /refreshDot\(currentBranch\)/);
   assert.match(src, /if \(!githubConnected\) return;/);
+});
+
+test('P27: AGENTS.md, purity contract, and README document the Actions write modules and scopes', () => {
+  const agents = read('AGENTS.md');
+  assert.ok(agents.includes('src/workflowInputs.ts'), 'AGENTS.md File Map lists workflowInputs.ts');
+  assert.ok(agents.includes('src/webview/RunWorkflowDialog.tsx'), 'AGENTS.md File Map lists RunWorkflowDialog.tsx');
+
+  const purity = read('test/purity.test.ts');
+  assert.match(purity, /'src\/workflowInputs\.ts'/);
+
+  const readme = read('README.md');
+  assert.match(readme, /Actions Write Actions/);
+  assert.match(readme, /`repo` and `workflow`/);
 });

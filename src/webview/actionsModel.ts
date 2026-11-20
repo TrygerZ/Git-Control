@@ -5,7 +5,7 @@
  * decision the Actions view makes about what to draw is a function here, so it is
  * testable without a browser.
  */
-import type { Lang, RunConclusion, RunJobInfo, RunStatus, WorkflowRunInfo } from '../messages';
+import type { DispatchInput, Lang, RunConclusion, RunJobInfo, RunStatus, WorkflowRunInfo } from '../messages';
 import { sanitizeGitText, shortHash } from './format';
 import { t } from './i18n';
 
@@ -224,4 +224,102 @@ export function metaLine(run: WorkflowRunInfo, lang: Lang = 'en'): string {
   }
   const event = sanitizeGitText(run.event);
   return strings.runMeta(name, num, event, sha);
+}
+
+// -------------------------------------------------- actions writes (P27)
+
+/** Whether a completed run ended in a state GitHub allows re-running failed jobs for. */
+export function canRerun(run: Pick<WorkflowRunInfo, 'status' | 'conclusion'>): boolean {
+  return (
+    run.status === 'completed' &&
+    (run.conclusion === 'failure' || run.conclusion === 'timed_out' || run.conclusion === 'cancelled')
+  );
+}
+
+/** Command preview shown inside the dispatch confirmation dialog. */
+export function dispatchCommand(
+  owner: string,
+  repo: string,
+  workflowFile: string,
+  branch: string,
+  inputs?: Record<string, string>,
+): string {
+  const file = sanitizeGitText(workflowFile.split('/').pop() ?? workflowFile);
+  const cleanBranch = sanitizeGitText(branch);
+  const base = `POST /repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/actions/workflows/${encodeURIComponent(file)}/dispatches`;
+  let cleanInputs: Record<string, string> | undefined;
+  if (inputs !== undefined) {
+    const entries = Object.entries(inputs);
+    if (entries.length > 0) {
+      cleanInputs = {};
+      for (const [k, v] of entries) {
+        cleanInputs[sanitizeGitText(k)] = sanitizeGitText(v);
+      }
+    }
+  }
+  const body =
+    cleanInputs !== undefined
+      ? { ref: cleanBranch, inputs: cleanInputs }
+      : { ref: cleanBranch };
+  return `${base} ${JSON.stringify(body)}`;
+}
+
+/**
+ * Find the newest `workflow_dispatch` run matching a recent dispatch within a 5 s
+ * clock-skew window, or `null` while the run has not appeared yet.
+ */
+export function matchDispatchedRun(
+  runs: readonly WorkflowRunInfo[],
+  criteria: { workflowId: number; branch: string; since: string },
+): WorkflowRunInfo | null {
+  const sinceMs = Date.parse(criteria.since);
+  if (!Number.isFinite(sinceMs)) return null;
+  const floor = sinceMs - 5_000;
+  let best: WorkflowRunInfo | null = null;
+  let bestCreatedMs = Number.NEGATIVE_INFINITY;
+  for (const run of runs) {
+    if (
+      run.workflowId !== criteria.workflowId ||
+      run.event !== 'workflow_dispatch' ||
+      run.branch !== criteria.branch
+    ) {
+      continue;
+    }
+    const createdMs = Date.parse(run.createdAt);
+    if (!Number.isFinite(createdMs) || createdMs < floor) continue;
+    if (best === null || createdMs > bestCreatedMs || (createdMs === bestCreatedMs && run.id > best.id)) {
+      best = run;
+      bestCreatedMs = createdMs;
+    }
+  }
+  return best;
+}
+
+/** Build initial form values from parsed `workflow_dispatch` input declarations. */
+export function defaultInputValues(inputs: readonly DispatchInput[]): Record<string, string> {
+  const values: Record<string, string> = {};
+  for (const input of inputs) {
+    if (input.type === 'boolean') {
+      values[input.name] = input.default === 'true' ? 'true' : 'false';
+    } else if (input.type === 'choice') {
+      values[input.name] = input.default ?? input.options[0] ?? '';
+    } else {
+      values[input.name] = input.default ?? '';
+    }
+  }
+  return values;
+}
+
+/** Return required input names whose current value is blank. */
+export function missingRequired(
+  inputs: readonly DispatchInput[],
+  values: Readonly<Record<string, string>>,
+): string[] {
+  const missing: string[] = [];
+  for (const input of inputs) {
+    if (input.required && (values[input.name] ?? '').trim().length === 0) {
+      missing.push(input.name);
+    }
+  }
+  return missing;
 }

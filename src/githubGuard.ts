@@ -28,7 +28,7 @@ export type GitHubWriteAction =
   | { action: 'close-issue' }
   | { action: 'reopen-issue' }
   | { action: 'create-issue' }
-  | { action: 'rerun-failed-jobs' }
+  | { action: 'rerun-failed-jobs'; run?: { status: string; conclusion: string | null } }
   | { action: 'dispatch-workflow' }
   | { action: 'create-release' };
 
@@ -79,6 +79,13 @@ export function hasWriteScope(
   return scopes.some((scope) => WRITE_SCOPES.includes(scope)) ? 'yes' : 'no';
 }
 
+export function isRerunableRun(run: { status: string; conclusion: string | null }): boolean {
+  return (
+    run.status === 'completed' &&
+    (run.conclusion === 'failure' || run.conclusion === 'timed_out' || run.conclusion === 'cancelled')
+  );
+}
+
 export function evaluateGitHubAction(
   action: GitHubWriteAction,
   ctx: GitHubGuardContext,
@@ -103,6 +110,9 @@ export function evaluateGitHubAction(
   }
   if (hasWriteScope(ctx.scopes, action) === 'no') {
     return { allow: false, code: 'FORBIDDEN', message: text.missingScope('repo'), remedies: ['cancel'] };
+  }
+  if (action.action === 'rerun-failed-jobs' && action.run !== undefined && !isRerunableRun(action.run)) {
+    return { allow: false, code: 'VALIDATION_ERROR', message: text.rerunNotAllowed, remedies: ['cancel'] };
   }
 
   // A publish pushes a new branch, which changes the remote for everyone. A

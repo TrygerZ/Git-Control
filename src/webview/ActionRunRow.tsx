@@ -2,6 +2,7 @@ import type { JSX } from 'react';
 import type { Lang, RunJobInfo, WorkflowRunInfo } from '../messages';
 import {
   canLoadLog,
+  canRerun,
   durationText,
   formatDuration,
   metaLine,
@@ -47,11 +48,14 @@ export interface ActionRunRowProps {
 export function ActionRunRow({ run, now }: ActionRunRowProps): JSX.Element {
   const strings = useT();
   const language = useSettingsStore((s) => s.language);
+  const auth = useGitHubStore((s) => s.auth);
   const openUrl = useGitHubStore((s) => s.openUrl);
   const expanded = useActionsStore((s) => s.expanded.has(run.id));
   const jobs = useActionsStore((s) => s.jobsByRun[run.id]);
   const isLoadingJobs = useActionsStore((s) => s.jobsLoading.has(run.id));
   const isErrorJobs = useActionsStore((s) => s.jobsError.has(run.id));
+  const rerunning = useActionsStore((s) => s.rerunning.has(run.id));
+  const rerunFailed = useActionsStore((s) => s.rerunFailed);
   const toggleRun = useActionsStore((s) => s.toggleRun);
   const loadJobs = useActionsStore((s) => s.loadJobs);
   const expandedJobs = useActionsStore((s) => s.expandedJobs);
@@ -111,7 +115,21 @@ export function ActionRunRow({ run, now }: ActionRunRowProps): JSX.Element {
       </div>
 
       {expanded && (
-        <ul className="gc-actions__jobs" id={jobsId} role="list">
+        <>
+          {auth?.connected === true && canRerun(run) && (
+            <div className="gc-actions__run-actions">
+              <button
+                type="button"
+                className="gc-button gc-button--primary gc-actions__rerun"
+                disabled={rerunning}
+                onClick={() => void rerunFailed(run.id)}
+              >
+                <Icon name="refresh" />
+                {rerunning ? strings.actionsWrite.rerunning : strings.actionsWrite.rerunFailed}
+              </button>
+            </div>
+          )}
+          <ul className="gc-actions__jobs" id={jobsId} role="list">
           {isLoadingJobs ? (
             <li className="gc-actions__jobs-note">{strings.actions.jobsLoading}</li>
           ) : isErrorJobs ? (
@@ -169,7 +187,8 @@ export function ActionRunRow({ run, now }: ActionRunRowProps): JSX.Element {
               );
             })
           ) : null}
-        </ul>
+          </ul>
+        </>
       )}
     </li>
   );

@@ -22,6 +22,7 @@ import { buildIconThemeSnapshot, iconThemeRootUri } from './iconTheme';
 import { Logger } from './logger';
 import { parseRemoteUrl, resolveGitHubApiBase, webUrlOf, type GitHubApiBase, type ParsedRemoteUrl } from './remoteUrl';
 import { buildDraft } from './pullRequestDraft';
+import { parseDispatchInputs, workflowWebUrl } from './workflowInputs';
 import { validateFullHash, validatePullRequestNumber } from './validation';
 import { isFresh, parseRoute, PENDING_ROUTE_TTL_MS } from './webview/route';
 import { clampZoom } from './webview/viewport';
@@ -56,6 +57,8 @@ import type {
   CreateIssuePayload,
   CreatePullRequestPayload,
   CreatePullRequestResult,
+  DispatchWorkflowPayload,
+  DispatchWorkflowResult,
   FocusTarget,
   GitHubAuthState,
   GitHubLinkage,
@@ -84,6 +87,8 @@ import type {
   PullRequestsResult,
   RepoLabelsPayload,
   ReplyReviewPayload,
+  RerunFailedPayload,
+  RerunFailedResult,
   Route,
   SetIssueStatePayload,
   SubmitReviewPayload,
@@ -91,6 +96,10 @@ import type {
   SettingsSetPayload,
   SettingsSnapshot,
   UiPreferences,
+  WorkflowInfo,
+  WorkflowInputsPayload,
+  WorkflowInputsResult,
+  WorkflowRunInfo,
 } from './messages';
 
 export function activeLanguage(): Lang {
@@ -993,6 +1002,11 @@ class Controller implements vscode.Disposable {
       githubActionsRuns: (payload) => this.githubActionsRuns(payload),
       githubActionsJobs: (payload) => this.githubActionsJobs(payload),
       githubActionsLog: (payload) => this.githubActionsLog(payload),
+      githubActionsRun: (payload) => this.githubActionsRun(payload),
+      githubActionsWorkflows: (payload) => this.githubActionsWorkflows(payload),
+      githubRerunFailed: (payload) => this.githubRerunFailed(payload),
+      githubWorkflowInputs: (payload) => this.githubWorkflowInputs(payload),
+      githubDispatchWorkflow: (payload) => this.githubDispatchWorkflow(payload),
       githubCommitAuthors: (payload) => this.githubCommitAuthors(payload),
       githubContributorIdentity: (payload) => this.githubContributorIdentity(payload),
       githubPrPrepare: (payload) => this.githubPrPrepare(payload),
@@ -1488,6 +1502,7 @@ class Controller implements vscode.Disposable {
       ...(payload.branch === undefined ? {} : { branch: payload.branch }),
       ...(payload.workflowId === undefined ? {} : { workflowId: payload.workflowId }),
       ...(payload.perPage === undefined ? {} : { perPage: payload.perPage }),
+      ...(payload.refresh === undefined ? {} : { refresh: payload.refresh }),
     });
     const workflows =
       payload.branch === undefined && payload.workflowId === undefined
@@ -1525,6 +1540,64 @@ class Controller implements vscode.Disposable {
       headCut: result.data.headCut,
       rateLimit: client.rateLimit(result.cached),
     };
+  }
+
+  private async githubActionsRun(payload: {
+    owner: string;
+    repo: string;
+    runId: number;
+  }): Promise<{ data: WorkflowRunInfo; rateLimit: GitHubRateLimit; cached: boolean }> {
+    const { client } = await this.githubClient();
+    const result = await client.workflowRun(payload.owner, payload.repo, payload.runId);
+    return { data: result.data, rateLimit: client.rateLimit(result.cached), cached: result.cached };
+  }
+
+  private async githubActionsWorkflows(payload: {
+    owner: string;
+    repo: string;
+  }): Promise<{ data: WorkflowInfo[]; rateLimit: GitHubRateLimit; cached: boolean }> {
+    const { client } = await this.githubClient();
+    const result = await client.workflows(payload.owner, payload.repo);
+    return { data: result.data, rateLimit: client.rateLimit(result.cached), cached: result.cached };
+  }
+
+  private async githubRerunFailed(payload: RerunFailedPayload): Promise<RerunFailedResult> {
+    const { client } = await this.githubClient();
+    const result = await client.rerunFailedJobs(payload.owner, payload.repo, payload.runId);
+    this.logger.info('github/rerunFailedJobs', `POST runs/${payload.runId}/rerun-failed-jobs`);
+    return result.data;
+  }
+
+  private async githubDispatchWorkflow(payload: DispatchWorkflowPayload): Promise<DispatchWorkflowResult> {
+    const { client } = await this.githubClient();
+    const result = await client.dispatchWorkflow(payload.owner, payload.repo, payload.workflowId, {
+      ref: payload.ref,
+      ...(payload.inputs === undefined ? {} : { inputs: payload.inputs }),
+    });
+    this.logger.info('github/dispatchWorkflow', `POST workflows/${payload.workflowId}/dispatches`);
+    return result.data;
+  }
+
+  private async githubWorkflowInputs(payload: WorkflowInputsPayload): Promise<WorkflowInputsResult> {
+    const { client } = await this.githubClient();
+    let webUrl: string | null = null;
+    try {
+      const workflows = await client.workflows(payload.owner, payload.repo);
+      const workflow = workflows.data.find((item) => item.id === payload.workflowId);
+      if (workflow === undefined) {
+        return { inputs: [], parsed: false, webUrl: null, rateLimit: client.rateLimit(workflows.cached) };
+      }
+      const remote = await this.detectRemote();
+      webUrl = workflowWebUrl(remote?.host ?? null, payload.owner, payload.repo, workflow.path);
+      const file = await client.workflowFile(payload.owner, payload.repo, workflow.path, payload.ref);
+      const parsed = parseDispatchInputs(file.data);
+      if (parsed === null) {
+        return { inputs: [], parsed: false, webUrl, rateLimit: client.rateLimit(file.cached) };
+      }
+      return { inputs: parsed, parsed: true, webUrl, rateLimit: client.rateLimit(file.cached) };
+    } catch {
+      return { inputs: [], parsed: false, webUrl, rateLimit: client.rateLimit(false) };
+    }
   }
 
   private async githubCommitAuthors(payload: CommitAuthorsPayload): Promise<CommitAuthorsResult> {

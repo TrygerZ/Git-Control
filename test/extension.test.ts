@@ -67,3 +67,34 @@ test('checklistDismissed is read with a false default and written only as a bool
     'only a boolean is accepted',
   );
 });
+
+test('P27: bridgeHost registers Actions write host methods and never logs dispatch inputs', () => {
+  for (const name of [
+    'githubActionsRun',
+    'githubActionsWorkflows',
+    'githubRerunFailed',
+    'githubWorkflowInputs',
+    'githubDispatchWorkflow',
+  ]) {
+    assert.match(source, new RegExp(`${name}:\\s*\\(payload\\)\\s*=>\\s*this\\.${name}\\(payload\\)`), name);
+  }
+
+  const wiStart = source.indexOf('private async githubWorkflowInputs(');
+  assert.ok(wiStart > 0, 'githubWorkflowInputs method exists');
+  const wiBody = source.slice(wiStart, wiStart + 1600);
+  assert.match(wiBody, /parseDispatchInputs/);
+  assert.match(wiBody, /workflowWebUrl/);
+  assert.match(wiBody, /detectRemote\(\)/);
+  assert.doesNotMatch(wiBody, /logger\./, 'workflow file contents must not be logged');
+
+  const dwStart = source.indexOf('private async githubDispatchWorkflow(');
+  assert.ok(dwStart > 0, 'githubDispatchWorkflow method exists');
+  const dwBody = source.slice(dwStart, dwStart + 1000);
+  assert.doesNotMatch(dwBody, /payload\.inputs[^\n]*logger|logger\.[^\n]*inputs/i, 'inputs must never reach logs');
+  assert.match(dwBody, /dispatchWorkflow\(/);
+
+  const arStart = source.indexOf('private async githubActionsRuns(');
+  assert.ok(arStart > 0);
+  const arBody = source.slice(arStart, arStart + 600);
+  assert.match(arBody, /refresh:\s*payload\.refresh/);
+});
