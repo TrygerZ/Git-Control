@@ -542,3 +542,68 @@ test('P25: a second close while one is in flight is ignored, and a failed close 
   await usePullStore.getState().close();
   assert.equal(closeCalls, 2, 'failed close remains retryable');
 });
+
+test('P25: a second merge while one is in flight is ignored', async (t: TestContext) => {
+  load();
+  let release = (): void => {};
+  const gate = new Promise<void>((done) => {
+    release = done;
+  });
+  let mergeCalls = 0;
+  const original = bridge.request;
+  bridge.request = (async (kind: string) => {
+    if (kind === 'github/mergePullRequest') {
+      mergeCalls += 1;
+      await gate;
+      return { merged: true, mergeSha: 'c'.repeat(40), branchDeleted: { remote: null, local: null }, warnings: [] };
+    }
+    if (kind === 'github/pullDetail') return { detail: detail({ state: 'merged' }), rateLimit: RATE };
+    return RATE;
+  }) as typeof bridge.request;
+  t.after(() => {
+    release();
+    bridge.request = original;
+  });
+
+  usePullStore.getState().openMerge();
+  const first = usePullStore.getState().merge({ method: 'merge' });
+  const second = usePullStore.getState().merge({ method: 'merge' });
+  await Promise.resolve();
+  release();
+  await Promise.all([first, second]);
+  assert.equal(mergeCalls, 1, 'synchronous merging guard refuses duplicate merge');
+});
+
+test('P25: a merge outcome with merged === false transitions to failed without emitting merged toast', async (t: TestContext) => {
+  load();
+  const s = stub((kind) => {
+    if (kind === 'github/mergePullRequest') {
+      return { merged: false, mergeSha: null, branchDeleted: { remote: null, local: null }, warnings: [] };
+    }
+    return { detail: detail(), rateLimit: RATE };
+  });
+  t.after(() => s.restore());
+
+  useOperationStore.setState({ toasts: [] });
+  usePullStore.getState().openMerge();
+  await usePullStore.getState().merge({ method: 'merge' });
+
+  const state = usePullStore.getState();
+  assert.equal(state.mergeState, 'failed');
+  assert.ok(state.mergeError !== null);
+  assert.equal(useOperationStore.getState().toasts.length, 0, 'must not toast merged when merged is false');
+});
+
+test('P25: a submitted review silently refreshes PR detail when returned so mergeability updates', async (t: TestContext) => {
+  load(detail({ mergeableState: 'blocked' }));
+  const s = stub((kind) => {
+    if (kind === 'github/submitReview') return { reviewId: 9 };
+    if (kind === 'github/pullTimeline') return { items: [], truncated: false, rateLimit: RATE };
+    if (kind === 'github/pullDetail') return { detail: detail({ mergeableState: 'clean' }), rateLimit: RATE };
+    return RATE;
+  });
+  t.after(() => s.restore());
+
+  await usePullStore.getState().review({ event: 'APPROVE', body: '' });
+  assert.equal(usePullStore.getState().detail?.mergeableState, 'clean');
+});

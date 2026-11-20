@@ -356,6 +356,8 @@ export const usePullStore = create<PullState>((set, get) => ({
   },
 
   async merge(options) {
+    // Synchronous guard before any await so a double trigger cannot mint or send twice.
+    if (get().mergeState === 'merging') return;
     const detail = get().detail;
     if (detail === null) return;
     // The panel's own guard, checked before any request: a dirty or draft pull
@@ -391,6 +393,18 @@ export const usePullStore = create<PullState>((set, get) => ({
         // The dialog's confirm button IS the level 1 confirmation.
         confirm: true,
       });
+      if (!outcome.merged) {
+        // Keep `mergeKey` and `mergeOptions` so `retryMerge()` replays the same attempt.
+        set({
+          mergeState: 'failed',
+          mergeError: {
+            status: 409,
+            code: 'CONFLICT',
+            message: outcome.warnings[0] ?? t(activeLang()).format.errors.CONFLICT.explanation,
+          },
+        });
+        return;
+      }
       // Landed: forget the key so the next open cannot replay this outcome, and
       // forget the options so a stray retry has nothing to resend.
       mergeKey = null;
@@ -445,6 +459,7 @@ export const usePullStore = create<PullState>((set, get) => ({
     }
     // Only once there is something to send: the returns above state a failure
     // instead of leaving the button saying `sending` with no request behind it.
+    const mine = generation;
     set({ reviewState: 'sending', reviewError: null });
     pointTarget({ owner: repo.owner, repo: repo.repo, number: detail.number });
     try {
@@ -462,6 +477,18 @@ export const usePullStore = create<PullState>((set, get) => ({
       // Landed: the form has nothing left to show, so it closes over the text.
       set({ reviewState: 'idle', reviewError: null, reviewDraft: null, reviewOpen: false });
       await refreshConversation(get, set);
+      try {
+        const refreshed = await bridge.request('github/pullDetail', {
+          owner: repo.owner,
+          repo: repo.repo,
+          number: detail.number,
+        });
+        if (refreshed?.detail !== undefined && mine === generation) {
+          set({ detail: refreshed.detail });
+        }
+      } catch {
+        // Conversation already refreshed and the review landed; leave the detail as-is if re-read fails.
+      }
       useOperationStore.getState().pushToast({
         level: 'info',
         message: t(activeLang()).prMerge.reviewSubmittedToast,
