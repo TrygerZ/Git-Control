@@ -12,7 +12,7 @@ import assert from 'node:assert/strict';
 import { bridge } from '../src/webview/bridge';
 import { usePullStore } from '../src/webview/pullStore';
 import { t } from '../src/webview/i18n';
-import { useOperationStore } from '../src/webview/store';
+import { useGitHubStore, useOperationStore } from '../src/webview/store';
 import type { PullDetail } from '../src/messages';
 
 const RATE = { limit: 5000, remaining: 4999, resetAt: null, cached: false, offline: false };
@@ -467,4 +467,84 @@ test('QA-03: a second reply sent while one is in flight is ignored', async (t: T
   // send actually went out, so an ignored press cannot eat what was typed.
   const results = await Promise.all([first, second]);
   assert.deepEqual(results.sort(), [false, true], 'one send won, one was refused');
+});
+
+test('P25: closing the pull request refreshes the sidebar pull request list', async (t) => {
+  load();
+  useGitHubStore.setState({
+    linkage: {
+      available: true,
+      host: 'github.com',
+      owner: 'o',
+      repo: 'r',
+      webUrl: 'https://github.com/o/r',
+      commitUrlTemplate: 'https://github.com/o/r/commit/{hash}',
+      apiUrl: 'https://api.github.com',
+    },
+  });
+  const s = stub((kind) => {
+    if (kind === 'github/closePullRequest') return { closed: true };
+    if (kind === 'github/pullDetail') return { detail: detail({ state: 'closed' }), rateLimit: RATE };
+    if (kind === 'github/auth') return { connected: true, login: 'me', scopes: ['repo'] };
+    if (kind === 'github/linkage') {
+      return {
+        available: true,
+        host: 'github.com',
+        owner: 'o',
+        repo: 'r',
+        webUrl: 'https://github.com/o/r',
+        commitUrlTemplate: 'https://github.com/o/r/commit/{hash}',
+        apiUrl: 'https://api.github.com',
+      };
+    }
+    if (kind === 'github/pullRequests') return { pullRequests: [], rateLimit: RATE };
+    return RATE;
+  });
+  t.after(() => s.restore());
+
+  await usePullStore.getState().close();
+  await new Promise((r) => setTimeout(r, 0));
+  assert.ok(
+    s.calls.some((c) => c.kind === 'github/pullRequests'),
+    'sidebar pull request list refreshes after closing a PR',
+  );
+});
+
+test('P25: a second close while one is in flight is ignored, and a failed close stays retryable', async (t: TestContext) => {
+  load();
+  let release = (): void => {};
+  const gate = new Promise<void>((done) => {
+    release = done;
+  });
+  let closeCalls = 0;
+  let shouldFail = true;
+  const original = bridge.request;
+  bridge.request = (async (kind: string) => {
+    if (kind === 'github/closePullRequest') {
+      closeCalls += 1;
+      await gate;
+      if (shouldFail) {
+        shouldFail = false;
+        throw Object.assign(new Error('down'), { body: { status: 503, code: 'UNAVAILABLE', message: 'down' } });
+      }
+      return { closed: true };
+    }
+    if (kind === 'github/pullDetail') return { detail: detail({ state: 'closed' }), rateLimit: RATE };
+    return RATE;
+  }) as typeof bridge.request;
+  t.after(() => {
+    release();
+    bridge.request = original;
+  });
+
+  const first = usePullStore.getState().close();
+  const second = usePullStore.getState().close();
+  await Promise.resolve();
+  release();
+  await Promise.all([first, second]);
+  assert.equal(closeCalls, 1, 'second close ignored while first is on the wire');
+
+  // After failure, closeSending resets so a retry runs.
+  await usePullStore.getState().close();
+  assert.equal(closeCalls, 2, 'failed close remains retryable');
 });

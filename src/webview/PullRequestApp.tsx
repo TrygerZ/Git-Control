@@ -275,6 +275,7 @@ export function PullRequestApp(): JSX.Element {
   const review = usePullStore((s) => s.review);
   const reply = usePullStore((s) => s.reply);
   const closePr = usePullStore((s) => s.close);
+  const closeSending = usePullStore((s) => s.closeSending);
   const reviewState = usePullStore((s) => s.reviewState);
   const reviewError = usePullStore((s) => s.reviewError);
   const reviewOpen = usePullStore((s) => s.reviewOpen);
@@ -296,8 +297,8 @@ export function PullRequestApp(): JSX.Element {
     // snapshot is requested only once the listener exists.
     void loadIconTheme();
     void loadSettings();
-    // The checkout button compares against the current branch, and the fork rule
-    // reads the list row; both are cheap and already cached by the sidebar.
+    // The checkout button compares against the current branch, and the panel
+    // needs GitHub linkage (plus the list fallback for older detail payloads).
     void useRepoStore.getState().loadStatus();
     void useGitHubStore.getState().load();
     return off;
@@ -431,7 +432,7 @@ export function PullRequestApp(): JSX.Element {
       : null;
   const alreadyCheckedOut = checkoutRef !== null && currentBranch === checkoutRef;
   const listed = pullRequests.find((pr) => pr.number === detail.number);
-  const isFork = listed?.isFork === true;
+  const isFork = detail.isFork ?? (listed?.isFork === true);
   // The panel reads the same rule the store applies, so the box and the button
   // cannot disagree about whether a merge is possible.
   const emptyChecks: CheckSummary = {
@@ -534,6 +535,7 @@ export function PullRequestApp(): JSX.Element {
             </button>
             <PullMoreMenu
               detail={detail}
+              closing={closeSending}
               strings={strings}
               onCopy={() => void copy(detail.htmlUrl)}
               onOpen={() => void openUrl(detail.htmlUrl)}
@@ -1259,6 +1261,7 @@ function MergedCard({
  */
 function PullMoreMenu({
   detail,
+  closing,
   strings,
   onCopy,
   onOpen,
@@ -1266,6 +1269,7 @@ function PullMoreMenu({
   onClose,
 }: {
   detail: PullDetail;
+  closing: boolean;
   strings: Catalog;
   onCopy(): void;
   onOpen(): void;
@@ -1409,7 +1413,7 @@ function PullMoreMenu({
             type="button"
             role="menuitem"
             className="gc-menu__item"
-            disabled={detail.state !== 'open'}
+            disabled={detail.state !== 'open' || closing}
             tabIndex={active === 3 ? 0 : -1}
             onFocus={() => setActive(3)}
             onClick={() => run(onClose)}

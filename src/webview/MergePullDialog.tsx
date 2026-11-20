@@ -22,8 +22,8 @@ export interface MergePullDialogProps {
   repo: string;
   /**
    * The head branch lives in a fork this clone does not have, so there is no
-   * local branch to delete and the checkbox is not offered. `PullDetail` carries
-   * no head repository, so the panel tells the dialog from the list row.
+   * local branch to delete and the checkbox is not offered. Derived by the
+   * panel from `detail.isFork` with the list row as a fallback.
    */
   isFork: boolean;
   onConfirm(options: {

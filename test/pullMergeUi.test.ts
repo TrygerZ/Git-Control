@@ -125,6 +125,12 @@ test('the merge dialog hides delete-branch for a fork', () => {
   assert.match(dialog, /!isFork/);
 });
 
+test('the panel reads isFork from PullDetail so closed and older-than-50 PRs keep the fork rule', () => {
+  const app = source(APP);
+  assert.match(app, /detail\.isFork/);
+  assert.match(app, /closeSending/);
+});
+
 /**
  * The reply row posts to the parent comment and refreshes the thread. It was
  * declared and passed through without a control; the phase scope includes

@@ -57,6 +57,8 @@ export interface PullState {
   reviewError: ErrorBody | null;
   /** A reply is on the wire. A second send is ignored while this is true. */
   replySending: boolean;
+  /** A close request is on the wire. A second trigger is ignored while this is true. */
+  closeSending: boolean;
   /**
    * The review form's open flag and its text. Both live here, not in the
    * dialog, so a failed submit keeps the typed text and the reason to show it.
@@ -216,6 +218,7 @@ export const usePullStore = create<PullState>((set, get) => ({
   reviewState: 'idle',
   reviewError: null,
   replySending: false,
+  closeSending: false,
   reviewOpen: false,
   reviewDraft: null,
 
@@ -519,12 +522,14 @@ export const usePullStore = create<PullState>((set, get) => ({
   },
 
   async close() {
+    if (get().closeSending) return;
     const detail = get().detail;
     const repo = repoOf();
     if (detail === null || repo === null) {
       toastBody(unavailableBody());
       return;
     }
+    set({ closeSending: true });
     try {
       await bridge.request('github/closePullRequest', {
         owner: repo.owner,
@@ -535,8 +540,13 @@ export const usePullStore = create<PullState>((set, get) => ({
         confirm: true,
       });
       await get().load({ owner: repo.owner, repo: repo.repo, number: detail.number });
+      // The list row now says closed; re-read auth, linkage, and the list.
+      void useGitHubStore.getState().load();
     } catch (err) {
       toastFailure(err);
+    } finally {
+      // A failed close must stay retryable, so no path leaves the flag set.
+      set({ closeSending: false });
     }
   },
 }));
