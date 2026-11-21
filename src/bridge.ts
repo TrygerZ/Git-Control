@@ -2040,25 +2040,29 @@ export class MessageBridge {
       case 'tag-push':
         return git.pushTag(action.remote, action.name, this.progressSink(operationId, 'tag-push'));
       case 'worktree-add': {
-        const [repoRoot, gitDir, existing] = await Promise.all([git.repoRoot(), git.gitDir(), repo.worktrees()]);
-        if (existing.some((w) => w.branch === action.branch)) {
-          fail(400, 'VALIDATION_ERROR', this.text().invalid, { detail: 'branch-in-use' });
-        }
-        const targetCheck = checkWorktreeTarget(action.path, repoRoot, gitDir, existing);
-        if (targetCheck !== 'ok') {
-          fail(400, 'VALIDATION_ERROR', this.text().invalid, { detail: targetCheck });
-        }
-        if (this.host.worktreeTargetState !== undefined) {
-          const fsState = await this.host.worktreeTargetState(action.path);
-          if (fsState !== 'ok') {
-            fail(400, 'VALIDATION_ERROR', this.text().invalid, { detail: fsState });
+        await git.worktreeAdd(action.path, action.branch, async () => {
+          // Re-read fresh repository and filesystem state inside `runExclusive`
+          // so concurrent worktree requests cannot race past target checks.
+          repo.invalidate();
+          const [repoRoot, gitDir, existing] = await Promise.all([git.repoRoot(), git.gitDir(), repo.worktrees()]);
+          if (existing.some((w) => w.branch === action.branch)) {
+            fail(400, 'VALIDATION_ERROR', this.text().invalid, { detail: 'branch-in-use' });
           }
-        }
-        const refsResult = await repo.refs();
-        if (!refsResult.refs.some((r) => r.kind === 'local' && r.shortName === action.branch)) {
-          fail(404, 'NOT_FOUND', this.text().notFound, { detail: 'branch' });
-        }
-        await git.worktreeAdd(action.path, action.branch);
+          const targetCheck = checkWorktreeTarget(action.path, repoRoot, gitDir, existing);
+          if (targetCheck !== 'ok') {
+            fail(400, 'VALIDATION_ERROR', this.text().invalid, { detail: targetCheck });
+          }
+          if (this.host.worktreeTargetState !== undefined) {
+            const fsState = await this.host.worktreeTargetState(action.path);
+            if (fsState !== 'ok') {
+              fail(400, 'VALIDATION_ERROR', this.text().invalid, { detail: fsState });
+            }
+          }
+          const refsResult = await repo.refs();
+          if (!refsResult.refs.some((r) => r.kind === 'local' && r.shortName === action.branch)) {
+            fail(404, 'NOT_FOUND', this.text().notFound, { detail: 'branch' });
+          }
+        });
         this.host.logger.log({
           operationId,
           kind: 'worktree-add',
@@ -2483,6 +2487,7 @@ const FF_ONLY_MARKERS = [
   /Not possible to fast-forward/i,
   /Diverging branches can't be fast-forwarded/i,
 ];
+const WORKTREE_BRANCH_IN_USE = /is already (?:used by worktree|checked out at)/i;
 
 /**
  * Classify a generic git failure from stderr. Hook output is surfaced verbatim
@@ -2548,6 +2553,14 @@ function fromGitFailure(err: GitError, lang: Lang = 'en'): ErrorBody {
       message: text.nonFastForward,
       detail: stderr.trim(),
       remedies: ['fetch'],
+    };
+  }
+  if (WORKTREE_BRANCH_IN_USE.test(stderr) || WORKTREE_BRANCH_IN_USE.test(err.message)) {
+    return {
+      status: 400,
+      code: 'VALIDATION_ERROR',
+      message: text.invalid,
+      detail: 'branch-in-use',
     };
   }
   return { status: 500, code: 'SERVER_ERROR', message: redact(err.message), detail: stderr.trim() };

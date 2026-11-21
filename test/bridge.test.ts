@@ -5829,3 +5829,51 @@ test('P29: worktree-add re-validates target host-side, creates worktree, invalid
   assert.equal(openBad.ok, false);
   if (!openBad.ok) assert.equal(openBad.error.code, 'VALIDATION_ERROR');
 });
+
+test('P29: concurrent nested worktree-add requests serialize inside runExclusive and reject nesting', async (t) => {
+  const dir = await makeFixture('diverged');
+  const wtParent = await fs.mkdtemp(path.join(os.tmpdir(), 'git-control-race-wt-'));
+  const outerPath = path.join(wtParent, 'outer');
+  const nestedPath = path.join(outerPath, 'nested');
+  t.after(async () => {
+    await cleanup(wtParent);
+    await cleanup(dir);
+  });
+
+  const repo = new RepositoryService({ folderPath: dir, gitPath: 'git', store: new MemoryStore() });
+  const h = harness(repo);
+  t.after(() => h.bridge.dispose());
+
+  // Fire both concurrently: outer creates /outer on `feature`, nested tries /outer/nested on `orphan`.
+  // Because target checks run inside `runExclusive`, the second sees `/outer` and fails with `inside-worktree`.
+  const [r1, r2] = await Promise.all([
+    h.webview.send(req('actions/git', { action: 'worktree-add', path: outerPath, branch: 'feature', idempotencyKey: 'race-1' })),
+    h.webview.send(req('actions/git', { action: 'worktree-add', path: nestedPath, branch: 'orphan', idempotencyKey: 'race-2' })),
+  ]);
+  assert.equal(r1.ok, true, 'first worktree succeeds');
+  assert.equal(r2.ok, false, 'nested worktree must be rejected');
+  if (!r2.ok) {
+    assert.equal(r2.error.code, 'VALIDATION_ERROR');
+    assert.equal(r2.error.detail, 'inside-worktree');
+  }
+});
+
+test('P29: toErrorBody classifies git branch-in-use worktree stderr as VALIDATION_ERROR branch-in-use', () => {
+  const err = new GitError({
+    code: 'GIT_FAILED',
+    message: "fatal: 'main' is already used by worktree at 'C:/repo'",
+    stderr: "fatal: 'main' is already used by worktree at 'C:/repo'\n",
+  });
+  const body = toErrorBody(err, 'en');
+  assert.equal(body.code, 'VALIDATION_ERROR');
+  assert.equal(body.detail, 'branch-in-use');
+
+  const err2 = new GitError({
+    code: 'GIT_FAILED',
+    message: "fatal: 'main' is already checked out at '/tmp/repo'",
+    stderr: "fatal: 'main' is already checked out at '/tmp/repo'\n",
+  });
+  const body2 = toErrorBody(err2, 'en');
+  assert.equal(body2.code, 'VALIDATION_ERROR');
+  assert.equal(body2.detail, 'branch-in-use');
+});
