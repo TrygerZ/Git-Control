@@ -55,6 +55,7 @@ import {
   sanitizeRefArg,
   validateBranchName,
   validateCommitMessage,
+  validateCompareLimit,
   validateFullHash,
   validateHash,
   validateLimit,
@@ -592,6 +593,69 @@ export class GitRunner {
     const range = sanitizeRefArg(`${base}..${head}`);
     const { stdout } = await this.run(['diff', '--name-only', '--no-color', range]);
     return parseRefNameList(stdout).length;
+  }
+
+  /** Resolve a branch, tag, or hash ref to a full 40-hex commit hash, or `null` when unknown. */
+  async resolveCommit(ref: string): Promise<string | null> {
+    if (
+      typeof ref !== 'string' ||
+      ref.startsWith('-') ||
+      (!validateHash(ref) && !validateBranchName(ref, { allowQualified: true }) && !validateTagName(ref))
+    ) {
+      throw new GitError({ code: 'VALIDATION_ERROR', message: `Invalid ref: ${String(ref)}` });
+    }
+    const { stdout, code } = await this.run(
+      ['rev-parse', '--verify', '--quiet', sanitizeRefArg(`${ref}^{commit}`)],
+      { allowedExitCodes: [0, 1, 128] },
+    );
+    if (code !== 0) return null;
+    const hash = stdout.trim();
+    return validateFullHash(hash) ? hash : null;
+  }
+
+  /** Left/right ahead/behind counts between two full commit hashes (`base...head`). */
+  async compareCounts(base: string, head: string): Promise<AheadBehind> {
+    this.assertFullHash(base);
+    this.assertFullHash(head);
+    const { stdout, code } = await this.run(
+      ['rev-list', '--left-right', '--count', sanitizeRefArg(`${base}...${head}`)],
+      { allowedExitCodes: [0, 128] },
+    );
+    if (code !== 0) return { behind: 0, ahead: 0 };
+    return parseRevListCounts(stdout);
+  }
+
+  /** Commits on `head` not reachable from `base` (`base..head`), newest first, capped at `limit`. */
+  async compareLog(base: string, head: string, opts: { limit?: number } = {}): Promise<ParsedCommit[]> {
+    this.assertFullHash(base);
+    this.assertFullHash(head);
+    const limit = opts.limit ?? 200;
+    if (!validateCompareLimit(limit)) {
+      throw new GitError({ code: 'VALIDATION_ERROR', message: `Invalid compare limit: ${String(limit)}` });
+    }
+    const { stdout } = await this.run([
+      'log',
+      '-z',
+      LOG_FORMAT,
+      '--topo-order',
+      `--max-count=${limit}`,
+      sanitizeRefArg(`${base}..${head}`),
+    ]);
+    return parseLog(stdout);
+  }
+
+  /** Three-dot file numstat (`base...head`) between two full commit hashes. */
+  async compareNumstat(
+    base: string,
+    head: string,
+  ): Promise<{ entries: ParsedNumstatEntry[]; truncated: boolean }> {
+    this.assertFullHash(base);
+    this.assertFullHash(head);
+    const { stdout, truncated } = await this.run(
+      ['diff', '--numstat', '--no-color', sanitizeRefArg(`${base}...${head}`)],
+      { maxStdoutBytes: MAX_NUMSTAT_BYTES, truncateStdout: true },
+    );
+    return { entries: parseShowStat(stdout), truncated: truncated === true };
   }
 
   /**
@@ -1271,6 +1335,12 @@ export class GitRunner {
     assertValidHash(hash, () => {
       throw new GitError({ code: 'VALIDATION_ERROR', message: `Invalid commit hash: ${hash}` });
     });
+  }
+
+  private assertFullHash(hash: string): void {
+    if (!validateFullHash(hash)) {
+      throw new GitError({ code: 'VALIDATION_ERROR', message: `Invalid commit hash: ${String(hash)}` });
+    }
   }
 
   private pathspecs(paths: string[]): string[] {

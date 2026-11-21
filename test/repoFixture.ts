@@ -63,7 +63,13 @@ export type FixtureKind =
    * `main` with three commits and tags `v1.0.0` (annotated) and `v1.1.0`
    * (lightweight), plus a bare remote `origin` at `.git/bare.git`.
    */
-  | 'tags';
+  | 'tags'
+  /**
+   * `main` with two commits (`base commit`, `main two`), `feature` branched from
+   * `base commit` with two commits (`feature one`, `feature two`) touching
+   * different files, and an unrelated orphan branch `orphan` (`orphan root`).
+   */
+  | 'diverged';
 
 /** Built templates, one per kind per process. */
 const templates = new Map<FixtureKind, Promise<string>>();
@@ -261,6 +267,34 @@ async function buildTemplate(kind: FixtureKind): Promise<string> {
     await bareGit.run(['init', '--bare', '--quiet', '--initial-branch=main', bareDir]);
     await git.run(['remote', 'add', 'origin', './.git/bare.git']);
     await git.run(['push', '--quiet', '-u', 'origin', 'main']);
+    return dir;
+  }
+
+  if (kind === 'diverged') {
+    await fs.writeFile(path.join(dir, 'base.txt'), 'base\n', 'utf8');
+    await git.stage(['base.txt']);
+    await git.commit('base commit');
+
+    await git.createBranch('feature', 'main');
+    await fs.writeFile(path.join(dir, 'feat-1.txt'), 'feat 1\n', 'utf8');
+    await git.stage(['feat-1.txt']);
+    await git.commit('feature one');
+    await fs.writeFile(path.join(dir, 'feat-2.txt'), 'feat 2\n', 'utf8');
+    await git.stage(['feat-2.txt']);
+    await git.commit('feature two');
+
+    await git.switchBranch('main');
+    await fs.writeFile(path.join(dir, 'main-2.txt'), 'main two\n', 'utf8');
+    await git.stage(['main-2.txt']);
+    await git.commit('main two');
+
+    await git.run(['checkout', '--orphan', 'orphan']);
+    await git.run(['rm', '-rf', '.']);
+    await fs.writeFile(path.join(dir, 'orphan.txt'), 'orphan\n', 'utf8');
+    await git.stage(['orphan.txt']);
+    await git.commit('orphan root');
+
+    await git.switchBranch('main');
     return dir;
   }
 

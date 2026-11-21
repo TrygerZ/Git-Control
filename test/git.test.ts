@@ -1548,3 +1548,50 @@ test('validateTagName agrees with git check-ref-format on every rejected and acc
     assert.notEqual(code, 0, `git check-ref-format should reject ${name}`);
   }
 });
+
+test('diverged fixture and compare range runners compute mergeBase, counts, log, and three-dot numstat', async (t) => {
+  const dir = await makeFixture('diverged');
+  t.after(() => cleanup(dir));
+  const git = new GitRunner({ gitPath: 'git', cwd: dir });
+
+  const mainHash = await git.resolveCommit('main');
+  const featHash = await git.resolveCommit('feature');
+  const orphanHash = await git.resolveCommit('orphan');
+  assert.ok(mainHash && featHash && orphanHash, 'fixture branches resolve to full hashes');
+  assert.equal(mainHash.length, 40);
+  assert.equal(await git.resolveCommit('does-not-exist'), null);
+
+  // Abbreviated hash also resolves
+  assert.equal(await git.resolveCommit(mainHash.slice(0, 7)), mainHash);
+
+  // Merge base exists for main/feature and is null for unrelated orphan root
+  const forkPoint = await git.mergeBase(mainHash, featHash);
+  assert.ok(forkPoint !== null && forkPoint !== mainHash && forkPoint !== featHash);
+  assert.equal(await git.mergeBase(mainHash, orphanHash), null);
+
+  // Symmetric counts: main is 1 behind feature, feature is 2 ahead of main
+  assert.deepEqual(await git.compareCounts(mainHash, featHash), { behind: 1, ahead: 2 });
+  assert.deepEqual(await git.compareCounts(featHash, mainHash), { behind: 2, ahead: 1 });
+
+  // Two-dot compareLog: head-side commits newest first, respects limit
+  const commits = await git.compareLog(mainHash, featHash);
+  assert.deepEqual(commits.map((c) => c.subject), ['feature two', 'feature one']);
+  const capped = await git.compareLog(mainHash, featHash, { limit: 1 });
+  assert.deepEqual(capped.map((c) => c.subject), ['feature two']);
+
+  // Three-dot compareNumstat excludes changes made on base after the fork (main-2.txt)
+  const stat = await git.compareNumstat(mainHash, featHash);
+  assert.equal(stat.truncated, false);
+  assert.deepEqual(
+    stat.entries.map((e) => e.path).sort(),
+    ['feat-1.txt', 'feat-2.txt'],
+  );
+
+  // Leading-dash refs and non-hashes are rejected before reaching git
+  await assert.rejects(() => git.resolveCommit('--all'), (err: unknown) => err instanceof GitError && err.code === 'VALIDATION_ERROR');
+  await assert.rejects(() => git.compareCounts('-flag', featHash), (err: unknown) => err instanceof GitError && err.code === 'VALIDATION_ERROR');
+  await assert.rejects(() => git.compareCounts(mainHash, '-flag'), (err: unknown) => err instanceof GitError && err.code === 'VALIDATION_ERROR');
+  await assert.rejects(() => git.compareLog('main', featHash), (err: unknown) => err instanceof GitError && err.code === 'VALIDATION_ERROR');
+  await assert.rejects(() => git.compareLog(mainHash, featHash, { limit: 201 }), (err: unknown) => err instanceof GitError && err.code === 'VALIDATION_ERROR');
+  await assert.rejects(() => git.compareNumstat(mainHash, 'feature'), (err: unknown) => err instanceof GitError && err.code === 'VALIDATION_ERROR');
+});
