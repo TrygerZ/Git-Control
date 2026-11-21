@@ -67,9 +67,12 @@ export function ReleaseDialog(): JSX.Element | null {
   const failedStep = useReleaseStore((s) => s.failedStep);
   const createdUrl = useReleaseStore((s) => s.createdUrl);
   const mode = useReleaseStore((s) => s.mode);
+  const canFetch = useReleaseStore((s) => s.canFetch);
+  const fetching = useReleaseStore((s) => s.fetching);
   const closeDialog = useReleaseStore((s) => s.closeDialog);
   const setField = useReleaseStore((s) => s.setField);
   const generateNotes = useReleaseStore((s) => s.generateNotes);
+  const fetchRemote = useReleaseStore((s) => s.fetchRemote);
   const submit = useReleaseStore((s) => s.submit);
 
   const refs = useBranchesStore((s) => s.refs);
@@ -98,7 +101,7 @@ export function ReleaseDialog(): JSX.Element | null {
   const titleInputId = useId();
   const notesInputId = useId();
 
-  const busy = phase === 'tagging' || phase === 'pushing' || phase === 'releasing';
+  const busy = phase === 'tagging' || phase === 'pushing' || phase === 'releasing' || fetching;
   const locked = busy || phase === 'done';
 
   const handleClose = (): void => {
@@ -376,8 +379,6 @@ export function ReleaseDialog(): JSX.Element | null {
                 value={form.target}
                 disabled={locked}
                 aria-invalid={form.target.length > 0 && !targetValid ? 'true' : undefined}
-                aria-expanded={targetMenuOpen}
-                aria-controls={targetListboxId}
                 onChange={(event) => setField('target', event.target.value)}
                 onKeyDown={onTargetInputKeyDown}
               />
@@ -526,12 +527,25 @@ export function ReleaseDialog(): JSX.Element | null {
                 ))}
               </ol>
               {phase === 'failed' && error !== null && (
-                <p className="gc-field__error" role="alert">
-                  <span aria-hidden="true">!</span>
-                  <span>
-                    {strings.release.partialFailure(failedStepLabel)} {sanitizeGitText(error)}
-                  </span>
-                </p>
+                <div className="gc-release__error-row">
+                  <p className="gc-field__error" role="alert">
+                    <span aria-hidden="true">!</span>
+                    <span>
+                      {strings.release.partialFailure(failedStepLabel)} {sanitizeGitText(error)}
+                    </span>
+                  </p>
+                  {canFetch && (
+                    <button
+                      type="button"
+                      className="gc-button gc-release__fetch"
+                      disabled={fetching}
+                      onClick={() => void fetchRemote()}
+                    >
+                      <Icon name="fetch" />
+                      {strings.explorerSync.fetchButton}
+                    </button>
+                  )}
+                </div>
               )}
               {phase === 'done' && (
                 <div className="gc-release__done">
@@ -578,7 +592,9 @@ export function ReleaseDialog(): JSX.Element | null {
               disabled={!canPublishRelease}
               onClick={() => void submit('release', owner, repo)}
             >
-              {strings.release.publishRelease}
+              {phase === 'failed' && failedStep === 'release'
+                ? strings.release.retryRelease
+                : strings.release.publishRelease}
             </button>
           </div>
         </div>

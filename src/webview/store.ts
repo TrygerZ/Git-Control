@@ -3377,10 +3377,13 @@ export interface ReleaseState {
   failedStep: 'tag' | 'push' | 'release' | null;
   createdUrl: string | null;
   mode: 'tag' | 'release' | null;
+  canFetch: boolean;
+  fetching: boolean;
   openDialog(initial?: Partial<ReleaseForm>): void;
   closeDialog(): void;
   setField<K extends keyof ReleaseForm>(key: K, value: ReleaseForm[K]): void;
   generateNotes(owner: string, repo: string, previousTagName?: string): Promise<void>;
+  fetchRemote(): Promise<void>;
   submit(mode: 'tag' | 'release', owner?: string, repo?: string): Promise<void>;
   reset(): void;
 }
@@ -3402,6 +3405,10 @@ const INITIAL_RELEASE_STEPS: ReleaseSteps = {
 };
 
 let releaseRunKey = newId();
+let tagAttempt = 0;
+let pushAttempt = 0;
+let releaseAttempt = 0;
+let notesSession = 0;
 
 export const useReleaseStore = create<ReleaseState>((set, get) => ({
   open: false,
@@ -3414,8 +3421,14 @@ export const useReleaseStore = create<ReleaseState>((set, get) => ({
   failedStep: null,
   createdUrl: null,
   mode: null,
+  canFetch: false,
+  fetching: false,
   openDialog(initial) {
     releaseRunKey = newId();
+    tagAttempt = 0;
+    pushAttempt = 0;
+    releaseAttempt = 0;
+    notesSession += 1;
     set({
       open: true,
       form: { ...EMPTY_RELEASE_FORM, ...initial },
@@ -3427,34 +3440,48 @@ export const useReleaseStore = create<ReleaseState>((set, get) => ({
       failedStep: null,
       createdUrl: null,
       mode: null,
+      canFetch: false,
+      fetching: false,
     });
   },
   closeDialog() {
-    const { phase } = get();
-    if (phase === 'tagging' || phase === 'pushing' || phase === 'releasing') return;
-    set({ open: false });
+    const { phase, fetching } = get();
+    if (phase === 'tagging' || phase === 'pushing' || phase === 'releasing' || fetching) return;
+    notesSession += 1;
+    set({ open: false, generating: false });
   },
   setField(key, value) {
     const prev = get();
-    const resetAfterTagChange = key === 'tag' && prev.phase === 'failed';
+    const tagChanged = key === 'tag';
+    if (tagChanged) {
+      notesSession += 1;
+    }
+    const resetAfterTagChange = tagChanged && (prev.phase === 'failed' || prev.phase === 'done');
     if (resetAfterTagChange) {
       releaseRunKey = newId();
+      tagAttempt = 0;
+      pushAttempt = 0;
+      releaseAttempt = 0;
     }
     set({
       form: { ...prev.form, [key]: value },
       error: null,
+      ...(tagChanged ? { generating: false } : {}),
       ...(resetAfterTagChange
         ? {
             phase: 'idle' as const,
             steps: { ...INITIAL_RELEASE_STEPS },
             failedStep: null,
             createdUrl: null,
+            canFetch: false,
+            fetching: false,
           }
         : {}),
     });
   },
   async generateNotes(owner, repo, previousTagName) {
     if (get().generating) return;
+    const session = notesSession;
     set({ generating: true, notesError: null });
     try {
       const { form } = get();
@@ -3465,6 +3492,7 @@ export const useReleaseStore = create<ReleaseState>((set, get) => ({
         ...(previousTagName !== undefined && previousTagName.length > 0 ? { previousTag: previousTagName } : {}),
         ...(form.target.length > 0 ? { target: form.target } : {}),
       });
+      if (session !== notesSession) return;
       set((state) => {
         const trimmedTitle = state.form.title.trim();
         const shouldFillTitle = trimmedTitle === '' || state.form.title === state.form.tag;
@@ -3483,14 +3511,37 @@ export const useReleaseStore = create<ReleaseState>((set, get) => ({
         };
       });
     } catch (err) {
+      if (session !== notesSession) return;
       const body = toErrorBody(err);
       const message = body.message.length > 0 ? body.message : t(activeLang()).release.notesFailed;
       set({ generating: false, notesError: message });
     }
   },
+  async fetchRemote() {
+    const cur = get();
+    const remote = cur.form.remote.trim();
+    if (cur.fetching || remote.length === 0) return;
+    set({ fetching: true, error: null });
+    try {
+      await bridge.request('actions/git', {
+        action: 'fetch',
+        remote,
+        idempotencyKey: `${releaseRunKey}:fetch:${newId()}`,
+      });
+      set({ fetching: false, canFetch: false });
+    } catch (err) {
+      const body = toErrorBody(err);
+      set({ fetching: false, error: body.message });
+    }
+  },
   async submit(mode, owner, repo) {
     const start = get();
-    if (start.phase === 'tagging' || start.phase === 'pushing' || start.phase === 'releasing') {
+    if (
+      start.phase === 'tagging' ||
+      start.phase === 'pushing' ||
+      start.phase === 'releasing' ||
+      start.fetching
+    ) {
       return;
     }
 
@@ -3500,6 +3551,7 @@ export const useReleaseStore = create<ReleaseState>((set, get) => ({
         mode,
         error: null,
         failedStep: null,
+        canFetch: false,
         steps: { ...s.steps, tag: 'active' },
       }));
       try {
@@ -3509,11 +3561,12 @@ export const useReleaseStore = create<ReleaseState>((set, get) => ({
           name: form.tag,
           target: form.target,
           ...(form.annotated ? { annotated: true, message: form.title.trim() || form.tag } : { annotated: false }),
-          idempotencyKey: `${releaseRunKey}:tag`,
+          idempotencyKey: `${releaseRunKey}:tag:${tagAttempt}`,
         });
         set((s) => ({ steps: { ...s.steps, tag: 'done' } }));
         void useBranchesStore.getState().load();
       } catch (err) {
+        tagAttempt += 1;
         const body = toErrorBody(err);
         const msg =
           body.code === 'VALIDATION_ERROR' && body.detail === 'name'
@@ -3523,6 +3576,7 @@ export const useReleaseStore = create<ReleaseState>((set, get) => ({
           phase: 'failed',
           failedStep: 'tag',
           error: msg,
+          canFetch: false,
           steps: { ...s.steps, tag: 'failed' },
         }));
         return;
@@ -3539,6 +3593,7 @@ export const useReleaseStore = create<ReleaseState>((set, get) => ({
           mode,
           error: null,
           failedStep: null,
+          canFetch: false,
           steps: { ...s.steps, push: 'active' },
         }));
         try {
@@ -3547,19 +3602,22 @@ export const useReleaseStore = create<ReleaseState>((set, get) => ({
             remote,
             name: get().form.tag,
             confirm: true,
-            idempotencyKey: `${releaseRunKey}:push`,
+            idempotencyKey: `${releaseRunKey}:push:${pushAttempt}`,
           });
           set((s) => ({ steps: { ...s.steps, push: 'done' } }));
         } catch (err) {
+          pushAttempt += 1;
           const body = toErrorBody(err);
           const rawText = `${body.message} ${body.detail ?? ''}`;
           const msg = /already exists|Updates were rejected|non-fast-forward/i.test(rawText)
             ? t(activeLang()).release.remoteTagDiffers
             : body.message;
+          const needsFetch = body.code === 'STALE_STATUS' || body.code === 'REMOTE_AHEAD';
           set((s) => ({
             phase: 'failed',
             failedStep: 'push',
             error: msg,
+            canFetch: needsFetch,
             steps: { ...s.steps, push: 'failed' },
           }));
           return;
@@ -3573,17 +3631,20 @@ export const useReleaseStore = create<ReleaseState>((set, get) => ({
         mode,
         error: null,
         failedStep: null,
+        canFetch: false,
         steps: { ...s.steps, release: 'skipped' },
       }));
       return;
     }
 
     if (!owner || !repo) {
+      releaseAttempt += 1;
       set((s) => ({
         phase: 'failed',
         mode,
         failedStep: 'release',
         error: t(activeLang()).release.notConnected,
+        canFetch: false,
         steps: { ...s.steps, release: 'failed' },
       }));
       return;
@@ -3594,6 +3655,7 @@ export const useReleaseStore = create<ReleaseState>((set, get) => ({
       mode,
       error: null,
       failedStep: null,
+      canFetch: false,
       steps: { ...s.steps, release: 'active' },
     }));
     try {
@@ -3607,26 +3669,33 @@ export const useReleaseStore = create<ReleaseState>((set, get) => ({
         prerelease: form.prerelease,
         target: form.target,
         confirm: true,
-        idempotencyKey: `${releaseRunKey}:release`,
+        idempotencyKey: `${releaseRunKey}:release:${releaseAttempt}`,
       });
       set((s) => ({
         phase: 'done',
         createdUrl: res.htmlUrl,
+        canFetch: false,
         steps: { ...s.steps, release: 'done' },
       }));
     } catch (err) {
+      releaseAttempt += 1;
       const body = toErrorBody(err);
       const msg = body.code === 'FORBIDDEN' ? t(activeLang()).release.needScope : body.message;
       set((s) => ({
         phase: 'failed',
         failedStep: 'release',
         error: msg,
+        canFetch: false,
         steps: { ...s.steps, release: 'failed' },
       }));
     }
   },
   reset() {
     releaseRunKey = newId();
+    tagAttempt = 0;
+    pushAttempt = 0;
+    releaseAttempt = 0;
+    notesSession += 1;
     set({
       open: false,
       form: { ...EMPTY_RELEASE_FORM },
@@ -3638,6 +3707,8 @@ export const useReleaseStore = create<ReleaseState>((set, get) => ({
       failedStep: null,
       createdUrl: null,
       mode: null,
+      canFetch: false,
+      fetching: false,
     });
   },
 }));

@@ -8588,6 +8588,7 @@ h3 {
 
 .gc-release__option[aria-selected='true'] {
   background: var(--gc-bg-selected);
+  color: var(--vscode-list-activeSelectionForeground, var(--gc-text-primary));
 }
 
 .gc-release__option-label {
@@ -8758,6 +8759,16 @@ h3 {
 
 .gc-release__actions {
   flex-wrap: wrap;
+}
+
+.gc-release__error-row {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gc-space-2);
+}
+
+.gc-release__fetch {
+  align-self: flex-start;
 }
 
 @media (forced-colors: active) {

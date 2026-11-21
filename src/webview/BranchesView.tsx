@@ -4,8 +4,8 @@
  * Frames 11, 63, 64, 65, 87. Lists local branches, remote branches, and tags,
  * and runs checkout, merge, and create through the actions that already exist.
  *
- * Controls the design draws but later phases own stay out (R2): New tag (P28),
- * Compare and Add worktree (P29). No control ships without behaviour.
+ * Controls the design draws but later phases own stay out (R2): Compare and
+ * Add worktree (P29). No control ships without behaviour.
  *
  * Clean up (P20) is here: the banner counts what `selectCleanupCandidates`
  * offers, the footer button opens the dialog, and the row menu carries a single
@@ -195,11 +195,25 @@ export function BranchesView(): JSX.Element {
   const openNewTag = (): void => {
     const suggestion = suggestNextTag(existingTagNames, recentSubjects);
     const suggested = suggestion?.name ?? '';
+    const remoteNames: string[] = [];
+    if (status?.upstream) {
+      const slash = status.upstream.indexOf('/');
+      if (slash > 0) remoteNames.push(status.upstream.slice(0, slash));
+    }
+    for (const ref of refs) {
+      if (ref.kind !== 'remote') continue;
+      const slash = ref.shortName.indexOf('/');
+      if (slash > 0) {
+        const remote = ref.shortName.slice(0, slash);
+        if (!remoteNames.includes(remote)) remoteNames.push(remote);
+      }
+    }
+    const defaultRemote = remoteNames.includes('origin') ? 'origin' : (remoteNames[0] ?? '');
     useReleaseStore.getState().openDialog({
       tag: suggested,
       target: currentBranch ?? status?.head ?? 'main',
       title: suggested,
-      remote: 'origin',
+      remote: defaultRemote,
     });
   };
 

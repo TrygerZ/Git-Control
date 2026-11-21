@@ -24,6 +24,7 @@ test('suggestNextTag picks highest semver, preserves v prefix, and applies major
   assert.equal(minor.name, 'v1.11.0');
   assert.equal(minor.bump, 'minor');
   assert.ok(minor.reason.length > 0);
+  assert.doesNotMatch(minor.reason, /Based on/i, 'reason must not duplicate previous tag or English prefix');
 
   // Breaking change via !: triggers major bump and preserves absence of v prefix
   const majorBang = suggestNextTag(['2.3.4', '1.9.9'], ['feat(api)!: drop legacy endpoint', 'fix: bug']);

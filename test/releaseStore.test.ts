@@ -197,3 +197,124 @@ test('useReleaseStore.generateNotes populates notes and title from GitHub respon
     useReleaseStore.getState().reset();
   }
 });
+
+test('useReleaseStore handles STALE_STATUS on tag-push with fetchRemote() preserving steps.tag === done (I-1)', async () => {
+  let stale = true;
+  const s = stubBridge((kind, payload) => {
+    if (kind === 'repos/refs') return { refs: [], head: null, currentBranch: 'main', base: 'main' };
+    if (kind === 'repos/worktrees') return { worktrees: [] };
+    if (kind === 'actions/git') {
+      const action = (payload as { action: string }).action;
+      if (action === 'tag-push' && stale) {
+        throw new BridgeRequestError({ status: 409, code: 'STALE_STATUS', message: 'Remote status is stale.' });
+      }
+      if (action === 'fetch') {
+        stale = false;
+        return { success: true };
+      }
+      return { success: true };
+    }
+    return { success: true };
+  });
+  try {
+    useReleaseStore.getState().openDialog({
+      tag: 'v2.9.0',
+      target: 'main',
+      title: 'v2.9.0',
+      annotated: true,
+      remote: 'origin',
+    });
+
+    await useReleaseStore.getState().submit('tag');
+    let state = useReleaseStore.getState();
+    assert.equal(state.phase, 'failed');
+    assert.equal(state.failedStep, 'push');
+    assert.equal(state.steps.tag, 'done');
+    assert.equal(state.canFetch, true);
+
+    await useReleaseStore.getState().fetchRemote();
+    state = useReleaseStore.getState();
+    assert.equal(state.fetching, false);
+    assert.equal(state.canFetch, false);
+    assert.equal(state.steps.tag, 'done', 'fetch preserves completed tag step');
+
+    s.calls.length = 0;
+    await useReleaseStore.getState().submit('tag');
+    const retryActions = s.calls
+      .filter((c) => c.kind === 'actions/git')
+      .map((c) => (c.payload as { action: string }).action);
+    assert.deepEqual(retryActions, ['tag-push']);
+    assert.equal(useReleaseStore.getState().phase, 'done');
+  } finally {
+    s.restore();
+    useReleaseStore.getState().reset();
+  }
+});
+
+test('useReleaseStore rotates idempotencyKey when retrying after a failed step (I-2)', async () => {
+  const seenKeys: string[] = [];
+  let failOnce = true;
+  const s = stubBridge((kind, payload) => {
+    if (kind === 'repos/refs') return { refs: [], head: null, currentBranch: 'main', base: 'main' };
+    if (kind === 'repos/worktrees') return { worktrees: [] };
+    if (kind === 'github/createRelease') {
+      seenKeys.push((payload as { idempotencyKey: string }).idempotencyKey);
+      if (failOnce) {
+        failOnce = false;
+        throw new BridgeRequestError({ status: 422, code: 'VALIDATION_ERROR', message: 'invalid title' });
+      }
+      return { id: 99, htmlUrl: 'https://github.com/o/r/releases/tag/v2.9.1' };
+    }
+    return { success: true };
+  });
+  try {
+    useReleaseStore.getState().openDialog({
+      tag: 'v2.9.1',
+      target: 'main',
+      title: 'bad',
+      notes: '',
+      annotated: true,
+      prerelease: false,
+      remote: 'origin',
+    });
+    await useReleaseStore.getState().submit('release', 'o', 'r');
+    assert.equal(useReleaseStore.getState().phase, 'failed');
+    useReleaseStore.getState().setField('title', 'v2.9.1');
+    await useReleaseStore.getState().submit('release', 'o', 'r');
+    assert.equal(useReleaseStore.getState().phase, 'done');
+    assert.equal(seenKeys.length, 2);
+    assert.notEqual(seenKeys[0], seenKeys[1], 'explicit retry after failure must use a fresh idempotencyKey');
+  } finally {
+    s.restore();
+    useReleaseStore.getState().reset();
+  }
+});
+
+test('useReleaseStore.generateNotes discards stale response after dialog reopen or tag edit (M-5)', async () => {
+  let resolveNotes!: (value: unknown) => void;
+  const s = stubBridge((kind) => {
+    if (kind === 'github/releaseNotes') {
+      return new Promise((resolve) => {
+        resolveNotes = resolve;
+      });
+    }
+    return {};
+  });
+  try {
+    useReleaseStore.getState().openDialog({ tag: 'v2.8.0', target: 'main', title: 'v2.8.0', remote: 'origin' });
+    const pending = useReleaseStore.getState().generateNotes('o', 'r');
+    // User edits tag while notes request is still in flight
+    useReleaseStore.getState().setField('tag', 'v3.0.0');
+    resolveNotes({
+      name: 'v2.8.0',
+      body: 'stale notes for v2.8.0',
+      rateLimit: { limit: 5000, remaining: 4999, resetAt: null, cached: false, offline: false },
+    });
+    await pending;
+    assert.equal(useReleaseStore.getState().form.notes, '', 'stale notes response must be discarded');
+    assert.equal(useReleaseStore.getState().generating, false);
+  } finally {
+    s.restore();
+    useReleaseStore.getState().reset();
+  }
+});

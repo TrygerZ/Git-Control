@@ -107,10 +107,10 @@ export function suggestNextTag(
   if (fixes > 0) parts.push(`${fixes} fix`);
   const reason =
     parts.length > 0
-      ? `Based on ${highest.raw} (${parts.join(', ')})`
+      ? parts.join(', ')
       : subjectsSince.length > 0
-        ? `Based on ${highest.raw} (${subjectsSince.length} commit${subjectsSince.length === 1 ? '' : 's'})`
-        : `Based on ${highest.raw}`;
+        ? `${subjectsSince.length} commit${subjectsSince.length === 1 ? '' : 's'}`
+        : 'no commits';
 
   return { name, bump, reason };
 }
