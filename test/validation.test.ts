@@ -31,6 +31,10 @@ import {
   validateInputName,
   validateInputValue,
   validateDispatchInputs,
+  validateTagName,
+  validateTagMessage,
+  validateReleaseTitle,
+  validateReleaseBody,
 } from '../src/validation';
 
 test('PRD mandated self-check asserts', () => {
@@ -594,4 +598,76 @@ test('validateDispatchInputs validates plain objects capped at 10 safe entries',
   }
   const symObj = { [Symbol('s')]: 'v' };
   assert.equal(validateDispatchInputs(symObj), false, 'symbol keys rejected');
+});
+
+/**
+ * P28: tag name, tag message, and release title/body validators.
+ */
+test('validateTagName accepts valid git tag names and rejects unsafe or invalid ones', () => {
+  for (const good of ['v1.0.0', 'release/1.4', '1.0', 'v2.8.0-rc.1', 'a', 'x'.repeat(100), 'a/b/c']) {
+    assert.equal(validateTagName(good), true, good);
+  }
+  for (const bad of [
+    '',
+    '-x',
+    '.x',
+    'x.',
+    '/x',
+    'x/',
+    'a//b',
+    'a..b',
+    'a@{b}',
+    'a b',
+    'a~1',
+    'a^',
+    'a:b',
+    'a?',
+    'a*',
+    'a[',
+    'a\\',
+    'HEAD',
+    '@',
+    'x.lock',
+    'a/x.lock',
+    'a/.hidden',
+    'x'.repeat(101),
+    'v1\u0000',
+    'v1\n',
+    'v1\u007f',
+    null,
+    undefined,
+    123,
+    {},
+  ]) {
+    assert.equal(validateTagName(bad), false, JSON.stringify(bad));
+  }
+});
+
+test('validateTagMessage accepts 0 to 2000 chars without NUL', () => {
+  assert.equal(validateTagMessage(''), true);
+  assert.equal(validateTagMessage('Release v2.8.0\n\nNotes here'), true);
+  assert.equal(validateTagMessage('x'.repeat(2000)), true);
+
+  for (const bad of ['x'.repeat(2001), 'a\u0000b', null, undefined, 42, {}]) {
+    assert.equal(validateTagMessage(bad), false, JSON.stringify(bad));
+  }
+});
+
+test('validateReleaseTitle accepts 1 to 256 non-blank single-line chars', () => {
+  assert.equal(validateReleaseTitle('v2.8.0'), true);
+  assert.equal(validateReleaseTitle('x'.repeat(256)), true);
+
+  for (const bad of ['', '   ', 'x'.repeat(257), 'line1\nline2', 'a\u0000b', null, undefined, 1]) {
+    assert.equal(validateReleaseTitle(bad), false, JSON.stringify(bad));
+  }
+});
+
+test('validateReleaseBody accepts 0 to 125000 chars without NUL', () => {
+  assert.equal(validateReleaseBody(''), true);
+  assert.equal(validateReleaseBody('## Changes\n- Added tags'), true);
+  assert.equal(validateReleaseBody('x'.repeat(125000)), true);
+
+  for (const bad of ['x'.repeat(125001), 'a\u0000b', null, undefined, 1, []]) {
+    assert.equal(validateReleaseBody(bad), false, JSON.stringify(bad));
+  }
 });

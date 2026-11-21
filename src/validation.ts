@@ -458,4 +458,58 @@ export function validateDispatchInputs(value: unknown): value is Record<string, 
   return true;
 }
 
+function isBoundedTextWithoutNul(value: unknown, max: number): value is string {
+  return typeof value === 'string' && value.length <= max && !value.includes('\u0000');
+}
+
+/**
+ * Defends against: git option injection (leading `-`), invalid or ambiguous
+ * ref names (`HEAD`, `@`, `..`, `@{`, `.lock`, control characters), and
+ * unbounded tag names reaching `git tag` or the GitHub releases endpoint.
+ */
+export function validateTagName(value: unknown): value is string {
+  if (typeof value !== 'string') return false;
+  if (value.length === 0 || value.length > 100) return false;
+  if (value === 'HEAD' || value === '@') return false;
+  if (value.startsWith('-') || value.startsWith('/') || value.startsWith('.')) return false;
+  if (value.endsWith('/') || value.endsWith('.')) return false;
+  if (value.includes('//') || value.includes('..') || value.includes('@{')) return false;
+  if (CONTROL_CHARS.test(value)) return false;
+  if (/[ ~^:?*[\\]/.test(value)) return false;
+  for (const segment of value.split('/')) {
+    if (segment.length === 0) return false;
+    if (segment.startsWith('.')) return false;
+    if (segment.endsWith('.lock')) return false;
+  }
+  return true;
+}
+
+/**
+ * Defends against: unbounded annotated-tag messages or NUL bytes truncating
+ * downstream git tag message handling. Empty messages are allowed; newlines are
+ * expected for multi-line annotations.
+ */
+export function validateTagMessage(value: unknown): value is string {
+  return isBoundedTextWithoutNul(value, 2_000);
+}
+
+/**
+ * Defends against: blank, oversized, or control-character-bearing release
+ * titles (including newlines, which would break single-line headings).
+ */
+export function validateReleaseTitle(value: unknown): value is string {
+  if (typeof value !== 'string') return false;
+  if (value.length > 256 || CONTROL_CHARS.test(value)) return false;
+  const trimmed = value.trim();
+  return trimmed.length >= 1 && trimmed.length <= 256;
+}
+
+/**
+ * Defends against: oversized or NUL-containing release notes reaching the
+ * GitHub releases API. Empty release notes are allowed; newlines are expected.
+ */
+export function validateReleaseBody(value: unknown): value is string {
+  return isBoundedTextWithoutNul(value, 125_000);
+}
+
 /** Shared assertion primitives for callers that must preserve their own error type. */
