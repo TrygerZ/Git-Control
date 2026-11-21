@@ -1645,7 +1645,8 @@ export class MessageBridge {
     validateAction(payload, this.text().invalid);
     const repo = await this.repository();
     const status = await this.assertToken(repo, payload.statusToken);
-    this.gate(repo, payload as GuardAction, status, payload);
+    const tagExists = payload.action === 'tag-create' ? await repo.git.tagExists(payload.name) : undefined;
+    this.gate(repo, payload as GuardAction, status, payload, null, tagExists);
 
     // `push-up-to` must be fast-forward; the remedy is fetch, never force.
     //
@@ -1877,6 +1878,17 @@ export class MessageBridge {
         return this.deleteBranch(repo, action.branch);
       case 'branch-delete-remote':
         return this.deleteRemoteBranch(repo, action.remote, action.branch);
+      case 'tag-create': {
+        if (await git.tagExists(action.name)) {
+          fail(400, 'VALIDATION_ERROR', this.text().invalid, { detail: 'name' });
+        }
+        if (action.annotated === false) {
+          return git.createTag(action.name, action.target);
+        }
+        return git.createTag(action.name, action.target, { message: action.message ?? action.name });
+      }
+      case 'tag-push':
+        return git.pushTag(action.remote, action.name, this.progressSink(operationId, 'tag-push'));
       default:
         return fail(400, 'VALIDATION_ERROR', this.text().invalid);
     }
@@ -1978,13 +1990,15 @@ export class MessageBridge {
     status: RepoStatus,
     meta: MutationMeta,
     headPublished: boolean | null = null,
+    tagExists?: boolean,
   ): void {
     const lang = this.host.settings().language ?? 'en';
-    const verdict = SafetyGuard.evaluate(action, this.snapshotOf(status, repo, headPublished), lang);
+    const verdict = SafetyGuard.evaluate(action, this.snapshotOf(status, repo, headPublished, tagExists), lang);
     if (verdict.allow) return;
     if (verdict.requiresConfirmation === true && this.confirmed(verdict, meta)) return;
     fail(verdictStatus(verdict), verdict.code, verdict.message, {
       remedies: verdict.remedies,
+      ...(action.action === 'tag-create' && verdict.code === 'VALIDATION_ERROR' ? { detail: 'name' } : {}),
       ...(verdict.requiresConfirmation === undefined
         ? {}
         : { requiresConfirmation: verdict.requiresConfirmation }),
@@ -2039,7 +2053,12 @@ export class MessageBridge {
     return repo.git.isPublished('HEAD').catch(() => true);
   }
 
-  private snapshotOf(status: RepoStatus, repo: RepositoryService, headPublished: boolean | null = null): GuardSnapshot {
+  private snapshotOf(
+    status: RepoStatus,
+    repo: RepositoryService,
+    headPublished: boolean | null = null,
+    tagExists?: boolean,
+  ): GuardSnapshot {
     return {
       dirty: status.dirty,
       staged: status.staged,
@@ -2054,6 +2073,7 @@ export class MessageBridge {
       headPublished,
       branch: status.branch,
       readOnlyBranches: repo.readOnlyBranches(),
+      ...(tagExists === undefined ? {} : { tagExists }),
     };
   }
 

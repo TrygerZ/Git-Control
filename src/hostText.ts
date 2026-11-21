@@ -16,6 +16,7 @@ const en = {
     branchDeleteCurrent: 'You cannot delete the branch you are on.',
     branchDeleteRemote: 'Removes the branch from the remote for everyone.',
     forkReadOnly: 'This is a fork pull request. It is read-only here.',
+    tagExists: 'A tag with this name already exists.',
     confirm: 'This action requires confirmation.',
   },
   bridge: {
@@ -146,6 +147,7 @@ const id: HostCatalog = {
     branchDeleteCurrent: 'Anda tidak dapat menghapus branch yang sedang aktif.',
     branchDeleteRemote: 'Menghapus branch dari remote untuk semua orang.',
     forkReadOnly: 'Ini pull request dari fork. Hanya baca di sini.',
+    tagExists: 'Tag dengan nama ini sudah ada.',
     confirm: 'Tindakan ini perlu konfirmasi.',
   },
   bridge: {

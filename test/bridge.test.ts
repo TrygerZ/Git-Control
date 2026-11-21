@@ -5492,3 +5492,104 @@ test('P27: dispatchWorkflow enforces confirm, active workflow, branch/inputs val
     assert.equal(missPost.error.code, 'UNAVAILABLE');
   }
 });
+
+// ------------------------------------------------- P28 tag-create and tag-push
+
+test('actions/git tag-create creates tag, invalidates refs, and rejects duplicate with VALIDATION_ERROR', async (t) => {
+  const dir = await makeFixture('tags');
+  t.after(() => cleanup(dir));
+  const repo = new RepositoryService({ folderPath: dir, gitPath: 'git', store: new MemoryStore() });
+  const h = harness(repo);
+  t.after(() => h.bridge.dispose());
+
+  // Duplicate tag fails with VALIDATION_ERROR and detail 'name'
+  const dup = await h.webview.send(
+    req('actions/git', {
+      action: 'tag-create',
+      name: 'v1.0.0',
+      target: 'main',
+      idempotencyKey: 'tc-dup-1',
+    }),
+  );
+  assert.equal(dup.ok, false);
+  if (!dup.ok) {
+    assert.equal(dup.error.code, 'VALIDATION_ERROR');
+    assert.equal(dup.error.detail, 'name');
+  }
+
+  // Creating a new annotated tag succeeds and updates refs
+  const created = await h.webview.send(
+    req('actions/git', {
+      action: 'tag-create',
+      name: 'v1.2.0',
+      target: 'main',
+      message: 'Release v1.2.0',
+      annotated: true,
+      idempotencyKey: 'tc-ok-1',
+    }),
+  );
+  assert.equal(created.ok, true);
+  assert.equal(await repo.git.tagExists('v1.2.0'), true);
+  const refs = await repo.refs();
+  assert.ok(refs.refs.some((r) => r.kind === 'tag' && r.shortName === 'v1.2.0'));
+});
+
+test('actions/git tag-push requires confirmation and replays idempotently', async (t) => {
+  const dir = await makeFixture('tags');
+  t.after(() => cleanup(dir));
+  const store = new MemoryStore();
+  const repo = new RepositoryService({ folderPath: dir, gitPath: 'git', store });
+  await repo.markFetched(Date.now());
+  const h = harness(repo);
+  t.after(() => h.bridge.dispose());
+
+  await repo.git.createTag('v2.0.0', 'main', { message: 'v2.0.0' });
+
+  // Unconfirmed push returns level 1 CONFIRMATION_REQUIRED
+  const unconfirmed = await h.webview.send(
+    req('actions/git', {
+      action: 'tag-push',
+      remote: 'origin',
+      name: 'v2.0.0',
+      idempotencyKey: 'tp-1',
+    }),
+  );
+  assert.equal(unconfirmed.ok, false);
+  if (!unconfirmed.ok) {
+    assert.equal(unconfirmed.error.code, 'CONFIRMATION_REQUIRED');
+    assert.equal(unconfirmed.error.confirmationLevel, 1);
+  }
+
+  // Confirmed push succeeds and replays on same idempotencyKey
+  let pushCalls = 0;
+  const origPushTag = repo.git.pushTag.bind(repo.git);
+  repo.git.pushTag = async (remote, name, onProgress) => {
+    pushCalls += 1;
+    return origPushTag(remote, name, onProgress);
+  };
+
+  const p1 = await h.webview.send(
+    req('actions/git', {
+      action: 'tag-push',
+      remote: 'origin',
+      name: 'v2.0.0',
+      confirm: true,
+      idempotencyKey: 'tp-2',
+    }),
+  );
+  const p2 = await h.webview.send(
+    req('actions/git', {
+      action: 'tag-push',
+      remote: 'origin',
+      name: 'v2.0.0',
+      confirm: true,
+      idempotencyKey: 'tp-2',
+    }),
+  );
+  assert.equal(p1.ok, true);
+  assert.equal(p2.ok, true);
+  assert.equal(pushCalls, 1, 'second call replays idempotently');
+
+  const lsRemote = (await repo.git.run(['ls-remote', '--tags', 'origin', 'refs/tags/v2.0.0'])).stdout.trim();
+  assert.match(lsRemote, /refs\/tags\/v2\.0\.0$/);
+});

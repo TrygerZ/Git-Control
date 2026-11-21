@@ -50,6 +50,8 @@ export interface GuardSnapshot {
    * succeed no matter what the user confirms.
    */
   readOnlyBranches: ReadonlySet<string>;
+  /** True when the target tag name already exists locally (supplied by bridge for `tag-create`). */
+  tagExists?: boolean;
 }
 
 export type GuardVerdict =
@@ -107,6 +109,7 @@ const CONFIRM_LEVEL_1 = new Set<GuardAction['action']>([
   'stash-apply',
   'cherry-pick',
   'branch-delete',
+  'tag-push',
 ]);
 
 /**
@@ -188,7 +191,7 @@ export function evaluate(action: GuardAction, snapshot: GuardSnapshot, lang: Lan
     };
   }
 
-  if (action.action === 'push' || action.action === 'push-up-to') {
+  if (action.action === 'push' || action.action === 'push-up-to' || action.action === 'tag-push') {
     if (isStale(snapshot)) {
       return {
         allow: false,
@@ -199,20 +202,29 @@ export function evaluate(action: GuardAction, snapshot: GuardSnapshot, lang: Lan
     }
     if (snapshot.behind > 0) {
       // Force push is never offered: fetch and integrate instead.
-      return action.action === 'push'
+      return action.action === 'push-up-to'
         ? {
-            allow: false,
-            code: 'REMOTE_AHEAD',
-            message: text.remoteAhead,
-            remedies: ['fetch'],
-          }
-        : {
             allow: false,
             code: 'NON_FAST_FORWARD',
             message: text.nonFastForward,
             remedies: ['fetch'],
+          }
+        : {
+            allow: false,
+            code: 'REMOTE_AHEAD',
+            message: text.remoteAhead,
+            remedies: ['fetch'],
           };
     }
+  }
+
+  if (action.action === 'tag-create' && snapshot.tagExists === true) {
+    return {
+      allow: false,
+      code: 'VALIDATION_ERROR',
+      message: text.tagExists,
+      remedies: ['cancel'],
+    };
   }
 
   if (action.action === 'reset-hard' || action.action === 'discard-file') {
