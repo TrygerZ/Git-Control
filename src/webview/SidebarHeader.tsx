@@ -31,6 +31,7 @@ import {
   useActionsStore,
   useChangesStore,
   useGitHubStore,
+  useIconThemeStore,
   useIssuesStore,
   useOperationStore,
   useRepoStore,
@@ -48,16 +49,28 @@ const SYNC_ICON: Record<SyncBadge, IconName> = {
   diverged: 'merge',
 };
 
-/** One More menu row: a label and the store call it runs. Rows never reach git. */
+function isLightBodyTheme(): boolean {
+  if (typeof document === 'undefined') return false;
+  return (
+    document.body.classList.contains('vscode-light') ||
+    document.body.classList.contains('vscode-high-contrast-light')
+  );
+}
+
+/** One More menu row: a label, optional right-aligned value hint, and the store call it runs. Rows never reach git. */
 interface HeaderMenuRow {
   id: string;
   label: string;
+  hint?: string;
   run: () => void;
 }
 
 export function SidebarHeader(): JSX.Element | null {
   const strings = useT();
   const language = useSettingsStore((s) => s.language);
+  const iconTheme = useIconThemeStore((s) => s.snapshot);
+  void iconTheme;
+  const lightTheme = isLightBodyTheme();
   const status = useRepoStore((s) => s.status);
   const graph = useRepoStore((s) => s.graph);
   const loadStatus = useRepoStore((s) => s.loadStatus);
@@ -197,6 +210,7 @@ export function SidebarHeader(): JSX.Element | null {
       ? {
           id: 'disconnect',
           label: strings.explorerMenu.disconnectGithub,
+          hint: auth.login ?? undefined,
           run: () => void useGitHubStore.getState().disconnect(),
         }
       : {
@@ -204,6 +218,18 @@ export function SidebarHeader(): JSX.Element | null {
           label: strings.explorerMenu.connectGithub,
           run: () => void useGitHubStore.getState().connect(),
         },
+    {
+      id: 'language',
+      label: strings.shell.menuLanguage,
+      hint: strings.shell.menuLanguageValue,
+      run: () => useSettingsStore.getState().setLanguage(language === 'id' ? 'en' : 'id'),
+    },
+    {
+      id: 'color-theme',
+      label: strings.shell.menuColorTheme,
+      hint: lightTheme ? strings.shell.themeLight : strings.shell.themeDark,
+      run: () => useSettingsStore.getState().toggleColorTheme(),
+    },
   );
 
   const closeMenu = (returnFocus: boolean): void => {
@@ -466,6 +492,7 @@ export function SidebarHeader(): JSX.Element | null {
               }}
             >
               <span className="gc-menu__label">{row.label}</span>
+              {row.hint !== undefined && <span className="gc-menu__hint">{row.hint}</span>}
             </button>
           ))}
         </div>

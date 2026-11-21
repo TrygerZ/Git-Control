@@ -45,6 +45,7 @@ test('group and item order match frame 17', () => {
       ['view.changes', 'view.prs', 'view.issues', 'view.actions', 'view.branches'],
       ['refresh', 'logs'],
       ['github.disconnect'],
+      ['preferences.language', 'preferences.theme'],
       ['repository'],
     ],
   );
@@ -64,7 +65,13 @@ test('each view item opens its own route', () => {
     ],
   );
   // Non-view items carry no route, so they can never be mistaken for navigation.
-  for (const item of [...(groups[0] ?? []), ...(groups[2] ?? []), ...(groups[3] ?? []), ...(groups[4] ?? [])]) {
+  for (const item of [
+    ...(groups[0] ?? []),
+    ...(groups[2] ?? []),
+    ...(groups[3] ?? []),
+    ...(groups[4] ?? []),
+    ...(groups[5] ?? []),
+  ]) {
     assert.equal(item.route, null, `${item.id} carries no route`);
   }
 });
@@ -88,9 +95,11 @@ test('Quick actions is omitted when the palette is not shipped', () => {
     'refresh',
     'logs',
     'github.disconnect',
+    'preferences.language',
+    'preferences.theme',
     'repository',
   ]);
-  assert.equal(groups.length, 4, 'the quick group disappears entirely');
+  assert.equal(groups.length, 5, 'the quick group disappears entirely');
 });
 
 test('Quick actions carries the contributed chord as its hint', () => {
@@ -113,7 +122,7 @@ test('signed out offers Connect with no login, signed in offers Disconnect with 
 
 test('a repository without a GitHub remote omits the GitHub group and keeps the rest', () => {
   const groups = buildMoreMenu(ctx({ github: { linked: false, connected: false, login: null } }));
-  assert.equal(groups.length, 4);
+  assert.equal(groups.length, 5);
   assert.equal(ids(groups).some((id) => id.startsWith('github.')), false);
 });
 

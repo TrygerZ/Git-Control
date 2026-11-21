@@ -54,3 +54,57 @@ test('the phase module list matches what the File Map claims', () => {
     assert.ok(fs.existsSync(path.join(ROOT, file)), `${file} exists`);
   }
 });
+
+test('P30: README Key Features and Getting Started cover the UI v3 sidebar navigation and guidance matrix', () => {
+  const readme = read('README.md');
+  // Sidebar 5-destination navigation strip and header
+  assert.match(readme, /Pull requests,\s*Issues,\s*Actions,\s*(and\s+)?Branches/i);
+  // Pinned commit footer and Amend last commit
+  assert.match(readme, /Amend last commit/i);
+  // Branches view: Clean up merged branches, Compare, and Worktrees
+  assert.match(readme, /Clean up/i);
+  assert.match(readme, /Compare/i);
+  assert.match(readme, /[Ww]orktrees/);
+  // Quick Actions palette and Get started checklist in Key Features
+  const keyFeaturesEnd = readme.indexOf('## Requirements');
+  const keyFeatures = keyFeaturesEnd === -1 ? readme : readme.slice(0, keyFeaturesEnd);
+  assert.match(keyFeatures, /Quick Actions/);
+  assert.match(keyFeatures, /Get [Ss]tarted/);
+});
+
+test('P30: README Available Commands has 100% parity with package.json contributes.commands and documents anonymous PR list', () => {
+  const readme = read('README.md');
+  const pkg = JSON.parse(read('package.json')) as {
+    contributes: { commands: Array<{ command: string; title: string }> };
+  };
+  const cmdStart = readme.indexOf('## Available Commands');
+  assert.ok(cmdStart !== -1, 'README has Available Commands section');
+  const cmdEnd = readme.indexOf('## Token Scopes', cmdStart);
+  const cmdSection = cmdEnd === -1 ? readme.slice(cmdStart) : readme.slice(cmdStart, cmdEnd);
+
+  const manifestTitles = pkg.contributes.commands.map((c) => c.title).sort();
+  const readmeTitles = [...cmdSection.matchAll(/^\*\s+`(Git Control: [^`]+)`:/gm)].map((m) => m[1]!).sort();
+
+  assert.deepEqual(readmeTitles, manifestTitles, 'README command list matches package.json command titles exactly');
+  assert.match(readme, /Sign in for higher limits/);
+  assert.match(readme, /60 requests per hour/);
+});
+
+test('P30: AGENTS.md File Map covers every file in src/ and src/webview/ and lists final UI v3 invariants', () => {
+  const agents = read('AGENTS.md');
+  const walk = (dir: string): string[] =>
+    fs.readdirSync(path.join(ROOT, dir), { withFileTypes: true }).flatMap((entry) => {
+      const rel = `${dir}/${entry.name}`;
+      return entry.isDirectory() ? walk(rel) : [rel];
+    });
+
+  for (const rel of walk('src')) {
+    assert.ok(agents.includes(`\`${rel}\``), `AGENTS.md File Map lists ${rel}`);
+  }
+
+  assert.match(agents, /`LICENSE` in VSIX/, 'AGENTS.md packaging invariant includes LICENSE');
+  assert.match(agents, /Quick actions and Explorer More menu navigate and focus only/);
+  assert.match(agents, /Sidebar route ids and focus targets are validated against a closed allowlist/);
+  assert.match(agents, /Every keyboard shortcut listed in `shortcuts\.ts` and `README\.md` is backed by a handler evidence assertion/);
+  assert.match(agents, /register it in `src\/webview\/navRegistry\.ts`/);
+});

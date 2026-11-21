@@ -18,9 +18,13 @@ export type MenuItemId =
   | 'logs'
   | 'github.connect'
   | 'github.disconnect'
+  | 'preferences.language'
+  | 'preferences.theme'
   | 'repository';
 
-export type MenuGroupId = 'quick' | 'views' | 'tools' | 'github' | 'repo';
+export type MenuGroupId = 'quick' | 'views' | 'tools' | 'github' | 'preferences' | 'repo';
+
+export type MenuItemHint = 'shortcut' | 'login' | 'language' | 'theme' | null;
 
 export interface MoreMenuItem {
   id: MenuItemId;
@@ -28,8 +32,8 @@ export interface MoreMenuItem {
   route: Route | null;
   /** Badge number, or null to draw none. */
   count: number | null;
-  /** Extra text after the label: the palette chord, or the signed-in login. */
-  hint: 'shortcut' | 'login' | null;
+  /** Extra text after the label: the palette chord, signed-in login, or active preference value. */
+  hint: MenuItemHint;
   /** Login shown on the Disconnect row; null on every other row. */
   login: string | null;
 }
@@ -52,7 +56,7 @@ export function buildMoreMenu(ctx: MoreMenuContext): MoreMenuItem[][] {
     id: MenuItemId,
     route: Route | null = null,
     count: number | null = null,
-    hint: 'shortcut' | 'login' | null = null,
+    hint: MenuItemHint = null,
     login: string | null = null,
   ): MoreMenuItem => ({ id, route, count, hint, login });
 
@@ -91,6 +95,11 @@ export function buildMoreMenu(ctx: MoreMenuContext): MoreMenuItem[][] {
         : item('github.connect'),
     ]);
   }
+
+  groups.push([
+    item('preferences.language', null, null, 'language'),
+    item('preferences.theme', null, null, 'theme'),
+  ]);
 
   groups.push([item('repository')]);
 

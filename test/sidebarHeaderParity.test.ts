@@ -86,6 +86,10 @@ test('the More menu is the frame 42 menu: reload, repository links, account', ()
   assert.match(src, /strings\.shell\.menuCopyUrl/, 'Copy repository URL');
   assert.match(src, /strings\.explorerMenu\.connectGithub/, 'Connect GitHub');
   assert.match(src, /strings\.explorerMenu\.disconnectGithub/, 'Disconnect GitHub');
+  assert.match(src, /strings\.shell\.menuLanguage/, 'Language preference row');
+  assert.match(src, /strings\.shell\.menuColorTheme/, 'Color theme preference row');
+  assert.match(src, /useSettingsStore\.getState\(\)\.setLanguage\(/, 'Language toggles en/id');
+  assert.match(src, /useSettingsStore\.getState\(\)\.toggleColorTheme\(\)/, 'Color theme toggles dark/light');
   // A menu row navigates, copies, or reuses a store action. It never invents a
   // request kind of its own, and it cannot run git.
   const calls = src.match(/bridge\.request\('([^']+)'/g) ?? [];
@@ -142,7 +146,22 @@ test('the new-branch focus target has a consumer, so the header may raise it', (
 test('both catalogs name every new shell string', () => {
   for (const lang of ['en', 'id']) {
     const catalog = read(`src/webview/i18n.${lang}.ts`);
-    for (const key of ['addPr', 'addIssue', 'addWorkflow', 'addBranch', 'moreAria', 'moreTitle', 'menuReload', 'menuOpenRepo', 'menuCopyUrl']) {
+    for (const key of [
+      'addPr',
+      'addIssue',
+      'addWorkflow',
+      'addBranch',
+      'moreAria',
+      'moreTitle',
+      'menuReload',
+      'menuOpenRepo',
+      'menuCopyUrl',
+      'menuLanguage',
+      'menuLanguageValue',
+      'menuColorTheme',
+      'themeDark',
+      'themeLight',
+    ]) {
       assert.ok(catalog.includes(`    ${key}:`), `${lang} catalog is missing ${key}`);
     }
   }

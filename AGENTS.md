@@ -58,12 +58,15 @@ Agents following the AGENTS.md convention resolve the nearest configuration file
 | Webview inputs validated before entering argv; `sanitizeRefArg` on refs; `validateWorktreePath` and host `checkWorktreeTarget` on worktree folders | `src/validation.ts`, `src/bridgePure.ts`, `src/bridge.ts` | Option injection (`-flag` interpreted as git option) or unsafe worktree path targeting `.git`, ancestors, or non-empty folders. |
 | GitHub token stored ONLY in `SecretStorage`; sent ONLY to `tokenAllowed` base (`github.com` or explicit `gitControl.githubApiUrl`); NEVER to webview, logs, or `workspaceState` | `src/extension.ts`, `src/github.ts` | Token theft / exfiltration (SEC-001). Remote URL host derived API base MUST NEVER receive token. |
 | All logs pass through redactor | `src/logger.ts` | Secret leakage in output channel or bug report screenshots (SEC-004, SEC-012). |
-| Every GitHub mutation passes `evaluateGitHubAction` through the bridge's `gateGitHub`, and `mutate()` makes exactly one network attempt (no retry, no stale-cache fallback) | `src/githubGuard.ts`, `src/bridge.ts`, `src/github.ts` | A repeated `POST` creates a duplicate pull request, comment, or release. A write served from a stale cache claims success that never happened. |
+| Every GitHub mutation carries an idempotency key, passes `evaluateGitHubAction` through the bridge's `gateGitHub`, and `mutate()` makes exactly one network attempt (no retry, no stale-cache fallback) | `src/githubGuard.ts`, `src/bridgePure.ts`, `src/bridge.ts`, `src/github.ts` | A repeated `POST` creates a duplicate pull request, comment, or release. A write served from a stale cache claims success that never happened. |
+| Quick actions and Explorer More menu navigate and focus only; never execute git or GitHub mutations directly | `src/quickActions.ts`, `src/webview/explorerMenu.ts`, `src/extension.ts` | Bypassing webview status tokens and `GuardDialog` safety confirmations from a host QuickPick or menu. |
+| Sidebar route ids and focus targets are validated against a closed allowlist on both host and webview | `src/webview/route.ts`, `src/bridgePure.ts`, `src/bridge.ts` | Unvalidated route state or message payloads corrupting sidebar navigation. |
+| Every keyboard shortcut listed in `shortcuts.ts` and `README.md` is backed by a handler evidence assertion | `src/webview/shortcuts.ts`, `test/shortcuts.test.ts` | Help panel or README advertising stale or removed keyboard shortcuts. |
 | Mutations serialized via per-repo promise mutex (`runExclusive`); status cache invalidated on mutation / watcher; watcher debounce 500 ms | `src/git.ts`, `src/repository.ts`, `src/watcher.ts` | Git index lock races (`.git/index.lock`), dirty state corruption, UI thrashing. |
 | Zero `dangerouslySetInnerHTML`, zero `innerHTML`; no untrusted `href`/`src` binding | `src/webview/**` | Webview XSS / remote code execution (T4). |
 | `gitControl.gitPath` and `gitControl.githubApiUrl` MUST stay `"scope": "machine"`; `gitPath` MUST be absolute | `package.json`, `src/extension.ts` | Malicious repository executes arbitrary local binaries via committed `.vscode/settings.json` (SEC-005). |
-| New logic belongs in pure modules free of `vscode`; I/O and `vscode` APIs partitioned to thin wrappers (e.g. `iconThemeCore.ts` pure vs `iconTheme.ts` I/O, `PersistentStore` in `repository.ts`) | `src/git.ts`, `src/gitParse.ts`, `src/validation.ts`, `src/guard.ts`, `src/layout.ts`, `src/repository.ts`, `src/remoteUrl.ts`, `src/iconThemeCore.ts`, `src/webview/{format,viewport,tree}.ts` | Inability to unit test business/domain logic under `node:test` without heavyweight stubs or full extension harness. |
-| `.vscodeignore` maintained independently of `.gitignore`; only `dist/`, `resources/`, `package.json`, `README.md`, `CHANGELOG.md` in VSIX | `.vscodeignore` | Leaking internal docs, sources, source maps with developer paths into public extension package (SEC-002). |
+| New logic belongs in pure modules free of `vscode`; I/O and `vscode` APIs partitioned to thin wrappers (e.g. `iconThemeCore.ts` pure vs `iconTheme.ts` I/O, `PersistentStore` in `repository.ts`) | `src/git.ts`, `src/gitParse.ts`, `src/validation.ts`, `src/guard.ts`, `src/layout.ts`, `src/repository.ts`, `src/remoteUrl.ts`, `src/iconThemeCore.ts`, `src/webview/{format,viewport,tree}.ts`, `test/purity.test.ts` | Inability to unit test business/domain logic under `node:test` without heavyweight stubs or full extension harness. |
+| `.vscodeignore` maintained independently of `.gitignore`; only `dist/`, `resources/`, `package.json`, `README.md`, `CHANGELOG.md`, `LICENSE` in VSIX | `.vscodeignore` | Leaking internal docs, sources, source maps with developer paths into public extension package (SEC-002). |
 
 ## Deliberate Redactor Omission (DO NOT "FIX")
 
@@ -81,7 +84,7 @@ When implementing a new Git action, modify layers in this exact sequence:
 5. `src/bridge.ts`: Wire request handling, validate payload, check guard, execute, format output.
 6. `src/repository.ts`: Add or invalidate domain model caches if state changed.
 7. `src/webview/store.ts`: Add action and state handler in Zustand store.
-8. `src/webview/` components: Render UI controls and wire event handlers.
+8. `src/webview/` components: Render UI controls and wire event handlers. When adding a sidebar view destination, register it in `src/webview/navRegistry.ts`, validate its route id in `src/webview/route.ts`, and gate its capability in `src/quickActions.ts` and `src/webview/helpModel.ts`.
 9. `src/webview/i18n.ts`: Add UI strings in BOTH `en` and `id` catalogs (en is source type, id implements `Catalog`).
 10. `test/`: Add unit and regression tests. `test/i18n.test.ts` enforces key parity and forbids en/em-dashes.
 
@@ -234,14 +237,29 @@ Encodes module purity boundaries (pure logic vs I/O) and execution trust boundar
 | `src/webview/PullRequestsView.tsx` | Sidebar Pull requests view. Banners, search row, filter chips, current-branch card, grouped list, footer. Reads only through store actions; reloads on mount and on `prs` activation while stale, no polling. Each row carries a check badge loaded through one `IntersectionObserver`, so only rows that reach the list viewport ask for checks; the count travels in the row button's `aria-label` because that label replaces every descendant's accessible name. The row's checkout button sends `checkout-pr` with the number only and adds `readOnly` for a fork row, and the row shows a Checked out chip while HEAD is `pr/<n>` |
 | `src/webview/IssuesView.tsx` | Sidebar Issues view. Sign-in required, chips Assigned / Created / Mentioned, label menu, expandable row preview with Start work, inline comment box, Close and Reopen actions, recently closed group, footer quota, and `NewIssueDialog` host |
 | `src/webview/NewIssueDialog.tsx` | New issue dialog (frame 101). Title, Description, Labels with removable chips and a multiselect listbox picker backed by `github/repoLabels`, `POST /repos/{owner}/{repo}/issues` command preview through `issueCommand`, and the shared P02 focus trap |
-| `src/webview/BranchesView.tsx` | Sidebar Branches view. Sub-tabs Local / Remote / Tags, filter row, sections Current / Local / Worktrees / Recent tags, row menu (Checkout, Merge into current, Copy name), sort menu, footer New branch and fetch age. Owns its prompt and merge hosts; the guard dialog stays the shell's single host |
+| `src/webview/BranchesView.tsx` | Sidebar Branches view. Sub-tabs Local / Remote / Tags, filter row, sections Current / Local / Worktrees / Recent tags, row menu (Checkout, Merge into current, Compare with current, Add worktree, Delete branch, Copy name), sort menu, footer New branch, Compare, and fetch age, and hosts for `CleanupDialog`, `ReleaseDialog`, `CompareView`, `AddWorktreeDialog`, prompt, and merge dialogs |
 | `src/webview/StartWorkDialog.tsx` | "Start work on #n" dialog. Suggested branch name, command preview through `gitCommandOf`, dirty-tree note, inline name problem. Closes before it awaits `runAction` so a host guard verdict cannot stack modals |
 | `src/webview/Inspector.tsx` | Detail inspector for selected commit or file diff. Below the ref chips sits the pull request card: the first PR containing the commit, its state and base, and the collapsed check summary from `src/checkSummary.ts`. Gated on GitHub linkage; a commit in no PR says so and sends no check request, since checks hang off the PR head sha |
 | `src/webview/SidebarHeader.tsx` | Sidebar-only header (title row with refresh and open-graph, branch row with sync chip, upstream row). Reads stores and `headerModel`, owns no state. The Explorer keeps `ContextBar` |
 | `src/webview/Tablist.tsx` | Generic WAI-ARIA tabs (roving tabindex, automatic activation, keys through `nextTabIndex`). No nav-specific code; takes a `classPrefix`, so the nav strip (`gc-nav`) and the Changes and Stashes sub-tabs (`gc-subtabs`) share it. A tab may carry a decorative `count` |
 | `src/webview/NavStrip.tsx` | Sidebar nav strip. Registers Changes, renders nothing below two destinations, selects through `useRouteStore.navigate`. Makes no request; counts come from `useNavStore` and the changes store |
-| `src/webview/CommitForm.tsx` | Commit message authoring, inline validation, and commit/push controls |
+| `src/webview/CommitForm.tsx` | Commit message authoring, inline validation, amend toggle, and commit/push/pull controls pinned to the sidebar footer |
 | `src/webview/GuardDialog.tsx` | Blocked-action guard modal offering remedies (commit/stash/fetch/cancel/resolve-conflicts/confirm) and 2-level confirmations |
+| `src/webview/ExplorerApp.tsx` | Explorer root view mounting `ContextBar`, `ExplorerSyncActions`, `ExplorerHeaderActions`, `GraphCanvas`, `Inspector`, and `Contributors` (no longer mounts `GitHubPanel`, which moved to the sidebar Pull requests route in P07) |
+| `src/webview/ChangeTree.tsx` | Virtualized/collapsible file tree for staged, unstaged, untracked, and conflicted files with tri-state selection, file icons, line churn, and keyboard navigation |
+| `src/webview/ConflictPanel.tsx` | Conflict resolution banner and file list during active merge, rebase, or cherry-pick operations |
+| `src/webview/Contributors.tsx` | Ranked contributor leaderboard panel in the Explorer aside with commit bars and GitHub avatar resolution |
+| `src/webview/GraphMinimap.tsx` | Horizontal overview minimap at the bottom-left of the graph canvas with keyboard scrolling |
+| `src/webview/BranchLegend.tsx` | Compact graph status legend pill (`Pushed` and `Not pushed`) sharing the canvas bottom row |
+| `src/webview/NodeContextMenu.tsx` | Commit node context menu grouped into `Inspect`, `Branch`, and `Rewrite history` with risk badges and a live focus hint box |
+| `src/webview/MergeDialog.tsx` | Branch merge confirmation modal using the shared P02 focus trap |
+| `src/webview/PromptDialog.tsx` | Generic text prompt modal (such as new branch creation) using the shared P02 focus trap |
+| `src/webview/Toast.tsx` | Non-blocking toast notification bar with optional action callback (such as Undo issue close or View run) |
+| `src/webview/fileIcon.ts` | Client-side file and folder icon resolver evaluating the active VS Code File Icon Theme snapshot |
+| `src/webview/icons.ts` | Shared `IconName` union type for inline SVG icons |
+| `src/webview/iconPaths.tsx` | Inline SVG path definitions for every `IconName` |
+| `src/webview/useT.ts` | React hook binding the active language catalog from `i18n.ts` |
+| `src/webview/styles.css` | Tokenized webview stylesheet deriving `--gc-*` variables from `--vscode-*` theme tokens with zero hardcoded colors |
 
 ## Canonical References
 

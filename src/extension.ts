@@ -205,6 +205,7 @@ class Controller implements vscode.Disposable {
       vscode.window.onDidChangeActiveColorTheme(() => {
         // Light/dark/HC switch changes only the overlay; root stays valid.
         this.broadcastIconThemeChanged();
+        this.broadcastSettingsChanged();
       }),
       vscode.extensions.onDidChange(() => {
         // Install/uninstall/enable of a theme extension → root may change.
@@ -1171,6 +1172,9 @@ class Controller implements vscode.Disposable {
       this.broadcastSettingsChanged();
       return this.settingsSnapshot();
     }
+    if (payload.key === 'colorTheme' && payload.value === 'toggle') {
+      return this.toggleColorTheme();
+    }
     const prefs = this.uiPreferences();
     if (payload.key === 'zoom' && typeof payload.value === 'number') prefs.zoom = clampZoom(payload.value);
     if (payload.key === 'branchFilter' && typeof payload.value === 'string') prefs.branchFilter = payload.value;
@@ -1178,6 +1182,27 @@ class Controller implements vscode.Disposable {
       prefs.checklistDismissed = payload.value;
     }
     await this.context.workspaceState.update(UI_PREFS_KEY, prefs);
+    return this.settingsSnapshot();
+  }
+
+  private async toggleColorTheme(): Promise<SettingsSnapshot> {
+    const wasKind = vscode.window.activeColorTheme.kind;
+    const wasLight =
+      wasKind === vscode.ColorThemeKind.Light ||
+      wasKind === vscode.ColorThemeKind.HighContrastLight;
+    try {
+      await vscode.commands.executeCommand('workbench.action.toggleLightDarkThemes');
+    } catch {
+      // Fall through to explicit configuration update if command is unavailable.
+    }
+    if (vscode.window.activeColorTheme.kind === wasKind) {
+      const wb = vscode.workspace.getConfiguration('workbench');
+      const target = wasLight
+        ? wb.get<string>('preferredDarkColorTheme', 'Default Dark Modern')
+        : wb.get<string>('preferredLightColorTheme', 'Default Light Modern');
+      await wb.update('colorTheme', target, vscode.ConfigurationTarget.Global);
+    }
+    this.broadcastSettingsChanged();
     return this.settingsSnapshot();
   }
 
