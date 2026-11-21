@@ -874,6 +874,7 @@ export interface SettingsState {
   setBranchFilter(filter: string): void;
   setSearch(search: string): void;
   setLanguage(language: 'en' | 'id'): void;
+  toggleColorTheme(): void;
   setChecklistDismissed(value: boolean): void;
   /** Clear the dismissal and force the card back. Called by the Help footer (P17). */
   reopenChecklist(): void;
@@ -927,6 +928,10 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
     if (normalized === get().language) return;
     set({ language: normalized });
     void persist('language', normalized);
+  },
+
+  toggleColorTheme() {
+    void persist('colorTheme', 'toggle');
   },
 
   setChecklistDismissed(value) {

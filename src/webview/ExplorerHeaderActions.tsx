@@ -30,8 +30,10 @@ import { SHIPPED_ROUTES } from '../quickActions';
 import {
   toErrorBody,
   useGitHubStore,
+  useIconThemeStore,
   useOperationStore,
   useRepoStore,
+  useSettingsStore,
 } from './store';
 import { Icon } from './ui';
 import { useT } from './useT';
@@ -49,11 +51,22 @@ function groupOf(item: MoreMenuItem): MenuGroupId {
   if (item.id.startsWith('view.')) return 'views';
   if (item.id === 'refresh' || item.id === 'logs') return 'tools';
   if (item.id.startsWith('github.')) return 'github';
+  if (item.id.startsWith('preferences.')) return 'preferences';
   return 'repo';
+}
+
+function isLightBodyTheme(): boolean {
+  if (typeof document === 'undefined') return false;
+  return (
+    document.body.classList.contains('vscode-light') ||
+    document.body.classList.contains('vscode-high-contrast-light')
+  );
 }
 
 export function ExplorerHeaderActions(): JSX.Element {
   const strings = useT();
+  const language = useSettingsStore((s) => s.language);
+  const iconTheme = useIconThemeStore((s) => s.snapshot);
   const pushToast = useOperationStore((s) => s.pushToast);
   const status = useRepoStore((s) => s.status);
   const auth = useGitHubStore((s) => s.auth);
@@ -65,6 +78,8 @@ export function ExplorerHeaderActions(): JSX.Element {
   const moreRef = useRef<HTMLButtonElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
   const menuId = useId();
+  void iconTheme;
+  const lightTheme = isLightBodyTheme();
 
   /** Same failure shape as `SidebarHeader`: the host explains, the toast repeats it. */
   async function send<K extends HeaderRequest>(
@@ -105,17 +120,21 @@ export function ExplorerHeaderActions(): JSX.Element {
     logs: strings.explorerMenu.showGitOutput,
     'github.connect': strings.explorerMenu.connectGithub,
     'github.disconnect': strings.explorerMenu.disconnectGithub,
+    'preferences.language': strings.shell.menuLanguage,
+    'preferences.theme': strings.shell.menuColorTheme,
     repository: strings.explorerMenu.pickRepository,
   };
 
   /*
-   * Frame 17 names two groups. The other three are separated by rules only, so
-   * they stay unnamed: borrowing an unrelated catalog string would make a screen
-   * reader announce the wrong group name, which is worse than none.
+   * Frame 17 names three groups (Sidebar views, GitHub, Preferences). The other
+   * groups are separated by rules only, so they stay unnamed: borrowing an
+   * unrelated catalog string would make a screen reader announce the wrong group
+   * name, which is worse than none.
    */
   const groupLabels: Partial<Record<MenuGroupId, string>> = {
     views: strings.explorerMenu.groupViews,
     github: strings.explorerMenu.groupGithub,
+    preferences: strings.explorerMenu.groupPreferences,
   };
 
   // First open only, never on mount: the counts and the login need this slice.
@@ -179,6 +198,12 @@ export function ExplorerHeaderActions(): JSX.Element {
         return;
       case 'github.disconnect':
         void useGitHubStore.getState().disconnect();
+        return;
+      case 'preferences.language':
+        useSettingsStore.getState().setLanguage(language === 'id' ? 'en' : 'id');
+        return;
+      case 'preferences.theme':
+        useSettingsStore.getState().toggleColorTheme();
         return;
       case 'repository':
         void send('actions/pickRepository', {});
@@ -309,7 +334,11 @@ export function ExplorerHeaderActions(): JSX.Element {
                         ? quickActionsHint()
                         : item.hint === 'login'
                           ? (item.login ?? '')
-                          : '';
+                          : item.hint === 'language'
+                            ? strings.shell.menuLanguageValue
+                            : item.hint === 'theme'
+                              ? (lightTheme ? strings.shell.themeLight : strings.shell.themeDark)
+                              : '';
                   return (
                     <button
                       key={item.id}

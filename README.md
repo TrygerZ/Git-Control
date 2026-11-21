@@ -104,12 +104,12 @@ Right-click any commit node or branch ref to perform standard Git actions:
 
 * **Sync Buttons**: Fetch, Pull, and Publish or Push sit beside the breadcrumbs with ahead and behind counts, running the same actions and guard flow as the sidebar footer. The group is hidden when the repository has no remote.
 * **Help Button**: Opens the Help panel in the sidebar, revealing the sidebar when it was never opened in this session.
-* **More Menu**: Quick actions, every sidebar view, Refresh graph, Show Git output, GitHub connect or disconnect, and Pick repository, with the Changes and Pull requests counts.
+* **More Menu**: Quick actions, every sidebar view, Refresh graph, Show Git output, GitHub connect or disconnect, Language (`English (EN)` / `Indonesia (ID)`), Color theme (`Dark` / `Light`), and Pick repository, with the Changes and Pull requests counts.
 * **One Header In Every State**: Both buttons render while the repository is still loading, and the menu never runs a git mutation.
 
-### 11. Bilingual Interface
+### 11. Bilingual Interface and Theme Switching
 
-Git Control ships a complete English and Bahasa Indonesia UI, switched from the status bar toggle or the `gitControl.language` setting. Panel chrome, section headers, buttons, tooltips, and accessible names are all translated, and the selection controls keep identical widths in both languages.
+Git Control ships a complete English and Bahasa Indonesia UI, switched directly from **Language** in the Sidebar or Explorer More (`...`) menu or via the `gitControl.language` setting, alongside a **Color theme** action that toggles between Dark and Light VS Code themes. Panel chrome, section headers, buttons, tooltips, and accessible names are all translated, and the selection controls keep identical widths in both languages.
 
 ![Git Control Pending Changes panel in Bahasa Indonesia](screenshots/pending-showcase-id.png)
 

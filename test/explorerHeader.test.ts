@@ -67,6 +67,8 @@ test('every menu row routes through the pure model and the store actions', () =>
   assert.match(src, /showLogs\(\)/, 'Show Git output reveals the channel');
   assert.match(src, /\.connect\(\)/, 'Connect GitHub uses the existing request');
   assert.match(src, /\.disconnect\(\)/, 'Disconnect GitHub uses the existing request');
+  assert.match(src, /\.setLanguage\(/, 'Language preference toggles en/id through useSettingsStore');
+  assert.match(src, /\.toggleColorTheme\(\)/, 'Color theme preference toggles theme through useSettingsStore');
 });
 
 test('the first open loads GitHub, guarded by the open edge and the auth state', () => {

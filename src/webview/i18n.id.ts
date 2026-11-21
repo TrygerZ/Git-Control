@@ -101,6 +101,11 @@ const id: Catalog = {
     menuOpenRepo: 'Buka repository di GitHub',
     menuCopyUrl: 'Salin URL repository',
     menuCopied: 'URL repository disalin.',
+    menuLanguage: 'Bahasa',
+    menuLanguageValue: 'Indonesia (ID)',
+    menuColorTheme: 'Tema warna',
+    themeDark: 'Gelap',
+    themeLight: 'Terang',
   },
 
   // Sidebar nav strip: tab labels and accessible names
@@ -1288,6 +1293,7 @@ const id: Catalog = {
     menuAria: 'Aksi Explorer',
     groupViews: 'Tampilan sidebar',
     groupGithub: 'GitHub',
+    groupPreferences: 'Preferensi',
     quickActions: 'Aksi cepat',
     refreshGraph: 'Muat ulang grafik',
     showGitOutput: 'Tampilkan output Git',

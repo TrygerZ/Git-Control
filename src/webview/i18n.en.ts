@@ -105,6 +105,11 @@ const en = {
     menuOpenRepo: 'Open repository on GitHub',
     menuCopyUrl: 'Copy repository URL',
     menuCopied: 'Repository URL copied.',
+    menuLanguage: 'Language',
+    menuLanguageValue: 'English (EN)',
+    menuColorTheme: 'Color theme',
+    themeDark: 'Dark',
+    themeLight: 'Light',
   },
 
   // Sidebar nav strip: tab labels and accessible names
@@ -1302,6 +1307,7 @@ const en = {
     menuAria: 'Explorer actions',
     groupViews: 'Sidebar views',
     groupGithub: 'GitHub',
+    groupPreferences: 'Preferences',
     quickActions: 'Quick actions',
     refreshGraph: 'Refresh graph',
     showGitOutput: 'Show Git output',
