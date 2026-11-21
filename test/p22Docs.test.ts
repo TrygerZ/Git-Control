@@ -71,3 +71,21 @@ test('P30: README Key Features and Getting Started cover the UI v3 sidebar navig
   assert.match(keyFeatures, /Quick Actions/);
   assert.match(keyFeatures, /Get [Ss]tarted/);
 });
+
+test('P30: README Available Commands has 100% parity with package.json contributes.commands and documents anonymous PR list', () => {
+  const readme = read('README.md');
+  const pkg = JSON.parse(read('package.json')) as {
+    contributes: { commands: Array<{ command: string; title: string }> };
+  };
+  const cmdStart = readme.indexOf('## Available Commands');
+  assert.ok(cmdStart !== -1, 'README has Available Commands section');
+  const cmdEnd = readme.indexOf('## Token Scopes', cmdStart);
+  const cmdSection = cmdEnd === -1 ? readme.slice(cmdStart) : readme.slice(cmdStart, cmdEnd);
+
+  const manifestTitles = pkg.contributes.commands.map((c) => c.title).sort();
+  const readmeTitles = [...cmdSection.matchAll(/^\*\s+`(Git Control: [^`]+)`:/gm)].map((m) => m[1]!).sort();
+
+  assert.deepEqual(readmeTitles, manifestTitles, 'README command list matches package.json command titles exactly');
+  assert.match(readme, /Sign in for higher limits/);
+  assert.match(readme, /60 requests per hour/);
+});
