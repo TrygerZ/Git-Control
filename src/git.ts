@@ -64,6 +64,8 @@ import {
   validateRepoRelativePath,
   validateStashIndex,
   validateStashMessage,
+  validateTagMessage,
+  validateTagName,
 } from './validation';
 
 export type { GitErrorCode, GitResult, GitRunnerOptions, RunOptions } from './gitExec';
@@ -959,6 +961,81 @@ export class GitRunner {
     );
   }
 
+  /**
+   * Create an annotated or lightweight tag at the target commit or branch.
+   *
+   * Threat model: tag name, target ref, and message originate from untrusted
+   * webview input. Each is validated before entering argv, `--` separates
+   * options from ref arguments, and `-f` / `--force` are never passed so an
+   * existing tag cannot be overwritten.
+   */
+  async createTag(
+    name: string,
+    target: string,
+    opts: { message?: string } = {},
+  ): Promise<void> {
+    this.assertTagName(name);
+    if (!validateHash(target) && !validateBranchName(target)) {
+      throw new GitError({ code: 'VALIDATION_ERROR', message: `Invalid tag target: ${target}` });
+    }
+    if (opts.message !== undefined && !validateTagMessage(opts.message)) {
+      throw new GitError({ code: 'VALIDATION_ERROR', message: 'Invalid tag message.' });
+    }
+    const args =
+      opts.message !== undefined
+        ? ['tag', '-a', '-m', opts.message, '--', sanitizeRefArg(name), sanitizeRefArg(target)]
+        : ['tag', '--', sanitizeRefArg(name), sanitizeRefArg(target)];
+    await this.runExclusive(() => this.run(args));
+  }
+
+  /**
+   * Check whether a local tag exists.
+   *
+   * Threat model: `name` comes from untrusted input, so it is validated via
+   * `validateTagName` and `sanitizeRefArg` before passing `refs/tags/<name>`
+   * to `git rev-parse --verify`.
+   */
+  async tagExists(name: string): Promise<boolean> {
+    this.assertTagName(name);
+    const { code } = await this.run(
+      ['rev-parse', '-q', '--verify', sanitizeRefArg(`refs/tags/${name}`)],
+      { allowedExitCodes: [0, 1] },
+    );
+    return code === 0;
+  }
+
+  /**
+   * Push a single tag explicitly without force.
+   *
+   * Threat model: remote and tag name come from untrusted input. A leading `+`
+   * on the tag name or constructed refspec is rejected so force updates cannot
+   * rewrite remote tags, `--tags` is never used so unrelated local tags are
+   * never pushed, and `--` separates options from arguments.
+   */
+  async pushTag(
+    remote: string,
+    name: string,
+    onProgress?: (line: string) => void,
+  ): Promise<void> {
+    if (!validateRemoteName(remote)) {
+      throw new GitError({ code: 'VALIDATION_ERROR', message: `Invalid remote name: ${remote}` });
+    }
+    if (typeof name === 'string' && name.startsWith('+')) {
+      throw new GitError({ code: 'VALIDATION_ERROR', message: 'Force push is not supported.' });
+    }
+    this.assertTagName(name);
+    const refspec = `refs/tags/${name}:refs/tags/${name}`;
+    if (refspec.startsWith('+')) {
+      throw new GitError({ code: 'VALIDATION_ERROR', message: 'Force push is not supported.' });
+    }
+    await this.runExclusive(() =>
+      this.run(['push', '--', sanitizeRefArg(remote), sanitizeRefArg(refspec)], {
+        timeoutMs: 120_000,
+        ...(onProgress === undefined ? {} : { onStderrLine: onProgress }),
+      }),
+    );
+  }
+
   async checkoutDetached(hash: string): Promise<void> {
     this.assertHash(hash);
     await this.runExclusive(() => this.run(['checkout', '--detach', sanitizeRefArg(hash)]));
@@ -1182,6 +1259,12 @@ export class GitRunner {
     assertValidBranchName(name, () => {
       throw new GitError({ code: 'VALIDATION_ERROR', message: `Invalid branch name: ${name}` });
     });
+  }
+
+  private assertTagName(name: string): void {
+    if (!validateTagName(name)) {
+      throw new GitError({ code: 'VALIDATION_ERROR', message: `Invalid tag name: ${name}` });
+    }
   }
 
   private assertHash(hash: string): void {

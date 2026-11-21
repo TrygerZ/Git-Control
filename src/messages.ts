@@ -282,7 +282,11 @@ export type GitActionRequest =
       remote?: string;
       /** Set when the pull request comes from a fork, so the host refuses a later push from that branch. */
       readOnly?: boolean;
-    };
+    }
+  /** Create an annotated or lightweight local tag at a validated branch or commit target. */
+  | { action: 'tag-create'; name: string; target: string; message?: string; annotated?: boolean }
+  /** Push a single tag via explicit `refs/tags/<name>:refs/tags/<name>` refspec without force. */
+  | { action: 'tag-push'; remote: string; name: string };
 
 // ---------------------------------------------------------------- payloads
 
@@ -1174,6 +1178,38 @@ export interface PrReviewersResult {
   available: boolean;
 }
 
+// ------------------------------------------------------ tags and releases (P28)
+
+export interface ReleaseNotesPayload {
+  owner: string;
+  repo: string;
+  tag: string;
+  previousTag?: string;
+  target?: string;
+}
+
+export interface ReleaseNotesResult {
+  name: string;
+  body: string;
+  rateLimit: GitHubRateLimit;
+}
+
+export interface CreateReleasePayload extends GitHubMutationMeta {
+  owner: string;
+  repo: string;
+  tag: string;
+  name: string;
+  body: string;
+  prerelease: boolean;
+  /** Branch name or full commit hash, sent as GitHub's `target_commitish`. */
+  target: string;
+}
+
+export interface CreateReleaseResult {
+  id: number;
+  htmlUrl: string;
+}
+
 export interface CommitAuthorInfo {
   hash: string;
   login: string | null;
@@ -1401,6 +1437,10 @@ export interface RequestMap {
   'github/workflowInputs': { payload: WorkflowInputsPayload; response: WorkflowInputsResult };
   /** Dispatch a workflow run on GitHub (`workflow_dispatch`). Level 1 confirmation. */
   'github/dispatchWorkflow': { payload: DispatchWorkflowPayload; response: DispatchWorkflowResult };
+  /** Generate release notes from GitHub for a tag. Read-like, never cached. */
+  'github/releaseNotes': { payload: ReleaseNotesPayload; response: ReleaseNotesResult };
+  /** Publish a GitHub release for a pushed tag. Level 1 confirmation. */
+  'github/createRelease': { payload: CreateReleasePayload; response: CreateReleaseResult };
   'settings/get': { payload: SettingsGetPayload; response: SettingsSnapshot };
   'settings/set': { payload: SettingsSetPayload; response: SettingsSnapshot };
   /**

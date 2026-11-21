@@ -30,6 +30,8 @@ import {
   validateRerunFailedPayload,
   validateWorkflowInputsPayload,
   validateDispatchWorkflowPayload,
+  validateReleaseNotesPayload,
+  validateCreateReleasePayload,
   GITHUB_MUTATION_KINDS,
   MUTATION_KINDS,
   type Outcome,
@@ -979,4 +981,113 @@ test('P27: validateRerunFailedPayload, validateWorkflowInputsPayload, and valida
   const eleven: Record<string, string> = {};
   for (let i = 0; i < 11; i += 1) eleven[`k_${i}`] = 'v';
   assert.equal(detailOf(() => validateDispatchWorkflowPayload({ ...dispatchBase, inputs: eleven }, invalid)), 'inputs');
+});
+
+/** P28: tag actions and release request payload validation + idempotency registration. */
+test('validateAction covers tag-create and tag-push', () => {
+  const fail = (detail: string): never => {
+    throw new Error(`failed:${detail}`);
+  };
+
+  assert.doesNotThrow(() =>
+    validateAction(
+      { action: 'tag-create', name: 'v2.8.0', target: 'main', message: 'Release v2.8.0', annotated: true, idempotencyKey: 'tc-1' },
+      fail,
+    ),
+  );
+  assert.doesNotThrow(() =>
+    validateAction(
+      { action: 'tag-create', name: 'v2.8.0', target: 'a'.repeat(40), annotated: false, idempotencyKey: 'tc-2' },
+      fail,
+    ),
+  );
+  assert.doesNotThrow(() =>
+    validateAction({ action: 'tag-push', remote: 'origin', name: 'v2.8.0', idempotencyKey: 'tp-1' }, fail),
+  );
+
+  assert.throws(
+    () => validateAction({ action: 'tag-create', name: '-f', target: 'main', idempotencyKey: 'tc-3' }, fail),
+    /failed:name/,
+  );
+  assert.throws(
+    () => validateAction({ action: 'tag-create', name: 'v2.8.0', target: '-bad', idempotencyKey: 'tc-4' }, fail),
+    /failed:target/,
+  );
+  assert.throws(
+    () =>
+      validateAction(
+        { action: 'tag-create', name: 'v2.8.0', target: 'main', message: 'x'.repeat(2001), idempotencyKey: 'tc-5' },
+        fail,
+      ),
+    /failed:message/,
+  );
+  assert.throws(
+    () =>
+      validateAction(
+        {
+          action: 'tag-create',
+          name: 'v2.8.0',
+          target: 'main',
+          annotated: 'yes' as unknown as boolean,
+          idempotencyKey: 'tc-6',
+        },
+        fail,
+      ),
+    /failed:annotated/,
+  );
+  assert.throws(
+    () => validateAction({ action: 'tag-push', remote: '-origin', name: 'v2.8.0', idempotencyKey: 'tp-2' }, fail),
+    /failed:remote/,
+  );
+  assert.throws(
+    () => validateAction({ action: 'tag-push', remote: 'origin', name: '+v2.8.0', idempotencyKey: 'tp-3' }, fail),
+    /failed:name/,
+  );
+});
+
+test('validateReleaseNotesPayload, validateCreateReleasePayload, and GITHUB_MUTATION_KINDS cover P28', () => {
+  assert.equal(GITHUB_MUTATION_KINDS.has('github/createRelease'), true);
+  assert.equal(GITHUB_MUTATION_KINDS.has('github/releaseNotes'), false);
+
+  const invalid = (detail: string): never => {
+    throw new Error(detail);
+  };
+  const detailOf = (fn: () => void): string => {
+    try {
+      fn();
+      return 'accepted';
+    } catch (err) {
+      return (err as Error).message;
+    }
+  };
+
+  const notesBase = { owner: 'o', repo: 'r', tag: 'v2.8.0', previousTag: 'v2.7.0', target: 'main' };
+  assert.equal(detailOf(() => validateReleaseNotesPayload(notesBase, invalid)), 'accepted');
+  assert.equal(detailOf(() => validateReleaseNotesPayload({ owner: 'o', repo: 'r', tag: 'v2.8.0' }, invalid)), 'accepted');
+  assert.equal(detailOf(() => validateReleaseNotesPayload({ ...notesBase, extra: 1 }, invalid)), 'payload');
+  assert.equal(detailOf(() => validateReleaseNotesPayload({ ...notesBase, owner: '../o' }, invalid)), 'owner/repo');
+  assert.equal(detailOf(() => validateReleaseNotesPayload({ ...notesBase, tag: '-bad' }, invalid)), 'tag');
+  assert.equal(detailOf(() => validateReleaseNotesPayload({ ...notesBase, previousTag: 'a..b' }, invalid)), 'previousTag');
+  assert.equal(detailOf(() => validateReleaseNotesPayload({ ...notesBase, target: '-bad' }, invalid)), 'target');
+
+  const releaseBase = {
+    owner: 'o',
+    repo: 'r',
+    tag: 'v2.8.0',
+    name: 'v2.8.0',
+    body: '## Notes\n- Added tags',
+    prerelease: false,
+    target: 'a'.repeat(40),
+    idempotencyKey: 'rel-1',
+    confirm: true,
+  };
+  assert.equal(detailOf(() => validateCreateReleasePayload(releaseBase, invalid)), 'accepted');
+  assert.equal(detailOf(() => validateCreateReleasePayload({ ...releaseBase, target: 'main' }, invalid)), 'accepted');
+  assert.equal(detailOf(() => validateCreateReleasePayload({ ...releaseBase, extra: 1 }, invalid)), 'payload');
+  assert.equal(detailOf(() => validateCreateReleasePayload({ ...releaseBase, owner: '' }, invalid)), 'owner/repo');
+  assert.equal(detailOf(() => validateCreateReleasePayload({ ...releaseBase, tag: 'HEAD' }, invalid)), 'tag');
+  assert.equal(detailOf(() => validateCreateReleasePayload({ ...releaseBase, name: '   ' }, invalid)), 'name');
+  assert.equal(detailOf(() => validateCreateReleasePayload({ ...releaseBase, body: 'a\u0000b' }, invalid)), 'body');
+  assert.equal(detailOf(() => validateCreateReleasePayload({ ...releaseBase, prerelease: 'no' }, invalid)), 'prerelease');
+  assert.equal(detailOf(() => validateCreateReleasePayload({ ...releaseBase, target: '-bad' }, invalid)), 'target');
 });

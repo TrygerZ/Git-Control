@@ -16,6 +16,7 @@ const en = {
     branchDeleteCurrent: 'You cannot delete the branch you are on.',
     branchDeleteRemote: 'Removes the branch from the remote for everyone.',
     forkReadOnly: 'This is a fork pull request. It is read-only here.',
+    tagExists: 'A tag with this name already exists.',
     confirm: 'This action requires confirmation.',
   },
   bridge: {
@@ -72,6 +73,7 @@ const en = {
     noDispatchTrigger: 'This workflow has no workflow_dispatch trigger.',
     inputsNeededOnGitHub: 'GitHub needs inputs for this workflow. Set them on GitHub.',
     workflowMissingScope: 'Your token cannot run workflows. Reconnect with workflow access.',
+    releaseExists: 'A release already exists for this tag.',
   },
   quickActions: {
     placeholder: 'Type what you want to do',
@@ -146,6 +148,7 @@ const id: HostCatalog = {
     branchDeleteCurrent: 'Anda tidak dapat menghapus branch yang sedang aktif.',
     branchDeleteRemote: 'Menghapus branch dari remote untuk semua orang.',
     forkReadOnly: 'Ini pull request dari fork. Hanya baca di sini.',
+    tagExists: 'Tag dengan nama ini sudah ada.',
     confirm: 'Tindakan ini perlu konfirmasi.',
   },
   bridge: {
@@ -202,6 +205,7 @@ const id: HostCatalog = {
     noDispatchTrigger: 'Workflow ini tidak punya pemicu workflow_dispatch.',
     inputsNeededOnGitHub: 'GitHub membutuhkan input untuk workflow ini. Isi di GitHub.',
     workflowMissingScope: 'Token kamu tidak bisa menjalankan workflow. Sambungkan ulang dengan akses workflow.',
+    releaseExists: 'Rilis untuk tag ini sudah ada.',
   },
   quickActions: {
     placeholder: 'Ketik tindakan yang diinginkan',

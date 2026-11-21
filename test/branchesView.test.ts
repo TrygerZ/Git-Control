@@ -74,7 +74,7 @@ test('the controls owned by later phases are absent', () => {
   // Checked against the rendered strings and the action payloads, not the
   // component's prose, so a comment naming a deferred control is not a failure.
   const src = code('src/webview/BranchesView.tsx');
-  for (const forbidden of ['newTag', 'addWorktree', 'compareRange']) {
+  for (const forbidden of ['addWorktree', 'compareRange']) {
     assert.doesNotMatch(src, new RegExp(forbidden), forbidden);
   }
   const actions = [...src.matchAll(/action:\s*'([a-z-]+)'/g)].map((m) => m[1]);

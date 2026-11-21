@@ -17,11 +17,15 @@ import {
   validateLabelList,
   validateMergeMethod,
   validatePullRequestNumber,
+  validateReleaseBody,
+  validateReleaseTitle,
   validateRemoteName,
   validateRepoRelativePath,
   validateReviewEvent,
   validateRunId,
   validateStashIndex,
+  validateTagMessage,
+  validateTagName,
   validateWorkflowId,
 } from './validation';
 
@@ -31,7 +35,8 @@ export const MUTATION_KINDS = new Set<string>(['actions/stage', 'actions/commit'
  * GitHub mutations. P22 registered the first one; P25 adds the four PR writes
  * (merge, close, review, reply); P26 adds the three issue writes (comment,
  * state toggle, create); P27 adds the two Actions writes (rerunFailedJobs,
- * dispatchWorkflow) so `idempotencyKeyOf` keeps a single place to consult.
+ * dispatchWorkflow); P28 adds release creation (`github/createRelease`) so
+ * `idempotencyKeyOf` keeps a single place to consult.
  */
 export const GITHUB_MUTATION_KINDS = new Set<string>([
   'github/createPullRequest',
@@ -44,6 +49,7 @@ export const GITHUB_MUTATION_KINDS = new Set<string>([
   'github/createIssue',
   'github/rerunFailedJobs',
   'github/dispatchWorkflow',
+  'github/createRelease',
 ]);
 const RETRYABLE_CODES = new Set<ErrorCode>([
   'CONFIRMATION_REQUIRED',
@@ -116,6 +122,16 @@ export function validateAction(action: GitActionPayload, fail: (detail: string) 
       if (!validatePullRequestNumber(action.number)) fail('number');
       if (action.remote !== undefined && !validateRemoteName(action.remote)) fail('remote');
       if (action.readOnly !== undefined && typeof action.readOnly !== 'boolean') fail('readOnly');
+      return;
+    case 'tag-create':
+      if (!validateTagName(action.name)) fail('name');
+      if (!validateHash(action.target) && !validateBranchName(action.target)) fail('target');
+      if (action.message !== undefined && !validateTagMessage(action.message)) fail('message');
+      if (action.annotated !== undefined && typeof action.annotated !== 'boolean') fail('annotated');
+      return;
+    case 'tag-push':
+      if (!validateRemoteName(action.remote)) fail('remote');
+      if (!validateTagName(action.name) || action.name.startsWith('+')) fail('name');
       return;
     default: fail('action');
   }
@@ -515,4 +531,55 @@ export function validateDispatchWorkflowPayload(
   if (!validateWorkflowId(payload.workflowId)) fail('workflowId');
   if (!validateBranchName(payload.ref)) fail('ref');
   if (payload.inputs !== undefined && !validateDispatchInputs(payload.inputs)) fail('inputs');
+}
+
+/** `github/releaseNotes`: owner, repo, tag, and optional previous tag or target ref. */
+export function validateReleaseNotesPayload(
+  payload: { owner: unknown; repo: unknown; tag: unknown; previousTag?: unknown; target?: unknown } & Record<string, unknown>,
+  fail: (detail: string) => never,
+): void {
+  if (!onlyKeys(payload, ['owner', 'repo', 'tag', 'previousTag', 'target'])) fail('payload');
+  if (!isSlug(payload.owner) || !isSlug(payload.repo)) fail('owner/repo');
+  if (!validateTagName(payload.tag)) fail('tag');
+  if (payload.previousTag !== undefined && !validateTagName(payload.previousTag)) fail('previousTag');
+  if (payload.target !== undefined && !validateHash(payload.target) && !validateBranchName(payload.target)) {
+    fail('target');
+  }
+}
+
+/** `github/createRelease`: owner, repo, tag, title, notes body, prerelease flag, target, and confirm metadata. */
+export function validateCreateReleasePayload(
+  payload: {
+    owner: unknown;
+    repo: unknown;
+    tag: unknown;
+    name: unknown;
+    body: unknown;
+    prerelease: unknown;
+    target: unknown;
+  } & Record<string, unknown>,
+  fail: (detail: string) => never,
+): void {
+  if (
+    !onlyKeys(payload, [
+      'owner',
+      'repo',
+      'tag',
+      'name',
+      'body',
+      'prerelease',
+      'target',
+      'idempotencyKey',
+      'confirm',
+      'forceAcknowledgement',
+    ])
+  ) {
+    fail('payload');
+  }
+  if (!isSlug(payload.owner) || !isSlug(payload.repo)) fail('owner/repo');
+  if (!validateTagName(payload.tag)) fail('tag');
+  if (!validateReleaseTitle(payload.name)) fail('name');
+  if (!validateReleaseBody(payload.body)) fail('body');
+  if (typeof payload.prerelease !== 'boolean') fail('prerelease');
+  if (!validateHash(payload.target) && !validateBranchName(payload.target)) fail('target');
 }

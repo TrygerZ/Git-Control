@@ -655,3 +655,54 @@ test('a dirty tree does not block either delete, and the snapshot branch is hono
   if (detached.allow) return;
   assert.equal(detached.confirmationLevel, 1, 'a confirmation, not a refusal');
 });
+
+// ------------------------------------------------- P28 tag-create and tag-push
+
+test('tag-create is blocked during in-progress operation and when tagExists, allowed on dirty tree', () => {
+  const inMerge = verdict({ action: 'tag-create', name: 'v2.0.0', target: 'main' }, { operation: 'merge' });
+  assert.equal(inMerge.allow, false);
+  if (!inMerge.allow) assert.equal(inMerge.code, 'CONFLICT');
+
+  const dup = verdict({ action: 'tag-create', name: 'v1.0.0', target: 'main' }, { tagExists: true });
+  assert.equal(dup.allow, false);
+  if (!dup.allow) {
+    assert.equal(dup.code, 'VALIDATION_ERROR');
+    assert.deepEqual(dup.remedies, ['cancel']);
+  }
+
+  // Dirty working tree does not block creating a tag
+  assert.deepEqual(
+    verdict({ action: 'tag-create', name: 'v2.0.0', target: 'main' }, { dirty: true, staged: true, tagExists: false }),
+    { allow: true },
+  );
+});
+
+test('tag-push enforces in-progress, stale, behind, and level 1 confirmation', () => {
+  const inMerge = verdict({ action: 'tag-push', remote: 'origin', name: 'v2.0.0' }, { operation: 'rebase' });
+  assert.equal(inMerge.allow, false);
+  if (!inMerge.allow) assert.equal(inMerge.code, 'CONFLICT');
+
+  const stale = verdict({ action: 'tag-push', remote: 'origin', name: 'v2.0.0' }, { lastFetchAt: null });
+  assert.equal(stale.allow, false);
+  if (!stale.allow) {
+    assert.equal(stale.code, 'STALE_STATUS');
+    assert.deepEqual(stale.remedies, ['fetch']);
+  }
+
+  const behind = verdict({ action: 'tag-push', remote: 'origin', name: 'v2.0.0' }, { behind: 2 });
+  assert.equal(behind.allow, false);
+  if (!behind.allow) {
+    assert.equal(behind.code, 'REMOTE_AHEAD');
+    assert.deepEqual(behind.remedies, ['fetch']);
+  }
+
+  const fresh = verdict({ action: 'tag-push', remote: 'origin', name: 'v2.0.0' }, { dirty: true });
+  assert.equal(fresh.allow, false);
+  if (!fresh.allow) {
+    assert.equal(fresh.code, 'CONFIRMATION_REQUIRED');
+    assert.equal(fresh.requiresConfirmation, true);
+    assert.equal(fresh.confirmationLevel, 1);
+    assert.equal(fresh.risk, 'medium');
+    assert.deepEqual(fresh.remedies, ['confirm', 'cancel']);
+  }
+});

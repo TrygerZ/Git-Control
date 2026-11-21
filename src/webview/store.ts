@@ -10,7 +10,7 @@
  *     the host's own 500 ms watcher debounce
  */
 import { create } from 'zustand';
-import { BridgeRequestError, bridge, fetchContributorIdentity, fetchContributors, isBridgeError, loadState, mutation, saveState } from './bridge';
+import { BridgeRequestError, bridge, fetchContributorIdentity, fetchContributors, isBridgeError, loadState, mutation, newId, saveState } from './bridge';
 import { unknownErrorBody } from '../errorBody';
 import { hostText } from '../hostText';
 import { amendBlockedReason, joinCommitMessage, linkageChangedRepo, sanitizeGitText } from './format';
@@ -3352,3 +3352,363 @@ export function wireHostEvents(mode: 'explorer' | 'pending' | 'pr'): () => void 
 
 /** Re-export so components do not import the bridge module directly. */
 export { BridgeRequestError };
+
+// ------------------------------------------------------ release dialog (P28)
+
+import { defaultTitle, type ReleaseForm } from '../releasePlan';
+
+export type ReleasePhase = 'idle' | 'tagging' | 'pushing' | 'releasing' | 'done' | 'failed';
+export type ReleaseStepStatus = 'pending' | 'active' | 'done' | 'failed' | 'skipped';
+
+export interface ReleaseSteps {
+  tag: ReleaseStepStatus;
+  push: ReleaseStepStatus;
+  release: ReleaseStepStatus;
+}
+
+export interface ReleaseState {
+  open: boolean;
+  form: ReleaseForm;
+  generating: boolean;
+  notesError: string | null;
+  phase: ReleasePhase;
+  steps: ReleaseSteps;
+  error: string | null;
+  failedStep: 'tag' | 'push' | 'release' | null;
+  createdUrl: string | null;
+  mode: 'tag' | 'release' | null;
+  canFetch: boolean;
+  fetching: boolean;
+  openDialog(initial?: Partial<ReleaseForm>): void;
+  closeDialog(): void;
+  setField<K extends keyof ReleaseForm>(key: K, value: ReleaseForm[K]): void;
+  generateNotes(owner: string, repo: string, previousTagName?: string): Promise<void>;
+  fetchRemote(): Promise<void>;
+  submit(mode: 'tag' | 'release', owner?: string, repo?: string): Promise<void>;
+  reset(): void;
+}
+
+const EMPTY_RELEASE_FORM: ReleaseForm = {
+  tag: '',
+  target: 'main',
+  title: '',
+  notes: '',
+  annotated: true,
+  prerelease: false,
+  remote: 'origin',
+};
+
+const INITIAL_RELEASE_STEPS: ReleaseSteps = {
+  tag: 'pending',
+  push: 'pending',
+  release: 'pending',
+};
+
+let releaseRunKey = newId();
+let tagAttempt = 0;
+let pushAttempt = 0;
+let releaseAttempt = 0;
+let notesSession = 0;
+
+export const useReleaseStore = create<ReleaseState>((set, get) => ({
+  open: false,
+  form: { ...EMPTY_RELEASE_FORM },
+  generating: false,
+  notesError: null,
+  phase: 'idle',
+  steps: { ...INITIAL_RELEASE_STEPS },
+  error: null,
+  failedStep: null,
+  createdUrl: null,
+  mode: null,
+  canFetch: false,
+  fetching: false,
+  openDialog(initial) {
+    releaseRunKey = newId();
+    tagAttempt = 0;
+    pushAttempt = 0;
+    releaseAttempt = 0;
+    notesSession += 1;
+    set({
+      open: true,
+      form: { ...EMPTY_RELEASE_FORM, ...initial },
+      generating: false,
+      notesError: null,
+      phase: 'idle',
+      steps: { ...INITIAL_RELEASE_STEPS },
+      error: null,
+      failedStep: null,
+      createdUrl: null,
+      mode: null,
+      canFetch: false,
+      fetching: false,
+    });
+  },
+  closeDialog() {
+    const { phase, fetching } = get();
+    if (phase === 'tagging' || phase === 'pushing' || phase === 'releasing' || fetching) return;
+    notesSession += 1;
+    set({ open: false, generating: false });
+  },
+  setField(key, value) {
+    const prev = get();
+    const tagChanged = key === 'tag';
+    if (tagChanged) {
+      notesSession += 1;
+    }
+    const resetAfterTagChange = tagChanged && (prev.phase === 'failed' || prev.phase === 'done');
+    if (resetAfterTagChange) {
+      releaseRunKey = newId();
+      tagAttempt = 0;
+      pushAttempt = 0;
+      releaseAttempt = 0;
+    }
+    set({
+      form: { ...prev.form, [key]: value },
+      error: null,
+      ...(tagChanged ? { generating: false } : {}),
+      ...(resetAfterTagChange
+        ? {
+            phase: 'idle' as const,
+            steps: { ...INITIAL_RELEASE_STEPS },
+            failedStep: null,
+            createdUrl: null,
+            canFetch: false,
+            fetching: false,
+          }
+        : {}),
+    });
+  },
+  async generateNotes(owner, repo, previousTagName) {
+    if (get().generating) return;
+    const session = notesSession;
+    set({ generating: true, notesError: null });
+    try {
+      const { form } = get();
+      const res = await bridge.request('github/releaseNotes', {
+        owner,
+        repo,
+        tag: form.tag,
+        ...(previousTagName !== undefined && previousTagName.length > 0 ? { previousTag: previousTagName } : {}),
+        ...(form.target.length > 0 ? { target: form.target } : {}),
+      });
+      if (session !== notesSession) return;
+      set((state) => {
+        const trimmedTitle = state.form.title.trim();
+        const shouldFillTitle = trimmedTitle === '' || state.form.title === state.form.tag;
+        const firstLine = res.body.split('\n')[0] ?? null;
+        const nextTitle = shouldFillTitle
+          ? res.name || defaultTitle(state.form.tag, firstLine)
+          : state.form.title;
+        return {
+          generating: false,
+          notesError: null,
+          form: {
+            ...state.form,
+            notes: res.body,
+            title: nextTitle,
+          },
+        };
+      });
+    } catch (err) {
+      if (session !== notesSession) return;
+      const body = toErrorBody(err);
+      const message = body.message.length > 0 ? body.message : t(activeLang()).release.notesFailed;
+      set({ generating: false, notesError: message });
+    }
+  },
+  async fetchRemote() {
+    const cur = get();
+    const remote = cur.form.remote.trim();
+    if (cur.fetching || remote.length === 0) return;
+    set({ fetching: true, error: null });
+    try {
+      await bridge.request('actions/git', {
+        action: 'fetch',
+        remote,
+        idempotencyKey: `${releaseRunKey}:fetch:${newId()}`,
+      });
+      set({ fetching: false, canFetch: false });
+    } catch (err) {
+      const body = toErrorBody(err);
+      set({ fetching: false, error: body.message });
+    }
+  },
+  async submit(mode, owner, repo) {
+    const start = get();
+    if (
+      start.phase === 'tagging' ||
+      start.phase === 'pushing' ||
+      start.phase === 'releasing' ||
+      start.fetching
+    ) {
+      return;
+    }
+
+    if (start.steps.tag !== 'done') {
+      set((s) => ({
+        phase: 'tagging',
+        mode,
+        error: null,
+        failedStep: null,
+        canFetch: false,
+        steps: { ...s.steps, tag: 'active' },
+      }));
+      try {
+        const form = get().form;
+        await bridge.request('actions/git', {
+          action: 'tag-create',
+          name: form.tag,
+          target: form.target,
+          ...(form.annotated ? { annotated: true, message: form.title.trim() || form.tag } : { annotated: false }),
+          idempotencyKey: `${releaseRunKey}:tag:${tagAttempt}`,
+        });
+        set((s) => ({ steps: { ...s.steps, tag: 'done' } }));
+        void useBranchesStore.getState().load();
+      } catch (err) {
+        tagAttempt += 1;
+        const body = toErrorBody(err);
+        const msg =
+          body.code === 'VALIDATION_ERROR' && body.detail === 'name'
+            ? t(activeLang()).release.tagExists(get().form.tag)
+            : body.message;
+        set((s) => ({
+          phase: 'failed',
+          failedStep: 'tag',
+          error: msg,
+          canFetch: false,
+          steps: { ...s.steps, tag: 'failed' },
+        }));
+        return;
+      }
+    }
+
+    if (get().steps.push !== 'done') {
+      const remote = get().form.remote.trim();
+      if (remote.length === 0) {
+        set((s) => ({ steps: { ...s.steps, push: 'skipped' } }));
+      } else {
+        set((s) => ({
+          phase: 'pushing',
+          mode,
+          error: null,
+          failedStep: null,
+          canFetch: false,
+          steps: { ...s.steps, push: 'active' },
+        }));
+        try {
+          await bridge.request('actions/git', {
+            action: 'tag-push',
+            remote,
+            name: get().form.tag,
+            confirm: true,
+            idempotencyKey: `${releaseRunKey}:push:${pushAttempt}`,
+          });
+          set((s) => ({ steps: { ...s.steps, push: 'done' } }));
+        } catch (err) {
+          pushAttempt += 1;
+          const body = toErrorBody(err);
+          const rawText = `${body.message} ${body.detail ?? ''}`;
+          const msg = /already exists|Updates were rejected|non-fast-forward/i.test(rawText)
+            ? t(activeLang()).release.remoteTagDiffers
+            : body.message;
+          const needsFetch = body.code === 'STALE_STATUS' || body.code === 'REMOTE_AHEAD';
+          set((s) => ({
+            phase: 'failed',
+            failedStep: 'push',
+            error: msg,
+            canFetch: needsFetch,
+            steps: { ...s.steps, push: 'failed' },
+          }));
+          return;
+        }
+      }
+    }
+
+    if (mode === 'tag') {
+      set((s) => ({
+        phase: 'done',
+        mode,
+        error: null,
+        failedStep: null,
+        canFetch: false,
+        steps: { ...s.steps, release: 'skipped' },
+      }));
+      return;
+    }
+
+    if (!owner || !repo) {
+      releaseAttempt += 1;
+      set((s) => ({
+        phase: 'failed',
+        mode,
+        failedStep: 'release',
+        error: t(activeLang()).release.notConnected,
+        canFetch: false,
+        steps: { ...s.steps, release: 'failed' },
+      }));
+      return;
+    }
+
+    set((s) => ({
+      phase: 'releasing',
+      mode,
+      error: null,
+      failedStep: null,
+      canFetch: false,
+      steps: { ...s.steps, release: 'active' },
+    }));
+    try {
+      const form = get().form;
+      const res = await bridge.request('github/createRelease', {
+        owner,
+        repo,
+        tag: form.tag,
+        name: form.title,
+        body: form.notes,
+        prerelease: form.prerelease,
+        target: form.target,
+        confirm: true,
+        idempotencyKey: `${releaseRunKey}:release:${releaseAttempt}`,
+      });
+      set((s) => ({
+        phase: 'done',
+        createdUrl: res.htmlUrl,
+        canFetch: false,
+        steps: { ...s.steps, release: 'done' },
+      }));
+    } catch (err) {
+      releaseAttempt += 1;
+      const body = toErrorBody(err);
+      const msg = body.code === 'FORBIDDEN' ? t(activeLang()).release.needScope : body.message;
+      set((s) => ({
+        phase: 'failed',
+        failedStep: 'release',
+        error: msg,
+        canFetch: false,
+        steps: { ...s.steps, release: 'failed' },
+      }));
+    }
+  },
+  reset() {
+    releaseRunKey = newId();
+    tagAttempt = 0;
+    pushAttempt = 0;
+    releaseAttempt = 0;
+    notesSession += 1;
+    set({
+      open: false,
+      form: { ...EMPTY_RELEASE_FORM },
+      generating: false,
+      notesError: null,
+      phase: 'idle',
+      steps: { ...INITIAL_RELEASE_STEPS },
+      error: null,
+      failedStep: null,
+      createdUrl: null,
+      mode: null,
+      canFetch: false,
+      fetching: false,
+    });
+  },
+}));

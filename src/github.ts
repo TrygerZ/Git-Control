@@ -1287,6 +1287,85 @@ export class GitHubClient {
   }
 
   /**
+   * Generate suggested release title and markdown notes via GitHub's
+   * `/releases/generate-notes` endpoint. Uses `mutate` for a single uncached
+   * POST without retries.
+   */
+  async generateReleaseNotes(
+    owner: string,
+    repo: string,
+    input: { tag: string; previousTag?: string; target?: string },
+  ): Promise<{ data: { name: string; body: string }; rateLimit: GitHubRateLimit }> {
+    return this.mutate<{ name: string; body: string }>({
+      method: 'POST',
+      path: `/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/releases/generate-notes`,
+      body: {
+        tag_name: input.tag,
+        ...(input.previousTag !== undefined ? { previous_tag_name: input.previousTag } : {}),
+        ...(input.target !== undefined ? { target_commitish: input.target } : {}),
+      },
+      invalidate: [],
+      map: (raw) => {
+        const json = (raw && typeof raw === 'object' ? raw : {}) as { name?: unknown; body?: unknown };
+        return {
+          name: typeof json.name === 'string' ? json.name : '',
+          body: typeof json.body === 'string' ? json.body : '',
+        };
+      },
+    });
+  }
+
+  /**
+   * Create a published GitHub release for an existing tag. Never sets `draft`
+   * or uploads release assets, and makes exactly one POST attempt via `mutate`.
+   */
+  async createRelease(
+    owner: string,
+    repo: string,
+    input: { tag: string; name: string; body: string; prerelease: boolean; target: string },
+  ): Promise<{ data: { id: number; htmlUrl: string }; rateLimit: GitHubRateLimit }> {
+    return this.mutate<{ id: number; htmlUrl: string }>({
+      method: 'POST',
+      path: `/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/releases`,
+      body: {
+        tag_name: input.tag,
+        name: input.name,
+        body: input.body,
+        prerelease: input.prerelease,
+        target_commitish: input.target,
+        draft: false,
+        generate_release_notes: false,
+      },
+      invalidate: ['releases:'],
+      invalid: (raw) => {
+        const detail = errorMessages(raw).join('; ');
+        const detailField = detail.length === 0 ? {} : { detail };
+        if (hasErrorCode(raw, 'already_exists')) {
+          return new GitHubError({
+            status: 422,
+            code: 'VALIDATION_ERROR',
+            message: this.text().releaseExists,
+            ...detailField,
+          });
+        }
+        return new GitHubError({
+          status: 422,
+          code: 'VALIDATION_ERROR',
+          message: this.text().invalidWrite,
+          ...detailField,
+        });
+      },
+      map: (raw) => {
+        const json = (raw && typeof raw === 'object' ? raw : {}) as { id?: unknown; html_url?: unknown };
+        return {
+          id: safeInt(json.id),
+          htmlUrl: httpsUrl(json.html_url),
+        };
+      },
+    });
+  }
+
+  /**
    * Commit authors and avatars for a batch of commit hashes.
    *
    * Queries `GET /repos/{owner}/{repo}/commits/{sha}` per unique hash. Cached per-hash
@@ -2848,6 +2927,13 @@ function errorMessages(body: unknown): string[] {
     .filter((m): m is string => typeof m === 'string')
     .map((m) => redact(m.replace(CONTROL_AND_BIDI_CHARS, '').trim()))
     .filter((m) => m.length > 0);
+}
+
+/** True when a GitHub 422 `errors[]` item carries the given machine code. */
+function hasErrorCode(body: unknown, code: string): boolean {
+  const errors = (body as { errors?: unknown } | null)?.errors;
+  if (!Array.isArray(errors)) return false;
+  return errors.some((e) => (e as { code?: unknown } | null)?.code === code);
 }
 
 /** The top-level `message` from an error body. Refusals put the sentence here. */

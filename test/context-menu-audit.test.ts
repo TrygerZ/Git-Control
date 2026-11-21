@@ -72,6 +72,8 @@ const VALID_ACTIONS: Record<GitActionRequest['action'], GitActionRequest> = {
   'branch-delete': { action: 'branch-delete', branch: 'feature' },
   'branch-delete-remote': { action: 'branch-delete-remote', remote: 'origin', branch: 'feature' },
   'checkout-pr': { action: 'checkout-pr', number: 150, remote: 'origin' },
+  'tag-create': { action: 'tag-create', name: 'v1.0.0', target: 'main', message: 'Release v1.0.0', annotated: true },
+  'tag-push': { action: 'tag-push', remote: 'origin', name: 'v1.0.0' },
 };
 
 const INVALID_ACTIONS: Record<GitActionRequest['action'], GitActionRequest> = {
@@ -101,6 +103,8 @@ const INVALID_ACTIONS: Record<GitActionRequest['action'], GitActionRequest> = {
   'branch-delete': { action: 'branch-delete', branch: '-bad' },
   'branch-delete-remote': { action: 'branch-delete-remote', remote: '-bad', branch: 'main' },
   'checkout-pr': { action: 'checkout-pr', number: 0 },
+  'tag-create': { action: 'tag-create', name: '-bad', target: 'main' },
+  'tag-push': { action: 'tag-push', remote: '-bad', name: 'v1.0.0' },
 };
 
 test('validateAction accepts every union member and rejects every invalid table row', async (t) => {

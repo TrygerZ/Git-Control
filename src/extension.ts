@@ -57,6 +57,8 @@ import type {
   CreateIssuePayload,
   CreatePullRequestPayload,
   CreatePullRequestResult,
+  CreateReleasePayload,
+  CreateReleaseResult,
   DispatchWorkflowPayload,
   DispatchWorkflowResult,
   FocusTarget,
@@ -85,6 +87,8 @@ import type {
   PullRequestsChangedEvent,
   PullRequestsPayload,
   PullRequestsResult,
+  ReleaseNotesPayload,
+  ReleaseNotesResult,
   RepoLabelsPayload,
   ReplyReviewPayload,
   RerunFailedPayload,
@@ -1007,6 +1011,8 @@ class Controller implements vscode.Disposable {
       githubRerunFailed: (payload) => this.githubRerunFailed(payload),
       githubWorkflowInputs: (payload) => this.githubWorkflowInputs(payload),
       githubDispatchWorkflow: (payload) => this.githubDispatchWorkflow(payload),
+      githubReleaseNotes: (payload) => this.githubReleaseNotes(payload),
+      githubCreateRelease: (payload) => this.githubCreateRelease(payload),
       githubCommitAuthors: (payload) => this.githubCommitAuthors(payload),
       githubContributorIdentity: (payload) => this.githubContributorIdentity(payload),
       githubPrPrepare: (payload) => this.githubPrPrepare(payload),
@@ -1575,6 +1581,30 @@ class Controller implements vscode.Disposable {
       ...(payload.inputs === undefined ? {} : { inputs: payload.inputs }),
     });
     this.logger.info('github/dispatchWorkflow', `POST workflows/${payload.workflowId}/dispatches`);
+    return result.data;
+  }
+
+  private async githubReleaseNotes(payload: ReleaseNotesPayload): Promise<ReleaseNotesResult> {
+    const { client } = await this.githubClient();
+    const result = await client.generateReleaseNotes(payload.owner, payload.repo, {
+      tag: payload.tag,
+      ...(payload.previousTag === undefined ? {} : { previousTag: payload.previousTag }),
+      ...(payload.target === undefined ? {} : { target: payload.target }),
+    });
+    this.logger.info('github/releaseNotes', `POST releases/generate-notes tag=${payload.tag}`);
+    return { name: result.data.name, body: result.data.body, rateLimit: result.rateLimit };
+  }
+
+  private async githubCreateRelease(payload: CreateReleasePayload): Promise<CreateReleaseResult> {
+    const { client } = await this.githubClient();
+    const result = await client.createRelease(payload.owner, payload.repo, {
+      tag: payload.tag,
+      name: payload.name,
+      body: payload.body,
+      prerelease: payload.prerelease,
+      target: payload.target,
+    });
+    this.logger.info('github/createRelease', `POST releases tag=${payload.tag}`);
     return result.data;
   }
 

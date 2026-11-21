@@ -4,6 +4,7 @@ import * as fs from 'node:fs/promises';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { GitError, GitRunner, MAX_STDERR_BYTES, resolveGitExecutable } from '../src/git';
+import { validateTagName } from '../src/validation';
 import { advanceRemote, advancePullRequest, cleanup, makeFixture, setPullRequestHead } from './repoFixture';
 
 /** Throwaway repository with one commit. Copied from a per-process template. */
@@ -1439,4 +1440,111 @@ test('hasObject answers for a commit that is here and one that is not', async (t
   assert.equal(await git.hasObject('0'.repeat(40)), false);
   await assert.rejects(() => git.hasObject('main'), /Invalid/);
   await assert.rejects(() => git.hasObject('a'.repeat(7)), /Invalid/);
+});
+
+// ------------------------------------------------- P28 tags and single-tag push
+
+test('createTag creates annotated and lightweight tags on the tags fixture and tagExists detects them', async (t) => {
+  const dir = await makeFixture('tags');
+  t.after(() => cleanup(dir));
+  const git = new GitRunner({ gitPath: 'git', cwd: dir });
+
+  assert.equal(await git.tagExists('v1.0.0'), true);
+  assert.equal(await git.tagExists('v1.1.0'), true);
+  assert.equal(await git.tagExists('v1.2.0'), false);
+
+  // Annotated tag at branch name
+  await git.createTag('v1.2.0', 'main', { message: 'Release v1.2.0' });
+  assert.equal(await git.tagExists('v1.2.0'), true);
+  assert.equal((await git.run(['cat-file', '-t', 'refs/tags/v1.2.0'])).stdout.trim(), 'tag');
+  const body = (await git.run(['tag', '-l', '--format=%(contents:subject)', 'v1.2.0'])).stdout.trim();
+  assert.equal(body, 'Release v1.2.0');
+
+  // Lightweight tag at commit hash
+  const head = (await git.headHash()) as string;
+  await git.createTag('v1.2.1', head);
+  assert.equal(await git.tagExists('v1.2.1'), true);
+  assert.equal((await git.run(['cat-file', '-t', 'refs/tags/v1.2.1'])).stdout.trim(), 'commit');
+
+  // Existing tag is never overwritten (no -f)
+  await assert.rejects(() => git.createTag('v1.2.0', 'main', { message: 'overwrite' }), (err: unknown) => {
+    assert.ok(err instanceof GitError);
+    return true;
+  });
+
+  // Invalid inputs rejected before git runs
+  await assert.rejects(() => git.createTag('-f', 'main'), (err: unknown) => {
+    assert.ok(err instanceof GitError && err.code === 'VALIDATION_ERROR');
+    return true;
+  });
+  await assert.rejects(() => git.createTag('v2.0.0', '-bad'), (err: unknown) => {
+    assert.ok(err instanceof GitError && err.code === 'VALIDATION_ERROR');
+    return true;
+  });
+  await assert.rejects(() => git.tagExists('-bad'), (err: unknown) => {
+    assert.ok(err instanceof GitError && err.code === 'VALIDATION_ERROR');
+    return true;
+  });
+});
+
+test('pushTag pushes one explicit refs/tags refspec and refuses force or conflicting remote tags', async (t) => {
+  const dir = await makeFixture('tags');
+  t.after(() => cleanup(dir));
+  const git = new GitRunner({ gitPath: 'git', cwd: dir });
+
+  const recordedArgs: string[][] = [];
+  const origRun = git.run.bind(git);
+  git.run = (args, opts) => {
+    recordedArgs.push([...args]);
+    return origRun(args, opts);
+  };
+
+  await git.createTag('v2.0.0', 'main', { message: 'v2.0.0' });
+  await git.pushTag('origin', 'v2.0.0');
+
+  const pushArgv = recordedArgs.find((a) => a[0] === 'push');
+  assert.ok(pushArgv !== undefined, 'push command recorded');
+  assert.deepEqual(pushArgv, ['push', '--', 'origin', 'refs/tags/v2.0.0:refs/tags/v2.0.0']);
+  assert.ok(!pushArgv.includes('--force') && !pushArgv.includes('--tags') && !pushArgv.includes('-f'));
+
+  // Verify tag arrived on bare origin
+  const lsRemote = (await git.run(['ls-remote', '--tags', 'origin', 'refs/tags/v2.0.0'])).stdout.trim();
+  assert.match(lsRemote, /refs\/tags\/v2\.0\.0$/);
+
+  // Pushing a different commit under an existing remote tag is rejected by git (no force)
+  const commits = await git.log({ limit: 3, all: false });
+  const olderHash = commits[commits.length - 1]!.hash;
+  await git.run(['tag', '-d', 'v2.0.0']);
+  await git.createTag('v2.0.0', olderHash, { message: 'different commit' });
+  await assert.rejects(() => git.pushTag('origin', 'v2.0.0'), (err: unknown) => {
+    assert.ok(err instanceof GitError);
+    return true;
+  });
+
+  // Leading + or invalid tag/remote rejected before spawning git
+  await assert.rejects(() => git.pushTag('origin', '+v2.0.0'), (err: unknown) => {
+    assert.ok(err instanceof GitError && err.code === 'VALIDATION_ERROR');
+    return true;
+  });
+  await assert.rejects(() => git.pushTag('-origin', 'v2.0.0'), (err: unknown) => {
+    assert.ok(err instanceof GitError && err.code === 'VALIDATION_ERROR');
+    return true;
+  });
+});
+
+test('validateTagName agrees with git check-ref-format on every rejected and accepted sample', async (t) => {
+  const dir = await makeFixture('tags');
+  t.after(() => cleanup(dir));
+  const git = new GitRunner({ gitPath: 'git', cwd: dir });
+
+  for (const name of ['v1.0.0', 'release/1.4', '1.0', 'v2.8.0-rc.1']) {
+    assert.equal(validateTagName(name), true, name);
+    const { code } = await git.run(['check-ref-format', `refs/tags/${name}`], { allowedExitCodes: [0, 1] });
+    assert.equal(code, 0, `git check-ref-format should accept ${name}`);
+  }
+  for (const name of ['a..b', 'a@{b}', 'a b', 'a~1', 'a^', 'a:b', 'a?', 'a*', 'a[', 'a\\', 'x.lock', '.x', 'x.']) {
+    assert.equal(validateTagName(name), false, name);
+    const { code } = await git.run(['check-ref-format', `refs/tags/${name}`], { allowedExitCodes: [0, 1] });
+    assert.notEqual(code, 0, `git check-ref-format should reject ${name}`);
+  }
 });
