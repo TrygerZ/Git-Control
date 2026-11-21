@@ -31,7 +31,8 @@ import { CHANGES_PANEL_ID, CHANGES_TABS_PREFIX, changesSubTabs, changesTabId } f
 import { changesSubOf, parseRoute } from './route';
 import { ToastRegion } from './Toast';
 import { bridge, loadState, saveState } from './bridge';
-import { baseName, filterStashes, formatCount, formatStashLabel, parseStashIndex, sanitizeGitText, shortHash, UNKNOWN_CHURN } from './format';
+import { baseName, filterStashes, formatCount, formatStashLabel, formatStashMeta, parseStashIndex, sanitizeGitText, shortHash, UNKNOWN_CHURN } from './format';
+import { firstRemoteName } from './NodeContextMenu';
 import { useT } from './useT';
 import { groupBySection, isSectionBulkDisabled, stageableFrom, unstageableFrom, type ChangeSection } from './tree';
 import {
@@ -118,6 +119,7 @@ export function PendingChangesApp(): JSX.Element {
   const dropStash = useChangesStore((s) => s.dropStash);
 
   const status = useRepoStore((s) => s.status);
+  const graph = useRepoStore((s) => s.graph);
   const loadGraph = useRepoStore((s) => s.loadGraph);
   /**
    * Whether the host managed to count every file's lines. A row without numbers is
@@ -129,6 +131,9 @@ export function PendingChangesApp(): JSX.Element {
   const loadSettings = useSettingsStore((s) => s.load);
   const loadIconTheme = useIconThemeStore((s) => s.load);
   const language = useSettingsStore((s) => s.language);
+  const linkage = useGitHubStore((s) => s.linkage);
+  const opState = useOperationStore((s) => s.state);
+  const activeAction = useOperationStore((s) => s.activeAction);
   const pushToast = useOperationStore((s) => s.pushToast);
   const showLogs = useOperationStore((s) => s.showLogs);
   const runAction = useOperationStore((s) => s.runAction);
@@ -308,7 +313,7 @@ export function PendingChangesApp(): JSX.Element {
         {route.id === 'changes' && sub === 'changes' && <GetStartedCard />}
         <OperationBanner status={status} />
         {error !== null && <ErrorBanner error={error} onShowLogs={showLogs} />}
-        {conflicts.length > 0 && (
+        {conflicts.length > 0 && (status === null || status.operation === 'idle') && (
           <ConflictPanel conflicts={conflicts} operation={status?.operation ?? 'idle'} />
         )}
         {churnTruncated && (
@@ -393,10 +398,100 @@ export function PendingChangesApp(): JSX.Element {
           <FileListSkeleton rows={8} />
         ) : changes.length === 0 ? (
           <>
-            <EmptyState
-              title={strings.pending.emptyTitle}
-              hint={strings.pending.emptyHint}
-            />
+            {(() => {
+              const remote =
+                status?.upstream !== null && status?.upstream !== undefined
+                  ? status.upstream.split('/')[0] ?? null
+                  : firstRemoteName(graph?.refs ?? []);
+              const localCommits = graph?.nodes.filter((n) => n.local).length ?? status?.ahead ?? 0;
+              const branch = status?.branch ?? null;
+              const isPublishing =
+                opState === 'loading' && activeAction?.action === 'push' && activeAction.setUpstream === true;
+              if (isPublishing && activeAction.action === 'push') {
+                return (
+                  <EmptyState
+                    icon={<Icon name="status-running" />}
+                    iconTone="accent"
+                    title={strings.pending.emptyPublishingTitle(activeAction.remote)}
+                    hint={strings.pending.emptyPublishingHint(
+                      localCommits,
+                      formatCount(localCommits, language),
+                      sanitizeGitText(activeAction.branch),
+                    )}
+                  />
+                );
+              }
+              if (status !== null && branch !== null && status.upstream === null && remote !== null) {
+                const safeBranch = sanitizeGitText(branch);
+                const publishBtn = (
+                  <button
+                    type="button"
+                    className="gc-button gc-button--primary"
+                    disabled={busy || opState === 'loading'}
+                    onClick={() => void runAction({ action: 'push', remote, branch, setUpstream: true })}
+                  >
+                    <Icon name="push" />
+                    {strings.pending.emptyPublishAction}
+                  </button>
+                );
+                if (localCommits > 0) {
+                  return (
+                    <EmptyState
+                      icon={<Icon name="push" />}
+                      iconTone="accent"
+                      title={strings.pending.emptyUnpublishedTitle(localCommits, formatCount(localCommits, language))}
+                      hint={strings.pending.emptyUnpublishedHint(safeBranch, remote)}
+                      action={publishBtn}
+                    />
+                  );
+                }
+                return (
+                  <EmptyState
+                    icon={<Icon name="git-branch" />}
+                    iconTone="neutral"
+                    title={strings.pending.emptyNewBranchTitle}
+                    hint={strings.pending.emptyNewBranchHint(safeBranch)}
+                    action={publishBtn}
+                  />
+                );
+              }
+              const isDefaultBranch =
+                branch === null || branch === 'main' || branch === 'master';
+              if (
+                status !== null &&
+                branch !== null &&
+                status.upstream !== null &&
+                (status.ahead ?? 0) === 0 &&
+                !isDefaultBranch &&
+                linkage !== null &&
+                linkage.available
+              ) {
+                return (
+                  <EmptyState
+                    icon={<Icon name="check" />}
+                    iconTone="success"
+                    title={strings.pending.emptyReadyPrTitle}
+                    hint={strings.pending.emptyReadyPrHint(sanitizeGitText(branch), remote ?? 'origin')}
+                    action={
+                      <button
+                        type="button"
+                        className="gc-button gc-button--primary"
+                        onClick={() => useRouteStore.getState().navigateWithFocus({ id: 'prs' }, 'create-pr')}
+                      >
+                        <Icon name="pr" />
+                        {strings.pending.emptyCreatePrAction}
+                      </button>
+                    }
+                  />
+                );
+              }
+              return (
+                <EmptyState
+                  title={strings.pending.emptyTitle}
+                  hint={strings.pending.emptyHint}
+                />
+              );
+            })()}
             <div className="gc-pending__sections" ref={scrollRef} />
           </>
         ) : (
@@ -693,6 +788,7 @@ function StashList({
         const isExpanded = stashesExpanded.has(parsedIndex);
         const files = stashContents[parsedIndex];
         const isLoading = stashContentsLoading.has(parsedIndex);
+        const meta = formatStashMeta(stash, language);
         return (
           <li key={stash.ref} className="gc-stash-entry" role="listitem">
             <div className="gc-tree__row gc-stash-item">
@@ -711,38 +807,47 @@ function StashList({
                   <Icon name={isExpanded ? 'chevron-down' : 'chevron-right'} />
                 </span>
               </button>
-              <span className="gc-stash-item__title">
-                {formatStashLabel(parsedIndex, language)}
-              </span>
-              <button
-                type="button"
-                className="gc-stash-item__hash-btn"
-                aria-label={strings.pending.stashOpenCommitAria}
-                title={strings.pending.stashOpenCommitTitle}
-                onClick={() => void handleRevealCommit(stash.hash)}
-              >
-                {shortHash(stash.hash)}
-              </button>
+              <div className="gc-stash-item__text">
+                <div className="gc-stash-item__heading">
+                  <span className="gc-stash-item__title">
+                    {formatStashLabel(parsedIndex, language)}
+                  </span>
+                  <button
+                    type="button"
+                    className="gc-stash-item__hash-btn"
+                    aria-label={strings.pending.stashOpenCommitAria}
+                    title={strings.pending.stashOpenCommitTitle}
+                    onClick={() => void handleRevealCommit(stash.hash)}
+                  >
+                    {shortHash(stash.hash)}
+                  </button>
+                </div>
+                {meta.length > 0 && (
+                  <span className="gc-stash-item__meta" title={meta}>
+                    {meta}
+                  </span>
+                )}
+              </div>
               <div className="gc-stash-item__actions">
                 <button
                   type="button"
-                  className="gc-icon-button gc-stash-item__action"
+                  className="gc-stash-item__btn gc-stash-item__btn--apply"
                   aria-label={strings.pending.stashApplyAria(stash.ref)}
                   title={strings.pending.stashApplyTitle}
                   disabled={busy}
                   onClick={() => onApply(parsedIndex)}
                 >
-                  <Icon name="add" />
+                  {strings.pending.stashApplyLabel}
                 </button>
                 <button
                   type="button"
-                  className="gc-icon-button gc-stash-item__action"
+                  className="gc-stash-item__btn gc-stash-item__btn--drop"
                   aria-label={strings.pending.stashDropAria(stash.ref)}
                   title={strings.pending.stashDropTitle}
                   disabled={busy}
                   onClick={() => onDrop(parsedIndex)}
                 >
-                  <Icon name="dash" />
+                  {strings.pending.stashDropLabel}
                 </button>
               </div>
             </div>
@@ -792,6 +897,20 @@ function StashList({
                               >
                                 <span className="gc-stat gc-stat--add">+{file.additions ?? 0}</span>
                                 <span className="gc-stat gc-stat--del">−{file.deletions ?? 0}</span>
+                              </span>
+                            )}
+                            {file.status !== undefined && (
+                              <span
+                                className={`gc-tree__status-letter gc-tree__status-letter--${
+                                  file.status === 'A'
+                                    ? 'added'
+                                    : file.status === 'D'
+                                      ? 'removed'
+                                      : 'changed'
+                                }`}
+                                aria-hidden="true"
+                              >
+                                {file.status}
                               </span>
                             )}
                           </button>

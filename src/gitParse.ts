@@ -486,11 +486,13 @@ export interface ParsedStashEntry {
   ref: string;
   hash: string;
   subject: string;
+  createdAt?: string;
 }
 
 /**
- * Parse `git stash list --format=%gd%x00%H%x00%gs` output.
- * Each entry is newline-separated with NUL delimiters separating ref, hash, and subject.
+ * Parse `git stash list --format=%gd%x00%H%x00%gs%x00%aI` (or 3-field legacy) output.
+ * Each entry is newline-separated with NUL delimiters separating ref, hash, subject,
+ * and optional author ISO timestamp.
  */
 export function parseStashList(raw: string): ParsedStashEntry[] {
   const entries: ParsedStashEntry[] = [];
@@ -498,15 +500,43 @@ export function parseStashList(raw: string): ParsedStashEntry[] {
     if (line.length === 0) continue;
     const parts = line.split('\0');
     if (parts.length < 3) continue;
-    const [ref, hash, ...subjectParts] = parts;
+    const [ref, hash, ...rest] = parts;
     if (!ref || !hash) continue;
+    let createdAt: string | undefined;
+    if (rest.length >= 2 && /^\d{4}-\d{2}-\d{2}T/.test(rest[rest.length - 1] ?? '')) {
+      createdAt = rest.pop();
+    }
     entries.push({
       ref,
       hash,
-      subject: subjectParts.join('\0'),
+      subject: rest.join('\0'),
+      ...(createdAt !== undefined ? { createdAt } : {}),
     });
   }
   return entries;
+}
+
+/**
+ * Parse `git ... --name-status` output into a map from path (new path for renames)
+ * to single-letter git status code (`A`, `M`, `D`, `R`, `C`, `T`, `U`).
+ */
+export function parseNameStatus(raw: string): Map<string, string> {
+  const result = new Map<string, string>();
+  for (const line of raw.split(/\r?\n/)) {
+    if (line.length === 0) continue;
+    const parts = line.split('\t');
+    const code = parts[0]?.trim() ?? '';
+    if (code.length === 0) continue;
+    const letter = code[0]!;
+    if ((letter === 'R' || letter === 'C') && parts.length >= 3) {
+      const target = parts[2]!;
+      if (target.length > 0) result.set(target, letter);
+    } else if (parts.length >= 2) {
+      const target = parts[1]!;
+      if (target.length > 0) result.set(target, letter);
+    }
+  }
+  return result;
 }
 
 

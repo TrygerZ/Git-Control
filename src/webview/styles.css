@@ -821,6 +821,28 @@ h3 {
   text-align: center;
 }
 
+.gc-empty__badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 12px;
+  font-size: var(--gc-fs-lg);
+  background: var(--gc-surface-raised);
+  color: var(--gc-muted);
+}
+
+.gc-empty__badge--accent {
+  background: color-mix(in srgb, var(--gc-accent) 16%, transparent);
+  color: var(--gc-accent);
+}
+
+.gc-empty__badge--success {
+  background: color-mix(in srgb, var(--gc-tone-added) 16%, transparent);
+  color: var(--gc-tone-added);
+}
+
 .gc-empty__title {
   margin: 0;
   color: var(--vscode-foreground);
@@ -3063,6 +3085,14 @@ h3 {
   gap: var(--gc-space-2);
 }
 
+.gc-menu__hint {
+  margin-left: auto;
+  color: var(--gc-muted);
+  font-size: var(--gc-fs-xs);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
 .gc-menu__separator {
   height: 1px;
   margin: var(--gc-space-1) var(--gc-space-2);
@@ -4044,13 +4074,36 @@ h3 {
 
 .gc-stash-item {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: var(--gc-space-2);
   min-height: var(--gc-hit);
-  padding: var(--gc-space-1) var(--gc-space-3);
+  padding: var(--gc-space-2) var(--gc-space-3);
   font-size: var(--gc-fs-sm);
   border-radius: var(--gc-radius);
   transition: background var(--gc-dur-fast) var(--gc-ease);
+}
+
+.gc-stash-item__text {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gc-space-1);
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.gc-stash-item__heading {
+  display: flex;
+  align-items: center;
+  gap: var(--gc-space-1);
+  min-width: 0;
+}
+
+.gc-stash-item__meta {
+  font-size: var(--gc-fs-2xs);
+  color: var(--gc-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .gc-stash-item:hover {
@@ -4101,8 +4154,36 @@ h3 {
   gap: var(--gc-space-1);
   flex-shrink: 0;
   margin-left: auto;
-  opacity: 0;
-  transition: opacity var(--gc-dur-fast) var(--gc-ease);
+}
+
+.gc-stash-item__btn {
+  display: inline-flex;
+  align-items: center;
+  height: 24px;
+  padding: 0 var(--gc-space-2);
+  border: none;
+  border-radius: var(--gc-radius-sm);
+  background: transparent;
+  font-size: var(--gc-fs-xs);
+  font-weight: var(--gc-weight-strong);
+  cursor: pointer;
+}
+
+.gc-stash-item__btn:hover:not(:disabled) {
+  background: var(--vscode-toolbar-hoverBackground, var(--vscode-list-hoverBackground));
+}
+
+.gc-stash-item__btn:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.gc-stash-item__btn--apply {
+  color: var(--gc-accent);
+}
+
+.gc-stash-item__btn--drop {
+  color: var(--gc-danger);
 }
 
 .gc-stash-item__action {

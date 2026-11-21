@@ -29,6 +29,23 @@ const en = {
     reloadAria: 'Reload change list',
     emptyTitle: 'No changes.',
     emptyHint: 'Working tree is clean.',
+    emptyPublishingTitle: (remote: string) => `Publishing to ${remote}...`,
+    emptyPublishingHint: (count: number, formatted: string, branch: string) =>
+      count > 0
+        ? `Sending ${formatted} ${count === 1 ? 'commit' : 'commits'} from ${branch}.`
+        : `Sending ${branch}.`,
+    emptyUnpublishedTitle: (count: number, formatted: string) =>
+      count === 1 ? '1 commit only exists on this machine' : `${formatted} commits only exist on this machine`,
+    emptyUnpublishedHint: (branch: string, remote: string) =>
+      `Working tree is clean. Publish ${branch} to ${remote} to back them up and open a pull request.`,
+    emptyNewBranchTitle: 'No commits of its own yet',
+    emptyNewBranchHint: (branch: string) =>
+      `Working tree is clean. Publish ${branch} when you have something to share.`,
+    emptyPublishAction: 'Publish branch',
+    emptyReadyPrTitle: 'Ready for a pull request',
+    emptyReadyPrHint: (branch: string, remote: string) =>
+      `${branch} is on ${remote} and the working tree is clean. Open a pull request when you want a review.`,
+    emptyCreatePrAction: 'Create pull request',
     searchPlaceholder: 'Search files...',
     searchAria: 'Filter by file name',
     searchMatched: (shown: string, total: string) => `${shown} of ${total} files matched`,
@@ -105,6 +122,8 @@ const en = {
     menuOpenRepo: 'Open repository on GitHub',
     menuCopyUrl: 'Copy repository URL',
     menuCopied: 'Repository URL copied.',
+    menuGroupAccount: 'Account',
+    menuGroupPreferences: 'Preferences',
     menuLanguage: 'Language',
     menuLanguageValue: 'English (EN)',
     menuColorTheme: 'Color theme',
@@ -549,8 +568,11 @@ const en = {
     stagedFilesReady: (count: string) => `${count} files ready to commit.`,
     commitTitle: 'Save staging area as a commit.',
     commitButton: 'Commit',
+    commitFilesButton: (count: number, formatted: string) =>
+      count === 1 ? 'Commit 1 file' : `Commit ${formatted} files`,
+    resolveConflictsFirst: 'Resolve conflicts first',
     pushButton: 'Push',
-    publishButton: 'Publish branch',
+    publishButton: 'Publish',
     pushWithCountButton: (count: string) => `Push (${count})`,
     pullButton: 'Pull',
     pullWithCountButton: (count: string) => `Pull (${count})`,

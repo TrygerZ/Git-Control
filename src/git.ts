@@ -26,6 +26,7 @@ import {
   LOG_FORMAT,
   REFS_FORMAT,
   parseLog,
+  parseNameStatus,
   parseRefNameList,
   parseRefs,
   parseRemoteList,
@@ -1218,7 +1219,7 @@ export class GitRunner {
    * Delimiter is NUL bytes to avoid collision with commit subjects.
    */
   async stashList(): Promise<ParsedStashEntry[]> {
-    const { stdout } = await this.run(['stash', 'list', '--format=%gd%x00%H%x00%gs']);
+    const { stdout } = await this.run(['stash', 'list', '--format=%gd%x00%H%x00%gs%x00%aI']);
     return parseStashList(stdout);
   }
 
@@ -1232,18 +1233,34 @@ export class GitRunner {
     }
     const ref = sanitizeRefArg(`stash@{${index}}`);
     let stdout: string;
+    let includeUntracked = true;
     try {
       const res = await this.run(['stash', 'show', '--include-untracked', '--numstat', ref]);
       stdout = res.stdout;
     } catch {
+      includeUntracked = false;
       const res = await this.run(['stash', 'show', '--numstat', ref]);
       stdout = res.stdout;
     }
-    return parseShowStat(stdout).map((entry) => ({
-      path: entry.path,
-      additions: entry.additions,
-      deletions: entry.deletions,
-    }));
+    let statusMap = new Map<string, string>();
+    try {
+      const statusArgs = includeUntracked
+        ? ['stash', 'show', '--include-untracked', '--name-status', ref]
+        : ['stash', 'show', '--name-status', ref];
+      const statusRes = await this.run(statusArgs);
+      statusMap = parseNameStatus(statusRes.stdout);
+    } catch {
+      // Status letters are best-effort; numstat rows remain valid without them.
+    }
+    return parseShowStat(stdout).map((entry) => {
+      const status = statusMap.get(entry.path);
+      return {
+        path: entry.path,
+        additions: entry.additions,
+        deletions: entry.deletions,
+        ...(status !== undefined ? { status } : {}),
+      };
+    });
   }
 
   /**

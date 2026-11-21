@@ -25,6 +25,23 @@ const id: Catalog = {
     reloadAria: 'Muat ulang daftar perubahan',
     emptyTitle: 'Tidak ada perubahan.',
     emptyHint: 'Folder kerja bersih.',
+    emptyPublishingTitle: (remote: string) => `Menerbitkan ke ${remote}...`,
+    emptyPublishingHint: (count: number, formatted: string, branch: string) =>
+      count > 0
+        ? `Mengirim ${formatted} commit dari ${branch}.`
+        : `Mengirim ${branch}.`,
+    emptyUnpublishedTitle: (count: number, formatted: string) =>
+      count === 1 ? '1 commit hanya ada di komputer ini' : `${formatted} commit hanya ada di komputer ini`,
+    emptyUnpublishedHint: (branch: string, remote: string) =>
+      `Folder kerja bersih. Terbitkan ${branch} ke ${remote} untuk mencadangkan dan membuka pull request.`,
+    emptyNewBranchTitle: 'Belum ada commit sendiri',
+    emptyNewBranchHint: (branch: string) =>
+      `Folder kerja bersih. Terbitkan ${branch} saat sudah ada yang ingin dibagikan.`,
+    emptyPublishAction: 'Terbitkan branch',
+    emptyReadyPrTitle: 'Siap untuk pull request',
+    emptyReadyPrHint: (branch: string, remote: string) =>
+      `${branch} sudah ada di ${remote} dan folder kerja bersih. Buka pull request saat siap ditinjau.`,
+    emptyCreatePrAction: 'Buat pull request',
     searchPlaceholder: 'Cari file...',
     searchAria: 'Saring berdasarkan nama file',
     searchMatched: (shown: string, total: string) => `${shown} dari ${total} file cocok`,
@@ -101,6 +118,8 @@ const id: Catalog = {
     menuOpenRepo: 'Buka repository di GitHub',
     menuCopyUrl: 'Salin URL repository',
     menuCopied: 'URL repository disalin.',
+    menuGroupAccount: 'Akun',
+    menuGroupPreferences: 'Preferensi',
     menuLanguage: 'Bahasa',
     menuLanguageValue: 'Indonesia (ID)',
     menuColorTheme: 'Tema warna',
@@ -544,8 +563,11 @@ const id: Catalog = {
     stagedFilesReady: (count: string) => `${count} file siap di-commit.`,
     commitTitle: 'Simpan staging area jadi satu commit.',
     commitButton: 'Commit',
+    commitFilesButton: (count: number, formatted: string) =>
+      count === 1 ? 'Commit 1 file' : `Commit ${formatted} file`,
+    resolveConflictsFirst: 'Selesaikan konflik dulu',
     pushButton: 'Push',
-    publishButton: 'Terbitkan branch',
+    publishButton: 'Terbitkan',
     pushWithCountButton: (count: string) => `Push (${count})`,
     pullButton: 'Pull',
     pullWithCountButton: (count: string) => `Pull (${count})`,

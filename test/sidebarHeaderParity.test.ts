@@ -82,8 +82,13 @@ test('the More menu is the frame 42 menu: reload, repository links, account', ()
   const src = read(HEADER);
   assert.match(src, /role="menu"/);
   assert.match(src, /strings\.shell\.menuReload/, 'Reload');
+  assert.match(src, /hint:\s*'R'/, 'Reload carries the R shortcut hint');
   assert.match(src, /strings\.shell\.menuOpenRepo/, 'Open repository on GitHub');
   assert.match(src, /strings\.shell\.menuCopyUrl/, 'Copy repository URL');
+  assert.match(src, /strings\.shell\.menuGroupAccount/, 'Account group title');
+  assert.match(src, /strings\.shell\.menuGroupPreferences/, 'Preferences group title');
+  assert.match(src, /className="gc-menu__group-title"/, 'renders visible group headings');
+  assert.match(src, /className="gc-menu__separator"/, 'renders group separators');
   assert.match(src, /strings\.explorerMenu\.connectGithub/, 'Connect GitHub');
   assert.match(src, /strings\.explorerMenu\.disconnectGithub/, 'Disconnect GitHub');
   assert.match(src, /strings\.shell\.menuLanguage/, 'Language preference row');

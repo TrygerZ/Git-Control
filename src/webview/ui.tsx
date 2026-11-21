@@ -345,14 +345,23 @@ export function EmptyState({
   hint,
   steps,
   action,
+  icon,
+  iconTone = 'neutral',
 }: {
   title: string;
   hint?: string;
   steps?: readonly string[];
   action?: ReactNode;
+  icon?: ReactNode;
+  iconTone?: 'neutral' | 'accent' | 'success';
 }): JSX.Element {
   return (
     <div className="gc-empty" role="note">
+      {icon !== undefined && (
+        <span className={`gc-empty__badge gc-empty__badge--${iconTone}`} aria-hidden="true">
+          {icon}
+        </span>
+      )}
       <p className="gc-empty__title">{title}</p>
       {hint !== undefined && <p className="gc-empty__hint">{hint}</p>}
       {steps !== undefined && steps.length > 0 && (

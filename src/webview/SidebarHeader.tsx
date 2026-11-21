@@ -57,12 +57,19 @@ function isLightBodyTheme(): boolean {
   );
 }
 
-/** One More menu row: a label, optional right-aligned value hint, and the store call it runs. Rows never reach git. */
+/** One More menu row: an icon, label, optional right-aligned value hint, and the store call it runs. Rows never reach git. */
 interface HeaderMenuRow {
   id: string;
+  icon: IconName;
   label: string;
   hint?: string;
   run: () => void;
+}
+
+interface HeaderMenuGroup {
+  id: string;
+  heading?: string;
+  rows: HeaderMenuRow[];
 }
 
 export function SidebarHeader(): JSX.Element | null {
@@ -196,41 +203,58 @@ export function SidebarHeader(): JSX.Element | null {
     void useGitHubStore.getState().openUrl(url);
   };
 
-  const menuRows: HeaderMenuRow[] = [
-    { id: 'reload', label: strings.shell.menuReload, run: refresh },
+  const primaryRows: HeaderMenuRow[] = [
+    { id: 'reload', icon: 'refresh', label: strings.shell.menuReload, hint: 'R', run: refresh },
   ];
   if (webUrl !== null) {
-    menuRows.push(
-      { id: 'open-repo', label: strings.shell.menuOpenRepo, run: () => openUrl(webUrl) },
-      { id: 'copy-url', label: strings.shell.menuCopyUrl, run: () => copyUrl(webUrl) },
+    primaryRows.push(
+      { id: 'open-repo', icon: 'external', label: strings.shell.menuOpenRepo, run: () => openUrl(webUrl) },
+      { id: 'copy-url', icon: 'copy', label: strings.shell.menuCopyUrl, run: () => copyUrl(webUrl) },
     );
   }
-  menuRows.push(
-    auth?.connected === true
-      ? {
-          id: 'disconnect',
-          label: strings.explorerMenu.disconnectGithub,
-          hint: auth.login ?? undefined,
-          run: () => void useGitHubStore.getState().disconnect(),
-        }
-      : {
-          id: 'connect',
-          label: strings.explorerMenu.connectGithub,
-          run: () => void useGitHubStore.getState().connect(),
+  const menuGroups: HeaderMenuGroup[] = [
+    { id: 'primary', rows: primaryRows },
+    {
+      id: 'account',
+      heading: strings.shell.menuGroupAccount,
+      rows: [
+        auth?.connected === true
+          ? {
+              id: 'disconnect',
+              icon: 'github',
+              label: strings.explorerMenu.disconnectGithub,
+              hint: auth.login ?? undefined,
+              run: () => void useGitHubStore.getState().disconnect(),
+            }
+          : {
+              id: 'connect',
+              icon: 'github',
+              label: strings.explorerMenu.connectGithub,
+              run: () => void useGitHubStore.getState().connect(),
+            },
+      ],
+    },
+    {
+      id: 'preferences',
+      heading: strings.shell.menuGroupPreferences,
+      rows: [
+        {
+          id: 'language',
+          icon: 'globe',
+          label: strings.shell.menuLanguage,
+          hint: strings.shell.menuLanguageValue,
+          run: () => useSettingsStore.getState().setLanguage(language === 'id' ? 'en' : 'id'),
         },
-    {
-      id: 'language',
-      label: strings.shell.menuLanguage,
-      hint: strings.shell.menuLanguageValue,
-      run: () => useSettingsStore.getState().setLanguage(language === 'id' ? 'en' : 'id'),
+        {
+          id: 'color-theme',
+          icon: 'theme',
+          label: strings.shell.menuColorTheme,
+          hint: lightTheme ? strings.shell.themeLight : strings.shell.themeDark,
+          run: () => useSettingsStore.getState().toggleColorTheme(),
+        },
+      ],
     },
-    {
-      id: 'color-theme',
-      label: strings.shell.menuColorTheme,
-      hint: lightTheme ? strings.shell.themeLight : strings.shell.themeDark,
-      run: () => useSettingsStore.getState().toggleColorTheme(),
-    },
-  );
+  ];
 
   const closeMenu = (returnFocus: boolean): void => {
     setMenuOpen(false);
@@ -467,36 +491,61 @@ export function SidebarHeader(): JSX.Element | null {
         </>
       )}
 
-      {menuOpen && (
-        <div
-          id={menuId}
-          ref={menuRef}
-          className="gc-menu"
-          role="menu"
-          aria-orientation="vertical"
-          aria-label={strings.shell.moreTitle}
-          style={{ left: `${placed.x}px`, top: `${placed.y}px` }}
-          onKeyDown={onMenuKeyDown}
-        >
-          {menuRows.map((row, index) => (
-            <button
-              key={row.id}
-              type="button"
-              role="menuitem"
-              className="gc-menu__item"
-              tabIndex={index === active ? 0 : -1}
-              onFocus={() => setActive(index)}
-              onClick={() => {
-                row.run();
-                closeMenu(true);
-              }}
-            >
-              <span className="gc-menu__label">{row.label}</span>
-              {row.hint !== undefined && <span className="gc-menu__hint">{row.hint}</span>}
-            </button>
-          ))}
-        </div>
-      )}
+      {menuOpen && (() => {
+        let flatIndex = -1;
+        return (
+          <div
+            id={menuId}
+            ref={menuRef}
+            className="gc-menu"
+            role="menu"
+            aria-orientation="vertical"
+            aria-label={strings.shell.moreTitle}
+            style={{ left: `${placed.x}px`, top: `${placed.y}px` }}
+            onKeyDown={onMenuKeyDown}
+          >
+            {menuGroups.map((group, groupIndex) => (
+              <div
+                key={group.id}
+                className="gc-menu__group"
+                role="group"
+                aria-label={group.heading}
+              >
+                {groupIndex > 0 && <span className="gc-menu__separator" aria-hidden="true" />}
+                {group.heading !== undefined && (
+                  <span className="gc-menu__group-title" aria-hidden="true">
+                    {group.heading}
+                  </span>
+                )}
+                {group.rows.map((row) => {
+                  flatIndex += 1;
+                  const index = flatIndex;
+                  return (
+                    <button
+                      key={row.id}
+                      type="button"
+                      role="menuitem"
+                      className="gc-menu__item"
+                      tabIndex={index === active ? 0 : -1}
+                      onFocus={() => setActive(index)}
+                      onClick={() => {
+                        row.run();
+                        closeMenu(true);
+                      }}
+                    >
+                      <span className="gc-menu__icon" aria-hidden="true">
+                        <Icon name={row.icon} />
+                      </span>
+                      <span className="gc-menu__label">{row.label}</span>
+                      {row.hint !== undefined && <span className="gc-menu__hint">{row.hint}</span>}
+                    </button>
+                  );
+                })}
+              </div>
+            ))}
+          </div>
+        );
+      })()}
     </header>
   );
 }

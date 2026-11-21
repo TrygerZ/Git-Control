@@ -73,6 +73,7 @@ export function OperationBanner({ status }: { status: RepoStatus | null }): JSX.
           ? strings.conflict.allConflictsResolved
           : strings.conflict.remainingConflicts(formatCount(status.conflicts.length, language))}
       </span>
+      {!resolved && <span className="gc-help-text">{strings.conflict.hint}</span>}
       <span className="gc-banner__buttons">
         <button
           type="button"

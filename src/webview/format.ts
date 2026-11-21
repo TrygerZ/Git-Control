@@ -43,6 +43,36 @@ export function formatStashLabel(index: number, lang: Lang = 'en'): string {
 }
 
 /**
+ * Format the stash metadata sub-row (`message · branch · 2m ago`, frame 67).
+ *
+ * Git prefixes stash reflog subjects with `On <branch>: <message>` or
+ * `WIP on <branch>: <hash> <subject>`. Custom messages invert to
+ * `<message> · <branch>`, while default WIP stashes stay `WIP on <branch>`.
+ */
+export function formatStashMeta(stash: StashEntry, lang: Lang = 'en', now: number = Date.now()): string {
+  const raw = sanitizeGitText(stash.subject).trim();
+  const parts: string[] = [];
+  const customMatch = /^On ([^:]+):\s*(.+)$/.exec(raw);
+  const wipMatch = /^WIP on ([^:]+):/.exec(raw);
+  if (customMatch !== null) {
+    const [, branch, message] = customMatch as unknown as [string, string, string];
+    parts.push(message.trim(), branch.trim());
+  } else if (wipMatch !== null) {
+    const [, branch] = wipMatch as unknown as [string, string];
+    parts.push(`WIP on ${branch.trim()}`);
+  } else if (raw.length > 0) {
+    parts.push(raw);
+  }
+  if (stash.createdAt !== undefined && stash.createdAt.length > 0) {
+    const rel = relativeTime(stash.createdAt, now, lang);
+    if (rel.length > 0 && rel !== t(lang).format.unknownTime) {
+      parts.push(rel);
+    }
+  }
+  return parts.join(' · ');
+}
+
+/**
  * Index N of a `stash@{N}` ref, or null for any other string.
  *
  * Anchored on both ends so `stash@{1}x`, `xstash@{1}`, and a stray space never
