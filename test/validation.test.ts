@@ -35,6 +35,8 @@ import {
   validateTagMessage,
   validateReleaseTitle,
   validateReleaseBody,
+  validateWorktreePath,
+  validateCompareLimit,
 } from '../src/validation';
 
 test('PRD mandated self-check asserts', () => {
@@ -669,5 +671,79 @@ test('validateReleaseBody accepts 0 to 125000 chars without NUL', () => {
 
   for (const bad of ['x'.repeat(125001), 'a\u0000b', null, undefined, 1, []]) {
     assert.equal(validateReleaseBody(bad), false, JSON.stringify(bad));
+  }
+});
+
+test('validateWorktreePath accepts normalized absolute POSIX and Windows paths', () => {
+  assert.equal(validateWorktreePath('/tmp/my-worktree', { windows: false }), true);
+  assert.equal(validateWorktreePath('/Users/dev/work trees/feat-1', { windows: false }), true);
+  assert.equal(validateWorktreePath('C:\\worktrees\\feat-1', { windows: true }), true);
+  assert.equal(validateWorktreePath('C:/worktrees/feat-1', { windows: true }), true);
+  assert.equal(validateWorktreePath('D:\\A - Pribadi\\wt-1', { windows: true }), true);
+  // Device name is allowed on POSIX when windows: false
+  assert.equal(validateWorktreePath('/tmp/con/wt', { windows: false }), true);
+});
+
+test('validateWorktreePath rejects relative, traversal, UNC, trailing slash, control chars, and oversized paths', () => {
+  const alwaysBad: unknown[] = [
+    '',
+    'relative/path',
+    './relative',
+    '../sibling',
+    '.',
+    '..',
+    'C:foo',
+    '\\\\server\\share\\wt',
+    '\\\\?\\C:\\wt',
+    '//server/share/wt',
+    '/tmp/a/../b',
+    '/tmp/a/./b',
+    '/tmp/wt/',
+    '/',
+    '/tmp/wt\u0000',
+    '/tmp/wt\n',
+    '/tmp/wt\r',
+    '/tmp/wt\u007f',
+    '/' + 'a'.repeat(4096),
+    null,
+    undefined,
+    123,
+    {},
+  ];
+  for (const bad of alwaysBad) {
+    assert.equal(validateWorktreePath(bad, { windows: false }), false, `posix: ${JSON.stringify(bad)}`);
+    assert.equal(validateWorktreePath(bad, { windows: true }), false, `win: ${JSON.stringify(bad)}`);
+  }
+
+  // Windows-specific rejections
+  const winBad = [
+    'C:\\',
+    'C:/',
+    'C:\\wt\\',
+    'C:/wt/',
+    'C:\\a\\..\\b',
+    'C:\\a\\.\\b',
+    'C:\\wt\\CON',
+    'C:\\wt\\nul.txt',
+    'C:\\wt\\COM1\\sub',
+    'C:\\wt\\file:$DATA',
+    '/posix/only',
+  ];
+  for (const bad of winBad) {
+    assert.equal(validateWorktreePath(bad, { windows: true }), false, `win: ${JSON.stringify(bad)}`);
+  }
+
+  // Drive paths are not absolute on POSIX
+  assert.equal(validateWorktreePath('C:\\wt', { windows: false }), false);
+  assert.equal(validateWorktreePath('C:/wt', { windows: false }), false);
+});
+
+test('validateCompareLimit accepts 1..200 integers and rejects everything else', () => {
+  assert.equal(validateCompareLimit(1), true);
+  assert.equal(validateCompareLimit(50), true);
+  assert.equal(validateCompareLimit(200), true);
+
+  for (const bad of [0, -1, 201, 1.5, Number.NaN, Number.POSITIVE_INFINITY, '50', null, undefined, {}]) {
+    assert.equal(validateCompareLimit(bad), false, JSON.stringify(bad));
   }
 });
