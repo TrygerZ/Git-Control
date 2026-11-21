@@ -22,7 +22,9 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState, type JSX, type K
 import { CleanupDialog } from './CleanupDialog';
 import { MergeDialog, mergeActionPayload } from './MergeDialog';
 import { PromptDialog } from './PromptDialog';
+import { ReleaseDialog } from './ReleaseDialog';
 import { selectCleanupCandidates } from '../branchCleanup';
+import { suggestNextTag } from '../releasePlan';
 import { Tablist } from './Tablist';
 import { checkoutActionPayload } from './BranchLegend';
 import {
@@ -50,6 +52,7 @@ import { useT } from './useT';
 import {
   useBranchesStore,
   useOperationStore,
+  useReleaseStore,
   useRepoStore,
   useRouteStore,
   useSettingsStore,
@@ -84,6 +87,8 @@ export function BranchesView(): JSX.Element {
   const language = useSettingsStore((s) => s.language);
   const route = useRouteStore((s) => s.route);
   const status = useRepoStore((s) => s.status);
+  const graph = useRepoStore((s) => s.graph);
+  const releaseOpen = useReleaseStore((s) => s.open);
 
   const refs = useBranchesStore((s) => s.refs);
   const base = useBranchesStore((s) => s.base);
@@ -172,6 +177,31 @@ export function BranchesView(): JSX.Element {
   const allTags = useMemo(() => filterRows(tagRows(refs), filter), [refs, filter]);
   const recentTags = useMemo(() => tagRows(refs, RECENT_TAG_LIMIT), [refs]);
   const shownWorktrees = useMemo(() => visibleWorktrees(worktrees), [worktrees]);
+  const existingTagNames = useMemo(
+    () => refs.filter((ref) => ref.kind === 'tag').map((ref) => ref.shortName),
+    [refs],
+  );
+  const recentSubjects = useMemo(() => {
+    const nodes = graph?.nodes ?? [];
+    const subjects: string[] = [];
+    for (const node of nodes) {
+      if (node.refNames.some((refName) => /^tag:\s*v?\d+\.\d+\.\d+$/.test(refName))) break;
+      subjects.push(node.subject);
+      if (subjects.length >= 50) break;
+    }
+    return subjects;
+  }, [graph]);
+
+  const openNewTag = (): void => {
+    const suggestion = suggestNextTag(existingTagNames, recentSubjects);
+    const suggested = suggestion?.name ?? '';
+    useReleaseStore.getState().openDialog({
+      tag: suggested,
+      target: currentBranch ?? status?.head ?? 'main',
+      title: suggested,
+      remote: 'origin',
+    });
+  };
 
   /*
    * The cleanup banner and dialog read the same selection, so the count in the
@@ -375,7 +405,7 @@ export function BranchesView(): JSX.Element {
         ) : sub === 'remote' ? (
           <RemoteList groups={remoteGroups} language={language} onCopy={copyName} />
         ) : sub === 'tags' ? (
-          <TagList tags={allTags} language={language} empty={strings.branches.emptyTags} />
+          <TagList tags={allTags} language={language} empty={strings.branches.emptyTags} onNewTag={openNewTag} />
         ) : (
           <LocalList
             currentRef={currentRef}
@@ -390,6 +420,7 @@ export function BranchesView(): JSX.Element {
             onToggleSection={toggleSection}
             onSort={setSort}
             onMenu={setMenu}
+            onNewTag={openNewTag}
           />
         )}
       </div>
@@ -496,6 +527,8 @@ export function BranchesView(): JSX.Element {
         />
       )}
 
+      {releaseOpen && <ReleaseDialog />}
+
       {/*
         No GuardDialog here: the sidebar shell mounts one for every route, and a
         second host would render two modal dialogs for a single guard verdict.
@@ -520,6 +553,7 @@ function LocalList(props: {
   onSort(sort: BranchSort): void;
   onMenu(anchor: MenuAnchor): void;
   onCopy(text: string, message: string): void;
+  onNewTag(): void;
 }): JSX.Element {
   const strings = useT();
   const {
@@ -534,6 +568,7 @@ function LocalList(props: {
     onSort,
     onMenu,
     onCopy,
+    onNewTag,
   } = props;
 
   const [sortOpen, setSortOpen] = useState(false);
@@ -728,6 +763,13 @@ function LocalList(props: {
             ))}
           </ul>
         ),
+        <button
+          type="button"
+          className="gc-button gc-button--quiet gc-release__new-tag"
+          onClick={onNewTag}
+        >
+          {strings.release.newTag}
+        </button>,
       )}
 
       {sortOpen && (
@@ -846,15 +888,42 @@ function TagRow({ tag, language }: { tag: TagRowModel; language: Lang }): JSX.El
   );
 }
 
-function TagList({ tags, language, empty }: { tags: readonly TagRowModel[]; language: Lang; empty: string }): JSX.Element {
-  if (tags.length === 0) return <p className="gc-branches__empty">{empty}</p>;
+function TagList({
+  tags,
+  language,
+  empty,
+  onNewTag,
+}: {
+  tags: readonly TagRowModel[];
+  language: Lang;
+  empty: string;
+  onNewTag(): void;
+}): JSX.Element {
+  const strings = useT();
   return (
     <div className="gc-branches__sections">
-      <ul className="gc-branches__list" role="list">
-        {tags.map((tag) => (
-          <TagRow key={tag.key} tag={tag} language={language} />
-        ))}
-      </ul>
+      <div className="gc-section__head">
+        <h3 className="gc-section__title">
+          <span className="gc-section__name">{strings.branches.tabTags}</span>
+        </h3>
+        <span className="gc-section__count">{tags.length}</span>
+        <button
+          type="button"
+          className="gc-button gc-button--quiet gc-release__new-tag"
+          onClick={onNewTag}
+        >
+          {strings.release.newTag}
+        </button>
+      </div>
+      {tags.length === 0 ? (
+        <p className="gc-branches__empty">{empty}</p>
+      ) : (
+        <ul className="gc-branches__list" role="list">
+          {tags.map((tag) => (
+            <TagRow key={tag.key} tag={tag} language={language} />
+          ))}
+        </ul>
+      )}
     </div>
   );
 }
