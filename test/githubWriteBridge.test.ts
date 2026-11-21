@@ -262,6 +262,7 @@ test('the GitHub mutation set holds the registered endpoint kinds and stays disj
     'github/commentIssue',
     'github/createIssue',
     'github/createPullRequest',
+    'github/createRelease',
     'github/dispatchWorkflow',
     'github/mergePullRequest',
     'github/replyReviewComment',

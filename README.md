@@ -163,8 +163,7 @@ Git Control uses a Personal Access Token stored in VS Code `SecretStorage`. Read
 | Read the private-repository warning state | `repo:status` | Metadata: Read |
 | Create, comment on, merge, close, or reopen pull requests and issues | `repo` | Pull requests: Read and write. Issues: Read and write |
 | Re-run failed jobs and dispatch a workflow | `repo` and `workflow` | Actions: Read and write (plus Contents: Read to read workflow inputs) |
-| Generate release notes and publish a release | `repo` | Contents: Read and write |
-| Create releases and tags through the API | `repo` | Contents: Read and write |
+| Generate release notes and create releases through the API | `repo` | Contents: Read and write |
 
 Behavior that applies to both token types:
 
