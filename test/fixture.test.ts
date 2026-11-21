@@ -175,6 +175,29 @@ test('cleanup removes a repository whose git objects are read-only', async (t) =
   assert.equal(await exists(repo.dir), false, 'the working tree is gone');
 });
 
+test('tags fixture holds three commits on main, annotated v1.0.0, lightweight v1.1.0, and bare origin', async (t) => {
+  const dir = await makeFixture('tags');
+  t.after(() => cleanup(dir));
+  const git = new GitRunner({ gitPath: 'git', cwd: dir });
+
+  const commits = await git.log({ limit: 10, all: false });
+  assert.equal(commits.length, 3);
+
+  const refs = await git.refs();
+  const tagNames = refs
+    .filter((r) => r.refName.startsWith('refs/tags/'))
+    .map((r) => r.refName.slice('refs/tags/'.length))
+    .sort();
+  assert.deepEqual(tagNames, ['v1.0.0', 'v1.1.0']);
+
+  const v100Type = (await git.run(['cat-file', '-t', 'refs/tags/v1.0.0'])).stdout.trim();
+  const v110Type = (await git.run(['cat-file', '-t', 'refs/tags/v1.1.0'])).stdout.trim();
+  assert.equal(v100Type, 'tag', 'v1.0.0 must be an annotated tag');
+  assert.equal(v110Type, 'commit', 'v1.1.0 must be a lightweight tag');
+
+  assert.equal(await git.upstreamOf('main'), 'origin/main');
+});
+
 async function exists(target: string): Promise<boolean> {
   try {
     await fs.stat(target);

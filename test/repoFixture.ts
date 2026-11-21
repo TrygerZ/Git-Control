@@ -58,7 +58,12 @@ export type FixtureKind =
    * pull request, fork or not, so this is the shape a checkout fetches from.
    * Pull 2 stays at `main` so a test can move it with {@link setPullRequestHead}.
    */
-  | 'remote-pulls';
+  | 'remote-pulls'
+  /**
+   * `main` with three commits and tags `v1.0.0` (annotated) and `v1.1.0`
+   * (lightweight), plus a bare remote `origin` at `.git/bare.git`.
+   */
+  | 'tags';
 
 /** Built templates, one per kind per process. */
 const templates = new Map<FixtureKind, Promise<string>>();
@@ -238,6 +243,24 @@ async function buildTemplate(kind: FixtureKind): Promise<string> {
     for (const number of [1, 2]) {
       await inBare.run(['update-ref', `refs/pull/${number}/head`, 'main']);
     }
+    return dir;
+  }
+
+  if (kind === 'tags') {
+    for (const n of ['one', 'two', 'three']) {
+      await fs.writeFile(path.join(dir, `${n}.txt`), `${n}\n`, 'utf8');
+      await git.stage([`${n}.txt`]);
+      await git.commit(`add ${n}`);
+      if (n === 'two') {
+        await git.run(['tag', '-a', '-m', 'Release v1.0.0', 'v1.0.0']);
+      }
+    }
+    await git.run(['tag', 'v1.1.0']);
+    const bareDir = path.join(dir, '.git', 'bare.git');
+    const bareGit = new GitRunner({ gitPath: 'git', cwd: dir });
+    await bareGit.run(['init', '--bare', '--quiet', '--initial-branch=main', bareDir]);
+    await git.run(['remote', 'add', 'origin', './.git/bare.git']);
+    await git.run(['push', '--quiet', '-u', 'origin', 'main']);
     return dir;
   }
 
