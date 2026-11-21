@@ -67,6 +67,7 @@ import {
   validateStashMessage,
   validateTagMessage,
   validateTagName,
+  validateWorktreePath,
 } from './validation';
 
 export type { GitErrorCode, GitResult, GitRunnerOptions, RunOptions } from './gitExec';
@@ -421,6 +422,27 @@ export class GitRunner {
   async worktrees(): Promise<ParsedWorktree[]> {
     const { stdout } = await this.run(['worktree', 'list', '--porcelain']);
     return parseWorktrees(stdout);
+  }
+
+  /**
+   * Add a linked worktree for an existing local branch at a validated absolute path.
+   * Never passes `-f`, `-b`, or `--detach`.
+   */
+  async worktreeAdd(targetPath: string, branch: string): Promise<void> {
+    if (!validateWorktreePath(targetPath)) {
+      throw new GitError({ code: 'VALIDATION_ERROR', message: `Invalid worktree path: ${String(targetPath)}` });
+    }
+    this.assertBranch(branch);
+    await this.runExclusive(async () => {
+      const { code } = await this.run(
+        ['rev-parse', '--verify', '--quiet', sanitizeRefArg(`refs/heads/${branch}`)],
+        { allowedExitCodes: [0, 1, 128] },
+      );
+      if (code !== 0) {
+        throw new GitError({ code: 'VALIDATION_ERROR', message: `Branch does not exist locally: ${branch}` });
+      }
+      await this.run(['worktree', 'add', '--', targetPath, sanitizeRefArg(branch)]);
+    });
   }
 
   async remotes(): Promise<Array<{ name: string; url: string }>> {

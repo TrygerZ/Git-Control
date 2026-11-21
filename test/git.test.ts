@@ -1595,3 +1595,56 @@ test('diverged fixture and compare range runners compute mergeBase, counts, log,
   await assert.rejects(() => git.compareLog(mainHash, featHash, { limit: 201 }), (err: unknown) => err instanceof GitError && err.code === 'VALIDATION_ERROR');
   await assert.rejects(() => git.compareNumstat(mainHash, 'feature'), (err: unknown) => err instanceof GitError && err.code === 'VALIDATION_ERROR');
 });
+
+test('worktreeAdd creates a worktree for an existing local branch, records exact argv, and rejects unsafe or in-use inputs', async (t) => {
+  const dir = await makeFixture('diverged');
+  const wtParent = await fs.mkdtemp(path.join(os.tmpdir(), 'git-control-wt test-'));
+  const wtPath = path.join(wtParent, 'feat worktree');
+  const wtPath2 = path.join(wtParent, 'main-dup');
+  t.after(async () => {
+    await cleanup(wtParent);
+    await cleanup(dir);
+  });
+  const git = new GitRunner({ gitPath: 'git', cwd: dir });
+
+  const recorded: string[][] = [];
+  const origRun = git.run.bind(git);
+  git.run = async (args, opts) => {
+    recorded.push([...args]);
+    return origRun(args, opts);
+  };
+
+  await git.worktreeAdd(wtPath, 'feature');
+
+  const addArgv = recorded.find((a) => a[0] === 'worktree' && a[1] === 'add');
+  assert.ok(addArgv !== undefined, 'worktree add command recorded');
+  assert.deepEqual(addArgv, ['worktree', 'add', '--', wtPath, 'feature']);
+  assert.ok(!addArgv.includes('-f') && !addArgv.includes('-b') && !addArgv.includes('--detach'));
+
+  const list = await git.worktrees();
+  assert.equal(list.length, 2);
+  assert.ok(list.some((w) => w.branch === 'refs/heads/feature'));
+
+  // Branch already checked out fails with a git error
+  await assert.rejects(() => git.worktreeAdd(wtPath2, 'main'), (err: unknown) => err instanceof GitError);
+
+  // Non-existent local branch fails with VALIDATION_ERROR
+  await assert.rejects(
+    () => git.worktreeAdd(wtPath2, 'no-such-branch'),
+    (err: unknown) => err instanceof GitError && err.code === 'VALIDATION_ERROR',
+  );
+
+  // Relative path, traversal, and invalid branch name fail with VALIDATION_ERROR
+  await assert.rejects(
+    () => git.worktreeAdd('../relative-wt', 'orphan'),
+    (err: unknown) => err instanceof GitError && err.code === 'VALIDATION_ERROR',
+  );
+  await assert.rejects(
+    () => git.worktreeAdd(`${wtParent}${path.sep}..${path.sep}escape`, 'orphan'),
+    (err: unknown) => err instanceof GitError && err.code === 'VALIDATION_ERROR',
+  );
+  await assert.rejects(
+    () => git.worktreeAdd(wtPath2, '-bad-branch'),
+    (err: unknown) => err instanceof GitError && err.code === 'VALIDATION_ERROR',
+  );
+});
