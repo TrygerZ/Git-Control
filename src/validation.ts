@@ -512,4 +512,44 @@ export function validateReleaseBody(value: unknown): value is string {
   return isBoundedTextWithoutNul(value, 125_000);
 }
 
+/**
+ * Defends against: relative paths, path traversal, UNC/extended-length escapes,
+ * trailing separators, control characters, and Windows reserved device names
+ * reaching `git worktree add -- <path> <branch>`.
+ */
+export function validateWorktreePath(
+  value: unknown,
+  opts: { windows?: boolean } = {},
+): boolean {
+  if (typeof value !== 'string') return false;
+  if (value.length === 0 || value.length > 4096) return false;
+  if (CONTROL_CHARS.test(value)) return false;
+  if (value.endsWith('/') || value.endsWith('\\')) return false;
+
+  const windows = opts.windows ?? WINDOWS_PATH_SEMANTICS;
+  let segments: string[];
+  if (windows) {
+    if (!/^[A-Za-z]:[\\/]/.test(value)) return false;
+    // Reject colons after the drive prefix to block NTFS alternate data streams.
+    if (value.indexOf(':', 2) !== -1) return false;
+    segments = value.slice(3).split(/[\\/]/);
+  } else {
+    if (!value.startsWith('/') || value.startsWith('//')) return false;
+    segments = value.slice(1).split('/');
+  }
+
+  for (const segment of segments) {
+    if (segment.length === 0 || segment === '.' || segment === '..') return false;
+    if (windows && WINDOWS_DEVICE_NAMES.test(segment)) return false;
+  }
+  return true;
+}
+
+/**
+ * Defends against: unbounded `--max-count` values in `repos/compare`.
+ */
+export function validateCompareLimit(value: unknown): value is number {
+  return typeof value === 'number' && Number.isInteger(value) && value >= 1 && value <= 200;
+}
+
 /** Shared assertion primitives for callers that must preserve their own error type. */

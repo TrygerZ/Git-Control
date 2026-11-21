@@ -82,7 +82,9 @@ const RESOLUTION_ACTIONS = new Set<GuardAction['action']>([
  * A dirty working tree would be overwritten or blocked by these.
  * Note: `reset-hard` and `discard-file` are intentionally excluded so they proceed
  * to the 2-stage CONFIRMATION_REQUIRED flow. Discarding dirty changes is their
- * explicit purpose.
+ * explicit purpose. `worktree-add` is also excluded because it checks out into a
+ * separate folder without touching the current working tree (while still blocked
+ * by in-progress operations via `RESOLUTION_ACTIONS`).
  */
 const DIRTY_BLOCKED = new Set<GuardAction['action']>([
   'checkout-branch',
@@ -99,6 +101,8 @@ const DIRTY_BLOCKED = new Set<GuardAction['action']>([
  * Actions needing a single confirmation click.
  * `merge-into` changes the active branch (switch + merge), so on a clean tree without confirmation
  * the user would suddenly find themselves on another branch without having asked for it.
+ * `worktree-add` is intentionally excluded: the dialog already previews the exact
+ * command and the action is non-destructive and reversible with `git worktree remove`.
  */
 const CONFIRM_LEVEL_1 = new Set<GuardAction['action']>([
   'push-up-to',

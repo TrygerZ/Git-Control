@@ -22,7 +22,6 @@ import {
   checkLabel,
   checkNamesLabel,
   checkTone,
-  compareUrl,
   countdown,
   formatCount,
   pullRequestLabel,
@@ -42,7 +41,17 @@ import {
   type PrContext,
   type PrFilterId,
 } from './prFilters';
-import { toErrorBody, useGitHubStore, useOperationStore, usePrDraftStore, useRepoStore, useRouteStore, useSettingsStore } from './store';
+import {
+  toErrorBody,
+  useBranchesStore,
+  useCompareStore,
+  useGitHubStore,
+  useOperationStore,
+  usePrDraftStore,
+  useRepoStore,
+  useRouteStore,
+  useSettingsStore,
+} from './store';
 import { useT } from './useT';
 import { EmptyState, FileListSkeleton, Icon, InfoBanner } from './ui';
 import type { Lang, PullRequestInfo } from '../messages';
@@ -212,6 +221,24 @@ export function PullRequestsView(): JSX.Element {
   const startCreate = (): void => {
     if (linkage?.owner == null || linkage.repo == null) return;
     void openDraft(linkage.owner, linkage.repo);
+  };
+
+  const startCompare = (): void => {
+    if (branch === null) return;
+    const branchesState = useBranchesStore.getState();
+    const repoBase =
+      branchesState.base !== null && branchesState.base !== branch ? branchesState.base : '';
+    useRouteStore.getState().navigate({ id: 'branches', sub: 'local' });
+    useCompareStore.getState().openCompare(repoBase, branch);
+    if (branchesState.base === null && branchesState.refs.length === 0) {
+      void branchesState.load().then(() => {
+        const loadedBase = useBranchesStore.getState().base;
+        const cmp = useCompareStore.getState();
+        if (cmp.open && cmp.base === '' && loadedBase !== null && loadedBase !== branch) {
+          cmp.setBase(loadedBase);
+        }
+      });
+    }
   };
 
   // A quick action or the Help row opens this dialog through a focus target.
@@ -421,9 +448,9 @@ export function PullRequestsView(): JSX.Element {
                   className="gc-button gc-button--quiet"
                   aria-label={strings.prs.compareAria(sanitizeGitText(branch))}
                   title={strings.prs.compareAria(sanitizeGitText(branch))}
-                  onClick={() => void openUrl(compareUrl(webUrl, branch))}
+                  onClick={startCompare}
                 >
-                  <Icon name="external" />
+                  <Icon name="diff" />
                   <span>{strings.prs.compareAction}</span>
                 </button>
               </div>

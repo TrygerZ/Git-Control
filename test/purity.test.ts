@@ -48,6 +48,7 @@ const PURE_MODULES = [
   'src/webview/pullMerge.ts',
   'src/workflowInputs.ts',
   'src/releasePlan.ts',
+  'src/webview/compareModel.ts',
 ];
 
 test('pure modules contain no vscode imports', () => {
@@ -135,4 +136,10 @@ test('the P28 pure module is listed and free of vscode and node imports', () => 
   assert.ok(PURE_MODULES.includes('src/releasePlan.ts'));
   const source = fs.readFileSync(path.join(__dirname, '..', '..', 'src/releasePlan.ts'), 'utf8');
   assert.doesNotMatch(source, /(?:from\s+|require\(\s*)['"]node:/, 'releasePlan must not import node builtins');
+});
+
+test('the P29 pure module is listed and free of vscode and node imports', () => {
+  assert.ok(PURE_MODULES.includes('src/webview/compareModel.ts'));
+  const source = fs.readFileSync(path.join(__dirname, '..', '..', 'src/webview/compareModel.ts'), 'utf8');
+  assert.doesNotMatch(source, /(?:from\s+|require\(\s*)['"]node:/, 'compareModel must not import node builtins');
 });

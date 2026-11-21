@@ -23,7 +23,7 @@ import { Logger } from './logger';
 import { parseRemoteUrl, resolveGitHubApiBase, webUrlOf, type GitHubApiBase, type ParsedRemoteUrl } from './remoteUrl';
 import { buildDraft } from './pullRequestDraft';
 import { parseDispatchInputs, workflowWebUrl } from './workflowInputs';
-import { validateFullHash, validatePullRequestNumber } from './validation';
+import { validateFullHash, validatePullRequestNumber, validateWorktreePath } from './validation';
 import { isFresh, parseRoute, PENDING_ROUTE_TTL_MS } from './webview/route';
 import { clampZoom } from './webview/viewport';
 import { MAX_COMMIT_LIMIT, RepositoryService } from './repository';
@@ -1030,7 +1030,49 @@ class Controller implements vscode.Disposable {
       takePendingRoute: () => this.takePendingRoute(),
       broadcastRepoChanged: (reason) => this.broadcastRepoChanged(reason),
       broadcastPullRequestsChanged: (event) => this.broadcastPullRequestsChanged(event),
+      pickWorktreeFolder: (suggested) => this.pickWorktreeFolder(suggested),
+      worktreeTargetState: (targetPath) => this.worktreeTargetState(targetPath),
+      openWorktreeFolder: (targetPath) => this.openWorktreeFolder(targetPath),
     };
+  }
+
+  private async pickWorktreeFolder(suggested: string): Promise<string | null> {
+    const options: vscode.OpenDialogOptions = {
+      canSelectFolders: true,
+      canSelectFiles: false,
+      canSelectMany: false,
+      ...(suggested.length > 0 && validateWorktreePath(suggested)
+        ? { defaultUri: vscode.Uri.file(suggested) }
+        : {}),
+    };
+    const uris = await vscode.window.showOpenDialog(options);
+    return uris?.[0]?.fsPath ?? null;
+  }
+
+  private async worktreeTargetState(targetPath: string): Promise<'ok' | 'exists-not-empty'> {
+    const uri = vscode.Uri.file(targetPath);
+    let stat: vscode.FileStat;
+    try {
+      stat = await vscode.workspace.fs.stat(uri);
+    } catch (err) {
+      const code = typeof err === 'object' && err !== null && 'code' in err ? (err as { code: unknown }).code : undefined;
+      if (code === 'FileNotFound' || code === 'ENOENT') return 'ok';
+      return 'exists-not-empty';
+    }
+    if (stat.type !== vscode.FileType.Directory) return 'exists-not-empty';
+    try {
+      const entries = await vscode.workspace.fs.readDirectory(uri);
+      return entries.length > 0 ? 'exists-not-empty' : 'ok';
+    } catch {
+      return 'exists-not-empty';
+    }
+  }
+
+  private async openWorktreeFolder(targetPath: string): Promise<boolean> {
+    await vscode.commands.executeCommand('vscode.openFolder', vscode.Uri.file(targetPath), {
+      forceNewWindow: true,
+    });
+    return true;
   }
 
   private async broadcastRepoChanged(reason: 'fs' | 'action' | 'manual'): Promise<void> {

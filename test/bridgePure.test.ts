@@ -32,6 +32,10 @@ import {
   validateDispatchWorkflowPayload,
   validateReleaseNotesPayload,
   validateCreateReleasePayload,
+  checkWorktreeTarget,
+  validateComparePayload,
+  validatePickWorktreeFolderPayload,
+  validateOpenWorktreeFolderPayload,
   GITHUB_MUTATION_KINDS,
   MUTATION_KINDS,
   type Outcome,
@@ -1090,4 +1094,83 @@ test('validateReleaseNotesPayload, validateCreateReleasePayload, and GITHUB_MUTA
   assert.equal(detailOf(() => validateCreateReleasePayload({ ...releaseBase, body: 'a\u0000b' }, invalid)), 'body');
   assert.equal(detailOf(() => validateCreateReleasePayload({ ...releaseBase, prerelease: 'no' }, invalid)), 'prerelease');
   assert.equal(detailOf(() => validateCreateReleasePayload({ ...releaseBase, target: '-bad' }, invalid)), 'target');
+});
+
+test('checkWorktreeTarget enforces absolute, .git, repo root, nesting, and existing worktree rules', () => {
+  const existing = [{ path: '/work/repo' }, { path: '/work/repo-wt1' }];
+  assert.equal(checkWorktreeTarget('/work/repo-wt2', '/work/repo', '/work/repo/.git', existing, { windows: false }), 'ok');
+  assert.equal(checkWorktreeTarget('../rel', '/work/repo', '/work/repo/.git', existing, { windows: false }), 'not-absolute');
+  assert.equal(checkWorktreeTarget('/work/repo/.git', '/work/repo', '/work/repo/.git', existing, { windows: false }), 'inside-git-dir');
+  assert.equal(checkWorktreeTarget('/work/repo/.git/worktrees/x', '/work/repo', '/work/repo/.git', existing, { windows: false }), 'inside-git-dir');
+  assert.equal(checkWorktreeTarget('/work/repo', '/work/repo', '/work/repo/.git', existing, { windows: false }), 'is-worktree');
+  assert.equal(checkWorktreeTarget('/work/repo-wt1', '/work/repo', '/work/repo/.git', existing, { windows: false }), 'is-worktree');
+  assert.equal(checkWorktreeTarget('/work', '/work/repo', '/work/repo/.git', existing, { windows: false }), 'inside-worktree');
+  assert.equal(checkWorktreeTarget('/work/repo/sub', '/work/repo', '/work/repo/.git', existing, { windows: false }), 'inside-worktree');
+  assert.equal(checkWorktreeTarget('/work/repo-wt1/sub', '/work/repo', '/work/repo/.git', existing, { windows: false }), 'inside-worktree');
+
+  // Windows case-insensitivity and slash normalization
+  const winExisting = [{ path: 'C:\\Work\\Repo' }, { path: 'C:\\Work\\Repo-WT1' }];
+  assert.equal(checkWorktreeTarget('c:/work/repo-wt2', 'C:\\Work\\Repo', 'C:\\Work\\Repo\\.git', winExisting, { windows: true }), 'ok');
+  assert.equal(checkWorktreeTarget('c:/work/repo-wt1', 'C:\\Work\\Repo', 'C:\\Work\\Repo\\.git', winExisting, { windows: true }), 'is-worktree');
+  assert.equal(checkWorktreeTarget('c:\\work\\repo\\.GIT\\sub', 'C:\\Work\\Repo', 'C:\\Work\\Repo\\.git', winExisting, { windows: true }), 'inside-git-dir');
+  assert.equal(checkWorktreeTarget('c:\\work', 'C:\\Work\\Repo', 'C:\\Work\\Repo\\.git', winExisting, { windows: true }), 'inside-worktree');
+  assert.equal(checkWorktreeTarget('c:\\work\\repo\\nested', 'C:\\Work\\Repo', 'C:\\Work\\Repo\\.git', winExisting, { windows: true }), 'inside-worktree');
+});
+
+test('validateAction accepts valid worktree-add and rejects bad path or branch', () => {
+  const invalid = (detail: string): never => {
+    throw new Error(detail);
+  };
+  const detailOf = (fn: () => void): string => {
+    try {
+      fn();
+      return 'accepted';
+    } catch (err) {
+      return (err as Error).message;
+    }
+  };
+  const validPath = process.platform === 'win32' ? 'C:\\worktrees\\feat' : '/tmp/worktrees/feat';
+  assert.equal(
+    detailOf(() => validateAction({ action: 'worktree-add', path: validPath, branch: 'feature', idempotencyKey: 'k1' }, invalid)),
+    'accepted',
+  );
+  assert.equal(
+    detailOf(() => validateAction({ action: 'worktree-add', path: '../rel', branch: 'feature', idempotencyKey: 'k1' }, invalid)),
+    'path',
+  );
+  assert.equal(
+    detailOf(() => validateAction({ action: 'worktree-add', path: validPath, branch: '-bad', idempotencyKey: 'k1' }, invalid)),
+    'branch',
+  );
+});
+
+test('validateComparePayload, validatePickWorktreeFolderPayload, and validateOpenWorktreeFolderPayload', () => {
+  const invalid = (detail: string): never => {
+    throw new Error(detail);
+  };
+  const detailOf = (fn: () => void): string => {
+    try {
+      fn();
+      return 'accepted';
+    } catch (err) {
+      return (err as Error).message;
+    }
+  };
+
+  assert.equal(detailOf(() => validateComparePayload({ base: 'main', head: 'feature' }, invalid)), 'accepted');
+  assert.equal(detailOf(() => validateComparePayload({ base: 'main', head: 'abcdef1', limit: 50 }, invalid)), 'accepted');
+  assert.equal(detailOf(() => validateComparePayload({ base: 'main', head: 'feature', extra: 1 }, invalid)), 'payload');
+  assert.equal(detailOf(() => validateComparePayload({ base: '-flag', head: 'feature' }, invalid)), 'base');
+  assert.equal(detailOf(() => validateComparePayload({ base: 'main', head: '--all' }, invalid)), 'head');
+  assert.equal(detailOf(() => validateComparePayload({ base: 'main', head: 'feature', limit: 201 }, invalid)), 'limit');
+
+  assert.equal(detailOf(() => validatePickWorktreeFolderPayload({ suggested: 'C:\\work\\wt' }, invalid)), 'accepted');
+  assert.equal(detailOf(() => validatePickWorktreeFolderPayload({ suggested: '' }, invalid)), 'accepted');
+  assert.equal(detailOf(() => validatePickWorktreeFolderPayload({ suggested: 'a', extra: 1 }, invalid)), 'payload');
+  assert.equal(detailOf(() => validatePickWorktreeFolderPayload({ suggested: 'bad\u0000path' }, invalid)), 'suggested');
+
+  const validPath = process.platform === 'win32' ? 'C:\\worktrees\\feat' : '/tmp/worktrees/feat';
+  assert.equal(detailOf(() => validateOpenWorktreeFolderPayload({ path: validPath }, invalid)), 'accepted');
+  assert.equal(detailOf(() => validateOpenWorktreeFolderPayload({ path: validPath, extra: 1 }, invalid)), 'payload');
+  assert.equal(detailOf(() => validateOpenWorktreeFolderPayload({ path: '../rel' }, invalid)), 'path');
 });

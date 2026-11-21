@@ -39,10 +39,10 @@ test('the card owns both actions, and nothing create-shaped floats in the search
   assert.doesNotMatch(search, /startCreate/, 'no second create entry point in the search row');
 });
 
-test('Compare opens the GitHub compare page for the current branch', () => {
+test('Compare opens the in-extension compare sub-view for the current branch', () => {
   const src = read(PRS);
-  assert.match(src, /compareUrl\(webUrl, branch\)/, 'the URL comes from the existing helper');
-  assert.match(src, /openUrl\(/, 'it leaves through the host, never an href');
+  assert.match(src, /openCompare\(/, 'Compare opens the local compare sub-view');
+  assert.match(src, /navigate\(\{\s*id:\s*'branches'/, 'Compare switches to the Branches route');
   assert.doesNotMatch(src, /href=\{/, 'no raw link');
 });
 

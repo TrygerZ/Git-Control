@@ -70,20 +70,18 @@ test('the view does not mount a second guard dialog, because the shell already h
   assert.match(read('src/webview/PendingChanges.tsx'), /<GuardDialog \/>/, 'the shell keeps its single host');
 });
 
-test('the controls owned by later phases are absent', () => {
-  // Checked against the rendered strings and the action payloads, not the
-  // component's prose, so a comment naming a deferred control is not a failure.
+test('the controls owned by later phases are absent while P29 compare and worktree are wired', () => {
   const src = code('src/webview/BranchesView.tsx');
-  for (const forbidden of ['addWorktree', 'compareRange']) {
-    assert.doesNotMatch(src, new RegExp(forbidden), forbidden);
-  }
   const actions = [...src.matchAll(/action:\s*'([a-z-]+)'/g)].map((m) => m[1]);
   assert.deepEqual(
     [...new Set(actions)].sort(),
     ['create-branch'],
-    'the only inline action is branch creation; checkout, merge, and delete ride shared helpers',
+    'the only inline action is branch creation; checkout, merge, delete, and worktree ride shared helpers/dialogs',
   );
-  assert.doesNotMatch(src, /'delete-tag'|'worktree-add'|'compare'/);
+  assert.doesNotMatch(src, /'delete-tag'/);
+  assert.match(src, /<CompareView/, 'Compare sub-view is mounted in BranchesView');
+  assert.match(src, /<AddWorktreeDialog/, 'AddWorktreeDialog is mounted in BranchesView');
+  assert.match(src, /canOfferAddWorktree\(/, 'row menu gates Add worktree... through canOfferAddWorktree');
 });
 
 test('cleanup is wired through the pure selector and the store, never a direct delete', () => {

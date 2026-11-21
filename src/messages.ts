@@ -286,7 +286,9 @@ export type GitActionRequest =
   /** Create an annotated or lightweight local tag at a validated branch or commit target. */
   | { action: 'tag-create'; name: string; target: string; message?: string; annotated?: boolean }
   /** Push a single tag via explicit `refs/tags/<name>:refs/tags/<name>` refspec without force. */
-  | { action: 'tag-push'; remote: string; name: string };
+  | { action: 'tag-push'; remote: string; name: string }
+  /** Add a linked worktree for an existing local branch at a validated absolute path. */
+  | { action: 'worktree-add'; path: string; branch: string };
 
 // ---------------------------------------------------------------- payloads
 
@@ -1273,6 +1275,53 @@ export interface RevealCommitPayload {
   hash: string;
 }
 
+/** Request payload for `repos/compare`. Refs may be branch names, tags, or hashes. */
+export interface ComparePayload {
+  base: string;
+  head: string;
+  limit?: number;
+}
+
+/** Commit entry returned in `CompareResult`. */
+export interface CompareCommit {
+  hash: string;
+  shortHash: string;
+  subject: string;
+  author: string;
+  authoredAt: string;
+}
+
+/** Result of comparing two refs (`base...head` files, `base..head` commits). */
+export interface CompareResult {
+  baseHash: string;
+  headHash: string;
+  mergeBase: string | null;
+  ahead: number;
+  behind: number;
+  commits: CompareCommit[];
+  files: CommitFileChange[];
+  totals: { files: number; additions: number; deletions: number; binary: number };
+  truncated: boolean;
+}
+
+/** Request payload for `actions/pickWorktreeFolder`. */
+export interface PickWorktreeFolderPayload {
+  suggested: string;
+}
+
+/** Request payload for `actions/openWorktreeFolder`. */
+export interface OpenWorktreeFolderPayload {
+  path: string;
+}
+
+export type WorktreeTargetState =
+  | 'ok'
+  | 'exists-not-empty'
+  | 'inside-git-dir'
+  | 'inside-worktree'
+  | 'is-worktree'
+  | 'not-absolute';
+
 /** Request kind → { payload, response } map. Extend here, nowhere else. */
 export interface RequestMap {
   'repos/status': { payload: StatusPayload; response: RepoStatus };
@@ -1281,6 +1330,7 @@ export interface RequestMap {
   'repos/contributors': { payload: ContributorsRequest; response: ContributorsResponse };
   'repos/refs': { payload: Record<string, never>; response: RefsResult };
   'repos/worktrees': { payload: Record<string, never>; response: { worktrees: WorktreeInfo[] } };
+  'repos/compare': { payload: ComparePayload; response: CompareResult };
   'stash/list': { payload: Record<string, never>; response: StashEntry[] };
   'stash/show': { payload: StashShowPayload; response: StashFile[] };
   'commits/detail': { payload: CommitDetailPayload; response: CommitDetail };
@@ -1289,6 +1339,8 @@ export interface RequestMap {
   'actions/git': { payload: GitActionPayload; response: ActionResult };
   'actions/openDiff': { payload: OpenDiffPayload; response: OpenDiffResult };
   'actions/openStashDiff': { payload: OpenStashDiffPayload; response: OpenDiffResult };
+  'actions/pickWorktreeFolder': { payload: PickWorktreeFolderPayload; response: { path: string | null } };
+  'actions/openWorktreeFolder': { payload: OpenWorktreeFolderPayload; response: { opened: boolean } };
   /**
    * Reveal the `Git Control` output channel. Empty payload by design: it takes no
    * parameters, so it cannot be used to run an arbitrary host command.

@@ -74,6 +74,11 @@ const VALID_ACTIONS: Record<GitActionRequest['action'], GitActionRequest> = {
   'checkout-pr': { action: 'checkout-pr', number: 150, remote: 'origin' },
   'tag-create': { action: 'tag-create', name: 'v1.0.0', target: 'main', message: 'Release v1.0.0', annotated: true },
   'tag-push': { action: 'tag-push', remote: 'origin', name: 'v1.0.0' },
+  'worktree-add': {
+    action: 'worktree-add',
+    path: process.platform === 'win32' ? 'C:\\worktrees\\audit-wt' : '/tmp/worktrees/audit-wt',
+    branch: 'feature',
+  },
 };
 
 const INVALID_ACTIONS: Record<GitActionRequest['action'], GitActionRequest> = {
@@ -105,6 +110,7 @@ const INVALID_ACTIONS: Record<GitActionRequest['action'], GitActionRequest> = {
   'checkout-pr': { action: 'checkout-pr', number: 0 },
   'tag-create': { action: 'tag-create', name: '-bad', target: 'main' },
   'tag-push': { action: 'tag-push', remote: '-bad', name: 'v1.0.0' },
+  'worktree-add': { action: 'worktree-add', path: '../relative', branch: '-bad' },
 };
 
 test('validateAction accepts every union member and rejects every invalid table row', async (t) => {
