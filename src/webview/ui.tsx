@@ -15,6 +15,7 @@ import {
   syncSummary,
 } from './format';
 import { useT } from './useT';
+import { t } from './i18n';
 import { useSettingsStore, useIconThemeStore } from './store';
 import type {
   ErrorBody,
@@ -491,7 +492,7 @@ export class ErrorBoundary extends Component<{ children: ReactNode }, BoundarySt
   override render(): ReactNode {
     const { error, errorId } = this.state;
     if (error === null) return this.props.children;
-    const strings = useT();
+    const strings = t(useSettingsStore.getState().language);
     return (
       <div className="gc-crash" role="alert">
         <p className="gc-crash__title">{strings.ui.crashTitle}</p>

@@ -3306,7 +3306,9 @@ h3 {
 .gc-branch-popover__pill {
   display: inline-flex;
   align-items: center;
+  margin-left: auto;
   padding: 0 var(--gc-space-2);
+  border: 1px solid var(--gc-border);
   border-radius: var(--gc-radius-lg);
   background: var(--gc-surface-raised);
   color: var(--gc-muted);
