@@ -3277,6 +3277,10 @@ export function wireHostEvents(mode: 'explorer' | 'pending' | 'pr'): () => void 
         // nothing else on this panel displays them.
         if (useRouteStore.getState().route.id === 'branches') {
           void useBranchesStore.getState().load();
+          const cmp = useCompareStore.getState();
+          if (cmp.open && cmp.base.length > 0 && cmp.head.length > 0) {
+            void cmp.load();
+          }
         }
       }
     }, REFRESH_DEBOUNCE_MS);

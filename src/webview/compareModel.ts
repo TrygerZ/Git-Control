@@ -6,7 +6,9 @@ import type { CompareResult, Lang } from '../messages';
 import { t } from './i18n';
 
 export function summaryLine(
-  r: Pick<CompareResult, 'ahead' | 'files' | 'totals' | 'truncated'>,
+  r: Pick<CompareResult, 'ahead' | 'files' | 'totals' | 'truncated'> & {
+    commits?: ReadonlyArray<unknown>;
+  },
   lang: Lang,
 ): string {
   const strings = t(lang).compare;
@@ -16,7 +18,10 @@ export function summaryLine(
     String(r.totals.additions),
     String(r.totals.deletions),
   );
-  return r.truncated ? `${line} ${strings.truncated(String(r.files.length))}` : line;
+  if (!r.truncated) return line;
+  const shownCount =
+    r.commits !== undefined && r.ahead > r.commits.length ? r.commits.length : r.files.length;
+  return `${line} ${strings.truncated(String(shownCount))}`;
 }
 
 export function swapSides(sel: { base: string; head: string }): { base: string; head: string } {

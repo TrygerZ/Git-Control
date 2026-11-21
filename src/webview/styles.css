@@ -8856,6 +8856,37 @@ h3 {
   padding: var(--gc-space-4);
 }
 
+.gc-compare__summary-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--gc-space-2);
+}
+
+.gc-compare__counts {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--gc-space-2);
+  flex: 0 0 auto;
+}
+
+.gc-compare__count {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--gc-space-1);
+  font-size: var(--gc-fs-xs);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.gc-compare__count--ahead {
+  color: var(--gc-tone-added);
+}
+
+.gc-compare__count--behind {
+  color: var(--gc-tone-pending);
+}
+
 .gc-compare__summary,
 .gc-compare__empty {
   margin: 0;

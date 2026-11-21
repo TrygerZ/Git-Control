@@ -30,6 +30,23 @@ test('summaryLine formats counts in en and id and appends truncated note when tr
   const truncId = summaryLine({ ...base, truncated: true }, 'id');
   assert.ok(truncId.includes('2 commit, 1 file, +10 -3'));
   assert.ok(truncId.includes('Menampilkan 1 pertama.'));
+
+  // Finding 6: when commits are capped (ahead > commits.length) and files are not, report commits.length
+  const commitTrunc = summaryLine(
+    {
+      ahead: 250,
+      commits: Array.from({ length: 200 }, (_, i) => ({ hash: String(i) })),
+      files: [
+        { path: 'a.ts', additions: 1, deletions: 0, binary: false },
+        { path: 'b.ts', additions: 1, deletions: 0, binary: false },
+        { path: 'c.ts', additions: 1, deletions: 0, binary: false },
+      ],
+      totals: { files: 3, additions: 3, deletions: 0, binary: 0 },
+      truncated: true,
+    },
+    'en',
+  );
+  assert.ok(commitTrunc.includes('Showing the first 200.'), `expected 200 in: ${commitTrunc}`);
 });
 
 test('swapSides swaps base and head without mutating input', () => {
@@ -133,4 +150,21 @@ test('P29 UI components satisfy security, accessibility, diff, and entry-point c
   const css = read('src/webview/styles.css');
   assert.match(css, /\.gc-compare\b/);
   assert.match(css, /\.gc-worktree-dialog\b/);
+
+  // Finding 1: PR card Compare uses repository base branch from useBranchesStore, never branch-vs-branch
+  const prsView = read('src/webview/PullRequestsView.tsx');
+  assert.match(prsView, /useBranchesStore\.getState\(\)/);
+  assert.doesNotMatch(prsView, /openCompare\(baseBranch \?\? branch, branch\)/);
+
+  // Finding 2: AddWorktreeDialog maps 'path' detail to notAbsolute and trims submitted path
+  assert.match(worktreeDialog, /case 'path':/);
+  assert.match(worktreeDialog, /folderPath\.trim\(\)/);
+
+  // Finding 3: CompareView renders result.behind and checks result.behind === 0 for upToDate
+  assert.match(compareView, /result\.behind/);
+  assert.match(compareView, /result\.ahead === 0 && result\.behind === 0/);
+
+  // Finding 7: wireHostEvents refreshes open CompareView on event/repoChanged
+  const storeSrc = read('src/webview/store.ts');
+  assert.match(storeSrc, /useCompareStore\.getState\(\)/);
 });

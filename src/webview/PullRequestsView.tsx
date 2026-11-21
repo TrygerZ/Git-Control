@@ -43,6 +43,7 @@ import {
 } from './prFilters';
 import {
   toErrorBody,
+  useBranchesStore,
   useCompareStore,
   useGitHubStore,
   useOperationStore,
@@ -220,6 +221,24 @@ export function PullRequestsView(): JSX.Element {
   const startCreate = (): void => {
     if (linkage?.owner == null || linkage.repo == null) return;
     void openDraft(linkage.owner, linkage.repo);
+  };
+
+  const startCompare = (): void => {
+    if (branch === null) return;
+    const branchesState = useBranchesStore.getState();
+    const repoBase =
+      branchesState.base !== null && branchesState.base !== branch ? branchesState.base : '';
+    useRouteStore.getState().navigate({ id: 'branches', sub: 'local' });
+    useCompareStore.getState().openCompare(repoBase, branch);
+    if (branchesState.base === null && branchesState.refs.length === 0) {
+      void branchesState.load().then(() => {
+        const loadedBase = useBranchesStore.getState().base;
+        const cmp = useCompareStore.getState();
+        if (cmp.open && cmp.base === '' && loadedBase !== null && loadedBase !== branch) {
+          cmp.setBase(loadedBase);
+        }
+      });
+    }
   };
 
   // A quick action or the Help row opens this dialog through a focus target.
@@ -429,10 +448,7 @@ export function PullRequestsView(): JSX.Element {
                   className="gc-button gc-button--quiet"
                   aria-label={strings.prs.compareAria(sanitizeGitText(branch))}
                   title={strings.prs.compareAria(sanitizeGitText(branch))}
-                  onClick={() => {
-                    useRouteStore.getState().navigate({ id: 'branches', sub: 'local' });
-                    useCompareStore.getState().openCompare(baseBranch ?? branch, branch);
-                  }}
+                  onClick={startCompare}
                 >
                   <Icon name="diff" />
                   <span>{strings.prs.compareAction}</span>

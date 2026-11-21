@@ -102,14 +102,34 @@ export function CompareView(): JSX.Element {
     if (result.mergeBase === null) {
       return <p className="gc-compare__empty">{strings.compare.unrelated}</p>;
     }
-    if (result.ahead === 0 && result.files.length === 0) {
+    if (result.ahead === 0 && result.behind === 0 && result.files.length === 0) {
       return <p className="gc-compare__empty">{strings.compare.upToDate}</p>;
     }
 
     const mergeBase = result.mergeBase;
     return (
       <>
-        <p className="gc-compare__summary">{summaryLine(result, language)}</p>
+        <div className="gc-compare__summary-row">
+          <div className="gc-compare__counts">
+            <span
+              className="gc-compare__count gc-compare__count--ahead"
+              aria-label={strings.branches.aheadAria(String(result.ahead))}
+              title={strings.branches.aheadAria(String(result.ahead))}
+            >
+              <Icon name="arrow-up" />
+              <span>{result.ahead}</span>
+            </span>
+            <span
+              className="gc-compare__count gc-compare__count--behind"
+              aria-label={strings.branches.behindAria(String(result.behind))}
+              title={strings.branches.behindAria(String(result.behind))}
+            >
+              <Icon name="arrow-down" />
+              <span>{result.behind}</span>
+            </span>
+          </div>
+          <p className="gc-compare__summary">{summaryLine(result, language)}</p>
+        </div>
 
         <section className="gc-section gc-compare__section" aria-label={strings.compare.commits}>
           <div className="gc-section__head">

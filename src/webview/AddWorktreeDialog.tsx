@@ -17,6 +17,7 @@ import { useT } from './useT';
 function mapWorktreeError(err: unknown, branch: string, strings: ReturnType<typeof useT>): string {
   if (isBridgeError(err)) {
     switch (err.body.detail) {
+      case 'path':
       case 'not-absolute':
         return strings.worktree.err.notAbsolute;
       case 'exists-not-empty':
@@ -165,18 +166,19 @@ export function AddWorktreeDialog(props: {
   const submit = async (event: FormEvent): Promise<void> => {
     event.preventDefault();
     if (!canAddWorktree({ path: folderPath, branch }, existingPaths) || submitting) return;
+    const targetPath = folderPath.trim();
     setSubmitting(true);
     setErrorText(null);
     try {
       await bridge.request('actions/git', {
         action: 'worktree-add',
-        path: folderPath,
+        path: targetPath,
         branch,
         idempotencyKey: newId(),
       });
       await reloadBranches();
-      props.onAdded(folderPath);
-      setAddedPath(folderPath);
+      props.onAdded(targetPath);
+      setAddedPath(targetPath);
     } catch (err) {
       setErrorText(mapWorktreeError(err, branch, strings));
     } finally {
