@@ -89,3 +89,22 @@ test('P30: README Available Commands has 100% parity with package.json contribut
   assert.match(readme, /Sign in for higher limits/);
   assert.match(readme, /60 requests per hour/);
 });
+
+test('P30: AGENTS.md File Map covers every file in src/ and src/webview/ and lists final UI v3 invariants', () => {
+  const agents = read('AGENTS.md');
+  const walk = (dir: string): string[] =>
+    fs.readdirSync(path.join(ROOT, dir), { withFileTypes: true }).flatMap((entry) => {
+      const rel = `${dir}/${entry.name}`;
+      return entry.isDirectory() ? walk(rel) : [rel];
+    });
+
+  for (const rel of walk('src')) {
+    assert.ok(agents.includes(`\`${rel}\``), `AGENTS.md File Map lists ${rel}`);
+  }
+
+  assert.match(agents, /`LICENSE` in VSIX/, 'AGENTS.md packaging invariant includes LICENSE');
+  assert.match(agents, /Quick actions and Explorer More menu navigate and focus only/);
+  assert.match(agents, /Sidebar route ids and focus targets are validated against a closed allowlist/);
+  assert.match(agents, /Every keyboard shortcut listed in `shortcuts\.ts` and `README\.md` is backed by a handler evidence assertion/);
+  assert.match(agents, /register it in `src\/webview\/navRegistry\.ts`/);
+});
