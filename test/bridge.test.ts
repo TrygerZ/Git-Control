@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as fs from 'node:fs/promises';
+import * as os from 'node:os';
 import * as path from 'node:path';
 import { GitError, GitRunner } from '../src/git';
 import { GitHubError } from '../src/github';
@@ -5671,4 +5672,160 @@ test('P28: github/createRelease enforces level 1 confirm, validates payload, and
   assert.equal(r2.ok, true);
   assert.equal(calls, 1, 'double click replays cached outcome');
   assert.deepEqual(r1.ok ? r1.data : null, { id: 77, htmlUrl: 'https://github.com/o/r/releases/tag/v2.8.0' });
+});
+
+test('P29: repos/compare resolves refs, computes diverged counts/commits/files, handles unrelated histories, and rejects bad payloads', async (t) => {
+  const dir = await makeFixture('diverged');
+  t.after(() => cleanup(dir));
+  const repo = new RepositoryService({ folderPath: dir, gitPath: 'git', store: new MemoryStore() });
+  const h = harness(repo);
+  t.after(() => h.bridge.dispose());
+
+  // Valid diverged compare
+  const ok = await h.webview.send(req('repos/compare', { base: 'main', head: 'feature' }));
+  assert.equal(ok.ok, true);
+  if (ok.ok) {
+    const data = ok.data as import('../src/messages').CompareResult;
+    assert.equal(data.baseHash.length, 40);
+    assert.equal(data.headHash.length, 40);
+    assert.ok(data.mergeBase !== null && data.mergeBase.length === 40);
+    assert.equal(data.ahead, 2);
+    assert.equal(data.behind, 1);
+    assert.deepEqual(data.commits.map((c) => c.subject), ['feature two', 'feature one']);
+    assert.deepEqual(data.files.map((f) => f.path).sort(), ['feat-1.txt', 'feat-2.txt']);
+    assert.equal(data.totals.files, 2);
+    assert.equal(data.totals.additions, 2);
+    assert.equal(data.totals.deletions, 0);
+    assert.equal(data.truncated, false);
+  }
+
+  // Unrelated histories return mergeBase: null and empty files
+  const unrelated = await h.webview.send(req('repos/compare', { base: 'main', head: 'orphan' }));
+  assert.equal(unrelated.ok, true);
+  if (unrelated.ok) {
+    const data = unrelated.data as import('../src/messages').CompareResult;
+    assert.equal(data.mergeBase, null);
+    assert.deepEqual(data.files, []);
+    assert.deepEqual(data.commits, []);
+  }
+
+  // Unknown ref returns 404 NOT_FOUND
+  const missing = await h.webview.send(req('repos/compare', { base: 'main', head: 'no-such-branch' }));
+  assert.equal(missing.ok, false);
+  if (!missing.ok) {
+    assert.equal(missing.error.status, 404);
+    assert.equal(missing.error.code, 'NOT_FOUND');
+  }
+
+  // Extra field or leading-dash ref rejected with 400 VALIDATION_ERROR
+  const extra = await h.webview.send(req('repos/compare', { base: 'main', head: 'feature', extra: true } as unknown as import('../src/messages').ComparePayload));
+  assert.equal(extra.ok, false);
+  if (!extra.ok) assert.equal(extra.error.code, 'VALIDATION_ERROR');
+
+  const dash = await h.webview.send(req('repos/compare', { base: '--all', head: 'feature' }));
+  assert.equal(dash.ok, false);
+  if (!dash.ok) assert.equal(dash.error.code, 'VALIDATION_ERROR');
+});
+
+test('P29: actions/pickWorktreeFolder returns picked path or null on cancel, and rejects missing host', async (t) => {
+  let pickedValue: string | null = null;
+  const h = harness(null, {
+    pickWorktreeFolder: async () => pickedValue,
+  });
+  t.after(() => h.bridge.dispose());
+
+  // Cancel returns null
+  const cancelled = await h.webview.send(req('actions/pickWorktreeFolder', { suggested: '' }));
+  assert.equal(cancelled.ok, true);
+  if (cancelled.ok) assert.deepEqual(cancelled.data, { path: null });
+
+  // Valid absolute path returned
+  pickedValue = process.platform === 'win32' ? 'C:\\worktrees\\feat' : '/tmp/worktrees/feat';
+  const picked = await h.webview.send(req('actions/pickWorktreeFolder', { suggested: pickedValue }));
+  assert.equal(picked.ok, true);
+  if (picked.ok) assert.deepEqual(picked.data, { path: pickedValue });
+
+  // Missing host callback returns 503 UNAVAILABLE
+  const missing = harness(null);
+  t.after(() => missing.bridge.dispose());
+  const unavailable = await missing.webview.send(req('actions/pickWorktreeFolder', { suggested: '' }));
+  assert.equal(unavailable.ok, false);
+  if (!unavailable.ok) assert.equal(unavailable.error.code, 'UNAVAILABLE');
+});
+
+test('P29: worktree-add re-validates target host-side, creates worktree, invalidates cache, and supports openWorktreeFolder', async (t) => {
+  const dir = await makeFixture('diverged');
+  const wtParent = await fs.mkdtemp(path.join(os.tmpdir(), 'git-control-bridge-wt-'));
+  const wtPath = path.join(wtParent, 'feature-wt');
+  t.after(async () => {
+    await cleanup(wtParent);
+    await cleanup(dir);
+  });
+
+  const repo = new RepositoryService({ folderPath: dir, gitPath: 'git', store: new MemoryStore() });
+  let targetProbe: 'ok' | 'exists-not-empty' = 'ok';
+  const openedFolders: string[] = [];
+  const h = harness(repo, {
+    worktreeTargetState: async () => targetProbe,
+    openWorktreeFolder: async (p) => {
+      openedFolders.push(p);
+      return true;
+    },
+  });
+  t.after(() => h.bridge.dispose());
+
+  // Inside .git rejected host-side
+  const insideGit = await h.webview.send(
+    req('actions/git', { action: 'worktree-add', path: path.join(dir, '.git', 'sub'), branch: 'feature', idempotencyKey: 'wt-1' }),
+  );
+  assert.equal(insideGit.ok, false);
+  if (!insideGit.ok) {
+    assert.equal(insideGit.error.code, 'VALIDATION_ERROR');
+    assert.equal(insideGit.error.detail, 'inside-git-dir');
+  }
+
+  // Non-empty folder probe rejected host-side
+  targetProbe = 'exists-not-empty';
+  const notEmpty = await h.webview.send(
+    req('actions/git', { action: 'worktree-add', path: wtPath, branch: 'feature', idempotencyKey: 'wt-2' }),
+  );
+  assert.equal(notEmpty.ok, false);
+  if (!notEmpty.ok) {
+    assert.equal(notEmpty.error.code, 'VALIDATION_ERROR');
+    assert.equal(notEmpty.error.detail, 'exists-not-empty');
+  }
+
+  // Already checked-out branch rejected with branch-in-use
+  targetProbe = 'ok';
+  const inUse = await h.webview.send(
+    req('actions/git', { action: 'worktree-add', path: wtPath, branch: 'main', idempotencyKey: 'wt-3' }),
+  );
+  assert.equal(inUse.ok, false);
+  if (!inUse.ok) {
+    assert.equal(inUse.error.code, 'VALIDATION_ERROR');
+    assert.equal(inUse.error.detail, 'branch-in-use');
+  }
+
+  // Valid worktree-add succeeds and repos/worktrees lists it immediately
+  const ok = await h.webview.send(
+    req('actions/git', { action: 'worktree-add', path: wtPath, branch: 'feature', idempotencyKey: 'wt-4' }),
+  );
+  assert.equal(ok.ok, true);
+
+  const list = await h.webview.send(req('repos/worktrees', {}));
+  assert.equal(list.ok, true);
+  if (list.ok) {
+    const data = list.data as { worktrees: import('../src/messages').WorktreeInfo[] };
+    assert.equal(data.worktrees.length, 2);
+    assert.ok(data.worktrees.some((w) => w.branch === 'feature'));
+  }
+
+  // openWorktreeFolder allows an existing worktree path and refuses an unrelated path
+  const openOk = await h.webview.send(req('actions/openWorktreeFolder', { path: wtPath }));
+  assert.equal(openOk.ok, true);
+  assert.deepEqual(openedFolders, [wtPath]);
+
+  const openBad = await h.webview.send(req('actions/openWorktreeFolder', { path: path.join(wtParent, 'not-a-wt') }));
+  assert.equal(openBad.ok, false);
+  if (!openBad.ok) assert.equal(openBad.error.code, 'VALIDATION_ERROR');
 });

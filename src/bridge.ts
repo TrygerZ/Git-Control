@@ -22,6 +22,7 @@ import { redact, type Logger } from './logger';
 import { parseRemoteUrl, stripCredentials } from './remoteUrl';
 import {
   GITHUB_MUTATION_KINDS,
+  checkWorktreeTarget,
   idempotencyKeyOf,
   isIssueFilter,
   isIssueState,
@@ -38,10 +39,13 @@ import {
   validateCheckRunsPayload,
   validateClosePullPayload,
   validateCommitPullRequestsPayload,
+  validateComparePayload,
   validateCreatePullRequestPayload,
   validateEmptyPayload as validateEmptyPayloadPure,
   validateMergePullPayload,
   validateOpenPullRequestPayload,
+  validateOpenWorktreeFolderPayload,
+  validatePickWorktreeFolderPayload,
   validatePrPreparePayload,
   validatePrReviewersPayload,
   validatePullDetailPayload,
@@ -60,6 +64,7 @@ import {
 import type { RepositoryService } from './repository';
 import { parseRoute } from './webview/route';
 import {
+  WINDOWS_PATH_SEMANTICS,
   prBranchName,
   validateBranchName,
   validateDeletableBranch,
@@ -68,6 +73,7 @@ import {
   validateRemoteName,
   validateRepoRelativePath,
   validateStashIndex,
+  validateWorktreePath,
 } from './validation';
 import type {
   ActionResult,
@@ -86,10 +92,14 @@ import type {
   CommitAuthorsResult,
   CommitDetail,
   CommitDetailPayload,
+  CommitFileChange,
   CommitPayload,
   CommitPullRequestsPayload,
   CommitPullRequestsResult,
   CommitResult,
+  CompareCommit,
+  ComparePayload,
+  CompareResult,
   ContributorIdentity,
   ContributorIdentityPayload,
   ContributorsResponse,
@@ -129,6 +139,8 @@ import type {
   OpenExternalPayload,
   OpenStashDiffHostPayload,
   OpenStashDiffPayload,
+  OpenWorktreeFolderPayload,
+  PickWorktreeFolderPayload,
   PrPreparePayload,
   PrPrepareResult,
   PrReviewersPayload,
@@ -309,6 +321,12 @@ export interface BridgeHost {
   broadcastRepoChanged?(reason: 'fs' | 'action' | 'manual'): Promise<void>;
   /** Broadcast a pull request state change across every live webview, falling back to this bridge when omitted. */
   broadcastPullRequestsChanged?(event: PullRequestsChangedEvent): void;
+  /** Open the host folder picker for a new worktree path. */
+  pickWorktreeFolder?(suggested: string): Promise<string | null>;
+  /** Probe whether a worktree target path is missing or an empty directory. */
+  worktreeTargetState?(targetPath: string): Promise<'ok' | 'exists-not-empty'>;
+  /** Open an existing worktree path in a new VS Code window. */
+  openWorktreeFolder?(targetPath: string): Promise<boolean>;
 }
 
 /**
@@ -531,6 +549,8 @@ export class MessageBridge {
       case 'repos/worktrees':
         validateEmptyPayload(request.payload, this.text().invalid);
         return this.handleWorktrees();
+      case 'repos/compare':
+        return this.handleCompare(request.payload as ComparePayload);
       case 'stash/list':
         validateEmptyPayload(request.payload, this.text().invalid);
         return this.handleStashList();
@@ -566,6 +586,10 @@ export class MessageBridge {
         return this.handleOpenPullRequest(request.payload as { number: number });
       case 'actions/openExternal':
         return this.handleOpenExternal(request.payload as OpenExternalPayload);
+      case 'actions/pickWorktreeFolder':
+        return this.handlePickWorktreeFolder(request.payload as PickWorktreeFolderPayload);
+      case 'actions/openWorktreeFolder':
+        return this.handleOpenWorktreeFolder(request.payload as OpenWorktreeFolderPayload);
       case 'github/auth':
         validateEmptyPayload(request.payload, this.text().invalid);
         return this.host.githubAuth();
@@ -751,6 +775,102 @@ export class MessageBridge {
   private async handleWorktrees(): Promise<{ worktrees: WorktreeInfo[] }> {
     const repo = await this.repository();
     return { worktrees: await repo.worktrees() };
+  }
+
+  /** Compare two refs (`base...head` numstat, `base..head` commits). Readonly; no guard needed. */
+  private async handleCompare(payload: ComparePayload): Promise<CompareResult> {
+    validateComparePayload({ ...payload }, this.invalidFail());
+    const repo = await this.repository();
+    const [baseHash, headHash] = await Promise.all([
+      repo.git.resolveCommit(payload.base),
+      repo.git.resolveCommit(payload.head),
+    ]);
+    if (baseHash === null || headHash === null) {
+      fail(404, 'NOT_FOUND', this.text().notFound);
+    }
+    const mergeBase = await repo.git.mergeBase(baseHash, headHash);
+    if (mergeBase === null) {
+      return {
+        baseHash,
+        headHash,
+        mergeBase: null,
+        ahead: 0,
+        behind: 0,
+        commits: [],
+        files: [],
+        totals: { files: 0, additions: 0, deletions: 0, binary: 0 },
+        truncated: false,
+      };
+    }
+
+    const limit = payload.limit ?? 200;
+    const [counts, rawCommits, stat] = await Promise.all([
+      repo.git.compareCounts(baseHash, headHash),
+      repo.git.compareLog(baseHash, headHash, { limit }),
+      repo.git.compareNumstat(baseHash, headHash),
+    ]);
+
+    const commits: CompareCommit[] = rawCommits.map((c) => ({
+      hash: c.hash,
+      shortHash: c.shortHash,
+      subject: c.subject,
+      author: c.authorName,
+      authoredAt: c.authoredAt,
+    }));
+    const files: CommitFileChange[] = stat.entries.map((entry) => ({
+      path: entry.path,
+      ...(entry.origPath === undefined ? {} : { origPath: entry.origPath }),
+      additions: entry.binary ? null : entry.additions,
+      deletions: entry.binary ? null : entry.deletions,
+      binary: entry.binary,
+    }));
+
+    let additions = 0;
+    let deletions = 0;
+    let binary = 0;
+    for (const file of files) {
+      if (file.additions !== null) additions += file.additions;
+      if (file.deletions !== null) deletions += file.deletions;
+      if (file.binary) binary += 1;
+    }
+
+    return {
+      baseHash,
+      headHash,
+      mergeBase,
+      ahead: counts.ahead,
+      behind: counts.behind,
+      commits,
+      files,
+      totals: { files: files.length, additions, deletions, binary },
+      truncated: stat.truncated || counts.ahead > commits.length,
+    };
+  }
+
+  /** Open the host folder picker for adding a worktree and validate its result. */
+  private async handlePickWorktreeFolder(payload: PickWorktreeFolderPayload): Promise<{ path: string | null }> {
+    validatePickWorktreeFolderPayload({ ...payload }, this.invalidFail());
+    const pick = this.host.pickWorktreeFolder;
+    if (pick === undefined) fail(503, 'UNAVAILABLE', this.text().unavailable);
+    const picked = await pick(payload.suggested);
+    if (picked !== null && !validateWorktreePath(picked)) {
+      fail(400, 'VALIDATION_ERROR', this.text().invalid, { detail: 'not-absolute' });
+    }
+    return { path: picked };
+  }
+
+  /** Open a registered repository worktree folder in a new VS Code window. */
+  private async handleOpenWorktreeFolder(payload: OpenWorktreeFolderPayload): Promise<{ opened: boolean }> {
+    validateOpenWorktreeFolderPayload({ ...payload }, this.invalidFail());
+    const open = this.host.openWorktreeFolder;
+    if (open === undefined) fail(503, 'UNAVAILABLE', this.text().unavailable);
+    const repo = await this.repository();
+    const worktrees = await repo.worktrees();
+    const needle = normalizeWorktreePath(payload.path);
+    if (!worktrees.some((wt) => normalizeWorktreePath(wt.path) === needle)) {
+      fail(400, 'VALIDATION_ERROR', this.text().invalid, { detail: 'path' });
+    }
+    return { opened: await open(payload.path) };
   }
 
   /** Query list of stash entries. Readonly; no guard needed. */
@@ -1919,6 +2039,34 @@ export class MessageBridge {
       }
       case 'tag-push':
         return git.pushTag(action.remote, action.name, this.progressSink(operationId, 'tag-push'));
+      case 'worktree-add': {
+        const [repoRoot, gitDir, existing] = await Promise.all([git.repoRoot(), git.gitDir(), repo.worktrees()]);
+        if (existing.some((w) => w.branch === action.branch)) {
+          fail(400, 'VALIDATION_ERROR', this.text().invalid, { detail: 'branch-in-use' });
+        }
+        const targetCheck = checkWorktreeTarget(action.path, repoRoot, gitDir, existing);
+        if (targetCheck !== 'ok') {
+          fail(400, 'VALIDATION_ERROR', this.text().invalid, { detail: targetCheck });
+        }
+        if (this.host.worktreeTargetState !== undefined) {
+          const fsState = await this.host.worktreeTargetState(action.path);
+          if (fsState !== 'ok') {
+            fail(400, 'VALIDATION_ERROR', this.text().invalid, { detail: fsState });
+          }
+        }
+        const refsResult = await repo.refs();
+        if (!refsResult.refs.some((r) => r.kind === 'local' && r.shortName === action.branch)) {
+          fail(404, 'NOT_FOUND', this.text().notFound, { detail: 'branch' });
+        }
+        await git.worktreeAdd(action.path, action.branch);
+        this.host.logger.log({
+          operationId,
+          kind: 'worktree-add',
+          status: 'info',
+          detail: `${action.branch} ${action.path}`,
+        });
+        return;
+      }
       default:
         return fail(400, 'VALIDATION_ERROR', this.text().invalid);
     }
@@ -2182,6 +2330,13 @@ export class MessageBridge {
 }
 
 // ------------------------------------------------------------------ parsing
+
+/** Normalize path separators and case on Windows for worktree equality checks. */
+function normalizeWorktreePath(p: string): string {
+  const slashed = WINDOWS_PATH_SEMANTICS ? p.replace(/\\/g, '/') : p;
+  const trimmed = slashed.replace(/\/+$/, '');
+  return WINDOWS_PATH_SEMANTICS ? trimmed.toLowerCase() : trimmed;
+}
 
 /** Attach a request id to an outcome, producing the wire response. */
 function stamp(id: string, outcome: Outcome): Response {

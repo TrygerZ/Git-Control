@@ -706,3 +706,28 @@ test('tag-push enforces in-progress, stale, behind, and level 1 confirmation', (
     assert.deepEqual(fresh.remedies, ['confirm', 'cancel']);
   }
 });
+
+test('worktree-add is blocked during an in-progress operation and allowed on a dirty tree without confirmation', () => {
+  const inMerge = verdict(
+    { action: 'worktree-add', path: '/tmp/wt-feature', branch: 'feature' },
+    { operation: 'merge' },
+  );
+  assert.equal(inMerge.allow, false);
+  if (!inMerge.allow) assert.equal(inMerge.code, 'CONFLICT');
+
+  const inRebase = verdict(
+    { action: 'worktree-add', path: '/tmp/wt-feature', branch: 'feature' },
+    { operation: 'rebase' },
+  );
+  assert.equal(inRebase.allow, false);
+  if (!inRebase.allow) assert.equal(inRebase.code, 'CONFLICT');
+
+  // Dirty working tree and stale remote do not block adding a worktree, and no confirmation is demanded
+  assert.deepEqual(
+    verdict(
+      { action: 'worktree-add', path: '/tmp/wt-feature', branch: 'feature' },
+      { dirty: true, staged: true, lastFetchAt: null },
+    ),
+    { allow: true },
+  );
+});

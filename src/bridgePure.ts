@@ -5,9 +5,11 @@ import {
 } from './pullRequestDraft';
 import type { ErrorCode, GitActionPayload, IssueListFilter, IssueStateFilter, Request, RequestKind } from './messages';
 import {
+  WINDOWS_PATH_SEMANTICS,
   validateBranchName,
   validateCommentBody,
   validateCommitTitle,
+  validateCompareLimit,
   validateDispatchInputs,
   validateFullHash,
   validateHash,
@@ -27,6 +29,7 @@ import {
   validateTagMessage,
   validateTagName,
   validateWorkflowId,
+  validateWorktreePath,
 } from './validation';
 
 export type Outcome = { ok: true; data: unknown } | { ok: false; error: { code: ErrorCode } };
@@ -132,6 +135,10 @@ export function validateAction(action: GitActionPayload, fail: (detail: string) 
     case 'tag-push':
       if (!validateRemoteName(action.remote)) fail('remote');
       if (!validateTagName(action.name) || action.name.startsWith('+')) fail('name');
+      return;
+    case 'worktree-add':
+      if (!validateWorktreePath(action.path)) fail('path');
+      if (!validateBranchName(action.branch)) fail('branch');
       return;
     default: fail('action');
   }
@@ -582,4 +589,84 @@ export function validateCreateReleasePayload(
   if (!validateReleaseBody(payload.body)) fail('body');
   if (typeof payload.prerelease !== 'boolean') fail('prerelease');
   if (!validateHash(payload.target) && !validateBranchName(payload.target)) fail('target');
+}
+
+function normalizeWorktreeComparePath(p: string, windows: boolean): string {
+  const slashed = windows ? p.replace(/\\/g, '/') : p;
+  const trimmed = slashed.replace(/\/+$/, '');
+  return windows ? trimmed.toLowerCase() : trimmed;
+}
+
+function isCompareRef(value: unknown): boolean {
+  return (
+    typeof value === 'string' &&
+    !value.startsWith('-') &&
+    (validateHash(value) || validateBranchName(value, { allowQualified: true }) || validateTagName(value))
+  );
+}
+
+/**
+ * Pure worktree target check against repository root, `.git` directory, and
+ * existing worktrees. The host layers an empty-folder filesystem check on top.
+ */
+export function checkWorktreeTarget(
+  target: string,
+  repoRoot: string,
+  gitDir: string,
+  existing: ReadonlyArray<{ path: string }>,
+  opts: { windows?: boolean } = {},
+): 'ok' | 'inside-git-dir' | 'inside-worktree' | 'is-worktree' | 'not-absolute' {
+  const windows = opts.windows ?? WINDOWS_PATH_SEMANTICS;
+  if (!validateWorktreePath(target, { windows })) return 'not-absolute';
+
+  const normTarget = normalizeWorktreeComparePath(target, windows);
+  const normGitDir = normalizeWorktreeComparePath(gitDir, windows);
+  if (normGitDir.length > 0 && (normTarget === normGitDir || normTarget.startsWith(`${normGitDir}/`))) {
+    return 'inside-git-dir';
+  }
+
+  const roots = [repoRoot, ...existing.map((w) => w.path)]
+    .map((p) => normalizeWorktreeComparePath(p, windows))
+    .filter((p) => p.length > 0);
+
+  if (roots.some((root) => normTarget === root)) return 'is-worktree';
+  if (roots.some((root) => normTarget.startsWith(`${root}/`) || root.startsWith(`${normTarget}/`))) {
+    return 'inside-worktree';
+  }
+  return 'ok';
+}
+
+/** `repos/compare`: base ref, head ref, and optional limit (1..200). */
+export function validateComparePayload(
+  payload: { base?: unknown; head?: unknown; limit?: unknown } & Record<string, unknown>,
+  fail: (detail: string) => never,
+): void {
+  if (!onlyKeys(payload, ['base', 'head', 'limit'])) fail('payload');
+  if (!isCompareRef(payload.base)) fail('base');
+  if (!isCompareRef(payload.head)) fail('head');
+  if (payload.limit !== undefined && !validateCompareLimit(payload.limit)) fail('limit');
+}
+
+/** `actions/pickWorktreeFolder`: optional suggested folder string. */
+export function validatePickWorktreeFolderPayload(
+  payload: { suggested?: unknown } & Record<string, unknown>,
+  fail: (detail: string) => never,
+): void {
+  if (!onlyKeys(payload, ['suggested'])) fail('payload');
+  if (
+    typeof payload.suggested !== 'string' ||
+    payload.suggested.length > 4096 ||
+    /[\u0000-\u001f\u007f]/.test(payload.suggested)
+  ) {
+    fail('suggested');
+  }
+}
+
+/** `actions/openWorktreeFolder`: validated absolute worktree path. */
+export function validateOpenWorktreeFolderPayload(
+  payload: { path?: unknown } & Record<string, unknown>,
+  fail: (detail: string) => never,
+): void {
+  if (!onlyKeys(payload, ['path'])) fail('payload');
+  if (!validateWorktreePath(payload.path)) fail('path');
 }
