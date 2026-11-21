@@ -50,7 +50,7 @@ import {
   truncate,
 } from './format';
 import { useT } from './useT';
-import { BranchSelector } from './BranchLegend';
+import { BranchSelector, LaneFilterSelector } from './BranchLegend';
 import { useGitHubStore, useRepoStore, useSettingsStore } from './store';
 import { chipsFor, computeStaggerMap, lanesForFilter, matchesSearch } from './graphQuery';
 import {
@@ -80,7 +80,7 @@ import {
   worldHeight,
   worldWidth,
 } from './viewport';
-import type { DateBucket, GraphEdge, GraphNode, RefInfo, RepoGraph, RepoStatus } from '../messages';
+import type { DateBucket, GraphEdge, GraphLane, GraphNode, RefInfo, RepoGraph, RepoStatus } from '../messages';
 export { chipsFor, computeStaggerMap, lanesForFilter, matchesSearch } from './graphQuery';
 export { edgePath } from './viewport';
 /** Frame 01 (`10:178`): the minimap is 220 x 68 at the canvas left edge. */
@@ -145,6 +145,7 @@ function Toolbar({
   currentBranch,
   busy,
   refs,
+  lanes,
   countId,
   countText,
   canLoadOlder,
@@ -160,6 +161,7 @@ function Toolbar({
   currentBranch: string | null;
   busy: boolean;
   refs: readonly RefInfo[];
+  lanes: readonly GraphLane[];
   countId: string;
   countText: string;
   canLoadOlder: boolean;
@@ -213,23 +215,13 @@ function Toolbar({
 
       <div className="gc-toolbar__group">
         <span className="gc-toolbar__label">{strings.graph.showLabel}</span>
-        <div className="gc-toolbar__branch-wrap">
-          <select
-            className="gc-toolbar__branch-select"
-            aria-label={strings.graph.branchFilterAria}
-            value={branchFilter}
-            onChange={(e) => onBranchFilter(e.target.value)}
-          >
-            <option value="">{strings.graph.branchFilterAll}</option>
-            {branches.map((ref) => (
-              <option key={ref.refName} value={ref.shortName}>
-                {ref.kind === 'remote'
-                  ? strings.graph.branchFilterRemotePrefix(sanitizeGitText(ref.shortName))
-                  : sanitizeGitText(ref.shortName)}
-              </option>
-            ))}
-          </select>
-        </div>
+        <LaneFilterSelector
+          branchFilter={branchFilter}
+          branches={branches}
+          lanes={lanes}
+          onBranchFilter={onBranchFilter}
+          aria-label={strings.graph.branchFilterAria}
+        />
       </div>
 
       <span className="gc-toolbar__divider" aria-hidden="true" />
@@ -786,6 +778,7 @@ export function GraphCanvas({
         currentBranch={currentBranch}
         busy={status !== null && status.operation !== 'idle'}
         refs={graph?.refs ?? []}
+        lanes={graph?.lanes ?? []}
         countId={countId}
         countText={
           search.length === 0 && branchFilter.length === 0

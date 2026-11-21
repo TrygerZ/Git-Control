@@ -694,6 +694,13 @@ const en = {
     checkoutBranchTitle: 'Switch to another local branch',
     checkoutBranchCurrent: (name: string) => `${name} (current)`,
     checkoutBranchDetached: 'Detached HEAD',
+    branchPopoverFilter: 'Filter branches...',
+    branchPopoverGroup: 'Local branches',
+    branchPopoverCurrent: 'current',
+    branchPopoverNote: 'Switching needs a clean working tree. Stash or commit first.',
+    lanePopoverFilter: 'Filter lanes...',
+    lanePopoverGroup: 'Show lanes',
+    lanePopoverCount: (count: number) => (count === 1 ? '1 lane' : `${count} lanes`),
     resetFilter: 'Reset',
     // Frame 01 (`9:45`): the toolbar carries no visible form labels, so each
     // control's name lives in the catalog.

@@ -689,6 +689,13 @@ const id: Catalog = {
     checkoutBranchTitle: 'Pindah ke branch lokal lain',
     checkoutBranchCurrent: (name: string) => `${name} (aktif)`,
     checkoutBranchDetached: 'Detached HEAD',
+    branchPopoverFilter: 'Saring branch...',
+    branchPopoverGroup: 'Branch lokal',
+    branchPopoverCurrent: 'aktif',
+    branchPopoverNote: 'Pindah branch memerlukan folder kerja bersih. Stash atau commit dulu.',
+    lanePopoverFilter: 'Saring jalur...',
+    lanePopoverGroup: 'Tampilkan jalur',
+    lanePopoverCount: (count: number) => `${count} jalur`,
     resetFilter: 'Reset',
     // Frame 01 (`9:45`): toolbar tanpa label form terlihat. Lihat katalog en.
     branchFilterAria: 'Filter menurut branch',

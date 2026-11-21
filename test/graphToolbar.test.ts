@@ -43,14 +43,14 @@ test('the checkout and show controls carry the frame words as visible labels', (
   assert.match(body, /gc-toolbar__label/, 'both use the quiet toolbar label style');
   // The accessible names stay: the visible label names the group, not the value.
   assert.match(body, /aria-label=\{strings\.graph\.checkoutBranchAria\}/);
-  assert.match(body, /aria-label=\{strings\.graph\.branchFilterAria\}/);
+  assert.match(body, /LaneFilterSelector/);
 });
 
 test('the count sits at the right end of the filter group, after the dropdowns', () => {
   const body = toolbar();
   const count = body.indexOf('gc-toolbar__count');
   const checkout = body.indexOf('BranchSelector');
-  const show = body.indexOf('gc-toolbar__branch-select');
+  const show = body.indexOf('LaneFilterSelector');
   assert.ok(checkout > 0 && show > 0 && count > 0, 'all three render');
   assert.ok(count > checkout, 'the count follows the checkout dropdown');
   assert.ok(count > show, 'and the show dropdown');

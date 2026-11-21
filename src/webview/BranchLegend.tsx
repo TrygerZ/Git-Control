@@ -11,7 +11,7 @@
  * (shape plus badge, weight plus curve), which is why the graph stays readable with
  * no colour at all.
  */
-import { useEffect, useId, useRef, type JSX, type KeyboardEvent } from 'react';
+import { useEffect, useId, useLayoutEffect, useRef, useState, type JSX, type KeyboardEvent } from 'react';
 import { sanitizeGitText } from './format';
 import { Icon } from './ui';
 import { t, type Lang } from './i18n';
@@ -154,43 +154,161 @@ export function BranchSelector({
     (name) => strings.graph.checkoutBranchCurrent(name),
     strings.graph.checkoutBranchDetached,
   );
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState('');
+  const [placed, setPlaced] = useState({ x: 0, y: 0, width: 260 });
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const popoverRef = useRef<HTMLDivElement>(null);
+  const searchRef = useRef<HTMLInputElement>(null);
+  const listId = useId();
+
+  useLayoutEffect(() => {
+    if (!open) return;
+    const trigger = triggerRef.current;
+    const popover = popoverRef.current;
+    if (trigger === null || popover === null) return;
+    const anchor = trigger.getBoundingClientRect();
+    const box = popover.getBoundingClientRect();
+    const margin = 8;
+    const width = Math.max(260, Math.min(356, Math.max(anchor.width, box.width)));
+    const x = Math.max(margin, Math.min(anchor.left, window.innerWidth - width - margin));
+    const y = Math.max(margin, Math.min(anchor.bottom + 4, window.innerHeight - box.height - margin));
+    setPlaced({ x, y, width });
+    searchRef.current?.focus();
+  }, [open]);
+
+  useEffect(() => {
+    if (!open) return;
+    const onPointerDown = (event: PointerEvent): void => {
+      const target = event.target as Node;
+      if (popoverRef.current?.contains(target) === true) return;
+      if (triggerRef.current?.contains(target) === true) return;
+      setOpen(false);
+    };
+    document.addEventListener('pointerdown', onPointerDown, true);
+    return () => document.removeEventListener('pointerdown', onPointerDown, true);
+  }, [open]);
 
   const onSelect = (branch: string) => {
+    setOpen(false);
+    setQuery('');
     const payload = checkoutActionPayload(branch, currentBranch, busy);
     if (!payload) return;
     void runAction(payload);
   };
 
-  // showLabel: graph toolbar — visual label distinguishes the mutating
-  // checkout action from the view-only filter. When a proper <label> is
-  // present the accessible name comes from that label, so aria-label would
-  // overwrite it and break label-in-name — omit it in the labelled variant.
-  // Default (sidebar) keeps aria-label to save vertical space.
+  const localRefs = refs.filter((ref) => ref.kind === 'local');
+  const q = query.trim().toLowerCase();
+  const filteredRefs = q.length === 0
+    ? localRefs
+    : localRefs.filter((ref) => ref.shortName.toLowerCase().includes(q));
+  const displayLabel =
+    currentBranch !== null
+      ? sanitizeGitText(currentBranch)
+      : strings.graph.checkoutBranchDetached;
+
   const select = (
-    /*
-     * The wrapper carries the custom chevron; the `<select>` itself keeps its
-     * class, its disabled binding, its options, and its accessible name
-     * untouched (the BranchSelector contract tests pin all four).
-     */
     <span className="gc-toolbar__branch-select-wrap">
-      <select
-        className="gc-toolbar__branch-select"
-        value={state.selectedValue}
+      <button
+        ref={triggerRef}
+        type="button"
+        className="gc-toolbar__branch-select gc-popover-trigger"
         disabled={state.disabled}
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        aria-controls={open ? listId : undefined}
         {...(!showLabel ? { 'aria-label': ariaLabel ?? strings.graph.checkoutBranchAria } : {})}
         title={strings.graph.checkoutBranchTitle}
-        onChange={(e) => onSelect(e.target.value)}
+        onClick={() => {
+          setOpen((prev) => !prev);
+          setQuery('');
+        }}
       >
-        {state.options.map((opt) => (
-          <option key={opt.value || '__detached'} value={opt.value} title={opt.hint ?? opt.label}>
-            {opt.label}
-          </option>
-        ))}
-      </select>
-      {/* Decorative: the select keeps focusability and its own keyboard contract. */}
-      <span className="gc-toolbar__branch-chevron" aria-hidden="true">
-        <Icon name="chevron-down" />
-      </span>
+        <span className="gc-popover-trigger__icon" aria-hidden="true">
+          <Icon name="git-branch" />
+        </span>
+        <span className="gc-popover-trigger__label">{displayLabel}</span>
+        <span className="gc-popover-trigger__chevron" aria-hidden="true">
+          <Icon name="chevron-down" />
+        </span>
+      </button>
+      {open && (
+        <div
+          id={listId}
+          ref={popoverRef}
+          className="gc-menu gc-branch-popover"
+          role="dialog"
+          aria-label={strings.graph.checkoutBranchAria}
+          style={{ left: `${placed.x}px`, top: `${placed.y}px`, width: `${placed.width}px` }}
+          onKeyDown={(e) => {
+            if (e.key === 'Escape') {
+              e.preventDefault();
+              setOpen(false);
+              triggerRef.current?.focus();
+            }
+          }}
+        >
+          <div className="gc-branch-popover__search">
+            <Icon name="search" />
+            <input
+              ref={searchRef}
+              type="search"
+              className="gc-branch-popover__input"
+              value={query}
+              placeholder={strings.graph.branchPopoverFilter}
+              aria-label={strings.graph.branchPopoverFilter}
+              onChange={(e) => setQuery(e.target.value)}
+            />
+          </div>
+          <span className="gc-menu__group-title" aria-hidden="true">
+            {strings.graph.branchPopoverGroup}
+          </span>
+          <div className="gc-branch-popover__list" role="listbox" aria-label={strings.graph.branchPopoverGroup}>
+            {filteredRefs.map((ref) => {
+              const isCurrent = ref.shortName === currentBranch;
+              const safeName = sanitizeGitText(ref.shortName);
+              return (
+                <button
+                  key={ref.refName}
+                  type="button"
+                  role="option"
+                  aria-selected={isCurrent}
+                  className={
+                    isCurrent
+                      ? 'gc-menu__item gc-branch-popover__option gc-branch-popover__option--selected'
+                      : 'gc-menu__item gc-branch-popover__option'
+                  }
+                  onClick={() => onSelect(ref.shortName)}
+                >
+                  <span className="gc-branch-popover__check" aria-hidden="true">
+                    {isCurrent && <Icon name="check" />}
+                  </span>
+                  <span className="gc-menu__icon" aria-hidden="true">
+                    <Icon name="git-branch" />
+                  </span>
+                  <span className="gc-branch-popover__name">{safeName}</span>
+                  {isCurrent ? (
+                    <span className="gc-menu__hint">{strings.graph.branchPopoverCurrent}</span>
+                  ) : ref.gone ? (
+                    <span className="gc-branch-popover__pill">{strings.branches.chipUpstreamGone}</span>
+                  ) : ref.upstream === null ? (
+                    <span className="gc-branch-popover__pill">{strings.branches.chipLocalOnly}</span>
+                  ) : (
+                    <span className="gc-menu__hint">{sanitizeGitText(ref.upstream)}</span>
+                  )}
+                </button>
+              );
+            })}
+            {filteredRefs.length === 0 && (
+              <p className="gc-branch-popover__empty">{strings.branches.emptyFilter}</p>
+            )}
+          </div>
+          <div className="gc-branch-popover__note">
+            <Icon name="info" />
+            <span>{strings.graph.branchPopoverNote}</span>
+          </div>
+        </div>
+      )}
     </span>
   );
 
@@ -203,6 +321,188 @@ export function BranchSelector({
         </label>
       ) : (
         select
+      )}
+    </div>
+  );
+}
+
+/**
+ * Searchable lane filter popover for the Explorer toolbar ("Show: All branches", frame 16).
+ */
+export function LaneFilterSelector({
+  branchFilter,
+  branches,
+  lanes,
+  onBranchFilter,
+  'aria-label': ariaLabel,
+}: {
+  branchFilter: string;
+  branches: readonly RefInfo[];
+  lanes: readonly GraphLane[];
+  onBranchFilter: (branch: string) => void;
+  'aria-label'?: string;
+}): JSX.Element {
+  const strings = useT();
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState('');
+  const [placed, setPlaced] = useState({ x: 0, y: 0, width: 280 });
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const popoverRef = useRef<HTMLDivElement>(null);
+  const searchRef = useRef<HTMLInputElement>(null);
+  const listId = useId();
+
+  useLayoutEffect(() => {
+    if (!open) return;
+    const trigger = triggerRef.current;
+    const popover = popoverRef.current;
+    if (trigger === null || popover === null) return;
+    const anchor = trigger.getBoundingClientRect();
+    const box = popover.getBoundingClientRect();
+    const margin = 8;
+    const width = Math.max(260, Math.min(320, Math.max(anchor.width, box.width)));
+    const x = Math.max(margin, Math.min(anchor.left, window.innerWidth - width - margin));
+    const y = Math.max(margin, Math.min(anchor.bottom + 4, window.innerHeight - box.height - margin));
+    setPlaced({ x, y, width });
+    searchRef.current?.focus();
+  }, [open]);
+
+  useEffect(() => {
+    if (!open) return;
+    const onPointerDown = (event: PointerEvent): void => {
+      const target = event.target as Node;
+      if (popoverRef.current?.contains(target) === true) return;
+      if (triggerRef.current?.contains(target) === true) return;
+      setOpen(false);
+    };
+    document.addEventListener('pointerdown', onPointerDown, true);
+    return () => document.removeEventListener('pointerdown', onPointerDown, true);
+  }, [open]);
+
+  const laneColor = new Map<string, string>();
+  for (const lane of lanes) {
+    if (lane.ref !== undefined) laneColor.set(lane.ref, lane.color);
+  }
+  const q = query.trim().toLowerCase();
+  const filtered = q.length === 0
+    ? branches
+    : branches.filter((ref) => ref.shortName.toLowerCase().includes(q));
+  const activeLabel =
+    branchFilter.length === 0 ? strings.graph.branchFilterAll : sanitizeGitText(branchFilter);
+
+  const pick = (val: string): void => {
+    setOpen(false);
+    setQuery('');
+    onBranchFilter(val);
+  };
+
+  return (
+    <div className="gc-toolbar__branch-wrap">
+      <button
+        ref={triggerRef}
+        type="button"
+        className="gc-toolbar__branch-select gc-popover-trigger"
+        aria-label={ariaLabel ?? strings.graph.branchFilterAria}
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        aria-controls={open ? listId : undefined}
+        onClick={() => {
+          setOpen((prev) => !prev);
+          setQuery('');
+        }}
+      >
+        <span className="gc-popover-trigger__label">{activeLabel}</span>
+        <span className="gc-popover-trigger__chevron" aria-hidden="true">
+          <Icon name="chevron-down" />
+        </span>
+      </button>
+      {open && (
+        <div
+          id={listId}
+          ref={popoverRef}
+          className="gc-menu gc-branch-popover"
+          role="dialog"
+          aria-label={ariaLabel ?? strings.graph.branchFilterAria}
+          style={{ left: `${placed.x}px`, top: `${placed.y}px`, width: `${placed.width}px` }}
+          onKeyDown={(e) => {
+            if (e.key === 'Escape') {
+              e.preventDefault();
+              setOpen(false);
+              triggerRef.current?.focus();
+            }
+          }}
+        >
+          <div className="gc-branch-popover__search">
+            <Icon name="search" />
+            <input
+              ref={searchRef}
+              type="search"
+              className="gc-branch-popover__input"
+              value={query}
+              placeholder={strings.graph.lanePopoverFilter}
+              aria-label={strings.graph.lanePopoverFilter}
+              onChange={(e) => setQuery(e.target.value)}
+            />
+          </div>
+          <span className="gc-menu__group-title" aria-hidden="true">
+            {strings.graph.lanePopoverGroup}
+          </span>
+          <div className="gc-branch-popover__list" role="listbox" aria-label={strings.graph.lanePopoverGroup}>
+            {q.length === 0 && (
+              <button
+                type="button"
+                role="option"
+                aria-selected={branchFilter === ''}
+                className={
+                  branchFilter === ''
+                    ? 'gc-menu__item gc-branch-popover__option gc-branch-popover__option--selected'
+                    : 'gc-menu__item gc-branch-popover__option'
+                }
+                onClick={() => pick('')}
+              >
+                <span className="gc-branch-popover__check" aria-hidden="true">
+                  {branchFilter === '' && <Icon name="check" />}
+                </span>
+                <span className="gc-branch-popover__name">{strings.graph.branchFilterAll}</span>
+                <span className="gc-menu__hint">{strings.graph.lanePopoverCount(lanes.length)}</span>
+              </button>
+            )}
+            {filtered.map((ref) => {
+              const selected = branchFilter === ref.shortName;
+              const color = laneColor.get(ref.shortName);
+              const label =
+                ref.kind === 'remote'
+                  ? strings.graph.branchFilterRemotePrefix(sanitizeGitText(ref.shortName))
+                  : sanitizeGitText(ref.shortName);
+              return (
+                <button
+                  key={ref.refName}
+                  type="button"
+                  role="option"
+                  aria-selected={selected}
+                  className={
+                    selected
+                      ? 'gc-menu__item gc-branch-popover__option gc-branch-popover__option--selected'
+                      : 'gc-menu__item gc-branch-popover__option'
+                  }
+                  onClick={() => pick(ref.shortName)}
+                >
+                  <span className="gc-branch-popover__check" aria-hidden="true">
+                    {selected && <Icon name="check" />}
+                  </span>
+                  <span
+                    className="gc-menu__commit-dot"
+                    style={color ? { background: color } : undefined}
+                    aria-hidden="true"
+                  />
+                  <span className="gc-branch-popover__name">{label}</span>
+                </button>
+              );
+            })}
+            {filtered.length === 0 && (
+              <p className="gc-branch-popover__empty">{strings.branches.emptyFilter}</p>
+            )}
+          </div>
+        </div>
       )}
     </div>
   );
