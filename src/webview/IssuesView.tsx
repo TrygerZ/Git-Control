@@ -572,19 +572,6 @@ export function IssuesView(): JSX.Element {
                   </div>
                 )}
               </div>
-              {!issuesDisabled && linkage?.owner != null && linkage.repo != null && (
-                <button
-                  type="button"
-                  className="gc-button gc-button--primary gc-issues__new-btn"
-                  disabled={rateLimited}
-                  title={rateLimited ? strings.prs.rateLimitedTitle : strings.issueWrite.newIssue}
-                  aria-label={strings.issueWrite.newIssue}
-                  onClick={() => setNewIssueOpen(true)}
-                >
-                  <Icon name="add" />
-                  <span>{strings.issueWrite.newIssue}</span>
-                </button>
-              )}
             </div>
           </div>
 
@@ -639,6 +626,18 @@ export function IssuesView(): JSX.Element {
                   <button type="button" className="gc-button gc-button--quiet" onClick={clearFilters}>
                     {strings.issues.clearFilters}
                   </button>
+                ) : !issuesDisabled && linkage?.owner != null && linkage.repo != null ? (
+                  <button
+                    type="button"
+                    className="gc-button gc-button--primary gc-issues__new-btn"
+                    disabled={rateLimited}
+                    title={rateLimited ? strings.prs.rateLimitedTitle : strings.issueWrite.newIssue}
+                    aria-label={strings.issueWrite.newIssue}
+                    onClick={() => setNewIssueOpen(true)}
+                  >
+                    <Icon name="add" />
+                    <span>{strings.issueWrite.newIssue}</span>
+                  </button>
                 ) : undefined
               }
             />
@@ -676,6 +675,19 @@ export function IssuesView(): JSX.Element {
                       {group === 'active' || loadedAt[filter].closed !== null || rows.length > 0 ? (
                         <span className="gc-section__count">{formatCount(rows.length, language)}</span>
                       ) : null}
+                      {group === 'active' && !issuesDisabled && linkage?.owner != null && linkage.repo != null && (
+                        <button
+                          type="button"
+                          className="gc-button gc-button--quiet gc-issues__new-btn gc-issues__section-new"
+                          disabled={rateLimited}
+                          title={rateLimited ? strings.prs.rateLimitedTitle : strings.issueWrite.newIssue}
+                          aria-label={strings.issueWrite.newIssue}
+                          onClick={() => setNewIssueOpen(true)}
+                        >
+                          <Icon name="add" />
+                          <span>{strings.issueWrite.newIssue}</span>
+                        </button>
+                      )}
                     </div>
                     {isOpen && (
                       <ul className="gc-issues__rows" role="list">

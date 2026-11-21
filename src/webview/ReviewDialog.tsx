@@ -29,6 +29,8 @@ import { useT } from './useT';
 export interface ReviewDialogProps {
   number: number;
   headRef: string;
+  owner?: string;
+  repo?: string;
   /** The store's copy of the form, so a failed submit comes back with its text. */
   draft?: { event: ReviewEvent; body: string };
   error?: ErrorBody;
@@ -58,6 +60,8 @@ function eventLabel(event: ReviewEvent, catalog: Catalog): string {
 export function ReviewDialog({
   number,
   headRef,
+  owner,
+  repo,
   draft,
   error,
   sending,
@@ -74,6 +78,7 @@ export function ReviewDialog({
   const descId = useId();
   const noteId = useId();
   const groupLabelId = useId();
+  const commandId = useId();
 
   useEffect(() => {
     returnFocus.current = document.activeElement;
@@ -175,6 +180,18 @@ export function ReviewDialog({
           <p className="gc-help-text" id={noteId}>
             {strings.prMerge.reviewNote}
           </p>
+
+          <div className="gc-modal__command">
+            <span className="gc-modal__command-label" id={commandId}>
+              {strings.guard.gitCommandLabel}
+            </span>
+            <code aria-describedby={commandId}>
+              {`POST /repos/${sanitizeGitText(owner ?? '<owner>')}/${sanitizeGitText(repo ?? '<repo>')}/pulls/${number}/reviews`}
+            </code>
+            <code className="gc-modal__command-pre">
+              {JSON.stringify({ event, body: body.trim() })}
+            </code>
+          </div>
 
           <div className="gc-modal__actions">
             <button type="button" className="gc-button" onClick={onCancel}>

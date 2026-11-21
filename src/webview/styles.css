@@ -3335,6 +3335,19 @@ h3 {
   font-size: var(--gc-fs-2xs);
 }
 
+.gc-prs__filter-menu {
+  width: 240px;
+}
+
+.gc-issues__section-new {
+  margin-left: auto;
+}
+
+.gc-prrail__summary-btn {
+  width: 100%;
+  justify-content: flex-start;
+}
+
 .gc-menu__separator {
   height: 1px;
   margin: var(--gc-space-1) var(--gc-space-2);

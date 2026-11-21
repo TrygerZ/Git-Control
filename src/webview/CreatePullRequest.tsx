@@ -10,7 +10,7 @@
  * confirmation. This file draws that state and previews the two calls that will run.
  * It never opens a second modal: a guard verdict has no stage to land on here.
  */
-import { useEffect, useId, useRef, useState, type FormEvent, type JSX } from 'react';
+import { useEffect, useId, useLayoutEffect, useRef, useState, type FormEvent, type JSX } from 'react';
 import {
   BODY_MAX,
   TITLE_MAX,
@@ -24,6 +24,152 @@ import { useGitHubStore, usePrDraftStore } from './store';
 import { useDialogFocusTrap } from './useDialogFocusTrap';
 import { useT } from './useT';
 import { Icon, InfoBanner } from './ui';
+
+function BranchPickerPopover({
+  label,
+  value,
+  options,
+  disabled,
+  filterPlaceholder,
+  emptyLabel,
+  onChange,
+}: {
+  label: string;
+  value: string;
+  options: readonly string[];
+  disabled: boolean;
+  filterPlaceholder: string;
+  emptyLabel: string;
+  onChange: (branch: string) => void;
+}): JSX.Element {
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState('');
+  const [placed, setPlaced] = useState({ x: 0, y: 0, width: 220 });
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const popoverRef = useRef<HTMLDivElement>(null);
+  const searchRef = useRef<HTMLInputElement>(null);
+  const listId = useId();
+
+  useLayoutEffect(() => {
+    if (!open) return;
+    const trigger = triggerRef.current;
+    const popover = popoverRef.current;
+    if (trigger === null || popover === null) return;
+    const anchor = trigger.getBoundingClientRect();
+    const box = popover.getBoundingClientRect();
+    const margin = 8;
+    const width = Math.max(220, Math.min(300, Math.max(anchor.width, box.width)));
+    const x = Math.max(margin, Math.min(anchor.left, window.innerWidth - width - margin));
+    const y = Math.max(margin, Math.min(anchor.bottom + 4, window.innerHeight - box.height - margin));
+    setPlaced({ x, y, width });
+    searchRef.current?.focus();
+  }, [open]);
+
+  useEffect(() => {
+    if (!open) return;
+    const onPointerDown = (event: PointerEvent): void => {
+      const target = event.target as Node;
+      if (popoverRef.current?.contains(target) === true) return;
+      if (triggerRef.current?.contains(target) === true) return;
+      setOpen(false);
+    };
+    document.addEventListener('pointerdown', onPointerDown, true);
+    return () => document.removeEventListener('pointerdown', onPointerDown, true);
+  }, [open]);
+
+  const q = query.trim().toLowerCase();
+  const filtered = q.length === 0 ? options : options.filter((o) => o.toLowerCase().includes(q));
+
+  return (
+    <div className="gc-field">
+      <span className="gc-field__label">{label}</span>
+      <button
+        ref={triggerRef}
+        type="button"
+        className="gc-toolbar__branch-select gc-popover-trigger"
+        disabled={disabled}
+        aria-label={`${label}: ${sanitizeGitText(value)}`}
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        aria-controls={open ? listId : undefined}
+        onClick={() => {
+          setOpen((prev) => !prev);
+          setQuery('');
+        }}
+      >
+        <span className="gc-popover-trigger__icon" aria-hidden="true">
+          <Icon name="git-branch" />
+        </span>
+        <span className="gc-popover-trigger__label">{sanitizeGitText(value)}</span>
+        <span className="gc-popover-trigger__chevron" aria-hidden="true">
+          <Icon name="chevron-down" />
+        </span>
+      </button>
+      {open && (
+        <div
+          id={listId}
+          ref={popoverRef}
+          className="gc-menu gc-branch-popover"
+          role="dialog"
+          aria-label={label}
+          style={{ left: `${placed.x}px`, top: `${placed.y}px`, width: `${placed.width}px` }}
+          onKeyDown={(e) => {
+            if (e.key === 'Escape') {
+              e.preventDefault();
+              setOpen(false);
+              triggerRef.current?.focus();
+            }
+          }}
+        >
+          <div className="gc-branch-popover__search">
+            <Icon name="search" />
+            <input
+              ref={searchRef}
+              type="search"
+              className="gc-branch-popover__input"
+              value={query}
+              placeholder={filterPlaceholder}
+              aria-label={filterPlaceholder}
+              onChange={(e) => setQuery(e.target.value)}
+            />
+          </div>
+          <div className="gc-branch-popover__list" role="listbox" aria-label={label}>
+            {filtered.map((name) => {
+              const selected = name === value;
+              return (
+                <button
+                  key={name}
+                  type="button"
+                  role="option"
+                  aria-selected={selected}
+                  className={
+                    selected
+                      ? 'gc-menu__item gc-branch-popover__option gc-branch-popover__option--selected'
+                      : 'gc-menu__item gc-branch-popover__option'
+                  }
+                  onClick={() => {
+                    onChange(name);
+                    setOpen(false);
+                    setQuery('');
+                  }}
+                >
+                  <span className="gc-branch-popover__check" aria-hidden="true">
+                    {selected && <Icon name="check" />}
+                  </span>
+                  <span className="gc-menu__icon" aria-hidden="true">
+                    <Icon name="git-branch" />
+                  </span>
+                  <span className="gc-branch-popover__name">{sanitizeGitText(name)}</span>
+                </button>
+              );
+            })}
+            {filtered.length === 0 && <p className="gc-branch-popover__empty">{emptyLabel}</p>}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
 
 export interface CreatePullRequestProps {
   variant: 'sidebar' | 'modal';
@@ -228,37 +374,27 @@ export function CreatePullRequest({
 
       <form className="gc-create-pr__body" onSubmit={onFormSubmit}>
         <div className="gc-create-pr__branches">
-          <label className="gc-field">
-            <span className="gc-field__label">{strings.createPr.base}</span>
-            <select
-              value={base}
-              disabled={locked}
-              onChange={(event) => setField('base', event.target.value)}
-            >
-              {baseOptions.map((name) => (
-                <option key={name} value={name}>
-                  {sanitizeGitText(name)}
-                </option>
-              ))}
-            </select>
-          </label>
+          <BranchPickerPopover
+            label={strings.createPr.base}
+            value={base}
+            options={baseOptions}
+            disabled={locked}
+            filterPlaceholder={strings.graph.branchPopoverFilter}
+            emptyLabel={strings.branches.emptyFilter}
+            onChange={(val) => setField('base', val)}
+          />
           <span className="gc-create-pr__arrow" aria-hidden="true">
             →
           </span>
-          <label className="gc-field">
-            <span className="gc-field__label">{strings.createPr.compare}</span>
-            <select
-              value={head}
-              disabled={locked}
-              onChange={(event) => setField('head', event.target.value)}
-            >
-              {headOptions.map((name) => (
-                <option key={name} value={name}>
-                  {sanitizeGitText(name)}
-                </option>
-              ))}
-            </select>
-          </label>
+          <BranchPickerPopover
+            label={strings.createPr.compare}
+            value={head}
+            options={headOptions}
+            disabled={locked}
+            filterPlaceholder={strings.graph.branchPopoverFilter}
+            emptyLabel={strings.branches.emptyFilter}
+            onChange={(val) => setField('head', val)}
+          />
         </div>
 
         <label className="gc-field">

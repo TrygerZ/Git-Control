@@ -26,6 +26,8 @@ export interface MergePullDialogProps {
    * panel from `detail.isFork` with the list row as a fallback.
    */
   isFork: boolean;
+  initialMethod?: MergeMethod;
+  initialDeleteBranch?: boolean;
   onConfirm(options: {
     method: MergeMethod;
     commitTitle?: string;
@@ -42,13 +44,15 @@ export function MergePullDialog({
   owner,
   repo,
   isFork,
+  initialMethod = 'squash',
+  initialDeleteBranch = false,
   onConfirm,
   onCancel,
 }: MergePullDialogProps): JSX.Element {
   const strings = useT();
-  const [method, setMethod] = useState<MergeMethod>('squash');
+  const [method, setMethod] = useState<MergeMethod>(initialMethod);
   const [title, setTitle] = useState(() => defaultSquashMessage(detail));
-  const [deleteBranch, setDeleteBranch] = useState(false);
+  const [deleteBranch, setDeleteBranch] = useState(initialDeleteBranch);
   const { dialogRef, onKeyDown } = useDialogFocusTrap(onCancel);
   const confirmRef = useRef<HTMLButtonElement>(null);
   const returnFocus = useRef<Element | null>(null);

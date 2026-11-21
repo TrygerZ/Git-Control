@@ -682,6 +682,30 @@ export function PullRequestApp(): JSX.Element {
               ))}
             </div>
           </section>
+          <section className="gc-prrail__section">
+            <h2 className="gc-prrail__title">{strings.prDetail.tabChecks}</h2>
+            <button
+              type="button"
+              className="gc-button gc-button--quiet gc-prrail__summary-btn"
+              onClick={() => setTab('checks')}
+            >
+              <span>
+                {checks !== null && checks.total > 0
+                  ? `${formatCount(checks.passed, language)} / ${formatCount(checks.total, language)}`
+                  : strings.prDetail.tabChecks}
+              </span>
+            </button>
+          </section>
+          <section className="gc-prrail__section">
+            <h2 className="gc-prrail__title">{strings.prDetail.tabCommits}</h2>
+            <button
+              type="button"
+              className="gc-button gc-button--quiet gc-prrail__summary-btn"
+              onClick={() => setTab('commits')}
+            >
+              <span>{`${formatCount(detail.commits, language)} ${strings.prDetail.tabCommits.toLowerCase()}`}</span>
+            </button>
+          </section>
         </aside>
       </div>
 
@@ -708,6 +732,8 @@ export function PullRequestApp(): JSX.Element {
         <ReviewDialog
           number={detail.number}
           headRef={sanitizeGitText(detail.headRef)}
+          owner={owner}
+          repo={repo}
           draft={reviewDraft ?? undefined}
           error={reviewError ?? undefined}
           sending={reviewState === 'sending'}
@@ -1170,6 +1196,7 @@ function MergeControl({
   onRetry(): void;
   onCancel(): void;
 }): JSX.Element {
+  const [inlineMethod, setInlineMethod] = useState<'merge' | 'squash'>('squash');
   if (mergeState === 'merging') {
     return (
       <p className="gc-prmerge__progress" role="status" aria-live="polite">
@@ -1199,16 +1226,32 @@ function MergeControl({
       </p>
     );
   }
+  const activeLabel =
+    inlineMethod === 'merge' ? strings.prMerge.methodMerge : strings.prMerge.methodSquash;
   return (
     <div className="gc-prdetail__merge-options">
+      <div className="gc-prmerge__methods" role="radiogroup" aria-label={strings.prMerge.method}>
+        {(['merge', 'squash'] as const).map((m) => (
+          <button
+            key={m}
+            type="button"
+            role="radio"
+            aria-checked={inlineMethod === m}
+            className={inlineMethod === m ? 'gc-button gc-button--action' : 'gc-button gc-button--quiet'}
+            onClick={() => setInlineMethod(m)}
+          >
+            {m === 'merge' ? strings.prMerge.methodMerge : strings.prMerge.methodSquash}
+          </button>
+        ))}
+      </div>
       <button
         type="button"
         className="gc-button gc-button--primary gc-prmerge__submit"
-        aria-label={strings.prMerge.dialogTitle(strings.prMerge.methodSquash, String(detail.number))}
+        aria-label={strings.prMerge.dialogTitle(activeLabel, String(detail.number))}
         onClick={onOpen}
       >
         <Icon name="merge" />
-        {strings.prMerge.methodSquash}
+        {activeLabel}
       </button>
       <p className="gc-prdetail__merge-caption">{strings.prMerge.runsOnGitHub}</p>
     </div>
