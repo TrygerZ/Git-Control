@@ -525,7 +525,7 @@ export function SidebarHeader(): JSX.Element | null {
                       key={row.id}
                       type="button"
                       role="menuitem"
-                      className="gc-menu__item"
+                      className="gc-menu__item gc-menu__item--compact"
                       tabIndex={index === active ? 0 : -1}
                       onFocus={() => setActive(index)}
                       onClick={() => {

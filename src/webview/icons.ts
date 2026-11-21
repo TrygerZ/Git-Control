@@ -69,4 +69,5 @@ export type IconName =
   // Sidebar and Explorer More menus (frames 17, 24b, 42).
   | 'globe'
   | 'theme'
-  | 'github';
+  | 'github'
+  | 'terminal';

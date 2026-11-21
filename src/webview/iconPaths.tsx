@@ -588,4 +588,12 @@ export const ICON_PATHS: Record<IconName, () => JSX.Element> = {
       fill="currentColor"
     />
   ),
+  // Terminal prompt: Show Git output in Explorer More menu (frame 17).
+  terminal: () => (
+    <>
+      <rect x="2" y="3" width="12" height="10" rx="1.5" stroke="currentColor" strokeWidth="1.4" fill="none" />
+      <path d="M4.75 6.25L7 8.25l-2.25 2" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" fill="none" />
+      <path d="M8.5 10.25h2.75" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+    </>
+  ),
 };
