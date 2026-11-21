@@ -5,6 +5,15 @@ All notable changes to the "Git Control" extension will be documented in this fi
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.26.1] - 2026-11-21
+
+### Added
+- Switch the interface language (`English (EN)` / `Bahasa Indonesia (ID)`) and toggle the active VS Code color theme (`Dark` / `Light`) directly from the `Preferences` group in the Graph Explorer and sidebar `More` (`...`) menus.
+
+### Changed
+- Refresh `README.md` and all five showcase screenshots (`screenshots/*.png`) for UI v3, covering the 5-tab sidebar navigation strip, Quick Actions palette (`Ctrl+K G`), Get Started checklist, Help & Shortcuts view, Branches/Tags/Compare/Worktrees, and GitHub Pull Requests, Issues, Actions, and Releases.
+- Sync the `README.md` keyboard shortcut table and contributed command list against the shipped handlers (`src/webview/shortcuts.ts` and `package.json`), and complete the `AGENTS.md` File Map and invariant documentation.
+
 ## [3.26.0] - 2026-11-21
 
 ### Added
