@@ -134,3 +134,28 @@ test('the shortcut catalog copy names no key that the code does not handle', () 
     }
   }
 });
+
+test('P30: the README keyboard shortcut tables cover every verified shortcut in SHORTCUTS', () => {
+  const readme = read('README.md');
+  const start = readme.indexOf('## Keyboard Shortcuts');
+  assert.ok(start !== -1, 'README has a Keyboard Shortcuts section');
+  const end = readme.indexOf('## License', start);
+  const section = end === -1 ? readme.slice(start) : readme.slice(start, end);
+
+  const tableRows = section
+    .split(/\r?\n/)
+    .filter((line) => line.startsWith('|') && !line.includes('---') && !/\|\s*Key\s*\|/i.test(line));
+
+  assert.ok(
+    tableRows.length >= SHORTCUTS.length,
+    `README shortcut table must list all ${SHORTCUTS.length} verified shortcuts (found ${tableRows.length} rows)`,
+  );
+
+  for (const entry of SHORTCUTS) {
+    const matchingRow = tableRows.find((row) => entry.keys.every((key) => row.toLowerCase().includes(key.toLowerCase())));
+    assert.ok(
+      matchingRow !== undefined,
+      `README shortcut table is missing a row covering ${entry.id} (${entry.keys.join(', ')})`,
+    );
+  }
+});

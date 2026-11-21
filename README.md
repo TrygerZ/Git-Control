@@ -190,24 +190,48 @@ Behavior that applies to both token types:
 
 ## Keyboard Shortcuts
 
+Click the graph, minimap, or changes list once to focus it before using its shortcuts.
+
+### Anywhere
+
 | Key | Action |
 |---|---|
 | `Ctrl + K G` (`Cmd + K G` on macOS) | Open Quick actions from the editor, the sidebar, or the Explorer panel |
-| `Ctrl + Shift + P` | Command Palette, where every Git Control command is available |
 
 The Quick actions chord is unscoped because a sidebar webview does not set `focusedView` or `sideBarFocus`, so a scoped clause could never fire there. It has no default binding in VS Code.
 
-## Keyboard Shortcuts in Graph Explorer
+### Graph Explorer
 
 | Key | Action |
 |---|---|
 | `Left` / `Right` | Move to the previous or next commit |
-| `Up` / `Down` | Move to the nearest commit in the lane above or below |
-| `Enter` / `Space` | Open selected commit in Inspector |
-| `Shift + F10` / `Menu` | Open context menu for selected commit |
-| `+` / `-` | Zoom in and zoom out |
-| `0` | Reset zoom to 100% |
-| `Space` (hold) | Drag-to-pan anywhere, including over commit rows and nodes |
+| `Up` / `Down` | Move to the nearest commit in the lane above or below (or pan vertically if none) |
+| `PageUp` / `PageDown` | Jump one screen backward or forward |
+| `Home` / `End` | Jump to the first or last loaded commit |
+| `Enter` or `Space` | Open commit details in the Inspector |
+| `+` / `-` / `0` | Zoom in, zoom out, or reset zoom to 100% |
+| `Menu` or `Shift F10` | Open the context menu for the selected commit |
+| `Ctrl + Scroll` (`Cmd + Scroll` on macOS) | Zoom in or out with the mouse wheel |
+| `Space + Drag` | Pan the canvas anywhere, including over commit rows and nodes |
+| `Left` / `Right` / `PageUp` / `PageDown` / `Home` / `End` | Scroll the minimap horizontally when focused |
+
+### Changes List
+
+| Key | Action |
+|---|---|
+| `Up` / `Down` | Move between file and folder rows |
+| `Right` / `Left` | Open or close a folder, or move to its first child or parent row |
+| `Home` / `End` | Jump to the first or last row |
+| `Enter` | Open diff for the selected file, or toggle a folder |
+
+### Menus and Dialogs
+
+| Key | Action |
+|---|---|
+| `Esc` | Close the open context menu, dialog, or branch legend |
+| `Up` / `Down` | Move between items in a context menu |
+| `Home` / `End` | Jump to the first or last item in a context menu |
+| `Tab` | Cycle focus inside an open dialog (`Shift + Tab` moves backward) |
 
 ## License
 
