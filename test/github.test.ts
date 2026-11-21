@@ -2546,3 +2546,99 @@ test('P27: workflowFile decodes base64 YAML, caches 60 s, enforces 64 KiB cap, a
   assert.equal(r2.cached, false);
   assert.equal(RUN_DETAIL_TTL_MS, 30_000);
 });
+
+// ------------------------------------------------- P28 tags and releases
+
+test('P28: generateReleaseNotes posts tag_name with optional previous_tag_name and target_commitish without caching or retry', async () => {
+  const h = writeClient([
+    response(200, { name: 'v2.8.0', body: "## What's Changed\n* feat: add tags" }),
+  ]);
+
+  const res = await h.gh.generateReleaseNotes('o', 'r', {
+    tag: 'v2.8.0',
+    previousTag: 'v2.7.0',
+    target: 'main',
+  });
+  assert.equal(h.calls.length, 1);
+  assert.equal(h.calls[0]?.url, 'https://api.github.com/repos/o/r/releases/generate-notes');
+  assert.equal(h.calls[0]?.method, 'POST');
+  assert.deepEqual(h.calls[0]?.body, {
+    tag_name: 'v2.8.0',
+    previous_tag_name: 'v2.7.0',
+    target_commitish: 'main',
+  });
+  assert.deepEqual(res.data, { name: 'v2.8.0', body: "## What's Changed\n* feat: add tags" });
+  assert.equal(h.gh.cacheSize, 0, 'generateReleaseNotes is never cached');
+
+  // Optional fields omitted when absent
+  const hMin = writeClient([response(200, { name: 'v1.0.0', body: '' })]);
+  await hMin.gh.generateReleaseNotes('o', 'r', { tag: 'v1.0.0' });
+  assert.deepEqual(hMin.calls[0]?.body, { tag_name: 'v1.0.0' });
+});
+
+test('P28: createRelease sends draft:false, maps 422 already_exists, and never retries on 502', async () => {
+  const h = writeClient([
+    response(201, { id: 99, html_url: 'https://github.com/o/r/releases/tag/v2.8.0' }),
+  ]);
+
+  const res = await h.gh.createRelease('o', 'r', {
+    tag: 'v2.8.0',
+    name: 'v2.8.0 - Tags',
+    body: '## Notes',
+    prerelease: true,
+    target: 'a'.repeat(40),
+  });
+  assert.equal(h.calls.length, 1);
+  assert.equal(h.calls[0]?.url, 'https://api.github.com/repos/o/r/releases');
+  assert.equal(h.calls[0]?.method, 'POST');
+  assert.deepEqual(h.calls[0]?.body, {
+    tag_name: 'v2.8.0',
+    name: 'v2.8.0 - Tags',
+    body: '## Notes',
+    prerelease: true,
+    target_commitish: 'a'.repeat(40),
+    draft: false,
+    generate_release_notes: false,
+  });
+  assert.deepEqual(res.data, { id: 99, htmlUrl: 'https://github.com/o/r/releases/tag/v2.8.0' });
+
+  // 422 already_exists maps to a clear VALIDATION_ERROR message
+  const dup = writeClient([
+    response(422, {
+      message: 'Validation Failed',
+      errors: [{ resource: 'Release', code: 'already_exists', field: 'tag_name' }],
+    }),
+  ]);
+  await assert.rejects(
+    () =>
+      dup.gh.createRelease('o', 'r', {
+        tag: 'v2.8.0',
+        name: 'v2.8.0',
+        body: '',
+        prerelease: false,
+        target: 'main',
+      }),
+    (err: unknown) => {
+      assert.ok(err instanceof GitHubError);
+      assert.equal(err.status, 422);
+      assert.equal(err.code, 'VALIDATION_ERROR');
+      assert.match(err.message, /release.*already exists/i);
+      return true;
+    },
+  );
+
+  // 502 never retries (exactly one network attempt)
+  const flaky = writeClient([response(502, { message: 'Bad Gateway' }), response(201, { id: 1, html_url: 'https://github.com/o/r' })]);
+  await assert.rejects(
+    () =>
+      flaky.gh.createRelease('o', 'r', {
+        tag: 'v2.8.1',
+        name: 'v2.8.1',
+        body: '',
+        prerelease: false,
+        target: 'main',
+      }),
+    (err: unknown) => err instanceof GitHubError,
+  );
+  assert.equal(flaky.calls.length, 1, 'mutate() must never retry POST on 502');
+});

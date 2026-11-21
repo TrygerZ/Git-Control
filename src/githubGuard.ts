@@ -30,7 +30,8 @@ export type GitHubWriteAction =
   | { action: 'create-issue' }
   | { action: 'rerun-failed-jobs'; run?: { status: string; conclusion: string | null } }
   | { action: 'dispatch-workflow' }
-  | { action: 'create-release' };
+  | { action: 'create-release' }
+  | { action: 'generate-notes' };
 
 export interface GitHubGuardContext {
   connected: boolean;

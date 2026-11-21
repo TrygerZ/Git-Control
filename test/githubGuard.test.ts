@@ -417,3 +417,34 @@ test('P27: dispatch-workflow requires level 1 confirmation and blocks on auth, t
   assert.equal(noScope.allow, false);
   if (!noScope.allow) assert.equal(noScope.code, 'FORBIDDEN');
 });
+
+test('P28: create-release requires level 1 confirmation and generate-notes is allowed without confirm', () => {
+  const rel = evaluateGitHubAction({ action: 'create-release' }, CONNECTED);
+  assert.equal(rel.allow, false);
+  if (!rel.allow) {
+    assert.equal(rel.code, 'CONFIRMATION_REQUIRED');
+    assert.equal(rel.confirmationLevel, 1);
+    assert.equal(rel.requiresConfirmation, true);
+    assert.equal(rel.risk, 'medium');
+    assert.deepEqual(rel.remedies, ['confirm', 'cancel']);
+  }
+
+  const unconnected = evaluateGitHubAction({ action: 'create-release' }, { ...CONNECTED, connected: false });
+  assert.equal(unconnected.allow, false);
+  if (!unconnected.allow) assert.equal(unconnected.code, 'AUTH_ERROR');
+
+  const untrusted = evaluateGitHubAction({ action: 'create-release' }, { ...CONNECTED, tokenAllowed: false });
+  assert.equal(untrusted.allow, false);
+  if (!untrusted.allow) assert.equal(untrusted.code, 'FORBIDDEN');
+
+  const noScope = evaluateGitHubAction({ action: 'create-release' }, { ...CONNECTED, scopes: ['read:user'] });
+  assert.equal(noScope.allow, false);
+  if (!noScope.allow) assert.equal(noScope.code, 'FORBIDDEN');
+
+  const notes = evaluateGitHubAction({ action: 'generate-notes' }, CONNECTED);
+  assert.deepEqual(notes, { allow: true });
+
+  const notesUnconnected = evaluateGitHubAction({ action: 'generate-notes' }, { ...CONNECTED, connected: false });
+  assert.equal(notesUnconnected.allow, false);
+  if (!notesUnconnected.allow) assert.equal(notesUnconnected.code, 'AUTH_ERROR');
+});
