@@ -218,6 +218,7 @@ export interface CommitFileChange {
   additions: number | null;
   deletions: number | null;
   binary: boolean;
+  status?: string;
 }
 
 export interface CommitDetail {

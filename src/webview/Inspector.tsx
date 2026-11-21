@@ -626,6 +626,20 @@ export function Inspector({ hash, onDetailLoaded }: Props): JSX.Element {
                         <span className="gc-stat gc-stat--del">−{file.deletions ?? 0}</span>
                       </span>
                     )}
+                    {file.status !== undefined && (
+                      <span
+                        className={`gc-tree__status-letter gc-tree__status-letter--${
+                          file.status === 'A'
+                            ? 'added'
+                            : file.status === 'D'
+                              ? 'removed'
+                              : 'changed'
+                        }`}
+                        aria-hidden="true"
+                      >
+                        {file.status}
+                      </span>
+                    )}
                   </button>
                   {opening === file.path && <Spinner label={strings.inspector.openingDiff} />}
                 </li>

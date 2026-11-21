@@ -832,6 +832,14 @@ const en = {
     commitToast: 'Action cancelled. Commit in Pending Changes panel, then retry.',
     resolveToast: 'Action cancelled. Resolve conflicts in Conflicts panel, then retry.',
     autoStashMessage: 'Git Control auto stash',
+    dirtySubtitle: 'You have unsaved changes. Choose how to keep them safe first.',
+    dirtyOptionsAria: 'Choose how to handle unsaved changes',
+    dirtyRecommendedBadge: 'Recommended',
+    dirtyStashOption: (verb: string) => `Stash changes, then ${verb}`,
+    dirtyStashHint: 'Saves your work to the stash and cleans the working directory. Restore it later from Stashes.',
+    dirtyCommitOption: 'Commit changes first',
+    dirtyCommitHint: 'Review and commit your changes before continuing.',
+    dirtyStashAction: (verb: string) => `Stash & ${verb}`,
   },
 
   // Branch legend
@@ -1147,6 +1155,7 @@ const en = {
     mergeIntoPrompt: 'Target branch',
     mergeIntoSubmit: 'Merge',
     branchNameRequired: 'Branch name cannot be empty.',
+    branchNameHint: 'Letters, numbers, / . _ - only. No spaces.',
     defaultBranchPrefix: 'feature',
     asideAria: 'Details panel',
     asideTitle: 'Details',

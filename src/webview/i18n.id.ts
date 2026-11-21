@@ -825,6 +825,14 @@ const id: Catalog = {
     commitToast: 'Tindakan dibatalkan. Lakukan commit di panel Pending Changes, lalu coba lagi.',
     resolveToast: 'Tindakan dibatalkan. Selesaikan konflik di panel Konflik, lalu coba lagi.',
     autoStashMessage: 'Git Control auto stash',
+    dirtySubtitle: 'Ada perubahan yang belum disimpan. Pilih cara mengamankannya dulu.',
+    dirtyOptionsAria: 'Pilih cara menangani perubahan yang belum disimpan',
+    dirtyRecommendedBadge: 'Disarankan',
+    dirtyStashOption: (verb: string) => `Simpan ke stash, lalu ${verb}`,
+    dirtyStashHint: 'Menyimpan pekerjaan ke stash dan membersihkan direktori kerja. Pulihkan nanti dari Stashes.',
+    dirtyCommitOption: 'Commit perubahan dulu',
+    dirtyCommitHint: 'Tinjau dan commit perubahan sebelum melanjutkan.',
+    dirtyStashAction: (verb: string) => `Stash & ${verb}`,
   },
 
   // Branch legend
@@ -1134,6 +1142,7 @@ const id: Catalog = {
     mergeIntoPrompt: 'Branch tujuan',
     mergeIntoSubmit: 'Merge',
     branchNameRequired: 'Nama branch tidak boleh kosong.',
+    branchNameHint: 'Hanya huruf, angka, / . _ -. Tanpa spasi.',
     defaultBranchPrefix: 'fitur',
     asideAria: 'Panel detail',
     asideTitle: 'Detail',

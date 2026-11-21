@@ -333,6 +333,10 @@ export function ExplorerApp(): JSX.Element {
           submitLabel={strings.explorer.createBranchTitle}
           cancelLabel={strings.guard.cancelButton}
           initialValue={createBranchTarget.defaultName}
+          hint={strings.explorer.branchNameHint}
+          commandPreview={(val) =>
+            `git switch --create ${val || '<branch>'} ${createBranchTarget.startPoint.slice(0, 7)}`
+          }
           validate={(val) => {
             // Client-side quick validation: non-empty only. Host (validateBranchName) is sole authority.
             if (val.length === 0) return strings.explorer.branchNameRequired;

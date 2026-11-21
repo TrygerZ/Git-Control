@@ -492,6 +492,15 @@ export function NodeContextMenu({
       onKeyDown={onKeyDown}
       style={{ left: `${placed.x}px`, top: `${placed.y}px` }}
     >
+      <div className="gc-menu__commit-header" aria-hidden="true">
+        <span
+          className="gc-menu__commit-dot"
+          style={node.branchColor ? { background: node.branchColor } : undefined}
+        />
+        <code className="gc-menu__commit-hash">{node.shortHash}</code>
+        <span className="gc-menu__commit-subject">{sanitizeGitText(node.subject)}</span>
+      </div>
+      <span className="gc-menu__separator" aria-hidden="true" />
       {groups.map(({ group, items: members }, groupIndex) => (
         <div
           key={group}
@@ -558,6 +567,17 @@ export function NodeContextMenu({
                     {item.risky === true && <span className="gc-menu__risk-word">{strings.menu.riskyWord}</span>}
                   </span>
                 </span>
+                {(item.id === 'view-diff' ||
+                  item.id === 'copy-full' ||
+                  item.id === 'create-branch') && (
+                  <span className="gc-menu__hint gc-menu__shortcut" aria-hidden="true">
+                    {item.id === 'view-diff'
+                      ? 'Enter'
+                      : item.id === 'copy-full'
+                        ? 'Ctrl C'
+                        : 'B'}
+                  </span>
+                )}
               </button>
             );
           })}

@@ -68,6 +68,7 @@ function GuardDialogBody({ guard }: { guard: PendingGuard }): JSX.Element {
   const request: GitActionRequest = guard.request;
   const [stage, setStage] = useState<1 | 2>(1);
   const [acknowledged, setAcknowledged] = useState(false);
+  const [dirtyChoice, setDirtyChoice] = useState<'stash' | 'commit'>('stash');
   const [busy, setBusy] = useState(false);
   const { dialogRef, onKeyDown } = useDialogFocusTrap(dismiss);
   const cancelRef = useRef<HTMLButtonElement>(null);
@@ -176,6 +177,21 @@ function GuardDialogBody({ guard }: { guard: PendingGuard }): JSX.Element {
    * moves off the bottom-right corner so a reflex press lands on `Batal` instead.
    */
   const remedies = orderedRemedies(view.remedies);
+  const isDirtyGuard =
+    remedies.includes('stash') &&
+    remedies.includes('commit') &&
+    !remedies.includes('confirm');
+  const dirtyVerb =
+    request.action === 'cherry-pick'
+      ? 'cherry-pick'
+      : request.action === 'checkout-branch'
+        ? 'switch'
+        : request.action === 'checkout-commit' || request.action === 'checkout-pr'
+          ? 'checkout'
+          : request.action === 'merge' || request.action === 'merge-into'
+            ? 'merge'
+            : request.action;
+  const autoStashCommand = `git stash push -u -m "${strings.guard.autoStashMessage}"`;
 
   return (
     <div className="gc-modal-backdrop">
@@ -204,6 +220,75 @@ function GuardDialogBody({ guard }: { guard: PendingGuard }): JSX.Element {
           {actionTitle(request, language)}
         </h2>
 
+        {isDirtyGuard ? (
+          <>
+            <div className="gc-modal__body" id={descId}>
+              <p>{strings.guard.dirtySubtitle}</p>
+            </div>
+            <div
+              className="gc-guard-options"
+              role="radiogroup"
+              aria-label={strings.guard.dirtyOptionsAria}
+            >
+              <button
+                type="button"
+                role="radio"
+                aria-checked={dirtyChoice === 'stash'}
+                className={
+                  dirtyChoice === 'stash'
+                    ? 'gc-guard-option gc-guard-option--selected'
+                    : 'gc-guard-option'
+                }
+                onClick={() => setDirtyChoice('stash')}
+              >
+                <span className="gc-guard-option__radio" aria-hidden="true">
+                  {dirtyChoice === 'stash' && <Icon name="check" />}
+                </span>
+                <span className="gc-guard-option__text">
+                  <span className="gc-guard-option__title">
+                    <span>{strings.guard.dirtyStashOption(dirtyVerb)}</span>
+                    <span className="gc-guard-option__badge">
+                      {strings.guard.dirtyRecommendedBadge}
+                    </span>
+                  </span>
+                  <span className="gc-guard-option__hint">
+                    {strings.guard.dirtyStashHint}
+                  </span>
+                </span>
+                <span className="gc-guard-option__icon" aria-hidden="true">
+                  <Icon name="archive" />
+                </span>
+              </button>
+              <button
+                type="button"
+                role="radio"
+                aria-checked={dirtyChoice === 'commit'}
+                className={
+                  dirtyChoice === 'commit'
+                    ? 'gc-guard-option gc-guard-option--selected'
+                    : 'gc-guard-option'
+                }
+                onClick={() => setDirtyChoice('commit')}
+              >
+                <span className="gc-guard-option__radio" aria-hidden="true">
+                  {dirtyChoice === 'commit' && <Icon name="check" />}
+                </span>
+                <span className="gc-guard-option__text">
+                  <span className="gc-guard-option__title">
+                    <span>{strings.guard.dirtyCommitOption}</span>
+                  </span>
+                  <span className="gc-guard-option__hint">
+                    {strings.guard.dirtyCommitHint}
+                  </span>
+                </span>
+                <span className="gc-guard-option__icon" aria-hidden="true">
+                  <Icon name="commit" />
+                </span>
+              </button>
+            </div>
+          </>
+        ) : (
+          <>
         {/*
           Target, problem, and — for a two-stage flow — where the user is in it. The
           stage line is a fact about the dialog, so it belongs with the other facts
@@ -257,6 +342,8 @@ function GuardDialogBody({ guard }: { guard: PendingGuard }): JSX.Element {
             </>
           )}
         </div>
+          </>
+        )}
 
         {/*
           The command block is a teaching surface, not a technical footnote.
@@ -272,6 +359,9 @@ function GuardDialogBody({ guard }: { guard: PendingGuard }): JSX.Element {
           <span className="gc-modal__command-label" id={commandId}>
             {strings.guard.gitCommandLabel}
           </span>
+          {isDirtyGuard && dirtyChoice === 'stash' && (
+            <code className="gc-modal__command-pre">{autoStashCommand}</code>
+          )}
           <code aria-describedby={commandId}>{command}</code>
           <span className="gc-modal__command-note">
             {strings.guard.gitCommandNote}
@@ -328,6 +418,33 @@ function GuardDialogBody({ guard }: { guard: PendingGuard }): JSX.Element {
         )}
 
         <div className="gc-modal__actions">
+          {isDirtyGuard ? (
+            <>
+              <button
+                type="button"
+                ref={cancelRef}
+                className="gc-button"
+                title={remedyConsequence('cancel', language)}
+                disabled={busy}
+                onClick={close}
+              >
+                {strings.guard.cancelButton}
+              </button>
+              <button
+                type="button"
+                className="gc-button gc-button--primary"
+                title={remedyConsequence(dirtyChoice, language)}
+                disabled={busy}
+                onClick={() => void handleRemedy(dirtyChoice)}
+              >
+                <Icon name={dirtyChoice === 'stash' ? 'archive' : 'commit'} />
+                {dirtyChoice === 'stash'
+                  ? strings.guard.dirtyStashAction(dirtyVerb)
+                  : strings.guard.dirtyCommitOption}
+              </button>
+            </>
+          ) : (
+            <>
           {remedies.map((remedy) => {
             const isConfirm = remedy === 'confirm';
             // Stage 1 of a level-2 flow does not run anything: it opens stage 2. The
@@ -380,6 +497,8 @@ function GuardDialogBody({ guard }: { guard: PendingGuard }): JSX.Element {
             >
               {strings.guard.cancelButton}
             </button>
+          )}
+            </>
           )}
         </div>
 

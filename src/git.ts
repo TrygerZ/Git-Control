@@ -737,6 +737,26 @@ export class GitRunner {
   }
 
   /**
+   * Single-letter file status (`A`, `M`, `D`, `R`, `C`) per path in a commit.
+   * Mirrors {@link numstat} flags and truncation cap so Inspector rows can
+   * render status badges without failing on huge commits.
+   */
+  async commitFileStatuses(
+    hash: string,
+    opts: { firstParent?: boolean } = {},
+  ): Promise<Map<string, string>> {
+    this.assertHash(hash);
+    const args = ['show', '--name-status', '--format=', '--no-color'];
+    if (opts.firstParent === true) args.push('-m', '--first-parent');
+    args.push(sanitizeRefArg(hash));
+    const { stdout } = await this.run(args, {
+      maxStdoutBytes: MAX_NUMSTAT_BYTES,
+      truncateStdout: true,
+    });
+    return parseNameStatus(stdout);
+  }
+
+  /**
    * Per-file add/delete counts for the working tree or the index.
    *
    * `cached: true` reads the index against HEAD (`--cached`), otherwise the working
