@@ -5593,3 +5593,82 @@ test('actions/git tag-push requires confirmation and replays idempotently', asyn
   const lsRemote = (await repo.git.run(['ls-remote', '--tags', 'origin', 'refs/tags/v2.0.0'])).stdout.trim();
   assert.match(lsRemote, /refs\/tags\/v2\.0\.0$/);
 });
+
+test('P28: github/releaseNotes validates, gates on GitHub auth/scope without confirm, and delegates to host', async (t) => {
+  let called = 0;
+  const h = harness(
+    null,
+    writeHost({
+      githubReleaseNotes: async (p) => {
+        called += 1;
+        return { name: p.tag, body: '## Notes', rateLimit: RATE_LIMIT };
+      },
+    }),
+  );
+  t.after(() => h.bridge.dispose());
+
+  // Invalid tag rejected before host call
+  const bad = await h.webview.send(req('github/releaseNotes', { owner: 'o', repo: 'r', tag: '-bad' }));
+  assert.equal(bad.ok, false);
+  if (!bad.ok) assert.equal(bad.error.code, 'VALIDATION_ERROR');
+  assert.equal(called, 0);
+
+  // Valid request runs without confirmation
+  const ok = await h.webview.send(
+    req('github/releaseNotes', { owner: 'o', repo: 'r', tag: 'v2.8.0', previousTag: 'v2.7.0', target: 'main' }),
+  );
+  assert.equal(ok.ok, true);
+  assert.equal(called, 1);
+  assert.deepEqual(ok.ok ? ok.data : null, { name: 'v2.8.0', body: '## Notes', rateLimit: RATE_LIMIT });
+
+  // Missing host method returns 503 UNAVAILABLE
+  const missing = harness(null, writeHost({}));
+  t.after(() => missing.bridge.dispose());
+  const unavailable = await missing.webview.send(req('github/releaseNotes', { owner: 'o', repo: 'r', tag: 'v2.8.0' }));
+  assert.equal(unavailable.ok, false);
+  if (!unavailable.ok) {
+    assert.equal(unavailable.error.status, 503);
+    assert.equal(unavailable.error.code, 'UNAVAILABLE');
+  }
+});
+
+test('P28: github/createRelease enforces level 1 confirm, validates payload, and replays idempotently', async (t) => {
+  let calls = 0;
+  const h = harness(
+    null,
+    writeHost({
+      githubCreateRelease: async (p) => {
+        calls += 1;
+        return { id: 77, htmlUrl: `https://github.com/${p.owner}/${p.repo}/releases/tag/${p.tag}` };
+      },
+    }),
+  );
+  t.after(() => h.bridge.dispose());
+
+  const base = {
+    owner: 'o',
+    repo: 'r',
+    tag: 'v2.8.0',
+    name: 'v2.8.0',
+    body: '## Notes',
+    prerelease: false,
+    target: 'main',
+  };
+
+  // Unconfirmed blocked with level 1 CONFIRMATION_REQUIRED
+  const unconfirmed = await h.webview.send(req('github/createRelease', { ...base, idempotencyKey: 'cr-1' }));
+  assert.equal(unconfirmed.ok, false);
+  if (!unconfirmed.ok) {
+    assert.equal(unconfirmed.error.code, 'CONFIRMATION_REQUIRED');
+    assert.equal(unconfirmed.error.confirmationLevel, 1);
+  }
+  assert.equal(calls, 0);
+
+  // Confirmed succeeds and double-click with same idempotencyKey replays once
+  const r1 = await h.webview.send(req('github/createRelease', { ...base, confirm: true, idempotencyKey: 'cr-2' }));
+  const r2 = await h.webview.send(req('github/createRelease', { ...base, confirm: true, idempotencyKey: 'cr-2' }));
+  assert.equal(r1.ok, true);
+  assert.equal(r2.ok, true);
+  assert.equal(calls, 1, 'double click replays cached outcome');
+  assert.deepEqual(r1.ok ? r1.data : null, { id: 77, htmlUrl: 'https://github.com/o/r/releases/tag/v2.8.0' });
+});

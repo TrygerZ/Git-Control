@@ -629,3 +629,103 @@ test('P27: Actions workflowInputs -> dispatch -> 2-poll match and rerunFailed re
   assert.equal(afterData.runs[0]?.status, 'in_progress');
   assert.equal(afterData.rateLimit.cached, false, 'rerunFailedJobs invalidated cached workflow runs');
 });
+
+test('P28: releaseNotes -> createRelease -> duplicate createRelease maps 422 already_exists', async (t) => {
+  const repo = await makeRepo({ label: 'p28-release-e2e' });
+  const calls: Array<{ url: string; method: string; body: string | undefined }> = [];
+  const queue: FetchResponseLike[] = [
+    response(200, { name: 'v2.8.0', body: "## What's Changed\n* feat: tags" }),
+    response(201, { id: 101, html_url: 'https://github.com/o/r/releases/tag/v2.8.0' }),
+    response(422, {
+      message: 'Validation Failed',
+      errors: [{ resource: 'Release', code: 'already_exists', field: 'tag_name' }],
+    }),
+  ];
+  let idx = 0;
+  const gh = new GitHubClient({
+    apiUrl: 'https://api.github.com',
+    token: 'ghp_test',
+    fetchImpl: async (url, init) => {
+      calls.push({ url, method: init.method ?? 'GET', body: init.body });
+      return queue[Math.min(idx++, queue.length - 1)] as FetchResponseLike;
+    },
+  });
+
+  const bridge = repo.harness({
+    host: {
+      githubWriteContext: async () => ({
+        connected: true,
+        scopes: ['repo'],
+        tokenAllowed: true,
+        circuitOpen: false,
+      }),
+      githubReleaseNotes: async (p) => {
+        const r = await gh.generateReleaseNotes(p.owner, p.repo, {
+          tag: p.tag,
+          ...(p.previousTag === undefined ? {} : { previousTag: p.previousTag }),
+          ...(p.target === undefined ? {} : { target: p.target }),
+        });
+        return { name: r.data.name, body: r.data.body, rateLimit: r.rateLimit };
+      },
+      githubCreateRelease: async (p) => {
+        const r = await gh.createRelease(p.owner, p.repo, {
+          tag: p.tag,
+          name: p.name,
+          body: p.body,
+          prerelease: p.prerelease,
+          target: p.target,
+        });
+        return r.data;
+      },
+    },
+  });
+  t.after(() => {
+    bridge.dispose();
+    return repo.cleanup();
+  });
+
+  const notes = await bridge.send('github/releaseNotes', {
+    owner: 'o',
+    repo: 'r',
+    tag: 'v2.8.0',
+    previousTag: 'v2.7.0',
+    target: 'main',
+  });
+  assert.equal(notes.ok, true);
+  if (!notes.ok) return;
+  assert.equal((notes.data as { name: string; body: string }).name, 'v2.8.0');
+
+  const created = await bridge.send('github/createRelease', {
+    owner: 'o',
+    repo: 'r',
+    tag: 'v2.8.0',
+    name: 'v2.8.0',
+    body: (notes.data as { body: string }).body,
+    prerelease: false,
+    target: 'main',
+    confirm: true,
+    idempotencyKey: 'e2e-rel-1',
+  });
+  assert.equal(created.ok, true);
+  if (!created.ok) return;
+  assert.deepEqual(created.data, { id: 101, htmlUrl: 'https://github.com/o/r/releases/tag/v2.8.0' });
+
+  const dup = await bridge.send('github/createRelease', {
+    owner: 'o',
+    repo: 'r',
+    tag: 'v2.8.0',
+    name: 'v2.8.0',
+    body: '',
+    prerelease: false,
+    target: 'main',
+    confirm: true,
+    idempotencyKey: 'e2e-rel-2',
+  });
+  assert.equal(dup.ok, false);
+  if (!dup.ok) {
+    assert.equal(dup.error.status, 422);
+    assert.equal(dup.error.code, 'VALIDATION_ERROR');
+    assert.match(dup.error.message, /release.*already exists/i);
+  }
+  assert.equal(calls.length, 3);
+});
