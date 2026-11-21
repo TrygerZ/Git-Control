@@ -5,6 +5,17 @@ All notable changes to the "Git Control" extension will be documented in this fi
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.26.0] - 2026-11-21
+
+### Added
+- Compare two branches, tags, or commits inside the Branches sidebar route: view ahead and behind counts, head-side commits (click to reveal in the graph), and changed files with add/delete counts (click to open a merge-base-to-head VS Code diff), with swap sides and persisted ref selection.
+- Add a linked worktree for an existing local branch into a chosen folder from the Worktrees section header or the Branches row menu (`Add worktree...`, available even when a single worktree hides the Worktrees section), with a host folder picker, exact `git worktree add -- <path> <branch>` command preview, and a post-add `Open folder` action.
+- Wire the `Compare...` footer button in Branches, `Compare with current` in the branch row menu, and the `Compare` button on the Pull Requests current-branch card to the in-extension Compare sub-view.
+
+### Security
+- Validate worktree paths (`validateWorktreePath`) as normalized absolute paths rejecting relative paths, `..`/`.` segments, UNC/extended-length prefixes, control characters, trailing separators, NTFS alternate data streams, and Windows device names.
+- Re-check repository root, `.git` directory, existing worktree overlap/nesting, branch-in-use state, and empty-folder probes inside `runExclusive` before executing `git worktree add -- <path> <branch>` without `-f`, `-b`, or `--detach`; resolve compare refs to full 40-hex commit hashes before building ranges.
+
 ## [3.25.0] - 2026-11-21
 
 ### Added
