@@ -1,19 +1,20 @@
 ﻿# Git Control
 
-Git Control is an interactive 2D Git DAG graph explorer and source control manager for Visual Studio Code, featuring a dedicated Pending Changes workflow.
+Git Control is an interactive 2D Git DAG graph explorer and source control manager for Visual Studio Code, featuring a unified **Git Control** sidebar shell for pending changes, pull requests, issues, workflow runs, and branches.
 
-Navigate commit histories visually, inspect branches and merge lanes, stage changes granularly, and run standard Git operations directly from a unified interface without relying on terminal commands.
+Navigate commit histories visually, inspect branches and merge lanes, stage changes granularly, and run standard Git and GitHub operations directly from a unified interface without relying on terminal commands.
 
 ## Overview
 
 ![Git Control 2D Branch Explorer](screenshots/explorer-showcase.png)
 
-Git Control replaces flat vertical commit lists with an interactive two-dimensional Directed Acyclic Graph (DAG) coupled with a dedicated Pending Changes sidebar. The interface is designed for fast navigation, clear visual context, and data safety.
+Git Control replaces flat vertical commit lists with an interactive two-dimensional Directed Acyclic Graph (DAG) paired with the **Git Control** sidebar view, a routed shell with a persistent 5-tab navigation strip (Changes, Pull requests, Issues, Actions, and Branches). The interface is designed for fast navigation, clear visual context, and data safety.
 
 ## Key Features
 
 ### 1. Interactive 2D Branch Explorer
 * **Topological DAG Canvas**: Visualizes branches, merges, tags, HEAD position, and remote synchronization status with deterministic lane allocation.
+* **Branches Lane Column**: Fixed column beside the canvas that names every lane with its commit count and status (`merged`, `remote only`, `local only`, `tag`, or upstream tracking target) aligned at any zoom and scroll.
 * **Navigation and Filtering**: Pan, zoom (35% to 400%), search by commit message, hash, or author, and isolate specific branches.
 * **Canvas Minimap**: Compact overview map for large repositories.
 * **High-Capacity History**: Loads up to 10,000 commits per view with on-demand pagination for older history.
@@ -24,13 +25,15 @@ Git Control replaces flat vertical commit lists with an interactive two-dimensio
 * **GitHub Profile Navigation**: Clicking an author opens their GitHub profile when verified, or highlights their entry in the leaderboard.
 * **Adaptive Avatar Rendering**: Displays GitHub profile avatars via the GitHub API, with automatic fallback to deterministic color-coded initials when offline or unlinked.
 
-### 3. Dedicated Pending Changes Panel
+### 3. Git Control Sidebar and Pending Changes
 
 ![Git Control Pending Changes Panel](screenshots/pending-showcase.png)
 
+* **Persistent Sidebar Navigation**: Five tabs (Changes, Pull requests, Issues, Actions, and Branches) with count badges on Changes, Pull requests, and Issues, and a red failing dot on Actions when the latest run on the current branch failed.
+* **Sidebar Header**: Repository title row with Refresh, Open Explorer graph, Quick actions search, Help info, and More menu; branch selector with ahead/behind sync chip; and upstream tracking row showing the tracking branch and active commit hash. Other tabs use a compact single-row header with route-specific create actions.
+* **Pinned Commit Footer and Amend**: Commit message box, "Amend last commit" toggle (loads the last commit message when the box is empty and blocks amending when HEAD is already on the upstream branch because pushing would require a force push), "Push to remote after commit", and Commit, Push or Publish, and Pull actions pinned at the bottom of the panel.
 * **Granular Staging**: Tree and list views for Staged, Unstaged, Untracked, and Conflicted files with batch or individual file selection.
 * **Recursive Folder Selection**: Checking a folder toggles all child files automatically.
-* **One-Click Commit and Push**: Write commit messages, stage selected items, and optionally push to upstream remotes in a single flow.
 * **Inline File Churn**: Displays added and deleted line counts alongside binary and untracked indicators.
 * **File Icon Theme Integration**: File rows display icons from the active VS Code File Icon Theme, updating automatically on theme changes.
 * **Pull from Upstream**: Pull active branch from its upstream with dirty working tree guard offering commit, stash, and cancel remedies.
@@ -109,6 +112,24 @@ Git Control ships a complete English and Bahasa Indonesia UI, switched from the 
 
 ![Git Control Pending Changes panel in Bahasa Indonesia](screenshots/pending-showcase-id.png)
 
+### 12. Branches, Tags, Compare, and Worktrees
+
+* **Local, Remote, and Tags Sub-Tabs**: Browse and filter local branches, remote branches, and tags with `merged`, `local only`, and `upstream gone` chips, sorted by recent activity, name, or ahead and behind counts.
+* **Clean Up Merged Branches**: Batch-delete merged local branches safely (`git branch -d`, surfacing git's own refusal on unmerged work) with an optional step to delete matching remote branches after explicit confirmation.
+* **Compare Refs**: Compare any two branches, tags, or commits inside the Branches view with ahead and behind counts, head-side commits (click to reveal in the graph), changed files with line counts (click to open a merge-base-to-head VS Code diff), and swap sides.
+* **Worktrees**: View active worktrees and add a linked worktree for any local branch (`Add worktree...`) with a host folder picker, `git worktree add -- <path> <branch>` command preview, and a post-add `Open folder` action.
+
+### 13. Quick Actions Palette
+
+* **Fast Navigation and Focus**: Open from `Ctrl + K G` (`Cmd + K G` on macOS), the sidebar header search icon, the Explorer More menu, or `Git Control: Quick Actions` in the Command Palette.
+* **Branch-Aware Suggestions**: Ranks up to three next-step suggestions for the current branch state alongside Go-to rows for every sidebar view and Help rows.
+* **Non-Mutating**: Selecting a row navigates to the target view and focuses its control without executing git or GitHub mutations.
+
+### 14. Get Started Checklist
+
+* **Four-Step Onboarding Card**: Guides repository setup in the `Changes` view (`Connect GitHub`, `Save changes with a commit`, `Publish your branch`, and `Open a pull request`), derived from live repository and GitHub state with inapplicable steps hidden.
+* **Dismissible and Reopenable**: Dismissible per workspace, hides automatically after completion, reachable from Quick actions, and reopenable from the Help panel footer.
+
 
 ## Requirements
 
@@ -118,12 +139,10 @@ Git Control ships a complete English and Bahasa Indonesia UI, switched from the 
 ## Getting Started
 
 1. Open any workspace folder containing a Git repository in Visual Studio Code.
-2. Click the **Git Control** icon in the Activity Bar to open the **Pending Changes** view.
-3. Open the **Branch Explorer** graph using either:
-   * The graph icon on the Source Control panel title bar.
-   * Command Palette: `Git Control: Open Explorer`.
-4. Stage changes, review commit history, and execute branch operations directly through the interface.
-5. Use the Help button or the More menu at the top right of the Explorer to open any sidebar view, run Quick actions, or reach the repository picker without leaving the graph.
+2. Click the **Git Control** icon in the Activity Bar to open the **Git Control** sidebar view, and switch between Changes, Pull requests, Issues, Actions, and Branches using the persistent 5-tab navigation strip.
+3. Open the **Branch Explorer** graph using the graph icon in the sidebar header, the graph icon on the Source Control panel title bar, or Command Palette (`Git Control: Open Explorer`).
+4. Follow the **Get started** checklist in `Changes`, stage changes, commit or amend local commits, and execute branch or GitHub operations directly through the interface.
+5. Use Quick actions (`Ctrl + K G` / `Cmd + K G` on macOS, or the search icon in the sidebar header), the Help button, or the More menu to open any sidebar view, view shortcuts, or switch repositories without leaving your workflow.
 
 ## Extension Settings
 

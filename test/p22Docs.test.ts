@@ -54,3 +54,20 @@ test('the phase module list matches what the File Map claims', () => {
     assert.ok(fs.existsSync(path.join(ROOT, file)), `${file} exists`);
   }
 });
+
+test('P30: README Key Features and Getting Started cover the UI v3 sidebar navigation and guidance matrix', () => {
+  const readme = read('README.md');
+  // Sidebar 5-destination navigation strip and header
+  assert.match(readme, /Pull requests,\s*Issues,\s*Actions,\s*(and\s+)?Branches/i);
+  // Pinned commit footer and Amend last commit
+  assert.match(readme, /Amend last commit/i);
+  // Branches view: Clean up merged branches, Compare, and Worktrees
+  assert.match(readme, /Clean up/i);
+  assert.match(readme, /Compare/i);
+  assert.match(readme, /[Ww]orktrees/);
+  // Quick Actions palette and Get started checklist in Key Features
+  const keyFeaturesEnd = readme.indexOf('## Requirements');
+  const keyFeatures = keyFeaturesEnd === -1 ? readme : readme.slice(0, keyFeaturesEnd);
+  assert.match(keyFeatures, /Quick Actions/);
+  assert.match(keyFeatures, /Get [Ss]tarted/);
+});
