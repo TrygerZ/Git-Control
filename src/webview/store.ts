@@ -24,6 +24,7 @@ import type {
   CheckSummary,
   CommitDetail,
   CommitResult,
+  CompareResult,
   ConflictEntry,
   ContributorIdentity,
   ContributorInfo,
@@ -62,6 +63,7 @@ import { applyIssueMutation, canCreateIssue, canSubmitComment } from './issueFil
 import { issueExcerpt } from './issueText';
 import { normalizeLabels, normalizeReviewers } from '../pullRequestDraft';
 import type { BranchesSectionKey, BranchSort } from './branchesModel';
+import { swapSides } from './compareModel';
 import { clampZoom, COLUMN_WIDTH, LANE_HEIGHT, partitionUnrequestedHashes } from './viewport';
 
 /** Client-side coalescing of host change notifications. */
@@ -3712,3 +3714,109 @@ export const useReleaseStore = create<ReleaseState>((set, get) => ({
     });
   },
 }));
+
+export interface CompareState {
+  open: boolean;
+  base: string;
+  head: string;
+  result: CompareResult | null;
+  loading: boolean;
+  error: string | null;
+  openCompare: (base?: string, head?: string) => void;
+  closeCompare: () => void;
+  setBase: (ref: string) => void;
+  setHead: (ref: string) => void;
+  swap: () => void;
+  load: () => Promise<void>;
+  reset: () => void;
+}
+
+let compareLoadSeq = 0;
+
+export const useCompareStore = create<CompareState>((set, get) => {
+  const initial = loadState();
+  return {
+    open: false,
+    base: initial.compareBase,
+    head: initial.compareHead,
+    result: null,
+    loading: false,
+    error: null,
+    openCompare(base?: string, head?: string) {
+      const current = get();
+      const nextBase = base ?? current.base;
+      const nextHead = head ?? current.head;
+      const changed = nextBase !== current.base || nextHead !== current.head;
+      set({
+        open: true,
+        base: nextBase,
+        head: nextHead,
+        ...(changed ? { result: null, error: null } : {}),
+      });
+      if (changed) {
+        saveState({ compareBase: nextBase, compareHead: nextHead });
+      }
+      if (nextBase.length > 0 && nextHead.length > 0) {
+        void get().load();
+      }
+    },
+    closeCompare() {
+      compareLoadSeq += 1;
+      set({ open: false, loading: false });
+    },
+    setBase(ref: string) {
+      const head = get().head;
+      set({ base: ref, result: null, error: null });
+      saveState({ compareBase: ref, compareHead: head });
+      if (ref.length > 0 && head.length > 0) {
+        void get().load();
+      }
+    },
+    setHead(ref: string) {
+      const base = get().base;
+      set({ head: ref, result: null, error: null });
+      saveState({ compareBase: base, compareHead: ref });
+      if (base.length > 0 && ref.length > 0) {
+        void get().load();
+      }
+    },
+    swap() {
+      const { base, head } = swapSides({ base: get().base, head: get().head });
+      set({ base, head, result: null, error: null });
+      saveState({ compareBase: base, compareHead: head });
+      if (base.length > 0 && head.length > 0) {
+        void get().load();
+      }
+    },
+    async load() {
+      const { base, head } = get();
+      if (base.length === 0 || head.length === 0) {
+        compareLoadSeq += 1;
+        set({ result: null, loading: false, error: null });
+        return;
+      }
+      const seq = ++compareLoadSeq;
+      set({ loading: true, error: null });
+      try {
+        const result = await bridge.request('repos/compare', { base, head });
+        if (seq !== compareLoadSeq) return;
+        set({ result, loading: false, error: null });
+      } catch (err) {
+        if (seq !== compareLoadSeq) return;
+        set({ loading: false, error: toErrorBody(err).message });
+      }
+    },
+    reset() {
+      compareLoadSeq += 1;
+      set({
+        open: false,
+        base: '',
+        head: '',
+        result: null,
+        loading: false,
+        error: null,
+      });
+      saveState({ compareBase: '', compareHead: '' });
+    },
+  };
+});
