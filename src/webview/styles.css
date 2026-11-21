@@ -8779,3 +8779,229 @@ h3 {
     border: 1px solid ButtonBorder;
   }
 }
+
+/* ----------------------------------------------------- compare & worktree (P29) */
+
+.gc-branches__section-action {
+  margin-left: auto;
+  min-height: var(--gc-hit);
+  font-size: var(--gc-fs-xs);
+}
+
+.gc-compare {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gc-space-3);
+  flex: 1 1 auto;
+  min-height: 0;
+  padding: var(--gc-space-3);
+  overflow-y: auto;
+}
+
+.gc-compare__head {
+  display: flex;
+  align-items: center;
+  gap: var(--gc-space-2);
+  min-width: 0;
+}
+
+.gc-compare__back {
+  flex: 0 0 auto;
+  min-height: var(--gc-hit);
+}
+
+.gc-compare__title {
+  margin: 0;
+  color: var(--gc-text-primary);
+  font-size: var(--gc-fs-md);
+  font-weight: var(--gc-weight-strong);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.gc-compare__pickers {
+  display: flex;
+  align-items: flex-end;
+  gap: var(--gc-space-2);
+  min-width: 0;
+}
+
+.gc-compare__picker {
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+.gc-compare__swap {
+  flex: 0 0 auto;
+  min-width: var(--gc-hit);
+  min-height: var(--gc-hit);
+}
+
+.gc-compare__command {
+  display: block;
+  padding: var(--gc-space-2) var(--gc-space-3);
+  border: 1px solid var(--gc-border-subtle);
+  border-radius: var(--gc-radius);
+  background: var(--gc-bg-surface);
+  color: var(--gc-text-secondary);
+  font-family: var(--vscode-editor-font-family, monospace);
+  font-size: var(--gc-fs-xs);
+  overflow-wrap: anywhere;
+}
+
+.gc-compare__loading {
+  display: flex;
+  justify-content: center;
+  padding: var(--gc-space-4);
+}
+
+.gc-compare__summary,
+.gc-compare__empty {
+  margin: 0;
+  color: var(--gc-text-secondary);
+  font-size: var(--gc-fs-xs);
+}
+
+.gc-compare__section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gc-space-2);
+}
+
+.gc-compare__list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gc-space-1);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.gc-compare__item {
+  min-width: 0;
+}
+
+.gc-compare__row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--gc-space-2);
+  width: 100%;
+  min-height: var(--gc-hit);
+  padding: var(--gc-space-1) var(--gc-space-2);
+  border: 1px solid transparent;
+  border-radius: var(--gc-radius);
+  background: transparent;
+  color: var(--gc-text-primary);
+  font: inherit;
+  font-size: var(--gc-fs-xs);
+  text-align: left;
+  cursor: pointer;
+}
+
+.gc-compare__row:hover {
+  background: var(--gc-bg-hover);
+}
+
+.gc-compare__commit {
+  flex-direction: column;
+  align-items: stretch;
+  gap: var(--gc-space-1);
+}
+
+.gc-compare__commit-top {
+  display: flex;
+  align-items: baseline;
+  gap: var(--gc-space-2);
+  min-width: 0;
+}
+
+.gc-compare__hash {
+  flex: 0 0 auto;
+  color: var(--gc-accent-primary);
+  font-family: var(--vscode-editor-font-family, monospace);
+  font-size: var(--gc-fs-2xs);
+}
+
+.gc-compare__subject,
+.gc-compare__path {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.gc-compare__meta {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--gc-space-2);
+  color: var(--gc-text-muted);
+  font-size: var(--gc-fs-2xs);
+}
+
+.gc-compare__churn {
+  flex: 0 0 auto;
+  display: inline-flex;
+  gap: var(--gc-space-2);
+  font-family: var(--vscode-editor-font-family, monospace);
+  font-size: var(--gc-fs-2xs);
+  font-variant-numeric: tabular-nums;
+}
+
+.gc-compare__add {
+  color: var(--gc-tone-added);
+}
+
+.gc-compare__del {
+  color: var(--gc-tone-removed);
+}
+
+.gc-compare__bin {
+  color: var(--gc-text-muted);
+}
+
+.gc-worktree-dialog {
+  width: min(24em, calc(100vw - var(--gc-space-6)));
+}
+
+.gc-worktree-dialog__folder-row {
+  display: flex;
+  align-items: stretch;
+  gap: var(--gc-space-2);
+}
+
+.gc-worktree-dialog__folder-row input {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.gc-worktree-dialog__browse {
+  flex: 0 0 auto;
+  min-height: var(--gc-hit);
+}
+
+.gc-worktree-dialog__error {
+  margin: 0;
+}
+
+.gc-worktree-dialog__command code {
+  overflow-wrap: anywhere;
+  font-family: var(--vscode-editor-font-family, monospace);
+  font-size: var(--gc-fs-xs);
+}
+
+.gc-worktree-dialog__success {
+  margin: 0;
+  color: var(--gc-state-success);
+  font-size: var(--gc-fs-sm);
+  overflow-wrap: anywhere;
+}
+
+@media (forced-colors: active) {
+  .gc-compare__command,
+  .gc-compare__row:hover {
+    border-color: ButtonBorder;
+  }
+}

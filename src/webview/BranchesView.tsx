@@ -19,7 +19,9 @@
  * second host would render two modal dialogs for a single verdict.
  */
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type JSX, type KeyboardEvent } from 'react';
+import { AddWorktreeDialog } from './AddWorktreeDialog';
 import { CleanupDialog } from './CleanupDialog';
+import { CompareView } from './CompareView';
 import { MergeDialog, mergeActionPayload } from './MergeDialog';
 import { PromptDialog } from './PromptDialog';
 import { ReleaseDialog } from './ReleaseDialog';
@@ -27,6 +29,7 @@ import { selectCleanupCandidates } from '../branchCleanup';
 import { suggestNextTag } from '../releasePlan';
 import { Tablist } from './Tablist';
 import { checkoutActionPayload } from './BranchLegend';
+import { canOfferAddWorktree } from './compareModel';
 import {
   BRANCH_SORTS,
   BRANCHES_TABS,
@@ -51,6 +54,7 @@ import { relativeTime, sanitizeGitText, shortHash } from './format';
 import { useT } from './useT';
 import {
   useBranchesStore,
+  useCompareStore,
   useOperationStore,
   useReleaseStore,
   useRepoStore,
@@ -58,8 +62,8 @@ import {
   useSettingsStore,
   wireHostEvents,
 } from './store';
-import { EmptyState, ErrorBanner, Icon, InfoBanner, Spinner } from './ui';
-import type { BranchRef, Lang } from '../messages';
+import { EmptyState, ErrorBanner, Icon, InfoBanner, Spinner, type IconName } from './ui';
+import type { BranchRef, Lang, WorktreeInfo } from '../messages';
 
 /** DOM id of the one tabpanel all three sub-tabs control. */
 export const BRANCHES_PANEL_ID = 'gc-branches-panel';
@@ -107,12 +111,15 @@ export function BranchesView(): JSX.Element {
   const runAction = useOperationStore((s) => s.runAction);
   const pushToast = useOperationStore((s) => s.pushToast);
   const showLogs = useOperationStore((s) => s.showLogs);
+  const compareOpen = useCompareStore((s) => s.open);
+  const openCompare = useCompareStore((s) => s.openCompare);
 
   const [menu, setMenu] = useState<MenuAnchor | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
   const [mergeFor, setMergeFor] = useState<string | null>(null);
   const [cleanupOpen, setCleanupOpen] = useState(false);
   const [singleDelete, setSingleDelete] = useState<string | null>(null);
+  const [worktreeBranch, setWorktreeBranch] = useState<string | null | undefined>(undefined);
 
   /*
    * The sidebar shell already wired the host events, so this call is a no-op
@@ -347,6 +354,10 @@ export function BranchesView(): JSX.Element {
   const visibleCount = sub === 'local' ? localEntries.length : sub === 'remote' ? remoteRowCount : allTags.length;
   const nothingMatches = filter.trim().length > 0 && visibleCount === 0;
 
+  if (compareOpen) {
+    return <CompareView />;
+  }
+
   return (
     <div className="gc-branches">
       <Tablist
@@ -435,6 +446,7 @@ export function BranchesView(): JSX.Element {
             onSort={setSort}
             onMenu={setMenu}
             onNewTag={openNewTag}
+            onAddWorktree={(targetBranch) => setWorktreeBranch(targetBranch)}
           />
         )}
       </div>
@@ -448,6 +460,14 @@ export function BranchesView(): JSX.Element {
         >
           <Icon name="branch-add" />
           {strings.branches.newBranch}
+        </button>
+        <button
+          type="button"
+          className="gc-button gc-button--quiet"
+          onClick={() => openCompare(currentBranch ?? base ?? '', '')}
+        >
+          <Icon name="diff" />
+          {strings.compare.footerButton}
         </button>
         <span className="gc-branches__fetched">
           {status?.lastFetchAt == null
@@ -463,6 +483,7 @@ export function BranchesView(): JSX.Element {
           ref_={menu.ref}
           anchor={menu}
           currentBranch={currentBranch}
+          worktrees={worktrees}
           onClose={() => setMenu(null)}
           onCheckout={(name) => {
             setMenu(null);
@@ -471,6 +492,14 @@ export function BranchesView(): JSX.Element {
           onMerge={(name) => {
             setMenu(null);
             setMergeFor(name);
+          }}
+          onCompare={(name) => {
+            setMenu(null);
+            if (currentBranch !== null) openCompare(currentBranch, name);
+          }}
+          onAddWorktree={(name) => {
+            setMenu(null);
+            setWorktreeBranch(name);
           }}
           onCopy={(name) => {
             setMenu(null);
@@ -543,6 +572,16 @@ export function BranchesView(): JSX.Element {
 
       {releaseOpen && <ReleaseDialog />}
 
+      {worktreeBranch !== undefined && (
+        <AddWorktreeDialog
+          initialBranch={worktreeBranch}
+          onClose={() => setWorktreeBranch(undefined)}
+          onAdded={(addedPath) => {
+            pushToast({ level: 'info', message: strings.worktree.added(sanitizeGitText(addedPath)) });
+          }}
+        />
+      )}
+
       {/*
         No GuardDialog here: the sidebar shell mounts one for every route, and a
         second host would render two modal dialogs for a single guard verdict.
@@ -568,6 +607,7 @@ function LocalList(props: {
   onMenu(anchor: MenuAnchor): void;
   onCopy(text: string, message: string): void;
   onNewTag(): void;
+  onAddWorktree(branch: string | null): void;
 }): JSX.Element {
   const strings = useT();
   const {
@@ -583,6 +623,7 @@ function LocalList(props: {
     onMenu,
     onCopy,
     onNewTag,
+    onAddWorktree,
   } = props;
 
   const [sortOpen, setSortOpen] = useState(false);
@@ -762,6 +803,13 @@ function LocalList(props: {
               );
             })}
           </ul>,
+          <button
+            type="button"
+            className="gc-button gc-button--quiet gc-branches__section-action"
+            onClick={() => onAddWorktree(null)}
+          >
+            {strings.worktree.sectionAdd}
+          </button>,
         )}
 
       {section(
@@ -1040,9 +1088,12 @@ function BranchRowMenu(props: {
   ref_: BranchRef;
   anchor: MenuAnchor;
   currentBranch: string | null;
+  worktrees: readonly WorktreeInfo[];
   onClose(): void;
   onCheckout(name: string): void;
   onMerge(name: string): void;
+  onCompare(name: string): void;
+  onAddWorktree(name: string): void;
   onCopy(name: string): void;
   onDelete(name: string): void;
   /** `true` when this branch is in the cleanup selection, so Delete is offered. */
@@ -1101,7 +1152,7 @@ function BranchRowMenu(props: {
 
   const item = (
     label: string,
-    icon: 'git-branch' | 'merge' | 'copy' | 'trash',
+    icon: IconName,
     run: () => void,
     hint?: string,
   ): JSX.Element => (
@@ -1130,6 +1181,12 @@ function BranchRowMenu(props: {
       <div className="gc-menu__group" role="group">
         {mutable && item(strings.branches.menuCheckout, 'git-branch', () => props.onCheckout(ref_.shortName))}
         {mutable && item(strings.branches.menuMerge, 'merge', () => props.onMerge(ref_.shortName))}
+        {props.currentBranch !== null &&
+          !isCurrent &&
+          item(strings.compare.rowAction, 'diff', () => props.onCompare(ref_.shortName))}
+        {(ref_.kind === 'local' || ref_.kind === 'remote') &&
+          canOfferAddWorktree({ kind: ref_.kind, name: ref_.shortName }, props.worktrees) &&
+          item(strings.worktree.rowAction, 'branch-add', () => props.onAddWorktree(ref_.shortName))}
         {item(strings.branches.menuCopyName, 'copy', () => props.onCopy(ref_.shortName))}
         {/*
           Frame 63: Delete branch, merged only. The menu offers it exactly when the

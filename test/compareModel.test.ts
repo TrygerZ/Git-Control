@@ -1,5 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import * as fs from 'node:fs';
+import * as path from 'node:path';
 import {
   canAddWorktree,
   canOfferAddWorktree,
@@ -92,4 +94,43 @@ test('useCompareStore manages open, base, head, swap, and reset state', () => {
 
   useCompareStore.getState().closeCompare();
   assert.equal(useCompareStore.getState().open, false);
+});
+
+test('P29 UI components satisfy security, accessibility, diff, and entry-point contracts', () => {
+  const root = path.join(__dirname, '..', '..');
+  const read = (rel: string) => fs.readFileSync(path.join(root, rel), 'utf8');
+
+  const compareView = read('src/webview/CompareView.tsx');
+  assert.doesNotMatch(compareView, /dangerouslySetInnerHTML|innerHTML|href=\{/);
+  assert.match(compareView, /actions\/openDiff/);
+  assert.match(compareView, /mergeBase/);
+  assert.match(compareView, /headHash/);
+  assert.match(compareView, /graph\/revealCommit/);
+  assert.match(compareView, /sanitizeGitText/);
+  assert.match(compareView, /summaryLine\(/);
+  assert.match(compareView, /compareCommand\(/);
+
+  const worktreeDialog = read('src/webview/AddWorktreeDialog.tsx');
+  assert.doesNotMatch(worktreeDialog, /dangerouslySetInnerHTML|innerHTML|href=\{/);
+  assert.match(worktreeDialog, /role="dialog"/);
+  assert.match(worktreeDialog, /aria-modal="true"/);
+  assert.match(worktreeDialog, /aria-labelledby=/);
+  assert.match(worktreeDialog, /role="alert"/);
+  assert.match(worktreeDialog, /aria-describedby=/);
+  assert.match(worktreeDialog, /actions\/pickWorktreeFolder/);
+  assert.match(worktreeDialog, /actions\/openWorktreeFolder/);
+  assert.match(worktreeDialog, /'worktree-add'/);
+  assert.match(worktreeDialog, /worktreeCommand\(/);
+  assert.match(worktreeDialog, /defaultWorktreePath\(/);
+  assert.match(worktreeDialog, /canAddWorktree\(/);
+
+  const branchesView = read('src/webview/BranchesView.tsx');
+  assert.match(branchesView, /strings\.compare\.footerButton/);
+  assert.match(branchesView, /strings\.compare\.rowAction/);
+  assert.match(branchesView, /strings\.worktree\.sectionAdd/);
+  assert.match(branchesView, /strings\.worktree\.rowAction/);
+
+  const css = read('src/webview/styles.css');
+  assert.match(css, /\.gc-compare\b/);
+  assert.match(css, /\.gc-worktree-dialog\b/);
 });

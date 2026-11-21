@@ -22,7 +22,6 @@ import {
   checkLabel,
   checkNamesLabel,
   checkTone,
-  compareUrl,
   countdown,
   formatCount,
   pullRequestLabel,
@@ -42,7 +41,16 @@ import {
   type PrContext,
   type PrFilterId,
 } from './prFilters';
-import { toErrorBody, useGitHubStore, useOperationStore, usePrDraftStore, useRepoStore, useRouteStore, useSettingsStore } from './store';
+import {
+  toErrorBody,
+  useCompareStore,
+  useGitHubStore,
+  useOperationStore,
+  usePrDraftStore,
+  useRepoStore,
+  useRouteStore,
+  useSettingsStore,
+} from './store';
 import { useT } from './useT';
 import { EmptyState, FileListSkeleton, Icon, InfoBanner } from './ui';
 import type { Lang, PullRequestInfo } from '../messages';
@@ -421,9 +429,12 @@ export function PullRequestsView(): JSX.Element {
                   className="gc-button gc-button--quiet"
                   aria-label={strings.prs.compareAria(sanitizeGitText(branch))}
                   title={strings.prs.compareAria(sanitizeGitText(branch))}
-                  onClick={() => void openUrl(compareUrl(webUrl, branch))}
+                  onClick={() => {
+                    useRouteStore.getState().navigate({ id: 'branches', sub: 'local' });
+                    useCompareStore.getState().openCompare(baseBranch ?? branch, branch);
+                  }}
                 >
-                  <Icon name="external" />
+                  <Icon name="diff" />
                   <span>{strings.prs.compareAction}</span>
                 </button>
               </div>
