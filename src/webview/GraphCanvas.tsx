@@ -1009,6 +1009,12 @@ export function GraphCanvas({
                 const pillTop = pillPlacement === 'above'
                   ? (nodeCenterY - NODE_RADIUS - 6) * zoom
                   : (nodeCenterY + NODE_RADIUS + 6) * zoom;
+                // Anchor branch-tip pills to start near the node so long ref names extend into
+                // open space to the right instead of covering the preceding commit's subject.
+                const hasRightNeighbor = rows.some(
+                  (other) => other.lane === node.lane && other.x > node.x,
+                );
+                const alignClass = hasRightNeighbor ? '' : ' gc-pill--align-start';
 
                 // Check if path has slash e.g. "main/test" or "feature/something"
                 const hasSlash = branchChip.name.includes('/');
@@ -1020,7 +1026,7 @@ export function GraphCanvas({
                   return (
                     <div
                       key={`pill-${node.hash}`}
-                      className={`gc-pill gc-pill--trail gc-pill--${branchChip.kind} gc-pill--${pillPlacement}`}
+                      className={`gc-pill gc-pill--trail gc-pill--${branchChip.kind} gc-pill--${pillPlacement}${alignClass}`}
                       style={{
                         left: `${node.x * zoom}px`,
                         top: `${pillTop}px`,
@@ -1038,7 +1044,7 @@ export function GraphCanvas({
                 return (
                   <div
                     key={`pill-${node.hash}`}
-                    className={`gc-pill gc-pill--${branchChip.kind} gc-pill--${pillPlacement}`}
+                    className={`gc-pill gc-pill--${branchChip.kind} gc-pill--${pillPlacement}${alignClass}`}
                     style={{
                       left: `${node.x * zoom}px`,
                       top: `${pillTop}px`,
@@ -1046,7 +1052,7 @@ export function GraphCanvas({
                     aria-hidden="true"
                   >
                     <Icon name={branchChip.icon} />
-                    <span>{branchChip.prefix}{branchChip.name}</span>
+                    <span className="gc-pill__text">{branchChip.prefix}{branchChip.name}</span>
                   </div>
                 );
               })}
