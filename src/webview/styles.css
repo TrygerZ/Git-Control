@@ -4936,6 +4936,15 @@ h3 {
   font-size: var(--gc-fs-2xs);
 }
 
+.gc-filelist__stats,
+.gc-filelist__binary {
+  margin-left: auto;
+}
+
+.gc-inspector__heading-row > .gc-stat--add {
+  margin-left: auto;
+}
+
 .gc-tree__action {
   padding: 0;
   font-size: var(--gc-fs-sm);
