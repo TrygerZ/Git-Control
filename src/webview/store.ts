@@ -221,7 +221,9 @@ export const useRepoStore = create<RepoState>((set, get) => ({
       const step =
         typeof configuredPageSize === 'number' && configuredPageSize > 0
           ? configuredPageSize
-          : 50;
+          : current.nodes.length > 0
+            ? current.nodes.length
+            : 50;
       const nextLimit = Math.min(current.nextCursor + step, 10_000);
       const page = await bridge.request('repos/graph', {
         cursor: 0,

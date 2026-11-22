@@ -570,7 +570,7 @@ export function NodeContextMenu({
                 {(item.id === 'view-diff' ||
                   item.id === 'copy-full' ||
                   item.id === 'create-branch') && (
-                  <span className="gc-menu__hint gc-menu__shortcut" aria-hidden="true">
+                  <span className="gc-menu__shortcut" aria-hidden="true">
                     {item.id === 'view-diff'
                       ? 'Enter'
                       : item.id === 'copy-full'

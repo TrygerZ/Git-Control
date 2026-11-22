@@ -3218,8 +3218,12 @@ h3 {
 }
 
 .gc-menu__shortcut {
+  margin-left: auto;
+  color: var(--gc-muted);
   font-family: var(--vscode-editor-font-family, monospace);
   font-size: var(--gc-fs-2xs);
+  white-space: nowrap;
+  flex-shrink: 0;
 }
 
 .gc-menu__commit-header {

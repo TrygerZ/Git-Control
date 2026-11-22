@@ -46,11 +46,12 @@ test('every field has a visible label bound to its control', () => {
   const src = source(DIALOG);
   // A wrapping label binds without an id; an aria-label is the fallback for a
   // control that has no visible text of its own.
-  const controls = ['input', 'textarea', 'select'];
+  const controls = ['input', 'textarea'];
   for (const control of controls) {
     const opens = src.match(new RegExp(`<${control}[\\s>]`, 'g')) ?? [];
     assert.ok(opens.length > 0, `the dialog draws a ${control}`);
   }
+  assert.match(src, /aria-haspopup="listbox"/, 'the dialog draws a searchable branch picker');
   assert.match(src, /gc-field__label/, 'fields carry the shared label style');
   assert.doesNotMatch(src, /<input[^>]*placeholder="[^"]*"[^>]*\/>\s*\)/s, 'no placeholder-only field');
 });
