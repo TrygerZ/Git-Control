@@ -27,6 +27,7 @@ export function ActionsFilters(): JSX.Element {
   const branchList = useMemo(() => branchesWithRuns(runs, currentBranch), [runs, currentBranch]);
 
   const [openMenu, setOpenMenu] = useState<'branch' | 'workflow' | null>(null);
+  const [branchQuery, setBranchQuery] = useState('');
   const [menuPos, setMenuPos] = useState({ x: 0, y: 0 });
   // Roving tabindex: a menu is one tab stop, arrows move inside it.
   const [activeItem, setActiveItem] = useState(0);
@@ -34,6 +35,15 @@ export function ActionsFilters(): JSX.Element {
   const branchButtonRef = useRef<HTMLButtonElement>(null);
   const workflowButtonRef = useRef<HTMLButtonElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
+
+  const normalizedQuery = branchQuery.trim().toLowerCase();
+  const filteredBranches = useMemo(
+    () =>
+      normalizedQuery.length === 0
+        ? branchList
+        : branchList.filter((b) => b.toLowerCase().includes(normalizedQuery)),
+    [branchList, normalizedQuery],
+  );
 
   const selectedWorkflow = workflows.find((w) => w.id === workflowId);
   const branchValue = branch !== null ? sanitizeGitText(branch) : strings.actions.allBranches;
@@ -158,26 +168,38 @@ export function ActionsFilters(): JSX.Element {
       {openMenu === 'branch' && (
         <div
           ref={menuRef}
-          className="gc-menu"
+          className="gc-menu gc-branch-popover"
           role="menu"
           aria-label={strings.actions.branchMenuTitle}
           style={{ left: `${menuPos.x}px`, top: `${menuPos.y}px` }}
           onKeyDown={onMenuKey}
         >
+          <div className="gc-branch-popover__search">
+            <Icon name="search" />
+            <input
+              type="search"
+              className="gc-branch-popover__input"
+              value={branchQuery}
+              placeholder={strings.graph.branchPopoverFilter}
+              aria-label={strings.graph.branchPopoverFilter}
+              onChange={(e) => setBranchQuery(e.target.value)}
+            />
+          </div>
           <div className="gc-menu__group" role="group" aria-label={strings.actions.branchMenuTitle}>
             <div className="gc-menu__group-title" aria-hidden="true">
               {strings.actions.branchMenuTitle}
             </div>
-            {branchList.map((b) => (
+            {filteredBranches.map((b, idx) => (
               <button
                 key={b}
                 type="button"
                 className="gc-menu__item"
                 role="menuitemradio"
-                tabIndex={activeItem === branchList.indexOf(b) ? 0 : -1}
+                tabIndex={activeItem === idx ? 0 : -1}
                 aria-checked={branch === b}
                 onClick={() => {
                   selectBranch(b);
+                  setBranchQuery('');
                   closeMenu();
                 }}
               >
@@ -201,10 +223,11 @@ export function ActionsFilters(): JSX.Element {
               type="button"
               className="gc-menu__item"
               role="menuitemradio"
-              tabIndex={activeItem === branchList.length ? 0 : -1}
+              tabIndex={activeItem === filteredBranches.length ? 0 : -1}
               aria-checked={branch === null}
               onClick={() => {
                 selectBranch(null);
+                setBranchQuery('');
                 closeMenu();
               }}
             >
@@ -214,6 +237,7 @@ export function ActionsFilters(): JSX.Element {
               <span className="gc-menu__body">
                 <span className="gc-menu__label">{strings.actions.allBranches}</span>
               </span>
+              <span className="gc-menu__hint">{String(runs.length)}</span>
             </button>
           </div>
         </div>

@@ -566,4 +566,34 @@ export const ICON_PATHS: Record<IconName, () => JSX.Element> = {
       <path d="M8 1.5v2.25M8 12.25v2.25M1.5 8h2.25M12.25 8h2.25" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
     </>
   ),
+  // Language selector: globe with meridian and equator.
+  globe: () => (
+    <>
+      <circle cx="8" cy="8" r="5.5" stroke="currentColor" strokeWidth="1.4" fill="none" />
+      <ellipse cx="8" cy="8" rx="2.5" ry="5.5" stroke="currentColor" strokeWidth="1.3" fill="none" />
+      <path d="M2.75 8h10.5" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />
+    </>
+  ),
+  // Color theme switch: half-filled circle representing light and dark modes.
+  theme: () => (
+    <>
+      <circle cx="8" cy="8" r="5.5" stroke="currentColor" strokeWidth="1.4" fill="none" />
+      <path d="M8 2.5a5.5 5.5 0 0 1 0 11V2.5z" fill="currentColor" />
+    </>
+  ),
+  // GitHub account mark: simplified silhouette for the Account menu row.
+  github: () => (
+    <path
+      d="M8 2a6 6 0 0 0-1.9 11.7c.3.05.4-.13.4-.28v-1.1c-1.67.36-2.02-.8-2.02-.8-.27-.7-.67-.88-.67-.88-.54-.37.04-.37.04-.37.6.04.92.62.92.62.54.92 1.4.65 1.75.5.05-.39.21-.65.38-.8-1.33-.15-2.73-.67-2.73-2.97 0-.66.24-1.2.62-1.62-.06-.15-.27-.76.06-1.59 0 0 .5-.16 1.65.62a5.7 5.7 0 0 1 3 0c1.15-.78 1.65-.62 1.65-.62.33.83.12 1.44.06 1.59.39.42.62.96.62 1.62 0 2.31-1.4 2.82-2.74 2.97.22.19.41.55.41 1.11v1.65c0 .16.11.34.41.28A6 6 0 0 0 8 2z"
+      fill="currentColor"
+    />
+  ),
+  // Terminal prompt: Show Git output in Explorer More menu (frame 17).
+  terminal: () => (
+    <>
+      <rect x="2" y="3" width="12" height="10" rx="1.5" stroke="currentColor" strokeWidth="1.4" fill="none" />
+      <path d="M4.75 6.25L7 8.25l-2.25 2" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" fill="none" />
+      <path d="M8.5 10.25h2.75" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+    </>
+  ),
 };

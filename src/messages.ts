@@ -218,6 +218,7 @@ export interface CommitFileChange {
   additions: number | null;
   deletions: number | null;
   binary: boolean;
+  status?: string;
 }
 
 export interface CommitDetail {
@@ -459,12 +460,14 @@ export interface StashEntry {
   ref: string;
   hash: string;
   subject: string;
+  createdAt?: string;
 }
 
 export interface StashFile {
   path: string;
   additions: number | null;
   deletions: number | null;
+  status?: string;
 }
 
 export interface StashShowPayload {

@@ -2,7 +2,7 @@
  * Small shared primitives: skeletons, banners, and the error boundary.
  * Kept in one file because none of them own state worth isolating.
  */
-import { Component, useEffect, type ErrorInfo, type JSX, type ReactNode } from 'react';
+import { Component, useEffect, useState, type ErrorInfo, type JSX, type ReactNode } from 'react';
 import {
   formatCount,
   isSafeImageSrc,
@@ -15,6 +15,7 @@ import {
   syncSummary,
 } from './format';
 import { useT } from './useT';
+import { t } from './i18n';
 import { useSettingsStore, useIconThemeStore } from './store';
 import type {
   ErrorBody,
@@ -77,15 +78,35 @@ function iconFontFamily(fontId: string | undefined): string | undefined {
   return fontId === undefined ? undefined : `${ICON_FONT_PREFIX}${fontId}`;
 }
 
+/** Permit host-minted webview asset URIs as well as standard safe image schemes. */
+function isSafeThemeIconUri(uri: string): boolean {
+  if (isSafeImageSrc(uri)) return true;
+  try {
+    const { protocol } = new URL(uri.trim());
+    return protocol === 'vscode-webview-resource:' || protocol === 'vscode-resource:';
+  } catch {
+    return false;
+  }
+}
+
 /**
  * Render one resolved theme icon. All output is decorative (`aria-hidden`):
  * the surrounding cell or button already names the file for assistive tech.
  */
 function ThemeIcon({ icon, fallback }: { icon: ResolvedIcon | undefined; fallback: IconName }): JSX.Element {
+  const [failedUri, setFailedUri] = useState<string | null>(null);
   if (icon === undefined) return <Icon name={fallback} />;
   if (icon.kind === 'svg') {
-    if (!isSafeImageSrc(icon.uri)) return <Icon name={fallback} />;
-    return <img src={icon.uri} alt="" aria-hidden="true" className="gc-file-icon" />;
+    if (!isSafeThemeIconUri(icon.uri) || failedUri === icon.uri) return <Icon name={fallback} />;
+    return (
+      <img
+        src={icon.uri}
+        alt=""
+        aria-hidden="true"
+        className="gc-file-icon"
+        onError={() => setFailedUri(icon.uri)}
+      />
+    );
   }
   return (
     <span
@@ -127,9 +148,13 @@ export function FileIcon({
 function fontFaceCss(snapshot: IconThemeSnapshot): string {
   return snapshot.fonts
     .map((font) => {
+      const src =
+        font.format.length > 0
+          ? `src: url('${font.srcUri}') format('${font.format}');`
+          : `src: url('${font.srcUri}');`;
       const parts = [
         `font-family: '${ICON_FONT_PREFIX}${font.id}';`,
-        `src: url('${font.srcUri}') format('${font.format}');`,
+        src,
         `font-weight: ${font.weight ?? 'normal'};`,
         `font-style: ${font.style ?? 'normal'};`,
         'font-display: block;',
@@ -345,14 +370,23 @@ export function EmptyState({
   hint,
   steps,
   action,
+  icon,
+  iconTone = 'neutral',
 }: {
   title: string;
   hint?: string;
   steps?: readonly string[];
   action?: ReactNode;
+  icon?: ReactNode;
+  iconTone?: 'neutral' | 'accent' | 'success';
 }): JSX.Element {
   return (
     <div className="gc-empty" role="note">
+      {icon !== undefined && (
+        <span className={`gc-empty__badge gc-empty__badge--${iconTone}`} aria-hidden="true">
+          {icon}
+        </span>
+      )}
       <p className="gc-empty__title">{title}</p>
       {hint !== undefined && <p className="gc-empty__hint">{hint}</p>}
       {steps !== undefined && steps.length > 0 && (
@@ -482,7 +516,7 @@ export class ErrorBoundary extends Component<{ children: ReactNode }, BoundarySt
   override render(): ReactNode {
     const { error, errorId } = this.state;
     if (error === null) return this.props.children;
-    const strings = useT();
+    const strings = t(useSettingsStore.getState().language);
     return (
       <div className="gc-crash" role="alert">
         <p className="gc-crash__title">{strings.ui.crashTitle}</p>

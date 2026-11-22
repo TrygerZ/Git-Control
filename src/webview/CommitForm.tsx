@@ -101,15 +101,19 @@ export function CommitForm(): JSX.Element {
   };
 
   const stagedCount = changes.filter((entry) => entry.staged).length;
+  const conflictCount = status?.conflicts.length ?? 0;
+  const inOperation = status !== null && status.operation !== 'idle';
   const errorId = 'gc-commit-error';
 
   // Scope sentence ("N staged files ready") used to live as a paragraph below the
   // form; it now lives on the Commit button's title so the disabled reason is still
   // perceivable without duplicating the badge already on the Staged Changes header.
   const commitButtonTitle =
-    stagedCount === 0
-      ? strings.commitForm.noStagedFiles
-      : `${strings.commitForm.commitTitle} ${strings.commitForm.stagedFilesReady(formatCount(stagedCount, language))}`;
+    conflictCount > 0
+      ? strings.conflict.resolveAllFirst
+      : stagedCount === 0
+        ? strings.commitForm.noStagedFiles
+        : `${strings.commitForm.commitTitle} ${strings.commitForm.stagedFilesReady(formatCount(stagedCount, language))}`;
 
   const branch = status?.branch ?? null;
   const hasUpstream = status?.upstream !== null && status?.upstream !== undefined;
@@ -118,6 +122,14 @@ export function CommitForm(): JSX.Element {
   // Amend mirrors the host rule so the reason arrives before a failed request.
   const amendReason = amendBlockedReason(status);
   const amendOn = amend && amendReason === null;
+  const commitButtonLabel =
+    conflictCount > 0
+      ? strings.commitForm.resolveConflictsFirst
+      : amendOn
+        ? strings.commitForm.amendButton
+        : stagedCount > 0
+          ? strings.commitForm.commitFilesButton(stagedCount, formatCount(stagedCount, language))
+          : strings.commitForm.commitButton;
   const reasonId = 'gc-amend-reason';
   // `amendReason === 'published'` requires an upstream, and `remote` is derived
   // from it first, so this fallback is unreachable today. It exists so a future
@@ -143,7 +155,7 @@ export function CommitForm(): JSX.Element {
 
   let pushDisabled = false;
   let pushTitle = '';
-  if (busy) {
+  if (busy || inOperation) {
     pushDisabled = true;
     pushTitle = strings.commitForm.pushDisabledBusy;
   } else if (status === null || branch === null) {
@@ -167,27 +179,6 @@ export function CommitForm(): JSX.Element {
   const handlePush = (): void => {
     if (remote === null || branch === null) return;
     void runAction({ action: 'push', remote, branch, setUpstream });
-  };
-
-  let pullDisabled = false;
-  let pullTitle = '';
-  if (busy) {
-    pullDisabled = true;
-    pullTitle = strings.commitForm.pullDisabledBusy;
-  } else if (status === null || branch === null) {
-    pullDisabled = true;
-    pullTitle = strings.commitForm.pullDisabledNoBranch;
-  } else if (remote !== null) {
-    pullTitle = strings.commitForm.pullTitle(remote, branch);
-  }
-
-  const pullLabel =
-    (status?.behind ?? 0) > 0
-      ? strings.commitForm.pullWithCountButton(formatCount(status?.behind ?? 0, language))
-      : strings.commitForm.pullButton;
-
-  const handlePull = (): void => {
-    void runAction({ action: 'pull' });
   };
 
   // Label follows the operation marker, never the combined `busy` boolean:
@@ -321,10 +312,10 @@ export function CommitForm(): JSX.Element {
           type="submit"
           className="gc-button gc-button--primary"
           title={amendOn ? strings.commitForm.amendTitle : commitButtonTitle}
-          disabled={busy || (stagedCount === 0 && !amendOn)}
+          disabled={busy || conflictCount > 0 || (stagedCount === 0 && !amendOn)}
         >
           <Icon name="commit" />
-          {amendOn ? strings.commitForm.amendButton : strings.commitForm.commitButton}
+          {commitButtonLabel}
         </button>
         {remote !== null && (
           <button
@@ -335,20 +326,8 @@ export function CommitForm(): JSX.Element {
             disabled={pushDisabled}
             onClick={handlePush}
           >
-            <Icon name="push" />
+            <Icon name={setUpstream ? 'push' : 'arrow-up'} />
             {pushLabel}
-          </button>
-        )}
-        {remote !== null && (
-          <button
-            type="button"
-            className="gc-button gc-button--action"
-            title={pullTitle}
-            disabled={pullDisabled}
-            onClick={handlePull}
-          >
-            <Icon name="pull" />
-            {pullLabel}
           </button>
         )}
         {retryPush !== null && (

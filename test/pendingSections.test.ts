@@ -560,7 +560,7 @@ test('loadStashes resets stashesExpanded and prunes stashContents on stash list 
   assert.ok(state.stashContents[0] !== undefined);
 });
 
-test('stash item row renders expandable twisty, 1-based label, open-commit hash button, and no subject', () => {
+test('stash item row renders expandable twisty, 1-based label, metadata sub-row, hash button, and Apply/Drop buttons', () => {
   const src = fs.readFileSync(
     path.join(__dirname, '..', '..', 'src', 'webview', 'PendingChanges.tsx'),
     'utf8',
@@ -568,18 +568,18 @@ test('stash item row renders expandable twisty, 1-based label, open-commit hash 
   assert.match(src, /className="gc-icon-button gc-stash-item__twisty"/);
   assert.match(src, /aria-expanded=\{isExpanded\}/);
   assert.match(src, /formatStashLabel\(parsedIndex, language\)/);
+  assert.match(src, /formatStashMeta\(stash, language\)/);
+  assert.match(src, /className="gc-stash-item__meta"/);
   assert.match(src, /className="gc-stash-item__hash-btn"/);
   assert.match(src, /aria-label=\{strings\.pending\.stashOpenCommitAria\}/);
   assert.match(src, /title=\{strings\.pending\.stashOpenCommitTitle\}/);
   assert.doesNotMatch(src, /stash\.subject/);
   assert.match(src, /aria-label=\{strings\.pending\.stashApplyAria\(stash\.ref\)\}/);
   assert.match(src, /title=\{strings\.pending\.stashApplyTitle\}/);
-  assert.match(src, /<Icon name="add" \/>/);
+  assert.match(src, /strings\.pending\.stashApplyLabel/);
   assert.match(src, /aria-label=\{strings\.pending\.stashDropAria\(stash\.ref\)\}/);
   assert.match(src, /title=\{strings\.pending\.stashDropTitle\}/);
-  assert.match(src, /<Icon name="dash" \/>/);
-  assert.doesNotMatch(src, /strings\.pending\.stashApplyLabel/);
-  assert.doesNotMatch(src, /strings\.pending\.stashDropLabel/);
+  assert.match(src, /strings\.pending\.stashDropLabel/);
 
   const stylesSrc = fs.readFileSync(
     path.join(__dirname, '..', '..', 'src', 'webview', 'styles.css'),
@@ -587,8 +587,8 @@ test('stash item row renders expandable twisty, 1-based label, open-commit hash 
   );
   const actionsBlock = stylesSrc.match(/\.gc-stash-item__actions\s*\{([^}]*)\}/)?.[1] ?? '';
   assert.match(actionsBlock, /margin-left:\s*auto;/);
-  const actionBlock = stylesSrc.match(/\.gc-stash-item__action\s*\{([^}]*)\}/)?.[1] ?? '';
-  assert.match(actionBlock, /font-size:\s*var\(--gc-fs-sm\);/);
+  const btnBlock = stylesSrc.match(/\.gc-stash-item__btn\s*\{([^}]*)\}/)?.[1] ?? '';
+  assert.match(btnBlock, /font-size:\s*var\(--gc-fs-xs\);/);
 });
 
 test('stash file row renders theme file icon, path, and click button for actions/openStashDiff', () => {
@@ -689,8 +689,8 @@ test('pending panel mounts the nav strip directly under the sidebar header', () 
   assert.match(src, /<SidebarHeader \/>[\s\S]{0,40}?<NavStrip \/>/, 'the strip follows the header slot');
   assert.match(
     src,
-    /<NavStrip \/>\s*<Tablist\b[\s\S]{0,500}?\/>\s*<div className="gc-pending__notifications">/,
-    'strip, then the sub-tabs, then the notifications',
+    /<NavStrip \/>[\s\S]{0,80}?<Tablist\b[\s\S]{0,500}?\/>\s*<div className="gc-pending__notifications">/,
+    'strip, branch bar on Changes, then the sub-tabs, then the notifications',
   );
   assert.equal(src.match(/<NavStrip \/>/g)?.length, 1, 'mounted once');
 });
@@ -1035,8 +1035,8 @@ test('the commit footer renders an amend toggle bound to the store state', () =>
   assert.match(src, /amendTitle/);
   assert.match(
     src,
-    /disabled=\{busy \|\| \(stagedCount === 0 && !amendOn\)\}/,
-    'a message-only reword is the main use, so amend enables the button with nothing staged',
+    /disabled=\{busy \|\| conflictCount > 0 \|\| \(stagedCount === 0 && !amendOn\)\}/,
+    'a message-only reword is the main use, so amend enables the button with nothing staged unless conflicts exist',
   );
 });
 

@@ -149,9 +149,11 @@ export function GraphMinimap({
     >
       {rows.map((row) => {
         const y = rowTop(row.lane);
-        const x1 = row.startX * geometry.scale;
+        // `geometry.scale` maps zoomed world px (`totalWorldWidth * zoom`) to minimap px,
+        // so convert unzoomed world coordinates `startX`/`endX` into zoomed px first.
+        const x1 = row.startX * zoom * geometry.scale;
         // A single-commit lane is a point; the minimum length keeps it visible.
-        const x2 = Math.max(row.endX * geometry.scale, x1 + 2);
+        const x2 = Math.max(row.endX * zoom * geometry.scale, x1 + 2);
         return (
           <line
             key={row.lane}

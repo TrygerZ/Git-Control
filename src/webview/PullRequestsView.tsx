@@ -101,6 +101,10 @@ export function PullRequestsView(): JSX.Element {
 
   const [query, setQuery] = useState(() => loadState().prQuery);
   const [filter, setFilter] = useState<PrFilterId>(() => loadState().prFilter);
+  const [stateFilter, setStateFilter] = useState<'open' | 'closed' | 'merged'>('open');
+  const [sortBy, setSortBy] = useState<'updated' | 'newest' | 'commented'>('updated');
+  const [filterMenuOpen, setFilterMenuOpen] = useState(false);
+  const [filterPos, setFilterPos] = useState({ x: 0, y: 0 });
   /** `Recently updated` starts folded: it is the long tail, not the first read. */
   const [expanded, setExpanded] = useState<ReadonlySet<GroupId>>(
     () => new Set<GroupId>(['needsReview', 'mine']),
@@ -108,9 +112,23 @@ export function PullRequestsView(): JSX.Element {
   const [activeRow, setActiveRow] = useState(0);
   const [now, setNow] = useState(() => Date.now());
   const searchRef = useRef<HTMLInputElement>(null);
+  const filterBtnRef = useRef<HTMLButtonElement>(null);
+  const filterMenuRef = useRef<HTMLDivElement>(null);
   const connectRef = useRef<HTMLButtonElement>(null);
   const rowRefs = useRef<Array<HTMLButtonElement | null>>([]);
   const listRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!filterMenuOpen) return;
+    const onPointerDown = (event: PointerEvent): void => {
+      const target = event.target as Node;
+      if (filterMenuRef.current?.contains(target) === true) return;
+      if (filterBtnRef.current?.contains(target) === true) return;
+      setFilterMenuOpen(false);
+    };
+    document.addEventListener('pointerdown', onPointerDown, true);
+    return () => document.removeEventListener('pointerdown', onPointerDown, true);
+  }, [filterMenuOpen]);
 
   // A countdown is the only thing here that moves, so the tick exists only while
   // one is on screen. A `setTimeout` re-armed per second, never an interval.
@@ -142,16 +160,35 @@ export function PullRequestsView(): JSX.Element {
   const ctx: PrContext = { viewerLogin };
   const counts = countByFilter(pullRequests, ctx);
 
-  const visible = useMemo(
-    () =>
+  const sortPrs = (list: readonly PullRequestInfo[]): PullRequestInfo[] => {
+    const copy = [...list];
+    if (sortBy === 'newest') {
+      copy.sort((a, b) => b.number - a.number);
+    } else if (sortBy === 'commented') {
+      copy.sort(
+        (a, b) =>
+          b.requestedReviewers.length - a.requestedReviewers.length ||
+          Date.parse(b.updatedAt) - Date.parse(a.updatedAt),
+      );
+    } else {
+      copy.sort((a, b) => Date.parse(b.updatedAt) - Date.parse(a.updatedAt));
+    }
+    return copy;
+  };
+
+  const visible = useMemo(() => {
+    if (stateFilter !== 'open') return [];
+    return sortPrs(
       filterPullRequests(pullRequests, filter, { viewerLogin }).filter((pr) => matchesText(pr, query)),
-    [pullRequests, filter, query, viewerLogin],
-  );
+    );
+  }, [pullRequests, filter, query, viewerLogin, stateFilter, sortBy]);
   /** Closed rows carry no chip filter: the chips narrow the open list only. */
-  const closed = useMemo(
-    () => closedPullRequests.filter((pr) => matchesText(pr, query)),
-    [closedPullRequests, query],
-  );
+  const closed = useMemo(() => {
+    const base = closedPullRequests.filter((pr) => matchesText(pr, query));
+    if (stateFilter === 'merged') return sortPrs(base.filter((pr) => pr.state === 'merged'));
+    if (stateFilter === 'closed') return sortPrs(base.filter((pr) => pr.state === 'closed'));
+    return sortPrs(base);
+  }, [closedPullRequests, query, stateFilter, sortBy]);
 
   const groups = groupPullRequests(visible, ctx);
   const rowsByGroup: Record<GroupId, readonly PullRequestInfo[]> = {
@@ -391,8 +428,135 @@ export function PullRequestsView(): JSX.Element {
                   onChange={(event) => setQueryAndPersist(event.target.value)}
                 />
               </div>
+              <button
+                ref={filterBtnRef}
+                type="button"
+                className="gc-icon-button gc-prs__filter-btn"
+                aria-label={strings.prs.filterMenuAria}
+                title={strings.prs.filterMenuAria}
+                aria-haspopup="menu"
+                aria-expanded={filterMenuOpen}
+                onClick={() => {
+                  if (!filterMenuOpen && filterBtnRef.current !== null) {
+                    const rect = filterBtnRef.current.getBoundingClientRect();
+                    const width = 240;
+                    const x = Math.max(8, Math.min(rect.right - width, window.innerWidth - width - 8));
+                    const y = Math.min(rect.bottom + 4, window.innerHeight - 280);
+                    setFilterPos({ x, y });
+                  }
+                  setFilterMenuOpen((prev) => !prev);
+                }}
+              >
+                <Icon name="filter" />
+              </button>
             </div>
           </div>
+
+          {filterMenuOpen && (
+            <div
+              ref={filterMenuRef}
+              className="gc-menu gc-prs__filter-menu"
+              role="menu"
+              aria-label={strings.prs.filterMenuAria}
+              style={{ left: `${filterPos.x}px`, top: `${filterPos.y}px` }}
+              onKeyDown={(e) => {
+                if (e.key === 'Escape') {
+                  e.preventDefault();
+                  setFilterMenuOpen(false);
+                  filterBtnRef.current?.focus();
+                }
+              }}
+            >
+              <div className="gc-menu__group" role="group" aria-label={strings.prs.filterState}>
+                <span className="gc-menu__group-title" aria-hidden="true">
+                  {strings.prs.filterState}
+                </span>
+                {(['open', 'closed', 'merged'] as const).map((st) => {
+                  const selected = stateFilter === st;
+                  const label =
+                    st === 'open'
+                      ? strings.prs.filterStateOpen
+                      : st === 'closed'
+                        ? strings.prs.filterStateClosed
+                        : strings.prs.filterStateMerged;
+                  return (
+                    <button
+                      key={st}
+                      type="button"
+                      role="menuitemradio"
+                      aria-checked={selected}
+                      className={selected ? 'gc-menu__item gc-branch-popover__option--selected' : 'gc-menu__item'}
+                      onClick={() => {
+                        setStateFilter(st);
+                        if (st !== 'open') {
+                          setExpanded((prev) => new Set([...prev, 'other']));
+                          if (!closedLoaded) void loadClosedPullRequests();
+                        }
+                        setFilterMenuOpen(false);
+                      }}
+                    >
+                      <span className="gc-branch-popover__check" aria-hidden="true">
+                        {selected && <Icon name="check" />}
+                      </span>
+                      <span className="gc-menu__label">{label}</span>
+                      {st === 'open' && <span className="gc-menu__hint">{chipCount(counts.open)}</span>}
+                    </button>
+                  );
+                })}
+              </div>
+              <span className="gc-menu__separator" aria-hidden="true" />
+              <div className="gc-menu__group" role="group" aria-label={strings.prs.filterSortGroup}>
+                <span className="gc-menu__group-title" aria-hidden="true">
+                  {strings.prs.filterSortGroup}
+                </span>
+                {(['updated', 'newest', 'commented'] as const).map((sort) => {
+                  const selected = sortBy === sort;
+                  const label =
+                    sort === 'updated'
+                      ? strings.prs.filterSortUpdated
+                      : sort === 'newest'
+                        ? strings.prs.filterSortNewest
+                        : strings.prs.filterSortCommented;
+                  return (
+                    <button
+                      key={sort}
+                      type="button"
+                      role="menuitemradio"
+                      aria-checked={selected}
+                      className={selected ? 'gc-menu__item gc-branch-popover__option--selected' : 'gc-menu__item'}
+                      onClick={() => {
+                        setSortBy(sort);
+                        setFilterMenuOpen(false);
+                      }}
+                    >
+                      <span className="gc-branch-popover__check" aria-hidden="true">
+                        {selected && <Icon name="check" />}
+                      </span>
+                      <span className="gc-menu__label">{label}</span>
+                    </button>
+                  );
+                })}
+              </div>
+              <span className="gc-menu__separator" aria-hidden="true" />
+              <button
+                type="button"
+                role="menuitem"
+                className="gc-menu__item"
+                onClick={() => {
+                  setStateFilter('open');
+                  setSortBy('updated');
+                  setFilterAndPersist('open');
+                  setQueryAndPersist('');
+                  setFilterMenuOpen(false);
+                }}
+              >
+                <span className="gc-menu__icon" aria-hidden="true">
+                  <Icon name="close" />
+                </span>
+                <span className="gc-menu__label">{strings.prs.clearFilters}</span>
+              </button>
+            </div>
+          )}
 
           <div className="gc-prs__chips" role="group" aria-label={strings.prs.filterState}>
             {CHIP_ORDER.map((id) => {

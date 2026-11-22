@@ -26,13 +26,18 @@ function read(relative: string): string {
 
 const HEADER = 'src/webview/SidebarHeader.tsx';
 
-test('the header takes its shape from the active route, not from a fixed three-row stack', () => {
+test('the header keeps a consistent single-row bar above NavStrip and mounts branch/sync below on Changes', () => {
   const src = read(HEADER);
+  const pending = read('src/webview/PendingChanges.tsx');
   assert.match(src, /useRouteStore\(\(s\) => s\.route\)/, 'it reads the active route');
-  assert.match(src, /route\.id !== 'changes'/, 'Changes is the only three-row destination');
-  assert.match(src, /gc-sidebar-header--compact/, 'the compact variant is a class, not a second component');
-  // The two rows the frames drop on every other destination.
-  assert.match(src, /\{!compact && \(/, 'branch and upstream rows are conditional');
+  assert.match(src, /route\.id !== 'changes'/, 'Changes keeps the graph button and hides the compact slug');
+  assert.match(src, /gc-sidebar-header--compact/, 'the header stays single-row so NavStrip never shifts');
+  assert.match(src, /export function SidebarBranchBar/, 'branch selector and sync status live in SidebarBranchBar');
+  assert.match(
+    pending,
+    /<NavStrip \/>[\s\S]{0,80}?<SidebarBranchBar \/>/,
+    'SidebarBranchBar mounts directly below NavStrip on Changes',
+  );
 });
 
 test('the compact row carries the repository slug beside the repository name', () => {
@@ -82,8 +87,13 @@ test('the More menu is the frame 42 menu: reload, repository links, account', ()
   const src = read(HEADER);
   assert.match(src, /role="menu"/);
   assert.match(src, /strings\.shell\.menuReload/, 'Reload');
+  assert.match(src, /hint:\s*'R'/, 'Reload carries the R shortcut hint');
   assert.match(src, /strings\.shell\.menuOpenRepo/, 'Open repository on GitHub');
   assert.match(src, /strings\.shell\.menuCopyUrl/, 'Copy repository URL');
+  assert.match(src, /strings\.shell\.menuGroupAccount/, 'Account group title');
+  assert.match(src, /strings\.shell\.menuGroupPreferences/, 'Preferences group title');
+  assert.match(src, /className="gc-menu__group-title"/, 'renders visible group headings');
+  assert.match(src, /className="gc-menu__separator"/, 'renders group separators');
   assert.match(src, /strings\.explorerMenu\.connectGithub/, 'Connect GitHub');
   assert.match(src, /strings\.explorerMenu\.disconnectGithub/, 'Disconnect GitHub');
   assert.match(src, /strings\.shell\.menuLanguage/, 'Language preference row');

@@ -14,6 +14,7 @@
  */
 import { useEffect, useId, useRef, useState, type FormEvent, type JSX } from 'react';
 import { useDialogFocusTrap } from './useDialogFocusTrap';
+import { useT } from './useT';
 
 export interface PromptDialogProps {
   title: string;
@@ -26,6 +27,7 @@ export interface PromptDialogProps {
   options?: readonly string[];
   checkboxLabel?: string;
   checkboxHint?: string;
+  commandPreview?: (value: string, checkboxChecked: boolean) => string | null;
   validate?: (value: string) => string | null;
   onSubmit: (value: string, checkboxChecked?: boolean) => void;
   onCancel: () => void;
@@ -42,10 +44,12 @@ export function PromptDialog({
   options,
   checkboxLabel,
   checkboxHint,
+  commandPreview,
   validate,
   onSubmit,
   onCancel,
 }: PromptDialogProps): JSX.Element {
+  const strings = useT();
   const [value, setValue] = useState(initialValue);
   const [checkboxChecked, setCheckboxChecked] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -57,6 +61,7 @@ export function PromptDialog({
   const descId = useId();
   const errorId = useId();
   const hintId = useId();
+  const commandId = useId();
 
   useEffect(() => {
     returnFocus.current = document.activeElement;
@@ -173,6 +178,19 @@ export function PromptDialog({
               </span>
             </label>
           )}
+
+          {commandPreview !== undefined && (() => {
+            const cmd = commandPreview(value.trim(), checkboxChecked);
+            if (cmd === null) return null;
+            return (
+              <div className="gc-modal__command">
+                <span className="gc-modal__command-label" id={commandId}>
+                  {strings.guard.gitCommandLabel}
+                </span>
+                <code aria-describedby={commandId}>{cmd}</code>
+              </div>
+            );
+          })()}
 
           <div className="gc-modal__actions">
             <button

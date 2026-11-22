@@ -217,8 +217,14 @@ export const useRepoStore = create<RepoState>((set, get) => ({
     if (current === null || current.nextCursor === null || get().paging) return;
     set({ paging: true });
     try {
-      const pageSize = current.nodes.length > 0 ? current.nodes.length : 500;
-      const nextLimit = Math.min(current.nextCursor + pageSize, 10_000);
+      const configuredPageSize = useSettingsStore.getState().snapshot?.pageSize;
+      const step =
+        typeof configuredPageSize === 'number' && configuredPageSize > 0
+          ? configuredPageSize
+          : current.nodes.length > 0
+            ? current.nodes.length
+            : 50;
+      const nextLimit = Math.min(current.nextCursor + step, 10_000);
       const page = await bridge.request('repos/graph', {
         cursor: 0,
         limit: nextLimit,
@@ -716,6 +722,7 @@ export interface PendingGuard {
 
 export interface OperationState_ {
   state: 'idle' | 'loading' | 'success' | 'error' | 'conflict';
+  activeAction: GitActionRequest | null;
   progressLog: string[];
   pendingGuard: PendingGuard | null;
   toasts: Toast[];
@@ -738,6 +745,7 @@ export interface OperationState_ {
 
 export const useOperationStore = create<OperationState_>((set, get) => ({
   state: 'idle',
+  activeAction: null,
   progressLog: [],
   pendingGuard: null,
   toasts: [],
@@ -755,12 +763,12 @@ export const useOperationStore = create<OperationState_>((set, get) => ({
    * the request that lands must be judged against the tree as it is then.
    */
   async runAction(request, extra) {
-    set({ state: 'loading', lastError: null });
+    set({ state: 'loading', activeAction: request, lastError: null });
     const handle = mutation('actions/git', request);
     const send = async (extra: Partial<MutationMeta>): Promise<boolean> => {
       const statusToken = await freshToken();
       const result = await handle.send({ statusToken, ...extra });
-      set({ state: 'success', pendingGuard: null });
+      set({ state: 'success', activeAction: null, pendingGuard: null });
       await useRepoStore.getState().refresh();
       await useChangesStore.getState().load();
       if (result.operation !== 'idle') set({ state: 'conflict' });
@@ -775,6 +783,7 @@ export const useOperationStore = create<OperationState_>((set, get) => ({
       if (needsDialog) {
         set({
           state: 'idle',
+          activeAction: null,
           pendingGuard: {
             request,
             error: body,
@@ -789,6 +798,7 @@ export const useOperationStore = create<OperationState_>((set, get) => ({
         });
         return false;
       }
+      set({ activeAction: null });
       get().fail(err);
       return false;
     };

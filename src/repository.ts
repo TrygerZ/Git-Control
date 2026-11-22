@@ -63,7 +63,7 @@ export interface GraphRequest {
 }
 
 export const MAX_COMMIT_LIMIT = 10_000;
-export const DEFAULT_PAGE_SIZE = 500;
+export const DEFAULT_PAGE_SIZE = 50;
 export const DEFAULT_FILE_LIMIT = 2000;
 /**
  * Above this many changed files, `status` stops asking git for line counts. Past
@@ -298,26 +298,35 @@ export class RepositoryService {
     // larger than the runner will buffer. It truncates rather than failing, and
     // the flag rides out with the page so the UI does not claim completeness.
     let statsTruncated = false;
-    const stats = await this.git.numstat(meta.hash, {
-      firstParent: isMerge,
-      onTruncated: () => {
-        statsTruncated = true;
-      },
-    });
+    const [stats, statusMap] = await Promise.all([
+      this.git.numstat(meta.hash, {
+        firstParent: isMerge,
+        onTruncated: () => {
+          statsTruncated = true;
+        },
+      }),
+      typeof this.git.commitFileStatuses === 'function'
+        ? this.git.commitFileStatuses(meta.hash, { firstParent: isMerge }).catch(() => new Map<string, string>())
+        : Promise.resolve(new Map<string, string>()),
+    ]);
 
     const end = cursor + this.fileLimit;
     const hasMorePages = stats.length > end;
     // `truncated` means "there is more than you are seeing", which is true both
     // when a later page exists and when git's own output was cut short.
     const truncated = hasMorePages || statsTruncated;
-    const files: CommitFileChange[] = stats.slice(cursor, end).map((entry) => ({
-      path: entry.path,
-      ...(entry.origPath === undefined ? {} : { origPath: entry.origPath }),
-      // Binary files carry no line counts.
-      additions: entry.binary ? null : entry.additions,
-      deletions: entry.binary ? null : entry.deletions,
-      binary: entry.binary,
-    }));
+    const files: CommitFileChange[] = stats.slice(cursor, end).map((entry) => {
+      const status = statusMap.get(entry.path);
+      return {
+        path: entry.path,
+        ...(entry.origPath === undefined ? {} : { origPath: entry.origPath }),
+        // Binary files carry no line counts.
+        additions: entry.binary ? null : entry.additions,
+        deletions: entry.binary ? null : entry.deletions,
+        binary: entry.binary,
+        ...(status !== undefined ? { status } : {}),
+      };
+    });
 
     const detail: CommitDetail = {
       hash: meta.hash,

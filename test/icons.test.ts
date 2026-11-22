@@ -79,6 +79,11 @@ const ALL_ICON_NAMES: readonly IconName[] = [
   // Canvas zoom bar (frame 01, node `10:158`): fit to window and centre on HEAD.
   'maximize',
   'crosshair',
+  // Sidebar and Explorer More menus (frames 17, 24b, 42).
+  'globe',
+  'theme',
+  'github',
+  'terminal',
 ];
 
 test('every IconName has an SVG render function in ICON_PATHS and no orphan paths exist', () => {

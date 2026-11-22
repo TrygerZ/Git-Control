@@ -30,8 +30,8 @@ Git Control replaces flat vertical commit lists with an interactive two-dimensio
 ![Git Control Pending Changes Panel](screenshots/pending-showcase.png)
 
 * **Persistent Sidebar Navigation**: Five tabs (Changes, Pull requests, Issues, Actions, and Branches) with count badges on Changes, Pull requests, and Issues, and a red failing dot on Actions when the latest run on the current branch failed.
-* **Sidebar Header**: Repository title row with Refresh, Open Explorer graph, Quick actions search, Help info, and More menu; branch selector with ahead/behind sync chip; and upstream tracking row showing the tracking branch and active commit hash. Other tabs use a compact single-row header with route-specific create actions.
-* **Pinned Commit Footer and Amend**: Commit message box, "Amend last commit" toggle (loads the last commit message when the box is empty and blocks amending when HEAD is already on the upstream branch because pushing would require a force push), "Push to remote after commit", and Commit, Push or Publish, and Pull actions pinned at the bottom of the panel.
+* **Consistent Sidebar Header and Branch Bar**: A single-row repository title header stays pinned above the navigation strip on every tab so the navigation bar never shifts when switching tabs. On the Changes tab, the branch checkout selector, sync status chip, and upstream tracking summary sit directly below the navigation strip; other tabs surface route-specific quick-create actions in the header.
+* **Pinned Commit Footer and Amend**: Commit message box, "Amend last commit" toggle (loads the last commit message when the box is empty and blocks amending when HEAD is already on the upstream branch because pushing would require a force push), "Push to remote after commit", and dynamic Commit and Push or Publish actions pinned at the bottom of the panel.
 * **Granular Staging**: Tree and list views for Staged, Unstaged, Untracked, and Conflicted files with batch or individual file selection.
 * **Recursive Folder Selection**: Checking a folder toggles all child files automatically.
 * **Inline File Churn**: Displays added and deleted line counts alongside binary and untracked indicators.
@@ -77,6 +77,9 @@ Right-click any commit node or branch ref to perform standard Git actions:
 * **Author Avatar**: Shows the commit author's GitHub avatar in the inspector header, falling back to deterministic initials when the author is unlinked or offline.
 
 ### 8. GitHub Integration
+
+![Git Control Pull Requests Sidebar](screenshots/prs-showcase.png) ![Git Control Actions Sidebar](screenshots/actions-showcase.png)
+
 * **Token Storage**: Connects directly to GitHub via VS Code SecretStorage without exposing credentials.
 * **Sign-In and Public Repository Browsing**: The Pull requests list remains available for public repositories without sign-in, displaying a "Sign in for higher limits" banner under GitHub's 60 requests per hour anonymous limit. Private repositories, Issues, Actions, and all write actions require sign-in.
 * **Pull Request Visibility**: Displays pull request statuses and numbers associated with branch heads, with Open, Review requested, Mine, and Draft filters plus a current-branch card.
@@ -114,6 +117,8 @@ Git Control ships a complete English and Bahasa Indonesia UI, switched directly 
 ![Git Control Pending Changes panel in Bahasa Indonesia](screenshots/pending-showcase-id.png)
 
 ### 12. Branches, Tags, Compare, and Worktrees
+
+![Git Control Branches and Tags Sidebar](screenshots/branches-showcase.png)
 
 * **Local, Remote, and Tags Sub-Tabs**: Browse and filter local branches, remote branches, and tags with `merged`, `local only`, and `upstream gone` chips, sorted by recent activity, name, or ahead and behind counts.
 * **Clean Up Merged Branches**: Batch-delete merged local branches safely (`git branch -d`, surfacing git's own refusal on unmerged work) with an optional step to delete matching remote branches after explicit confirmation.

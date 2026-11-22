@@ -50,7 +50,7 @@ import {
   truncate,
 } from './format';
 import { useT } from './useT';
-import { BranchSelector } from './BranchLegend';
+import { BranchSelector, LaneFilterSelector } from './BranchLegend';
 import { useGitHubStore, useRepoStore, useSettingsStore } from './store';
 import { chipsFor, computeStaggerMap, lanesForFilter, matchesSearch } from './graphQuery';
 import {
@@ -80,7 +80,7 @@ import {
   worldHeight,
   worldWidth,
 } from './viewport';
-import type { DateBucket, GraphEdge, GraphNode, RefInfo, RepoGraph, RepoStatus } from '../messages';
+import type { DateBucket, GraphEdge, GraphLane, GraphNode, RefInfo, RepoGraph, RepoStatus } from '../messages';
 export { chipsFor, computeStaggerMap, lanesForFilter, matchesSearch } from './graphQuery';
 export { edgePath } from './viewport';
 /** Frame 01 (`10:178`): the minimap is 220 x 68 at the canvas left edge. */
@@ -121,6 +121,8 @@ interface Props {
   /** The aside is open. The toolbar owns the toggle; `ExplorerApp` owns the state. */
   inspectorOpen: boolean;
   onToggleInspector(): void;
+  /** Optional handler for "+ Create new branch..." inside the Checkout popover (Frame 15). */
+  onCreateBranch?: () => void;
 }
 
 /**
@@ -145,6 +147,8 @@ function Toolbar({
   currentBranch,
   busy,
   refs,
+  lanes,
+  laneCommitCounts,
   countId,
   countText,
   canLoadOlder,
@@ -154,12 +158,15 @@ function Toolbar({
   onBranchFilter,
   onLoadOlder,
   onToggleInspector,
+  onCreateBranch,
 }: {
   search: string;
   branchFilter: string;
   currentBranch: string | null;
   busy: boolean;
   refs: readonly RefInfo[];
+  lanes: readonly GraphLane[];
+  laneCommitCounts: ReadonlyMap<number, number>;
   countId: string;
   countText: string;
   canLoadOlder: boolean;
@@ -169,6 +176,7 @@ function Toolbar({
   onBranchFilter(value: string): void;
   onLoadOlder(): void;
   onToggleInspector(): void;
+  onCreateBranch?: () => void;
 }): JSX.Element {
   const strings = useT();
   const branches = refs.filter((r) => r.kind === 'local' || r.kind === 'remote');
@@ -198,38 +206,31 @@ function Toolbar({
       </div>
 
       {/*
-        One checkout control, shared with the sidebar; the unlabelled variant, so
-        the visible `Checkout` word sits beside it and the accessible name stays.
+        Frame 01/15/16: `Checkout` and `Show` render inline inside their trigger
+        buttons using `.gc-toolbar__label`, collapsing at narrow widths while each
+        button keeps its accessible name.
       */}
       <div className="gc-toolbar__group">
-        <span className="gc-toolbar__label">{strings.graph.checkoutBranchLabel}</span>
         <BranchSelector
           currentBranch={currentBranch}
           refs={refs}
           busy={busy}
+          inlineLabel={strings.graph.checkoutBranchLabel}
+          onCreateBranch={onCreateBranch}
           aria-label={strings.graph.checkoutBranchAria}
         />
       </div>
 
       <div className="gc-toolbar__group">
-        <span className="gc-toolbar__label">{strings.graph.showLabel}</span>
-        <div className="gc-toolbar__branch-wrap">
-          <select
-            className="gc-toolbar__branch-select"
-            aria-label={strings.graph.branchFilterAria}
-            value={branchFilter}
-            onChange={(e) => onBranchFilter(e.target.value)}
-          >
-            <option value="">{strings.graph.branchFilterAll}</option>
-            {branches.map((ref) => (
-              <option key={ref.refName} value={ref.shortName}>
-                {ref.kind === 'remote'
-                  ? strings.graph.branchFilterRemotePrefix(sanitizeGitText(ref.shortName))
-                  : sanitizeGitText(ref.shortName)}
-              </option>
-            ))}
-          </select>
-        </div>
+        <LaneFilterSelector
+          branchFilter={branchFilter}
+          branches={branches}
+          lanes={lanes}
+          laneCommitCounts={laneCommitCounts}
+          inlineLabel={strings.graph.showLabel}
+          onBranchFilter={onBranchFilter}
+          aria-label={strings.graph.branchFilterAria}
+        />
       </div>
 
       <span className="gc-toolbar__divider" aria-hidden="true" />
@@ -291,6 +292,7 @@ export function GraphCanvas({
   onOpenInspector,
   inspectorOpen,
   onToggleInspector,
+  onCreateBranch,
 }: Props): JSX.Element {
   const strings = useT();
   const language = useSettingsStore((s) => s.language);
@@ -373,10 +375,13 @@ export function GraphCanvas({
   const helpId = useId();
   const countId = useId();
 
-  // Track viewport width so horizontal column culling matches reality after resize or initial layout.
+  // The scroller element only mounts once the graph exits the initial skeleton/empty return.
+  const canvasMounted = !(loading && graph === null) && !(graph !== null && graph.nodes.length === 0);
+
+  // Track viewport width so horizontal column culling and minimap maxScroll match reality after load or resize.
   useLayoutEffect(() => {
     const node = scrollRef.current;
-    if (node === null) return undefined;
+    if (!canvasMounted || node === null) return undefined;
     if (node.clientWidth > 0) setViewportWidthState(node.clientWidth);
 
     const observer = new ResizeObserver((entries) => {
@@ -387,7 +392,7 @@ export function GraphCanvas({
     });
     observer.observe(node);
     return () => observer.disconnect();
-  }, []);
+  }, [canvasMounted]);
 
   // `space` toggles pan mode; tracked on the document so it works mid-drag.
   useEffect(() => {
@@ -411,7 +416,7 @@ export function GraphCanvas({
   //   Trackpads naturally emit deltaX on horizontal swipes, which native scrolling handles when not prevented.
   useEffect(() => {
     const node = scrollRef.current;
-    if (node === null) return undefined;
+    if (!canvasMounted || node === null) return undefined;
     const onWheel = (event: WheelEvent): void => {
       if (event.ctrlKey || event.metaKey) {
         event.preventDefault();
@@ -426,7 +431,7 @@ export function GraphCanvas({
     };
     node.addEventListener('wheel', onWheel, { passive: false });
     return () => node.removeEventListener('wheel', onWheel);
-  }, [setZoom, zoom]);
+  }, [canvasMounted, setZoom, zoom]);
 
   const rows: GraphNode[] = useMemo(() => {
     if (graph === null) return [];
@@ -452,6 +457,15 @@ export function GraphCanvas({
 
   /** Pre-pass map of node placement (above vs below) to avoid collisions */
   const staggerMap = useMemo(() => computeStaggerMap(rows), [rows]);
+
+  const laneCommitCounts = useMemo(() => {
+    const counts = new Map<number, number>();
+    if (graph === null) return counts;
+    for (const node of graph.nodes) {
+      counts.set(node.lane, (counts.get(node.lane) ?? 0) + 1);
+    }
+    return counts;
+  }, [graph]);
 
   const laneCount = useMemo(() => {
     if (graph === null) return 1;
@@ -786,6 +800,8 @@ export function GraphCanvas({
         currentBranch={currentBranch}
         busy={status !== null && status.operation !== 'idle'}
         refs={graph?.refs ?? []}
+        lanes={graph?.lanes ?? []}
+        laneCommitCounts={laneCommitCounts}
         countId={countId}
         countText={
           search.length === 0 && branchFilter.length === 0
@@ -799,6 +815,7 @@ export function GraphCanvas({
         onBranchFilter={setBranchFilter}
         onLoadOlder={() => void loadMore()}
         onToggleInspector={onToggleInspector}
+        onCreateBranch={onCreateBranch}
       />
 
       {graph?.stale === true && (
@@ -918,6 +935,16 @@ export function GraphCanvas({
                 width: `${totalWorldW * zoom}px`,
               }}
             >
+              {/* Full-height day separator lines aligned seamlessly with `.gc-ruler__cell` borders */}
+              {dateBuckets.map((bucket) => (
+                <div
+                  key={`day-col-${bucket.timestamp}`}
+                  className="gc-canvas__day-line-col"
+                  style={{ left: `${(bucket.bandStartX + bucket.bandWidth) * zoom}px` }}
+                  aria-hidden="true"
+                />
+              ))}
+
               <svg
                 className="gc-canvas__svg"
                 width={totalWorldW * zoom}
@@ -940,21 +967,6 @@ export function GraphCanvas({
                   )}
                   {/* Odd lanes (lane % 2 === 1) take the band above. It sits under the day
                       lines and the edges, which are painted after it. */}
-
-                  {/* Day separator lines aligned with band geometry */}
-                  {dateBuckets.map((bucket) => {
-                    return (
-                      <g key={`day-bg-${bucket.timestamp}`}>
-                        <line
-                          className="gc-canvas__day-line"
-                          x1={bucket.bandStartX + bucket.bandWidth}
-                          y1={RULER_HEIGHT}
-                          x2={bucket.bandStartX + bucket.bandWidth}
-                          y2={totalWorldH}
-                        />
-                      </g>
-                    );
-                  })}
 
                   {/* Edges */}
                   {visibleEdges.map(({ edge, fromX, toX }) => (
@@ -1016,6 +1028,12 @@ export function GraphCanvas({
                 const pillTop = pillPlacement === 'above'
                   ? (nodeCenterY - NODE_RADIUS - 6) * zoom
                   : (nodeCenterY + NODE_RADIUS + 6) * zoom;
+                // Anchor branch-tip pills to start near the node so long ref names extend into
+                // open space to the right instead of covering the preceding commit's subject.
+                const hasRightNeighbor = rows.some(
+                  (other) => other.lane === node.lane && other.x > node.x,
+                );
+                const alignClass = hasRightNeighbor ? '' : ' gc-pill--align-start';
 
                 // Check if path has slash e.g. "main/test" or "feature/something"
                 const hasSlash = branchChip.name.includes('/');
@@ -1027,7 +1045,7 @@ export function GraphCanvas({
                   return (
                     <div
                       key={`pill-${node.hash}`}
-                      className={`gc-pill gc-pill--trail gc-pill--${branchChip.kind} gc-pill--${pillPlacement}`}
+                      className={`gc-pill gc-pill--trail gc-pill--${branchChip.kind} gc-pill--${pillPlacement}${alignClass}`}
                       style={{
                         left: `${node.x * zoom}px`,
                         top: `${pillTop}px`,
@@ -1045,7 +1063,7 @@ export function GraphCanvas({
                 return (
                   <div
                     key={`pill-${node.hash}`}
-                    className={`gc-pill gc-pill--${branchChip.kind} gc-pill--${pillPlacement}`}
+                    className={`gc-pill gc-pill--${branchChip.kind} gc-pill--${pillPlacement}${alignClass}`}
                     style={{
                       left: `${node.x * zoom}px`,
                       top: `${pillTop}px`,
@@ -1053,7 +1071,7 @@ export function GraphCanvas({
                     aria-hidden="true"
                   >
                     <Icon name={branchChip.icon} />
-                    <span>{branchChip.prefix}{branchChip.name}</span>
+                    <span className="gc-pill__text">{branchChip.prefix}{branchChip.name}</span>
                   </div>
                 );
               })}

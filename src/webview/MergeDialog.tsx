@@ -74,6 +74,8 @@ export function MergeDialog({
 
   const safeBranch = sanitizeGitText(branch);
   const safeCurrent = currentBranch ? sanitizeGitText(currentBranch) : undefined;
+  const commandId = useId();
+  const command = noFf ? `git merge --no-ff ${safeBranch}` : `git merge ${safeBranch}`;
 
   return (
     <div className="gc-modal-backdrop">
@@ -108,6 +110,13 @@ export function MergeDialog({
               </span>
             </span>
           </label>
+
+          <div className="gc-modal__command">
+            <span className="gc-modal__command-label" id={commandId}>
+              {strings.guard.gitCommandLabel}
+            </span>
+            <code aria-describedby={commandId}>{command}</code>
+          </div>
 
           <div className="gc-modal__actions">
             <button

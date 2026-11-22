@@ -36,6 +36,7 @@ import {
   useSettingsStore,
 } from './store';
 import { Icon } from './ui';
+import type { IconName } from './icons';
 import { useT } from './useT';
 import type { RequestPayload } from '../messages';
 
@@ -123,6 +124,23 @@ export function ExplorerHeaderActions(): JSX.Element {
     'preferences.language': strings.shell.menuLanguage,
     'preferences.theme': strings.shell.menuColorTheme,
     repository: strings.explorerMenu.pickRepository,
+  };
+
+  // Frame 17 (`155:2820`): leading 14 px glyph for every row in the Explorer More menu.
+  const icons: Record<MenuItemId, IconName> = {
+    quick: 'search',
+    'view.changes': 'changes',
+    'view.prs': 'pr',
+    'view.issues': 'issue',
+    'view.actions': 'play',
+    'view.branches': 'git-branch',
+    refresh: 'refresh',
+    logs: 'terminal',
+    'github.connect': 'github',
+    'github.disconnect': 'github',
+    'preferences.language': 'globe',
+    'preferences.theme': 'theme',
+    repository: 'folder',
   };
 
   /*
@@ -312,9 +330,20 @@ export function ExplorerHeaderActions(): JSX.Element {
             const first = members[0];
             if (first === undefined) return null;
             const group = groupOf(first);
+            const groupHeading = groupLabels[group];
             return (
-              <div key={group} role="group" aria-label={groupLabels[group] ?? undefined}>
+              <div
+                key={group}
+                className="gc-menu__group"
+                role="group"
+                aria-label={groupHeading ?? undefined}
+              >
                 {groupIndex > 0 && <span className="gc-menu__separator" aria-hidden="true" />}
+                {groupHeading !== undefined && (
+                  <span className="gc-menu__group-title" aria-hidden="true">
+                    {groupHeading}
+                  </span>
+                )}
                 {members.map((item) => {
                   flatIndex += 1;
                   const index = flatIndex;
@@ -344,7 +373,7 @@ export function ExplorerHeaderActions(): JSX.Element {
                       key={item.id}
                       type="button"
                       role="menuitem"
-                      className="gc-menu__item"
+                      className="gc-menu__item gc-menu__item--compact"
                       tabIndex={index === active ? 0 : -1}
                       aria-label={
                         count !== null
@@ -357,6 +386,9 @@ export function ExplorerHeaderActions(): JSX.Element {
                         close(true);
                       }}
                     >
+                      <span className="gc-menu__icon" aria-hidden="true">
+                        <Icon name={icons[item.id]} />
+                      </span>
                       <span className="gc-menu__label">{label}</span>
                       {hint !== '' && <span className="gc-menu__hint">{hint}</span>}
                     </button>

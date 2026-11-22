@@ -50,8 +50,8 @@ test('i18n t(lang) returns corresponding catalog', () => {
   assert.equal(t('en').inspector.copyShortHash, 'Copy short hash');
   assert.equal(t('id').changeTree.expandFolder, 'Buka');
   assert.equal(t('en').changeTree.expandFolder, 'Expand');
-  assert.equal(t('id').commitForm.publishButton, 'Terbitkan branch');
-  assert.equal(t('en').commitForm.publishButton, 'Publish branch');
+  assert.equal(t('id').commitForm.publishButton, 'Terbitkan');
+  assert.equal(t('en').commitForm.publishButton, 'Publish');
   assert.equal(t('id').commitForm.pushButton, 'Push');
   assert.equal(t('en').commitForm.pushButton, 'Push');
   assert.equal(t('id').conflict.continueMerge, 'Lanjutkan merge');

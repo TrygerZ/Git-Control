@@ -65,4 +65,9 @@ export type IconName =
   | 'sparkle'
   // Zoom bar (frame 01, `10:158`): fit to window and centre HEAD.
   | 'maximize'
-  | 'crosshair';
+  | 'crosshair'
+  // Sidebar and Explorer More menus (frames 17, 24b, 42).
+  | 'globe'
+  | 'theme'
+  | 'github'
+  | 'terminal';

@@ -548,6 +548,10 @@ export function BranchesView(): JSX.Element {
           label={strings.explorer.newBranchPrompt}
           submitLabel={strings.explorer.createBranchTitle}
           cancelLabel={strings.guard.cancelButton}
+          hint={strings.explorer.branchNameHint}
+          commandPreview={(val) =>
+            `git switch --create ${val || '<branch>'} ${currentBranch ?? 'HEAD'}`
+          }
           validate={(value) => (value.length === 0 ? strings.explorer.branchNameRequired : null)}
           onSubmit={(name) => {
             setCreateOpen(false);

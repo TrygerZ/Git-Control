@@ -1190,11 +1190,11 @@ test('BranchSelector render contract: options never carry disabled, select keeps
     'option elements must not carry a disabled attribute: the native popup renders disabled options dimmed and unreadable',
   );
 
-  // The select keeps disabled={state.disabled} so busy and no-local-branch states stay inert.
+  // The trigger button keeps disabled={state.disabled} so busy and no-local-branch states stay inert.
   assert.match(
     source,
-    /<select\b[^>]*disabled=\{state\.disabled\}/,
-    'select must keep disabled={state.disabled} for the busy and no-local-branch invariants',
+    /<button[\s\S]*?disabled=\{state\.disabled\}/,
+    'branch selector trigger must keep disabled={state.disabled} for the busy and no-local-branch invariants',
   );
 
   // The active branch is identified through formatCurrent, not a disabled flag.
