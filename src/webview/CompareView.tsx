@@ -8,7 +8,7 @@
 import { useEffect, useId, useMemo, type JSX } from 'react';
 import { bridge } from './bridge';
 import { compareCommand, summaryLine } from './compareModel';
-import { relativeTime, sanitizeGitText } from './format';
+import { baseName, relativeTime, sanitizeGitText } from './format';
 import {
   toErrorBody,
   useBranchesStore,
@@ -16,7 +16,7 @@ import {
   useOperationStore,
   useSettingsStore,
 } from './store';
-import { ErrorBanner, Icon, Spinner } from './ui';
+import { ErrorBanner, FileIcon, Icon, Spinner } from './ui';
 import { useT } from './useT';
 
 export function CompareView(): JSX.Element {
@@ -193,6 +193,7 @@ export function CompareView(): JSX.Element {
                       );
                   }}
                 >
+                  <FileIcon kind="file" name={baseName(f.path)} />
                   <span className="gc-compare__path">{sanitizeGitText(f.path)}</span>
                   <span className="gc-compare__churn">
                     {f.binary ? (

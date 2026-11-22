@@ -168,6 +168,8 @@ class Controller implements vscode.Disposable {
    * these bridges and each panel gets a snapshot built against its own webview.
    */
   private readonly prPanelBridges = new Map<MessageBridge, vscode.WebviewPanel>();
+  /** Maps every live bridge to its own webview so icon-theme URIs are minted per webview. */
+  private readonly bridgeWebviews = new Map<MessageBridge, vscode.Webview>();
   private pendingFocusHash: string | undefined;
   /** One-shot route for the sidebar. Memory only: a route is never written to `workspaceState`. */
   private pendingRoute: { route: Route; focus?: FocusTarget; at: number } | undefined;
@@ -955,9 +957,11 @@ class Controller implements vscode.Disposable {
       iconThemeSnapshot: () => this.buildIconThemeSnapshotOrNull(webview),
     });
     this.bridges.add(bridge);
+    this.bridgeWebviews.set(bridge, webview);
     const detach = (): void => {
       bridge.dispose();
       this.bridges.delete(bridge);
+      this.bridgeWebviews.delete(bridge);
     };
     if (owner.onDidDispose !== undefined) owner.onDidDispose(detach);
     else this.disposables.push({ dispose: detach });
@@ -1108,22 +1112,11 @@ class Controller implements vscode.Disposable {
     if (this.pendingView !== undefined) this.pendingView.webview.options = current;
     if (this.panel !== undefined) this.panel.webview.options = current;
     for (const panel of this.prPanels.values()) panel.webview.options = current;
-    // Each PR panel resolves `asWebviewUri` against its own webview, so the
-    // snapshot has to be built per panel rather than borrowed from the explorer.
-    for (const [bridge, panel] of this.prPanelBridges) {
-      const prSnapshot = await buildIconThemeSnapshot(panel.webview);
+    // Each webview mints its own `asWebviewUri` authority, so build and emit per bridge.
+    for (const [bridge, webview] of this.bridgeWebviews) {
+      const snapshot = await buildIconThemeSnapshot(webview);
       if (generation !== this.iconThemeGeneration) return; // superseded — drop
-      bridge.emit('event/iconThemeChanged', prSnapshot ?? null);
-    }
-    const webview = this.pendingView?.webview ?? this.panel?.webview;
-    if (webview === undefined) return; // no webview ⇒ no bridge ⇒ no receiver
-    const snapshot = await buildIconThemeSnapshot(webview);
-    if (generation !== this.iconThemeGeneration) return; // superseded — drop
-    const payload = snapshot === undefined ? null : snapshot;
-    for (const bridge of this.bridges) {
-      // PR bridges already received their own snapshot above.
-      if (this.prPanelBridges.has(bridge)) continue;
-      bridge.emit('event/iconThemeChanged', payload);
+      bridge.emit('event/iconThemeChanged', snapshot ?? null);
     }
   }
 
