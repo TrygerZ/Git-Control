@@ -215,6 +215,12 @@ export function ExplorerApp(): JSX.Element {
             }}
             inspectorOpen={inspectorOpen}
             onToggleInspector={() => setInspectorOpen(!inspectorOpen)}
+            onCreateBranch={() =>
+              setCreateBranchTarget({
+                startPoint: status?.head ?? 'HEAD',
+                defaultName: `${strings.explorer.defaultBranchPrefix}/`,
+              })
+            }
           />
         </div>
 

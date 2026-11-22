@@ -697,10 +697,12 @@ const en = {
     branchPopoverFilter: 'Filter branches...',
     branchPopoverGroup: 'Local branches',
     branchPopoverCurrent: 'current',
-    branchPopoverNote: 'Switching needs a clean working tree. Stash or commit first.',
+    branchPopoverCreate: 'Create new branch...',
+    branchPopoverNote: 'Switching needs a clean working tree. You can stash first.',
     lanePopoverFilter: 'Filter lanes...',
     lanePopoverGroup: 'Show lanes',
     lanePopoverCount: (count: number) => (count === 1 ? '1 lane' : `${count} lanes`),
+    lanePopoverNote: 'Filters which lanes the graph draws. Does not switch your branch.',
     resetFilter: 'Reset',
     // Frame 01 (`9:45`): the toolbar carries no visible form labels, so each
     // control's name lives in the catalog.

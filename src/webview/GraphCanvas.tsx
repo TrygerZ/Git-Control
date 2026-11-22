@@ -121,6 +121,8 @@ interface Props {
   /** The aside is open. The toolbar owns the toggle; `ExplorerApp` owns the state. */
   inspectorOpen: boolean;
   onToggleInspector(): void;
+  /** Optional handler for "+ Create new branch..." inside the Checkout popover (Frame 15). */
+  onCreateBranch?: () => void;
 }
 
 /**
@@ -146,6 +148,7 @@ function Toolbar({
   busy,
   refs,
   lanes,
+  laneCommitCounts,
   countId,
   countText,
   canLoadOlder,
@@ -155,6 +158,7 @@ function Toolbar({
   onBranchFilter,
   onLoadOlder,
   onToggleInspector,
+  onCreateBranch,
 }: {
   search: string;
   branchFilter: string;
@@ -162,6 +166,7 @@ function Toolbar({
   busy: boolean;
   refs: readonly RefInfo[];
   lanes: readonly GraphLane[];
+  laneCommitCounts: ReadonlyMap<number, number>;
   countId: string;
   countText: string;
   canLoadOlder: boolean;
@@ -171,6 +176,7 @@ function Toolbar({
   onBranchFilter(value: string): void;
   onLoadOlder(): void;
   onToggleInspector(): void;
+  onCreateBranch?: () => void;
 }): JSX.Element {
   const strings = useT();
   const branches = refs.filter((r) => r.kind === 'local' || r.kind === 'remote');
@@ -200,25 +206,28 @@ function Toolbar({
       </div>
 
       {/*
-        One checkout control, shared with the sidebar; the unlabelled variant, so
-        the visible `Checkout` word sits beside it and the accessible name stays.
+        Frame 01/15/16: `Checkout` and `Show` render inline inside their trigger
+        buttons using `.gc-toolbar__label`, collapsing at narrow widths while each
+        button keeps its accessible name.
       */}
       <div className="gc-toolbar__group">
-        <span className="gc-toolbar__label">{strings.graph.checkoutBranchLabel}</span>
         <BranchSelector
           currentBranch={currentBranch}
           refs={refs}
           busy={busy}
+          inlineLabel={strings.graph.checkoutBranchLabel}
+          onCreateBranch={onCreateBranch}
           aria-label={strings.graph.checkoutBranchAria}
         />
       </div>
 
       <div className="gc-toolbar__group">
-        <span className="gc-toolbar__label">{strings.graph.showLabel}</span>
         <LaneFilterSelector
           branchFilter={branchFilter}
           branches={branches}
           lanes={lanes}
+          laneCommitCounts={laneCommitCounts}
+          inlineLabel={strings.graph.showLabel}
           onBranchFilter={onBranchFilter}
           aria-label={strings.graph.branchFilterAria}
         />
@@ -283,6 +292,7 @@ export function GraphCanvas({
   onOpenInspector,
   inspectorOpen,
   onToggleInspector,
+  onCreateBranch,
 }: Props): JSX.Element {
   const strings = useT();
   const language = useSettingsStore((s) => s.language);
@@ -444,6 +454,15 @@ export function GraphCanvas({
 
   /** Pre-pass map of node placement (above vs below) to avoid collisions */
   const staggerMap = useMemo(() => computeStaggerMap(rows), [rows]);
+
+  const laneCommitCounts = useMemo(() => {
+    const counts = new Map<number, number>();
+    if (graph === null) return counts;
+    for (const node of graph.nodes) {
+      counts.set(node.lane, (counts.get(node.lane) ?? 0) + 1);
+    }
+    return counts;
+  }, [graph]);
 
   const laneCount = useMemo(() => {
     if (graph === null) return 1;
@@ -779,6 +798,7 @@ export function GraphCanvas({
         busy={status !== null && status.operation !== 'idle'}
         refs={graph?.refs ?? []}
         lanes={graph?.lanes ?? []}
+        laneCommitCounts={laneCommitCounts}
         countId={countId}
         countText={
           search.length === 0 && branchFilter.length === 0
@@ -792,6 +812,7 @@ export function GraphCanvas({
         onBranchFilter={setBranchFilter}
         onLoadOlder={() => void loadMore()}
         onToggleInspector={onToggleInspector}
+        onCreateBranch={onCreateBranch}
       />
 
       {graph?.stale === true && (
@@ -911,6 +932,16 @@ export function GraphCanvas({
                 width: `${totalWorldW * zoom}px`,
               }}
             >
+              {/* Full-height day separator lines aligned seamlessly with `.gc-ruler__cell` borders */}
+              {dateBuckets.map((bucket) => (
+                <div
+                  key={`day-col-${bucket.timestamp}`}
+                  className="gc-canvas__day-line-col"
+                  style={{ left: `${(bucket.bandStartX + bucket.bandWidth) * zoom}px` }}
+                  aria-hidden="true"
+                />
+              ))}
+
               <svg
                 className="gc-canvas__svg"
                 width={totalWorldW * zoom}
@@ -933,21 +964,6 @@ export function GraphCanvas({
                   )}
                   {/* Odd lanes (lane % 2 === 1) take the band above. It sits under the day
                       lines and the edges, which are painted after it. */}
-
-                  {/* Day separator lines aligned with band geometry */}
-                  {dateBuckets.map((bucket) => {
-                    return (
-                      <g key={`day-bg-${bucket.timestamp}`}>
-                        <line
-                          className="gc-canvas__day-line"
-                          x1={bucket.bandStartX + bucket.bandWidth}
-                          y1={RULER_HEIGHT}
-                          x2={bucket.bandStartX + bucket.bandWidth}
-                          y2={totalWorldH}
-                        />
-                      </g>
-                    );
-                  })}
 
                   {/* Edges */}
                   {visibleEdges.map(({ edge, fromX, toX }) => (

@@ -25,6 +25,10 @@ export interface BranchSelectorProps {
   busy?: boolean;
   /** When true, renders a visible label above the select (graph toolbar). Omit in narrow sidebars. */
   showLabel?: boolean;
+  /** Inline label rendered inside the bordered trigger button (Figma Frame 01/15: `Checkout`). */
+  inlineLabel?: string;
+  /** Optional handler to open the Create Branch flow from the bottom of the Checkout popover (Frame 15). */
+  onCreateBranch?: () => void;
   /**
    * Accessible name for the select. Defaults to the catalog's checkout name, so a
    * host that renders no visible label still gets a named control.
@@ -143,6 +147,8 @@ export function BranchSelector({
   refs,
   busy = false,
   showLabel = false,
+  inlineLabel,
+  onCreateBranch,
   'aria-label': ariaLabel,
 }: BranchSelectorProps): JSX.Element {
   const strings = useT();
@@ -156,7 +162,7 @@ export function BranchSelector({
   );
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
-  const [placed, setPlaced] = useState({ x: 0, y: 0, width: 260 });
+  const [placed, setPlaced] = useState({ x: 0, y: 0, width: 310 });
   const triggerRef = useRef<HTMLButtonElement>(null);
   const popoverRef = useRef<HTMLDivElement>(null);
   const searchRef = useRef<HTMLInputElement>(null);
@@ -170,7 +176,7 @@ export function BranchSelector({
     const anchor = trigger.getBoundingClientRect();
     const box = popover.getBoundingClientRect();
     const margin = 8;
-    const width = Math.max(260, Math.min(356, Math.max(anchor.width, box.width)));
+    const width = Math.max(300, Math.min(356, Math.max(anchor.width, box.width)));
     const x = Math.max(margin, Math.min(anchor.left, window.innerWidth - width - margin));
     const y = Math.max(margin, Math.min(anchor.bottom + 4, window.innerHeight - box.height - margin));
     setPlaced({ x, y, width });
@@ -197,7 +203,9 @@ export function BranchSelector({
     void runAction(payload);
   };
 
-  const localRefs = refs.filter((ref) => ref.kind === 'local');
+  const localRefs = refs.filter(
+    (ref) => ref.kind === 'local' && !ref.shortName.startsWith('refs/remotes/'),
+  );
   const q = query.trim().toLowerCase();
   const filteredRefs = q.length === 0
     ? localRefs
@@ -227,6 +235,11 @@ export function BranchSelector({
         <span className="gc-popover-trigger__icon" aria-hidden="true">
           <Icon name="git-branch" />
         </span>
+        {inlineLabel !== undefined && (
+          <span className="gc-toolbar__label" aria-hidden="true">
+            {inlineLabel}
+          </span>
+        )}
         <span className="gc-popover-trigger__label">{displayLabel}</span>
         <span className="gc-popover-trigger__chevron" aria-hidden="true">
           <Icon name="chevron-down" />
@@ -275,8 +288,8 @@ export function BranchSelector({
                   aria-selected={isCurrent}
                   className={
                     isCurrent
-                      ? 'gc-menu__item gc-branch-popover__option gc-branch-popover__option--selected'
-                      : 'gc-menu__item gc-branch-popover__option'
+                      ? 'gc-menu__item gc-menu__item--compact gc-branch-popover__option gc-branch-popover__option--selected'
+                      : 'gc-menu__item gc-menu__item--compact gc-branch-popover__option'
                   }
                   onClick={() => onSelect(ref.shortName)}
                 >
@@ -287,14 +300,17 @@ export function BranchSelector({
                     <Icon name="git-branch" />
                   </span>
                   <span className="gc-branch-popover__name">{safeName}</span>
-                  {isCurrent ? (
-                    <span className="gc-menu__hint">{strings.graph.branchPopoverCurrent}</span>
-                  ) : ref.gone ? (
-                    <span className="gc-branch-popover__pill">{strings.branches.chipUpstreamGone}</span>
+                  {ref.gone ? (
+                    <span className="gc-branch-popover__pill gc-branch-popover__pill--warning">
+                      {strings.branches.chipUpstreamGone}
+                    </span>
                   ) : ref.upstream === null ? (
                     <span className="gc-branch-popover__pill">{strings.branches.chipLocalOnly}</span>
-                  ) : (
+                  ) : !isCurrent ? (
                     <span className="gc-menu__hint">{sanitizeGitText(ref.upstream)}</span>
+                  ) : null}
+                  {isCurrent && (
+                    <span className="gc-menu__hint">{strings.graph.branchPopoverCurrent}</span>
                   )}
                 </button>
               );
@@ -303,6 +319,26 @@ export function BranchSelector({
               <p className="gc-branch-popover__empty">{strings.branches.emptyFilter}</p>
             )}
           </div>
+          {onCreateBranch !== undefined && (
+            <>
+              <span className="gc-menu__separator" aria-hidden="true" />
+              <button
+                type="button"
+                className="gc-menu__item gc-menu__item--compact gc-branch-popover__create"
+                onClick={() => {
+                  setOpen(false);
+                  setQuery('');
+                  onCreateBranch();
+                }}
+              >
+                <span className="gc-menu__icon" aria-hidden="true">
+                  <Icon name="add" />
+                </span>
+                <span className="gc-menu__label">{strings.graph.branchPopoverCreate}</span>
+              </button>
+            </>
+          )}
+          <span className="gc-menu__separator" aria-hidden="true" />
           <div className="gc-branch-popover__note">
             <Icon name="info" />
             <span>{strings.graph.branchPopoverNote}</span>
@@ -333,19 +369,23 @@ export function LaneFilterSelector({
   branchFilter,
   branches,
   lanes,
+  laneCommitCounts,
+  inlineLabel,
   onBranchFilter,
   'aria-label': ariaLabel,
 }: {
   branchFilter: string;
   branches: readonly RefInfo[];
   lanes: readonly GraphLane[];
+  laneCommitCounts?: ReadonlyMap<number, number>;
+  inlineLabel?: string;
   onBranchFilter: (branch: string) => void;
   'aria-label'?: string;
 }): JSX.Element {
   const strings = useT();
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
-  const [placed, setPlaced] = useState({ x: 0, y: 0, width: 280 });
+  const [placed, setPlaced] = useState({ x: 0, y: 0, width: 290 });
   const triggerRef = useRef<HTMLButtonElement>(null);
   const popoverRef = useRef<HTMLDivElement>(null);
   const searchRef = useRef<HTMLInputElement>(null);
@@ -359,7 +399,7 @@ export function LaneFilterSelector({
     const anchor = trigger.getBoundingClientRect();
     const box = popover.getBoundingClientRect();
     const margin = 8;
-    const width = Math.max(260, Math.min(320, Math.max(anchor.width, box.width)));
+    const width = Math.max(280, Math.min(340, Math.max(anchor.width, box.width)));
     const x = Math.max(margin, Math.min(anchor.left, window.innerWidth - width - margin));
     const y = Math.max(margin, Math.min(anchor.bottom + 4, window.innerHeight - box.height - margin));
     setPlaced({ x, y, width });
@@ -378,14 +418,51 @@ export function LaneFilterSelector({
     return () => document.removeEventListener('pointerdown', onPointerDown, true);
   }, [open]);
 
-  const laneColor = new Map<string, string>();
+  const laneByShortName = new Map<string, GraphLane>();
   for (const lane of lanes) {
-    if (lane.ref !== undefined) laneColor.set(lane.ref, lane.color);
+    if (lane.ref !== undefined) {
+      const short = lane.ref.replace(/^refs\/(?:heads|remotes|tags)\//, '');
+      laneByShortName.set(short, lane);
+      laneByShortName.set(lane.ref, lane);
+    }
   }
+
+  // Frame 16 (`155:1888`): list the graph's lanes with their colour dot and commit count;
+  // fall back to branch refs if lanes have no named refs.
+  const laneEntries: { key: string; value: string; label: string; color?: string; count?: number }[] = [];
+  const seenValues = new Set<string>();
+  for (const lane of lanes) {
+    if (lane.ref === undefined) continue;
+    const value = lane.ref.replace(/^refs\/(?:heads|remotes|tags)\//, '');
+    if (seenValues.has(value)) continue;
+    seenValues.add(value);
+    const count = laneCommitCounts?.get(lane.index);
+    laneEntries.push({
+      key: `lane-${lane.index}-${value}`,
+      value,
+      label: sanitizeGitText(value),
+      color: lane.color,
+      ...(count !== undefined ? { count } : {}),
+    });
+  }
+  for (const ref of branches) {
+    if (seenValues.has(ref.shortName)) continue;
+    seenValues.add(ref.shortName);
+    const lane = laneByShortName.get(ref.shortName);
+    const count = lane !== undefined ? laneCommitCounts?.get(lane.index) : undefined;
+    laneEntries.push({
+      key: ref.refName,
+      value: ref.shortName,
+      label: sanitizeGitText(ref.shortName),
+      ...(lane !== undefined ? { color: lane.color } : {}),
+      ...(count !== undefined ? { count } : {}),
+    });
+  }
+
   const q = query.trim().toLowerCase();
   const filtered = q.length === 0
-    ? branches
-    : branches.filter((ref) => ref.shortName.toLowerCase().includes(q));
+    ? laneEntries
+    : laneEntries.filter((entry) => entry.label.toLowerCase().includes(q));
   const activeLabel =
     branchFilter.length === 0 ? strings.graph.branchFilterAll : sanitizeGitText(branchFilter);
 
@@ -410,6 +487,11 @@ export function LaneFilterSelector({
           setQuery('');
         }}
       >
+        {inlineLabel !== undefined && (
+          <span className="gc-toolbar__label" aria-hidden="true">
+            {inlineLabel}
+          </span>
+        )}
         <span className="gc-popover-trigger__label">{activeLabel}</span>
         <span className="gc-popover-trigger__chevron" aria-hidden="true">
           <Icon name="chevron-down" />
@@ -454,8 +536,8 @@ export function LaneFilterSelector({
                 aria-selected={branchFilter === ''}
                 className={
                   branchFilter === ''
-                    ? 'gc-menu__item gc-branch-popover__option gc-branch-popover__option--selected'
-                    : 'gc-menu__item gc-branch-popover__option'
+                    ? 'gc-menu__item gc-menu__item--compact gc-branch-popover__option gc-branch-popover__option--selected'
+                    : 'gc-menu__item gc-menu__item--compact gc-branch-popover__option'
                 }
                 onClick={() => pick('')}
               >
@@ -466,41 +548,46 @@ export function LaneFilterSelector({
                 <span className="gc-menu__hint">{strings.graph.lanePopoverCount(lanes.length)}</span>
               </button>
             )}
-            {filtered.map((ref) => {
-              const selected = branchFilter === ref.shortName;
-              const color = laneColor.get(ref.shortName);
-              const label =
-                ref.kind === 'remote'
-                  ? strings.graph.branchFilterRemotePrefix(sanitizeGitText(ref.shortName))
-                  : sanitizeGitText(ref.shortName);
+            {filtered.map((entry) => {
+              const selected = branchFilter === entry.value;
               return (
                 <button
-                  key={ref.refName}
+                  key={entry.key}
                   type="button"
                   role="option"
                   aria-selected={selected}
                   className={
                     selected
-                      ? 'gc-menu__item gc-branch-popover__option gc-branch-popover__option--selected'
-                      : 'gc-menu__item gc-branch-popover__option'
+                      ? 'gc-menu__item gc-menu__item--compact gc-branch-popover__option gc-branch-popover__option--selected'
+                      : 'gc-menu__item gc-menu__item--compact gc-branch-popover__option'
                   }
-                  onClick={() => pick(ref.shortName)}
+                  onClick={() => pick(entry.value)}
                 >
                   <span className="gc-branch-popover__check" aria-hidden="true">
-                    {selected && <Icon name="check" />}
+                    {selected ? (
+                      <Icon name="check" />
+                    ) : (
+                      <span
+                        className="gc-menu__commit-dot"
+                        style={entry.color ? { background: entry.color } : undefined}
+                      />
+                    )}
                   </span>
-                  <span
-                    className="gc-menu__commit-dot"
-                    style={color ? { background: color } : undefined}
-                    aria-hidden="true"
-                  />
-                  <span className="gc-branch-popover__name">{label}</span>
+                  <span className="gc-branch-popover__name">{entry.label}</span>
+                  {entry.count !== undefined && (
+                    <span className="gc-menu__hint">{entry.count}</span>
+                  )}
                 </button>
               );
             })}
             {filtered.length === 0 && (
               <p className="gc-branch-popover__empty">{strings.branches.emptyFilter}</p>
             )}
+          </div>
+          <span className="gc-menu__separator" aria-hidden="true" />
+          <div className="gc-branch-popover__note">
+            <Icon name="info" />
+            <span>{strings.graph.lanePopoverNote}</span>
           </div>
         </div>
       )}

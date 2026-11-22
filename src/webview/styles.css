@@ -1239,7 +1239,7 @@ h3 {
 .gc-toolbar__group .gc-toolbar__branch-wrap {
   flex: 0 1 auto;
   min-width: 0;
-  max-width: 14em;
+  max-width: 18em;
 }
 
 .gc-toolbar__field {
@@ -2211,6 +2211,7 @@ h3 {
 .gc-canvas__world {
   position: relative;
   min-width: 100%;
+  min-height: calc(100% - 32px);
 }
 
 .gc-canvas__svg {
@@ -2645,7 +2646,7 @@ h3 {
   color: var(--gc-muted);
   font-size: var(--gc-fs-2xs);
   font-weight: var(--gc-weight-strong);
-  border-right: 1px solid var(--gc-border);
+  border-right: 1px solid var(--gc-border-subtle);
   white-space: nowrap;
   box-sizing: border-box;
 }
@@ -2659,8 +2660,18 @@ h3 {
 }
 
 .gc-canvas__day-line {
-  stroke: var(--gc-border);
+  stroke: var(--gc-border-subtle);
   stroke-width: 1;
+}
+
+.gc-canvas__day-line-col {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: var(--gc-border-subtle);
+  pointer-events: none;
+  z-index: 0;
 }
 
 /*
@@ -3377,16 +3388,20 @@ h3 {
 .gc-branch-popover__list {
   display: flex;
   flex-direction: column;
+  overflow-x: hidden;
   overflow-y: auto;
   max-height: 220px;
 }
 
 .gc-branch-popover__option {
   align-items: center;
+  min-width: 0;
+  overflow: hidden;
 }
 
 .gc-branch-popover__option--selected {
-  background: var(--vscode-list-activeSelectionBackground, var(--vscode-list-hoverBackground));
+  background: var(--gc-accent-subtle);
+  color: var(--vscode-foreground);
 }
 
 .gc-branch-popover__check {
@@ -3418,6 +3433,17 @@ h3 {
   font-size: var(--gc-fs-2xs);
   white-space: nowrap;
   flex-shrink: 0;
+}
+
+.gc-branch-popover__pill--warning {
+  border-color: transparent;
+  background: var(--gc-state-warning-subtle);
+  color: var(--gc-state-warning);
+}
+
+.gc-branch-popover__create {
+  min-width: 0;
+  color: var(--gc-text-secondary);
 }
 
 .gc-branch-popover__empty {

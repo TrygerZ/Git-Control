@@ -692,10 +692,12 @@ const id: Catalog = {
     branchPopoverFilter: 'Saring branch...',
     branchPopoverGroup: 'Branch lokal',
     branchPopoverCurrent: 'aktif',
-    branchPopoverNote: 'Pindah branch memerlukan folder kerja bersih. Stash atau commit dulu.',
+    branchPopoverCreate: 'Buat branch baru...',
+    branchPopoverNote: 'Pindah branch memerlukan folder kerja bersih. Anda bisa stash terlebih dahulu.',
     lanePopoverFilter: 'Saring jalur...',
     lanePopoverGroup: 'Tampilkan jalur',
     lanePopoverCount: (count: number) => `${count} jalur`,
+    lanePopoverNote: 'Memfilter jalur yang ditampilkan grafik. Tidak mengganti branch Anda.',
     resetFilter: 'Reset',
     // Frame 01 (`9:45`): toolbar tanpa label form terlihat. Lihat katalog en.
     branchFilterAria: 'Filter menurut branch',
