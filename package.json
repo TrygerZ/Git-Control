@@ -140,7 +140,7 @@
         },
         "gitControl.pageSize": {
           "type": "number",
-          "default": 500,
+          "default": 50,
           "description": "Number of commits fetched per page."
         },
         "gitControl.showIgnoredFiles": {

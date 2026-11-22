@@ -1178,6 +1178,10 @@ h3 {
 
 .gc-toolbar__load-older {
   flex: 0 0 auto;
+  padding: 0 var(--gc-space-2);
+  color: var(--gc-accent-primary);
+  font-size: var(--gc-fs-2xs);
+  font-weight: var(--gc-weight-strong);
 }
 
 .gc-toolbar__search-wrap {

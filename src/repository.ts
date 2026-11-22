@@ -63,7 +63,7 @@ export interface GraphRequest {
 }
 
 export const MAX_COMMIT_LIMIT = 10_000;
-export const DEFAULT_PAGE_SIZE = 500;
+export const DEFAULT_PAGE_SIZE = 50;
 export const DEFAULT_FILE_LIMIT = 2000;
 /**
  * Above this many changed files, `status` stops asking git for line counts. Past

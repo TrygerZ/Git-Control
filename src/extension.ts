@@ -351,7 +351,7 @@ class Controller implements vscode.Disposable {
     const config = vscode.workspace.getConfiguration('gitControl');
     return {
       commitLimit: Math.min(config.get<number>('commitLimit', MAX_COMMIT_LIMIT), MAX_COMMIT_LIMIT),
-      pageSize: config.get<number>('pageSize', 500),
+      pageSize: config.get<number>('pageSize', 50),
     };
   }
 
@@ -1127,7 +1127,7 @@ class Controller implements vscode.Disposable {
     return {
       gitPath: this.gitPath ?? '',
       commitLimit: Math.min(config.get<number>('commitLimit', MAX_COMMIT_LIMIT), MAX_COMMIT_LIMIT),
-      pageSize: config.get<number>('pageSize', 500),
+      pageSize: config.get<number>('pageSize', 50),
       showIgnoredFiles: config.get<boolean>('showIgnoredFiles', false),
       githubApiUrl: config.get<string>('githubApiUrl', 'https://api.github.com'),
       fetchStalenessMs: config.get<number>('fetchStalenessMs', 300_000),
