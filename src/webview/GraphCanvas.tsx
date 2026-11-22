@@ -375,10 +375,13 @@ export function GraphCanvas({
   const helpId = useId();
   const countId = useId();
 
-  // Track viewport width so horizontal column culling matches reality after resize or initial layout.
+  // The scroller element only mounts once the graph exits the initial skeleton/empty return.
+  const canvasMounted = !(loading && graph === null) && !(graph !== null && graph.nodes.length === 0);
+
+  // Track viewport width so horizontal column culling and minimap maxScroll match reality after load or resize.
   useLayoutEffect(() => {
     const node = scrollRef.current;
-    if (node === null) return undefined;
+    if (!canvasMounted || node === null) return undefined;
     if (node.clientWidth > 0) setViewportWidthState(node.clientWidth);
 
     const observer = new ResizeObserver((entries) => {
@@ -389,7 +392,7 @@ export function GraphCanvas({
     });
     observer.observe(node);
     return () => observer.disconnect();
-  }, []);
+  }, [canvasMounted]);
 
   // `space` toggles pan mode; tracked on the document so it works mid-drag.
   useEffect(() => {
@@ -413,7 +416,7 @@ export function GraphCanvas({
   //   Trackpads naturally emit deltaX on horizontal swipes, which native scrolling handles when not prevented.
   useEffect(() => {
     const node = scrollRef.current;
-    if (node === null) return undefined;
+    if (!canvasMounted || node === null) return undefined;
     const onWheel = (event: WheelEvent): void => {
       if (event.ctrlKey || event.metaKey) {
         event.preventDefault();
@@ -428,7 +431,7 @@ export function GraphCanvas({
     };
     node.addEventListener('wheel', onWheel, { passive: false });
     return () => node.removeEventListener('wheel', onWheel);
-  }, [setZoom, zoom]);
+  }, [canvasMounted, setZoom, zoom]);
 
   const rows: GraphNode[] = useMemo(() => {
     if (graph === null) return [];
