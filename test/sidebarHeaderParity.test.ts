@@ -26,13 +26,18 @@ function read(relative: string): string {
 
 const HEADER = 'src/webview/SidebarHeader.tsx';
 
-test('the header takes its shape from the active route, not from a fixed three-row stack', () => {
+test('the header keeps a consistent single-row bar above NavStrip and mounts branch/sync below on Changes', () => {
   const src = read(HEADER);
+  const pending = read('src/webview/PendingChanges.tsx');
   assert.match(src, /useRouteStore\(\(s\) => s\.route\)/, 'it reads the active route');
-  assert.match(src, /route\.id !== 'changes'/, 'Changes is the only three-row destination');
-  assert.match(src, /gc-sidebar-header--compact/, 'the compact variant is a class, not a second component');
-  // The two rows the frames drop on every other destination.
-  assert.match(src, /\{!compact && \(/, 'branch and upstream rows are conditional');
+  assert.match(src, /route\.id !== 'changes'/, 'Changes keeps the graph button and hides the compact slug');
+  assert.match(src, /gc-sidebar-header--compact/, 'the header stays single-row so NavStrip never shifts');
+  assert.match(src, /export function SidebarBranchBar/, 'branch selector and sync status live in SidebarBranchBar');
+  assert.match(
+    pending,
+    /<NavStrip \/>[\s\S]{0,80}?<SidebarBranchBar \/>/,
+    'SidebarBranchBar mounts directly below NavStrip on Changes',
+  );
 });
 
 test('the compact row carries the repository slug beside the repository name', () => {

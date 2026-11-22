@@ -1520,6 +1520,16 @@ h3 {
   gap: 0;
 }
 
+/*
+ * Branch switcher + sync status strip rendered directly below the NavStrip on
+ * the Changes route so the top title row and NavStrip never shift vertically
+ * when switching between sidebar tabs.
+ */
+.gc-sidebar-header--branch-bar {
+  margin: 0 calc(-1 * var(--gc-space-2));
+  padding: var(--gc-space-2) var(--gc-space-4) var(--gc-space-1);
+}
+
 .gc-sidebar-header--compact .gc-sidebar-header__row {
   min-height: var(--gc-space-6);
 }

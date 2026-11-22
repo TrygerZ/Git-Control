@@ -689,8 +689,8 @@ test('pending panel mounts the nav strip directly under the sidebar header', () 
   assert.match(src, /<SidebarHeader \/>[\s\S]{0,40}?<NavStrip \/>/, 'the strip follows the header slot');
   assert.match(
     src,
-    /<NavStrip \/>\s*<Tablist\b[\s\S]{0,500}?\/>\s*<div className="gc-pending__notifications">/,
-    'strip, then the sub-tabs, then the notifications',
+    /<NavStrip \/>[\s\S]{0,80}?<Tablist\b[\s\S]{0,500}?\/>\s*<div className="gc-pending__notifications">/,
+    'strip, branch bar on Changes, then the sub-tabs, then the notifications',
   );
   assert.equal(src.match(/<NavStrip \/>/g)?.length, 1, 'mounted once');
 });

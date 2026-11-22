@@ -19,7 +19,7 @@ import { CommitForm } from './CommitForm';
 import { ConflictPanel, OperationBanner } from './ConflictPanel';
 import { GuardDialog } from './GuardDialog';
 import { GetStartedCard as GetStartedCardBase } from './GetStartedCard';
-import { SidebarHeader } from './SidebarHeader';
+import { SidebarBranchBar, SidebarHeader } from './SidebarHeader';
 import { NavStrip } from './NavStrip';
 import { PullRequestsView } from './PullRequestsView';
 import { ActionsView } from './ActionsView';
@@ -308,6 +308,7 @@ export function PendingChangesApp(): JSX.Element {
         <SidebarHeader />
       )}
       <NavStrip />
+      {route.id === 'changes' && <SidebarBranchBar />}
       <Tablist tabs={subTabs} activeId={sub} onSelect={selectSub} ariaLabel={strings.nav.subTabsAria} idPrefix={CHANGES_TABS_PREFIX} classPrefix="gc-subtabs" />
       <div className="gc-pending__notifications">
         {route.id === 'changes' && sub === 'changes' && <GetStartedCard />}

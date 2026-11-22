@@ -321,11 +321,7 @@ export function SidebarHeader(): JSX.Element | null {
 
   return (
     <header
-      className={
-        compact
-          ? 'gc-sidebar-header gc-sidebar-header--compact'
-          : `gc-sidebar-header${model.detached ? ' gc-sidebar-header--detached' : ''}`
-      }
+      className="gc-sidebar-header gc-sidebar-header--compact"
       aria-label={shell.headerAria}
     >
       <div className="gc-sidebar-header__row">
@@ -451,46 +447,6 @@ export function SidebarHeader(): JSX.Element | null {
         </div>
       </div>
 
-      {!compact && (
-        <>
-          <div className="gc-sidebar-header__row gc-sidebar-header__branch">
-            <BranchSelector
-              currentBranch={status.branch}
-              refs={graph?.refs ?? []}
-              busy={busy || status.operation !== 'idle'}
-            />
-            <span
-              className={`gc-chip gc-sidebar-header__sync gc-sidebar-header__sync--${model.syncBadge}`}
-              title={model.syncBadge === 'local' ? shell.syncLocalTitle : model.upstreamLine}
-            >
-              <Icon name={SYNC_ICON[model.syncBadge]} />
-              <span>{syncLabel[model.syncBadge]}</span>
-            </span>
-          </div>
-
-          {/*
-            The visible text is short; the full sentence and the "branch" wording stay in
-            the visually hidden fallback so a screen reader hears the counts and the kind
-            of name, as `ContextBar` did.
-          */}
-          <p className="gc-sidebar-header__upstream" title={model.upstreamLine}>
-            <span className="gc-sidebar-header__upstream-visual" aria-hidden="true">
-              <span className="gc-sidebar-header__upstream-text">{model.upstream ?? shell.notPublished}</span>
-              {model.hash !== null && (
-                <>
-                  <span className="gc-sidebar-header__dot">·</span>
-                  <code className="gc-sidebar-header__hash">{model.hash}</code>
-                </>
-              )}
-            </span>
-            <span className="gc-visually-hidden">
-              {strings.ui.branchLabel(model.branchLabel)}. {model.upstreamLine}
-              {model.hash !== null && ` ${strings.ui.headAtCommit(model.hash)}`}
-            </span>
-          </p>
-        </>
-      )}
-
       {menuOpen && (() => {
         let flatIndex = -1;
         return (
@@ -547,5 +503,75 @@ export function SidebarHeader(): JSX.Element | null {
         );
       })()}
     </header>
+  );
+}
+
+/**
+ * Branch checkout selector, sync status chip, and upstream/hash summary rendered
+ * below `NavStrip` on the Changes tab so the top title row and navigation bar
+ * stay pinned at the exact same vertical position across every sidebar tab.
+ */
+export function SidebarBranchBar(): JSX.Element | null {
+  const strings = useT();
+  const language = useSettingsStore((s) => s.language);
+  const status = useRepoStore((s) => s.status);
+  const graph = useRepoStore((s) => s.graph);
+  const opState = useOperationStore((s) => s.state);
+
+  const model = headerModel(status, language);
+  if (status === null || model === null) return null;
+  const busy = opState === 'loading';
+  const shell = strings.shell;
+
+  const syncLabel: Record<SyncBadge, string> = {
+    local: shell.syncLocal,
+    synced: shell.syncSynced,
+    ahead: shell.syncAhead(formatCount(model.ahead, language)),
+    behind: shell.syncBehind(formatCount(model.behind, language)),
+    diverged: shell.syncDiverged,
+  };
+
+  return (
+    <div
+      className={`gc-sidebar-header gc-sidebar-header--branch-bar${
+        model.detached ? ' gc-sidebar-header--detached' : ''
+      }`}
+    >
+      <div className="gc-sidebar-header__row gc-sidebar-header__branch">
+        <BranchSelector
+          currentBranch={status.branch}
+          refs={graph?.refs ?? []}
+          busy={busy || status.operation !== 'idle'}
+        />
+        <span
+          className={`gc-chip gc-sidebar-header__sync gc-sidebar-header__sync--${model.syncBadge}`}
+          title={model.syncBadge === 'local' ? shell.syncLocalTitle : model.upstreamLine}
+        >
+          <Icon name={SYNC_ICON[model.syncBadge]} />
+          <span>{syncLabel[model.syncBadge]}</span>
+        </span>
+      </div>
+
+      {/*
+        The visible text is short; the full sentence and the "branch" wording stay in
+        the visually hidden fallback so a screen reader hears the counts and the kind
+        of name, as `ContextBar` did.
+      */}
+      <p className="gc-sidebar-header__upstream" title={model.upstreamLine}>
+        <span className="gc-sidebar-header__upstream-visual" aria-hidden="true">
+          <span className="gc-sidebar-header__upstream-text">{model.upstream ?? shell.notPublished}</span>
+          {model.hash !== null && (
+            <>
+              <span className="gc-sidebar-header__dot">·</span>
+              <code className="gc-sidebar-header__hash">{model.hash}</code>
+            </>
+          )}
+        </span>
+        <span className="gc-visually-hidden">
+          {strings.ui.branchLabel(model.branchLabel)}. {model.upstreamLine}
+          {model.hash !== null && ` ${strings.ui.headAtCommit(model.hash)}`}
+        </span>
+      </p>
+    </div>
   );
 }
