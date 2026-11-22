@@ -5,6 +5,26 @@ All notable changes to the "Git Control" extension will be documented in this fi
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.27.0] - 2026-11-22
+
+### Added
+- Replace native `<select>` controls for `Checkout`, `Show`, sidebar branch switching, and `Create Pull Request` base/compare pickers with custom searchable popovers (`Filter branches...` / `Filter lanes...`), inline trigger labels, status pills, commit counts, `+ Create new branch...`, and guidance notes.
+- Add PR Filter and Sort popover (`PullRequestsView`), inline merge method radiogroup (`Merge commit` / `Squash and merge`) and right-rail `Checks` and `Commits` summaries (`PullRequestApp`), `POST .../reviews` JSON preview (`ReviewDialog`), `+ New issue` in `Assigned to you` (`IssuesView`), and searchable branch filter with run count (`ActionsFilters`).
+- Add dirty working tree radio option cards with `Recommended` badge and command preview (`GuardDialog`), `Command that will run` previews (`MergeDialog`, `PromptDialog`), commit header and keyboard shortcut hints (`NodeContextMenu`), contextual clean empty states (`PendingChanges`), stash metadata sub-rows (`message`, branch, time) with status badges, and file status badges (`M`/`A`/`D`/`R`) in Commit Inspector.
+- Add Pull Requests, Actions, and Branches showcase screenshots to `README.md` alongside refreshed Explorer, Pending Changes (EN/ID), Context Menu, and Guard Dialog previews.
+
+### Changed
+- Move the `Changes` tab branch switcher, sync status chip, and upstream/hash bar (`SidebarBranchBar`) directly below `NavStrip` so the top title row and 5-tab navigation strip stay fixed at the exact same vertical position across every sidebar tab.
+- Lower default `gitControl.pageSize` from `500` to `50` commits per page and increment `Load older` by `pageSize` per click with accent styling.
+- Add icons, visible uppercase group titles (`Sidebar views`, `GitHub`, `Preferences`), and visible separators to the Explorer and sidebar `More` (`...`) menus.
+
+### Fixed
+- Fix Explorer toolbar `Show` label clipping, branch-tip ref pill overlap with commit subjects, full collapse of the `Details` aside, container-aware responsiveness across narrow and medium widths, and continuous full-height day divider lines from the date ruler to the bottom of the canvas.
+- Fix minimap far-right scroll clamp (attach `ResizeObserver` and `wheel` listener after the canvas exits the loading skeleton) and scale minimap lane spans by active zoom level.
+- Right-align diff stats and status badges on root-level files and `CHANGED FILES` totals in Commit Inspector.
+- Harden theme file icon loading by minting `asWebviewUri` icon snapshots per webview, omitting empty `format('')` in `@font-face`, supporting `vscode-webview-resource:` URIs with `onError` fallback, and rendering `<FileIcon>` in Compare file rows.
+- Fix `ErrorBoundary` calling `useT()` hook inside a class component render method.
+
 ## [3.26.1] - 2026-11-21
 
 ### Added
